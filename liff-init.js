@@ -1,8 +1,8 @@
 // LIFF ID 設定
-const LIFF_ID = 'YOUR_LIFF_ID';
+const LIFF_ID = '2001679903-r5VXNe5g';
 
 // GAS Web App URL
-const GAS_URL = 'YOUR_GAS_WEBAPP_URL';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzyBxr10uHcQPeADyf6aLLt7OvtjclTaHmGCxC9-n2SyUJYFaK8I8PM_2YmAXim4o9T/exec';
 
 // 初始化 LIFF
 async function initializeLiff() {
