@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>活動列表 - 活動報名系統</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
+      <div class="container-fluid">
+        <a class="navbar-brand" href="#">活動報名系統</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav">
+            <li class="nav-item">
+              <a class="nav-link active" href="events.html">活動列表</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="profile.html">個人資料</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="my-events.html">我的活動</a>
+            </li>
+            <li class="nav-item admin-only d-none">
+              <a class="nav-link" href="admin.html">管理員專區</a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+    
+    <div class="row" id="eventsList">
+      <!-- 活動卡片將由 JavaScript 動態產生 -->
+    </div>
+  </div>
+
+  <template id="eventCardTemplate">
+    <div class="col-md-6 col-lg-4 mb-4">
+      <div class="card h-100">
+        <div class="card-body">
+          <h5 class="card-title"></h5>
+          <h6 class="card-subtitle mb-2 text-muted"></h6>
+          <p class="card-text description"></p>
+          <div class="event-info">
+            <p class="mb-1">
+              <small class="text-muted">
+                報名截止：<span class="deadline"></span>
+              </small>
+            </p>
+            <p class="mb-2">
+              <small class="text-muted">
+                名額：<span class="participants"></span>
+              </small>
+            </p>
+          </div>
+          <button class="btn btn-primary register-btn">立即報名</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="js/liff-init.js"></script>
+  <script>
+    // 活動列表處理
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      window.location.href = 'index.html';
+      return;
+    }
+    
+    const token = await liff.getAccessToken();
+    await loadEvents(token);
+  } catch (err) {
+    console.error('初始化失敗', err);
+    showError('載入失敗，請重新整理頁面');
+  }
+});
+
+// 載入活動列表
+async function loadEvents(token) {
+  try {
+    const response = await fetch(`${GAS_URL}?action=getEvents`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    const data = await response.json();
+    if (data.code === 200) {
+      renderEvents(data.data.events);
+    } else {
+      throw new Error(data.error || '載入活動失敗');
+    }
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+// 渲染活動卡片
+function renderEvents(events) {
+  const container = document.getElementById('eventsList');
+  const template = document.getElementById('eventCardTemplate');
+  
+  events.forEach(event => {
+    const clone = template.content.cloneNode(true);
+    
+    // 填充活動資料
+    clone.querySelector('.card-title').textContent = event.title;
+    clone.querySelector('.card-subtitle').textContent = new Date(event.date).toLocaleDateString();
+    clone.querySelector('.description').textContent = event.description;
+    clone.querySelector('.deadline').textContent = new Date(event.deadline).toLocaleDateString();
+    clone.querySelector('.participants').textContent = 
+      `${event.currentParticipants}/${event.maxParticipants}`;
+    
+    // 設定報名按鈕
+    const registerBtn = clone.querySelector('.register-btn');
+    if (event.currentParticipants >= event.maxParticipants) {
+      registerBtn.disabled = true;
+      registerBtn.textContent = '已額滿';
+    } else if (new Date(event.deadline) < new Date()) {
+      registerBtn.disabled = true;
+      registerBtn.textContent = '已截止';
+    } else {
+      registerBtn.addEventListener('click', () => {
+        window.location.href = `registration.html?eventId=${event.id}`;
+      });
+    }
+    
+    container.appendChild(clone);
+  });
+}
+
+// 顯示錯誤訊息
+function showError(message) {
+  const container = document.getElementById('eventsList');
+  container.innerHTML = `
+    <div class="col-12">
+      <div class="alert alert-danger" role="alert">
+        ${message}
+      </div>
+    </div>
+  `;
+}
+  </script>
+</body>
+</html>
