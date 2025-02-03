@@ -179,37 +179,78 @@
     
     <!-- 應用程式邏輯 -->
     <script>
-        // LIFF 初始化設定
-        const liffId = "2001679903-r5VXNe5g";
-        let userProfile = null;
 
-        // GAS Web App URL
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbwy32m6P4JXYxgXxUz_wPZCNYKBVvrXPmyDiQqjLlxPrBrQhyNCTTzYTA4Jb7PZ8Q8l/exec';
+// 全域變數
+let userProfile = null;
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbz4JwTl48qw3ieHW3gLuUwXs5Ftuw5PzI6BDLapJWsTkaPVae2eNsLvvvKLoT44sq1E/exec';
 
-        // 初始化 LIFF
-        async function initializeLiff() {
-            try {
-                showLoading();
-                await liff.init({ liffId });
+// LIFF 初始化和登入處理
+async function initializeLiff() {
+    try {
+        showLoading();
+        await liff.init({ liffId: "2001679903-r5VXNe5g" });
 
-                if (!liff.isLoggedIn()) {
-                    await liff.login();
-                    return;
-                }
-
-                userProfile = await liff.getProfile();
-                await loadUserData();
-                await loadEvents();
-                setupEventListeners();
-                hideLoading();
-            } catch (error) {
-                console.error('LIFF 初始化失敗:', error);
-                showError('初始化失敗，請重新整理頁面');
-                hideLoading();
-            }
+        // 檢查是否已登入
+        if (!liff.isLoggedIn()) {
+            await liff.login();
+            return;
         }
 
-        // 修改 loadUserData 函數
+        // 獲取用戶資料
+        userProfile = await liff.getProfile();
+        
+        // 儲存或更新用戶基本資料
+        await saveUserBasicInfo();
+        
+        // 載入頁面內容
+        await Promise.all([
+            loadEvents(),
+            loadUserData()
+        ]);
+        
+        setupEventListeners();
+        showSection('eventList'); // 直接顯示活動列表
+        hideLoading();
+        
+    } catch (error) {
+        console.error('LIFF 初始化失敗:', error);
+        showError('初始化失敗，請重新整理頁面');
+        hideLoading();
+    }
+}
+
+// 儲存用戶基本資料
+async function saveUserBasicInfo() {
+    if (!userProfile) return;
+
+    try {
+        const response = await fetch(GAS_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'updateProfile',
+                userId: userProfile.userId,
+                lineName: userProfile.displayName,
+                fullName: userProfile.displayName, // 預設使用 LINE 名稱
+                phone: '', // 預設空值
+                dietaryPreference: '無特殊要求' // 預設值
+            })
+        });
+
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || '無法儲存用戶資料');
+        }
+
+    } catch (error) {
+        console.error('儲存用戶基本資料失敗:', error);
+        // 這裡我們不要阻止程式繼續執行，只記錄錯誤
+    }
+}
+
+// 修改載入用戶資料函數
 async function loadUserData() {
     if (!userProfile) return;
 
@@ -217,7 +258,6 @@ async function loadUserData() {
         document.getElementById('userImage').src = userProfile.pictureUrl || '';
         document.getElementById('userName').textContent = userProfile.displayName || '';
 
-        showLoading();
         const response = await fetch(`${GAS_URL}?action=getUserProfile&userId=${userProfile.userId}`);
         const result = await response.json();
         
@@ -227,15 +267,16 @@ async function loadUserData() {
 
         const userData = result.data;
         if (userData) {
-            document.getElementById('fullName').value = userData['姓名'] || '';
+            document.getElementById('fullName').value = userData['姓名'] || userProfile.displayName;
             document.getElementById('phone').value = userData['電話'] || '';
             document.getElementById('dietaryPreference').value = userData['飲食偏好'] || '無特殊要求';
         }
     } catch (error) {
         console.error('載入使用者資料失敗:', error);
-        showError(error.message || '無法載入使用者資料');
-    } finally {
-        hideLoading();
+        // 如果載入失敗，使用 LINE 個人資料作為預設值
+        document.getElementById('fullName').value = userProfile.displayName;
+        document.getElementById('phone').value = '';
+        document.getElementById('dietaryPreference').value = '無特殊要求';
     }
 }
 
