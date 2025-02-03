@@ -2,7 +2,7 @@
 const LIFF_ID = '2001679903-r5VXNe5g';
 
 // GAS Web App URL
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxN4QcgMW1SjjqyPX3dE2Hf9DJaXExjLDwiS9C2YeUNNixGu-iX78b8T2-0zvTMs36y/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzZr85meAxFWWg9Dy2c0t3A3G0MBn0MRU7afOLbG-sfH29cMXrq-6eUM8YHXyDJaIAH/exec';
 
 
 // 初始化 LIFF
