@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>活動報名系統</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.32/dist/sweetalert2.min.css" rel="stylesheet">
     <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <style>
         .loading {
@@ -16,7 +17,6 @@
             height: 100%;
             background: rgba(0, 0, 0, 0.5);
             z-index: 9999;
-            display: flex;
             justify-content: center;
             align-items: center;
         }
@@ -24,17 +24,26 @@
             width: 3rem;
             height: 3rem;
         }
+        .event-card {
+            transition: transform 0.2s;
+        }
+        .event-card:hover {
+            transform: translateY(-5px);
+        }
+        .required-field::after {
+            content: '*';
+            color: red;
+            margin-left: 4px;
+        }
     </style>
 </head>
 <body>
-    <!-- Loading 遮罩 -->
     <div id="loading" class="loading">
         <div class="spinner-border text-light loading-spinner" role="status">
             <span class="visually-hidden">載入中...</span>
         </div>
     </div>
 
-    <!-- 導航欄 -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="#">活動報名系統</a>
@@ -61,7 +70,6 @@
     </nav>
 
     <div class="container mt-4">
-        <!-- 使用者資訊卡片 -->
         <div id="userInfo" class="card mb-4">
             <div class="card-body">
                 <h5 class="card-title">使用者資訊</h5>
@@ -78,22 +86,22 @@
             </div>
         </div>
 
-        <!-- 個人資料表單 -->
-        <div class="card mb-4">
-            <div class="card-header">
+        <div class="card mb-4" id="profileCard">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">個人基本資料</h5>
+                <button class="btn btn-primary btn-sm" onclick="toggleProfileEdit()">編輯資料</button>
             </div>
             <div class="card-body">
                 <form id="profileForm" novalidate>
                     <div class="mb-3">
-                        <label for="realName" class="form-label">真實姓名 <span class="text-danger">*</span></label>
+                        <label for="realName" class="form-label required-field">真實姓名</label>
                         <input type="text" class="form-control" id="realName" required>
                         <div class="invalid-feedback">請輸入真實姓名</div>
                     </div>
 
                     <div class="mb-3">
                         <label for="diet" class="form-label">用餐習慣</label>
-                        <select class="form-select" id="diet" required>
+                        <select class="form-select" id="diet">
                             <option value="葷">葷</option>
                             <option value="素">素</option>
                         </select>
@@ -123,29 +131,45 @@
                     </div>
 
                     <div class="text-end">
+                        <button type="button" class="btn btn-secondary me-2" onclick="cancelProfileEdit()">取消</button>
                         <button type="submit" class="btn btn-primary">儲存資料</button>
                     </div>
                 </form>
+                <div id="profileDisplay"></div>
             </div>
         </div>
 
-        <!-- 動態內容區域 -->
         <div id="content"></div>
     </div>
 
-    <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.32/dist/sweetalert2.all.min.js"></script>
 
     <script>
         // 常數定義
         const LIFF_ID = '2001679903-r5VXNe5g';
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbwq-GBH6G3vCoxfiwpE-TxT-r67kWAVE12rM0CyzufXoudfCNN1Iplo-4J2u8hz3Sha/exec';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbxkWKCGuePnnx8GofplesVFPF4Q45IKRmgOmAZulQ7mvop8WlSAxBHowiNYD3wo3dHU/exec';
         
+        let isAdmin = false;
+        let currentProfile = null;
+        let isProfileEditing = false;
+
         // Loading 控制
         const loading = {
             show: () => document.getElementById('loading').style.display = 'flex',
             hide: () => document.getElementById('loading').style.display = 'none'
         };
+
+        // 通用錯誤處理
+        function handleError(error, title = '錯誤') {
+            console.error(error);
+            Swal.fire({
+                icon: 'error',
+                title: title,
+                text: error.message || '發生未知錯誤',
+                confirmButtonText: '確定'
+            });
+        }
 
         // LIFF 初始化
         async function initializeLiff() {
@@ -160,15 +184,29 @@
                     await Promise.all([
                         updateUserInfo(profile),
                         recordUserLogin(profile),
-                        loadUserProfile(profile)
+                        loadUserProfile(profile),
+                        checkAdminStatus(profile)
                     ]);
                     showHome();
                 }
             } catch (err) {
-                console.error('LIFF 初始化失敗', err);
-                alert('系統初始化失敗，請重新整理頁面');
+                handleError(err, 'LIFF 初始化失敗');
             } finally {
                 loading.hide();
+            }
+        }
+
+        // 檢查管理員權限
+        async function checkAdminStatus(profile) {
+            try {
+                const response = await fetch(`${GAS_URL}?action=checkAdmin&userId=${profile.userId}`);
+                if (!response.ok) throw new Error('網路回應不正確');
+                
+                const result = await response.json();
+                isAdmin = result.isAdmin;
+                document.querySelector('.admin-only').style.display = isAdmin ? 'block' : 'none';
+            } catch (err) {
+                console.error('檢查管理員權限失敗', err);
             }
         }
 
@@ -184,9 +222,7 @@
             try {
                 const response = await fetch(GAS_URL, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         action: 'recordLogin',
                         userId: profile.userId,
@@ -200,8 +236,7 @@
                 const data = await response.json();
                 document.getElementById('loginCount').textContent = data.loginCount;
             } catch (err) {
-                console.error('記錄登入失敗', err);
-                alert('登入記錄更新失敗');
+                handleError(err, '登入記錄更新失敗');
             }
         }
 
@@ -213,18 +248,58 @@
                 
                 const data = await response.json();
                 if (data.success) {
-                    const form = document.getElementById('profileForm');
-                    form.realName.value = data.profile.realName || '';
-                    form.diet.value = data.profile.diet || '葷';
-                    form.phone.value = data.profile.phone || '';
-                    form.birthday.value = data.profile.birthday || '';
-                    form.idNumber.value = data.profile.idNumber || '';
-                    form.email.value = data.profile.email || '';
+                    currentProfile = data.profile;
+                    displayProfile();
+                    populateProfileForm();
                 }
             } catch (err) {
-                console.error('載入使用者資料失敗', err);
-                alert('載入個人資料失敗');
+                handleError(err, '載入個人資料失敗');
             }
+        }
+
+        // 顯示個人資料
+        function displayProfile() {
+            const displayDiv = document.getElementById('profileDisplay');
+            displayDiv.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>真實姓名：</strong>${currentProfile.realName || '未設定'}</p>
+                        <p><strong>用餐習慣：</strong>${currentProfile.diet || '葷'}</p>
+                        <p><strong>手機號碼：</strong>${currentProfile.phone || '未設定'}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>生日：</strong>${currentProfile.birthday || '未設定'}</p>
+                        <p><strong>身分證字號：</strong>${currentProfile.idNumber || '未設定'}</p>
+                        <p><strong>電子信箱：</strong>${currentProfile.email || '未設定'}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 填充個人資料表單
+        function populateProfileForm() {
+            const form = document.getElementById('profileForm');
+            form.realName.value = currentProfile.realName || '';
+            form.diet.value = currentProfile.diet || '葷';
+            form.phone.value = currentProfile.phone || '';
+            form.birthday.value = currentProfile.birthday || '';
+            form.idNumber.value = currentProfile.idNumber || '';
+            form.email.value = currentProfile.email || '';
+        }
+
+        // 切換個人資料編輯模式
+        function toggleProfileEdit() {
+            isProfileEditing = true;
+            document.getElementById('profileForm').style.display = 'block';
+            document.getElementById('profileDisplay').style.display = 'none';
+        }
+
+        // 取消編輯個人資料
+        function cancelProfileEdit() {
+            isProfileEditing = false;
+            document.getElementById('profileForm').style.display = 'none';
+            document.getElementById('profileDisplay').style.display = 'block';
+            populateProfileForm();
         }
 
         // 表單提交處理
@@ -252,9 +327,7 @@
 
                 const response = await fetch(GAS_URL, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         action: 'updateProfile',
                         ...formData
@@ -265,13 +338,20 @@
                 
                 const result = await response.json();
                 if (result.success) {
-                    alert('資料儲存成功！');
+                    Swal.fire({
+                        icon: 'success',
+                        title: '成功',
+                        text: '資料儲存成功！',
+                        confirmButtonText: '確定'
+                    });
+                    currentProfile = formData;
+                    displayProfile();
+                    cancelProfileEdit();
                 } else {
                     throw new Error(result.message || '儲存失敗');
                 }
             } catch (err) {
-                console.error('儲存資料失敗', err);
-                alert('儲存資料失敗: ' + err.message);
+                handleError(err, '儲存資料失敗');
             } finally {
                 loading.hide();
             }
@@ -300,8 +380,7 @@
                 displayEvents(events);
                 updateNavActive('活動列表');
             } catch (err) {
-                console.error('獲取活動列表失敗', err);
-                alert('載入活動列表失敗');
+                handleError(err, '載入活動列表失敗');
             } finally {
                 loading.hide();
             }
@@ -323,7 +402,7 @@
                 <div class="row">
                     ${events.map(event => `
                         <div class="col-md-4 mb-3">
-                            <div class="card h-100">
+                            <div class="card h-100 event-card">
                                 <div class="card-body">
                                     <h5 class="card-title">${event.title}</h5>
                                     <p class="card-text">${event.description}</p>
@@ -332,10 +411,16 @@
                                             活動時間：${new Date(event.startTime).toLocaleString()} - ${new Date(event.endTime).toLocaleString()}
                                         </small>
                                     </p>
+                                    <p class="card-text">
+                                        <small class="text-muted">
+                                            名額：${event.currentParticipants}/${event.maxParticipants}
+                                        </small>
+                                    </p>
                                 </div>
                                 <div class="card-footer text-end">
-                                    <button class="btn btn-primary" onclick="registerEvent('${event.id}')">
-                                        報名
+                                    <button class="btn btn-primary" onclick="registerEvent('${event.id}')"
+                                        ${event.currentParticipants >= event.maxParticipants ? 'disabled' : ''}>
+                                        ${event.currentParticipants >= event.maxParticipants ? '已額滿' : '報名'}
                                     </button>
                                 </div>
                             </div>
@@ -356,8 +441,7 @@
                 displayMyEvents(events);
                 updateNavActive('我的活動');
             } catch (err) {
-                console.error('獲取我的活動失敗', err);
-                alert('載入我的活動失敗');
+                handleError(err, '載入我的活動失敗');
             } finally {
                 loading.hide();
             }
@@ -379,10 +463,15 @@
                 <div class="row">
                     ${events.map(event => `
                         <div class="col-md-4 mb-3">
-                            <div class="card h-100">
+                            <div class="card h-100 event-card">
                                 <div class="card-body">
                                     <h5 class="card-title">${event.title}</h5>
                                     <p class="card-text">${event.description}</p>
+                                    <p class="card-text">
+                                        <small class="text-muted">
+                                            活動時間：${new Date(event.startTime).toLocaleString()} - ${new Date(event.endTime).toLocaleString()}
+                                        </small>
+                                    </p>
                                     <p class="card-text">
                                         <small class="text-muted">
                                             報名時間：${new Date(event.registerTime).toLocaleString()}
@@ -401,92 +490,241 @@
             `;
         }
 
-        async function showAdmin() {
-            // 檢查管理員權限
-            try {
-                loading.show();
-                const profile = await liff.getProfile();
-                const response = await fetch(`${GAS_URL}?action=checkAdmin&userId=${profile.userId}`);
-                if (!response.ok) throw new Error('網路回應不正確');
+        function showAdmin() {
+            if (!isAdmin) {
+                Swal.fire({
+                    icon: 'error',
+                    title: '權限不足',
+                    text: '您沒有管理員權限',
+                    confirmButtonText: '確定'
+                });
+                return;
+            }
+
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <h2 class="mb-4">管理員專區</h2>
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">新增活動</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="addEventForm" novalidate>
+                            <div class="mb-3">
+                                <label for="eventTitle" class="form-label required-field">活動名稱</label>
+                                <input type="text" class="form-control" id="eventTitle" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="eventDescription" class="form-label required-field">活動描述</label>
+                                <textarea class="form-control" id="eventDescription" rows="3" required></textarea>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="eventStartTime" class="form-label required-field">開始時間</label>
+                                    <input type="datetime-local" class="form-control" id="eventStartTime" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="eventEndTime" class="form-label required-field">結束時間</label>
+                                    <input type="datetime-local" class="form-control" id="eventEndTime" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="eventMaxParticipants" class="form-label required-field">人數上限</label>
+                                                                <input type="number" class="form-control" id="eventMaxParticipants" min="1" required>
+                            </div>
+                            <div class="text-end">
+                                <button type="submit" class="btn btn-primary">新增活動</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">活動管理</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="eventManagement"></div>
+                    </div>
+                </div>
+            `;
+
+            loadEventManagement();
+            updateNavActive('管理員專區');
+
+            // 綁定新增活動表單提交事件
+            document.getElementById('addEventForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
                 
-                const result = await response.json();
-                if (!result.isAdmin) {
-                    alert('您沒有管理員權限');
+                if (!this.checkValidity()) {
+                    e.stopPropagation();
+                    this.classList.add('was-validated');
                     return;
                 }
 
-                displayAdminPanel();
-                updateNavActive('管理員專區');
+                try {
+                    loading.show();
+                    const profile = await liff.getProfile();
+                    const formData = {
+                        userId: profile.userId,
+                        title: this.eventTitle.value,
+                        description: this.eventDescription.value,
+                        startTime: this.eventStartTime.value,
+                        endTime: this.eventEndTime.value,
+                        maxParticipants: parseInt(this.eventMaxParticipants.value)
+                    };
+
+                    const response = await fetch(GAS_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'createEvent',
+                            ...formData
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('網路回應不正確');
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: '成功',
+                            text: '活動新增成功！',
+                            confirmButtonText: '確定'
+                        });
+                        this.reset();
+                        loadEventManagement();
+                    } else {
+                        throw new Error(result.message || '新增失敗');
+                    }
+                } catch (err) {
+                    handleError(err, '新增活動失敗');
+                } finally {
+                    loading.hide();
+                }
+            });
+        }
+
+        async function loadEventManagement() {
+            try {
+                loading.show();
+                const response = await fetch(`${GAS_URL}?action=getAllEvents`);
+                if (!response.ok) throw new Error('網路回應不正確');
+                
+                const events = await response.json();
+                displayEventManagement(events);
             } catch (err) {
-                console.error('檢查管理員權限失敗', err);
-                alert('載入管理員專區失敗');
+                handleError(err, '載入活動管理失敗');
             } finally {
                 loading.hide();
             }
         }
 
-        function displayAdminPanel() {
-            const content = document.getElementById('content');
-            content.innerHTML = `
-                <h2 class="mb-4">管理員專區</h2>
-                <div class="card mb-4">
-                    <div class="card-body">
-                        <h5 class="card-title">新增活動</h5>
-                        <form id="addEventForm">
-                            <!-- 活動表單內容 -->
-                        </form>
+        function displayEventManagement(events) {
+            const managementDiv = document.getElementById('eventManagement');
+            if (events.length === 0) {
+                managementDiv.innerHTML = `
+                    <div class="alert alert-info">
+                        目前沒有任何活動
                     </div>
-                </div>
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">活動管理</h5>
-                        <div id="eventManagement">
-                            <!-- 活動管理內容 -->
-                        </div>
-                    </div>
+                `;
+                return;
+            }
+
+            managementDiv.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>活動名稱</th>
+                                <th>開始時間</th>
+                                <th>結束時間</th>
+                                <th>報名人數</th>
+                                <th>狀態</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${events.map(event => `
+                                <tr>
+                                    <td>${event.title}</td>
+                                    <td>${new Date(event.startTime).toLocaleString()}</td>
+                                    <td>${new Date(event.endTime).toLocaleString()}</td>
+                                    <td>${event.currentParticipants}/${event.maxParticipants}</td>
+                                    <td>${event.status}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary me-1" onclick="editEvent('${event.id}')">
+                                            編輯
+                                        </button>
+                                        <button class="btn btn-sm btn-info me-1" onclick="showRegistrations('${event.id}')">
+                                            報名名單
+                                        </button>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteEvent('${event.id}')">
+                                            刪除
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
                 </div>
             `;
-        }
-
-        // 導航欄活動項目更新
-        function updateNavActive(pageName) {
-            document.querySelectorAll('.nav-link').forEach(link => {
-                link.classList.remove('active');
-                if (link.textContent === pageName) {
-                    link.classList.add('active');
-                }
-            });
         }
 
         // 活動報名處理
         async function registerEvent(eventId) {
             try {
-                loading.show();
                 const profile = await liff.getProfile();
-                const response = await fetch(GAS_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        action: 'registerEvent',
-                        userId: profile.userId,
-                        eventId: eventId
-                    })
+                
+                // 檢查個人資料是否完整
+                if (!currentProfile?.realName) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: '無法報名',
+                        text: '請先完善您的個人資料（至少需要填寫真實姓名）',
+                        confirmButtonText: '確定'
+                    });
+                    return;
+                }
+
+                const result = await Swal.fire({
+                    title: '確認報名',
+                    text: '確定要報名此活動嗎？',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: '確定報名',
+                    cancelButtonText: '取消'
                 });
 
-                if (!response.ok) throw new Error('網路回應不正確');
-                
-                const result = await response.json();
-                if (result.success) {
-                    alert('報名成功！');
-                    showMyEvents();
-                } else {
-                    throw new Error(result.message || '報名失敗');
+                if (result.isConfirmed) {
+                    loading.show();
+                    const response = await fetch(GAS_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'registerEvent',
+                            userId: profile.userId,
+                            eventId: eventId
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('網路回應不正確');
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: '報名成功',
+                            text: '您已成功報名此活動！',
+                            confirmButtonText: '確定'
+                        });
+                        showEventList();
+                    } else {
+                        throw new Error(data.message || '報名失敗');
+                    }
                 }
             } catch (err) {
-                console.error('活動報名失敗', err);
-                alert('報名失敗: ' + err.message);
+                handleError(err, '報名失敗');
             } finally {
                 loading.hide();
             }
@@ -494,38 +732,60 @@
 
         // 取消報名處理
         async function cancelRegistration(eventId) {
-            if (!confirm('確定要取消報名嗎？')) return;
-
             try {
-                loading.show();
-                const profile = await liff.getProfile();
-                const response = await fetch(GAS_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        action: 'cancelRegistration',
-                        userId: profile.userId,
-                        eventId: eventId
-                    })
+                const result = await Swal.fire({
+                    title: '確認取消',
+                    text: '確定要取消報名此活動嗎？',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: '確定取消',
+                    cancelButtonText: '返回',
+                    confirmButtonColor: '#dc3545'
                 });
 
-                if (!response.ok) throw new Error('網路回應不正確');
-                
-                const result = await response.json();
-                if (result.success) {
-                    alert('已取消報名');
-                    showMyEvents();
-                } else {
-                    throw new Error(result.message || '取消報名失敗');
+                if (result.isConfirmed) {
+                    loading.show();
+                    const profile = await liff.getProfile();
+                    const response = await fetch(GAS_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'cancelRegistration',
+                            userId: profile.userId,
+                            eventId: eventId
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('網路回應不正確');
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: '取消成功',
+                            text: '您已成功取消報名！',
+                            confirmButtonText: '確定'
+                        });
+                        showMyEvents();
+                    } else {
+                        throw new Error(data.message || '取消報名失敗');
+                    }
                 }
             } catch (err) {
-                console.error('取消報名失敗', err);
-                alert('取消報名失敗: ' + err.message);
+                handleError(err, '取消報名失敗');
             } finally {
                 loading.hide();
             }
+        }
+
+        // 更新導航欄狀態
+        function updateNavActive(pageName) {
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+                if (link.textContent === pageName) {
+                    link.classList.add('active');
+                }
+            });
         }
 
         // 頁面載入時初始化 LIFF
