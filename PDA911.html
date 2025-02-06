@@ -107,6 +107,19 @@
     </style>
 </head>
 <body>
+  <!-- 在 body 開始處加入 -->
+<div id="initialLoading" class="position-fixed w-100 h-100 bg-white d-flex justify-content-center align-items-center" style="z-index: 9999;">
+    <div class="text-center">
+        <div class="spinner-border text-primary mb-3" role="status">
+            <span class="visually-hidden">載入中...</span>
+        </div>
+        <h5>正在載入應用程式...</h5>
+        <p class="text-muted small">請稍候片刻</p>
+    </div>
+</div>
+
+
+
     <!-- 載入中動畫 -->
     <div id="loading">
         <div class="spinner"></div>
@@ -206,17 +219,6 @@ const LIFF_ID = '2001679903-r5VXNe5g';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyRnmCcOsNgRrri4kgYJQDjoyj2TCbaX9RUYW8DLUg-Rbps5SUpwnzLf14A5C_WAYs9fQ/exec';
 
 
-async function initializeLiff(liffId) {
-  try {
-    await liff.init({
-      liffId: LIFF_ID,
-      withLoginOnExternalBrowser: true  // 允許在外部瀏覽器登入
-    });
-  } catch (err) {
-    console.error('LIFF 初始化失敗', err);
-  }
-}
-
 // ================ 全域狀態 ================
 const globalState = {
     isAdmin: false,
@@ -233,6 +235,8 @@ async function initializeApp() {
         showLoading();
         await initializeLiff();
         setupEventListeners();
+        // 隱藏初始載入畫面
+        document.getElementById('initialLoading').style.display = 'none';
         hideLoading();
     } catch (error) {
         console.error('初始化失敗:', error);
@@ -241,51 +245,77 @@ async function initializeApp() {
     }
 }
 
-// async function initializeLiff() {
-//     try {
-//         await liff.init({ liffId: LIFF_ID });
+
+
+async function initializeLiff() {
+    try {
+        await liff.init({ liffId: LIFF_ID });
         
-//         if (!liff.isLoggedIn()) {
-//             liff.login();
-//             return;
-//         }
+        // 檢查是否登入
+        if (!liff.isLoggedIn()) {
+            // 如果在 LINE APP 內
+            if (liff.isInClient()) {
+                liff.login();
+            } else {
+                // 如果在外部瀏覽器
+                const result = await Swal.fire({
+                    title: '需要登入',
+                    text: '請選擇登入方式',
+                    icon: 'info',
+                    showCancelButton: true,
+                    confirmButtonText: '使用 LINE 登入',
+                    cancelButtonText: '取消'
+                });
 
-//         const profile = await liff.getProfile();
-//         globalState.userProfile = profile;
+                if (result.isConfirmed) {
+                    liff.login();
+                }
+            }
+            return;
+        }
 
-//         // 準備登入資訊
-//         const loginInfo = {
-//             userId: profile.userId,
-//             displayName: profile.displayName,
-//             pictureUrl: profile.pictureUrl || '',
-//             statusMessage: profile.statusMessage || '',
-//             os: liff.getOS(),
-//             language: liff.getLanguage(),
-//             version: liff.getVersion(),
-//             lineVersion: liff.getLineVersion(),
-//             isInClient: liff.isInClient(),
-//             userAgent: navigator.userAgent,
-//             screenWidth: window.screen.width,
-//             screenHeight: window.screen.height,
-//             loginTime: new Date().toISOString()
-//         };
+        const profile = await liff.getProfile();
+        globalState.userProfile = profile;
 
-//         // 記錄登入
-//         await recordLoginInfo(loginInfo);
+        // 準備登入資訊
+        const loginInfo = {
+            userId: profile.userId,
+            displayName: profile.displayName,
+            pictureUrl: profile.pictureUrl || '',
+            statusMessage: profile.statusMessage || '',
+            os: liff.getOS(),
+            language: liff.getLanguage(),
+            version: liff.getVersion(),
+            lineVersion: liff.getLineVersion(),
+            isInClient: liff.isInClient(),
+            userAgent: navigator.userAgent,
+            screenWidth: window.screen.width,
+            screenHeight: window.screen.height,
+            loginTime: new Date().toISOString()
+        };
+
+        // 記錄登入
+        await recordLoginInfo(loginInfo);
         
-//         // 檢查管理員權限
-//         await checkAdminStatus(profile.userId);
+        // 檢查管理員權限
+        await checkAdminStatus(profile.userId);
 
-//         // 更新UI
-//         updateUIWithUserInfo(profile);
-//         await loadUserProfile(profile);
-//         showHome();
+        // 更新UI
+        updateUIWithUserInfo(profile);
+        await loadUserProfile(profile);
+        showHome();
 
-//     } catch (error) {
-//         console.error('LIFF初始化錯誤:', error);
-//         throw error;
-//     }
-// }
+    } catch (error) {
+        console.error('LIFF初始化錯誤:', error);
+        Swal.fire({
+            title: 'LIFF 初始化失敗',
+            text: '請確認您是否使用最新版本的 LINE 應用程式，或是使用支援的瀏覽器',
+            icon: 'error',
+            confirmButtonText: '確定'
+        });
+    }
+}
+
 
 // ================ 工具函數 ================
 const loading = {
@@ -295,13 +325,24 @@ const loading = {
 
 function handleError(error, title = '錯誤') {
     console.error(error);
+    
+    // 針對特定錯誤提供更友善的提示
+    let errorMessage = error.message || '發生未知錯誤';
+    let errorTitle = title;
+
+    if (error.message.includes('LIFF')) {
+        errorTitle = 'LINE 登入問題';
+        errorMessage = '請確認您已登入 LINE，或是使用支援的瀏覽器';
+    }
+
     Swal.fire({
         icon: 'error',
-        title: title,
-        text: error.message || '發生未知錯誤',
+        title: errorTitle,
+        text: errorMessage,
         confirmButtonText: '確定'
     });
 }
+
 
 function showNotification(message, type = 'info') {
     Swal.fire({
@@ -1230,19 +1271,19 @@ initializeApp();
             window.scrollTo({top: 0, behavior: 'smooth'});
         };
 
-        // 確保在 LINE 環境中運行
-        if (!window.location.href.includes('liff.line.me')) {
-            document.body.innerHTML = `
-                <div class="container mt-5">
-                    <div class="alert alert-danger" role="alert">
-                        <h4 class="alert-heading">錯誤！</h4>
-                        <p>此應用程式必須在 LINE 應用程式中運行。</p>
-                        <hr>
-                        <p class="mb-0">請使用 LINE 掃描 QR Code 或點擊連結開啟。</p>
-                    </div>
-                </div>
-            `;
-        }
+        // // 確保在 LINE 環境中運行
+        // if (!window.location.href.includes('liff.line.me')) {
+        //     document.body.innerHTML = `
+        //         <div class="container mt-5">
+        //             <div class="alert alert-danger" role="alert">
+        //                 <h4 class="alert-heading">錯誤！</h4>
+        //                 <p>此應用程式必須在 LINE 應用程式中運行。</p>
+        //                 <hr>
+        //                 <p class="mb-0">請使用 LINE 掃描 QR Code 或點擊連結開啟。</p>
+        //             </div>
+        //         </div>
+        //     `;
+        // }
     </script>
 </body>
 </html>
