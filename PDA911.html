@@ -107,7 +107,6 @@
     </style>
 </head>
 <body>
-  <!-- 在 body 開始處加入 -->
 <div id="initialLoading" class="position-fixed w-100 h-100 bg-white d-flex justify-content-center align-items-center" style="z-index: 9999;">
     <div class="text-center">
         <div class="spinner-border text-primary mb-3" role="status">
@@ -115,8 +114,10 @@
         </div>
         <h5>正在載入應用程式...</h5>
         <p class="text-muted small">請稍候片刻</p>
+        <div id="loadingError" class="text-danger mt-3" style="display: none;"></div>
     </div>
 </div>
+
 
 
 
@@ -214,6 +215,8 @@
  * - 統計分析
  */
 
+
+
 // ================ 常數定義 ================
 const LIFF_ID = '2001679903-r5VXNe5g';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyRnmCcOsNgRrri4kgYJQDjoyj2TCbaX9RUYW8DLUg-Rbps5SUpwnzLf14A5C_WAYs9fQ/exec';
@@ -232,16 +235,20 @@ document.addEventListener('DOMContentLoaded', initializeApp);
 
 async function initializeApp() {
     try {
-        showLoading();
         await initializeLiff();
         setupEventListeners();
-        // 隱藏初始載入畫面
         document.getElementById('initialLoading').style.display = 'none';
-        hideLoading();
     } catch (error) {
         console.error('初始化失敗:', error);
-        handleError(error);
-        hideLoading();
+        document.getElementById('initialLoading').innerHTML = `
+            <div class="text-center">
+                <h5 class="text-danger">初始化失敗</h5>
+                <p class="text-muted">${error.message || '請重新整理頁面'}</p>
+                <button class="btn btn-primary" onclick="window.location.reload()">
+                    重新整理
+                </button>
+            </div>
+        `;
     }
 }
 
@@ -255,64 +262,143 @@ async function initializeLiff() {
         if (!liff.isLoggedIn()) {
             // 如果在 LINE APP 內
             if (liff.isInClient()) {
-                liff.login();
+                await liff.login();
             } else {
                 // 如果在外部瀏覽器
                 const result = await Swal.fire({
                     title: '需要登入',
-                    text: '請選擇登入方式',
+                    text: '請使用 LINE 登入以繼續',
                     icon: 'info',
                     showCancelButton: true,
-                    confirmButtonText: '使用 LINE 登入',
+                    confirmButtonText: '登入',
                     cancelButtonText: '取消'
                 });
 
                 if (result.isConfirmed) {
-                    liff.login();
+                    await liff.login();
+                } else {
+                    throw new Error('使用者取消登入');
                 }
             }
             return;
         }
 
+        // 取得使用者資料
         const profile = await liff.getProfile();
         globalState.userProfile = profile;
 
-        // 準備登入資訊
-        const loginInfo = {
-            userId: profile.userId,
-            displayName: profile.displayName,
-            pictureUrl: profile.pictureUrl || '',
-            statusMessage: profile.statusMessage || '',
-            os: liff.getOS(),
-            language: liff.getLanguage(),
-            version: liff.getVersion(),
-            lineVersion: liff.getLineVersion(),
-            isInClient: liff.isInClient(),
-            userAgent: navigator.userAgent,
-            screenWidth: window.screen.width,
-            screenHeight: window.screen.height,
-            loginTime: new Date().toISOString()
-        };
-
-        // 記錄登入
-        await recordLoginInfo(loginInfo);
+        // 更新 UI
+        updateUIWithUserInfo(profile);
         
         // 檢查管理員權限
         await checkAdminStatus(profile.userId);
-
-        // 更新UI
-        updateUIWithUserInfo(profile);
-        await loadUserProfile(profile);
-        showHome();
+        
+        // 顯示首頁
+        await showHome();
 
     } catch (error) {
         console.error('LIFF初始化錯誤:', error);
         Swal.fire({
-            title: 'LIFF 初始化失敗',
-            text: '請確認您是否使用最新版本的 LINE 應用程式，或是使用支援的瀏覽器',
+            title: '初始化失敗',
+            text: error.message || '請確認您的網路連線並重新整理頁面',
             icon: 'error',
-            confirmButtonText: '確定'
+            confirmButtonText: '重新整理',
+            allowOutsideClick: false
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.reload();
+            }
         });
+    }
+}
+
+
+
+// 在 JavaScript 代碼中添加 showHome 函數
+async function showHome() {
+    try {
+        const content = document.getElementById('content');
+        content.innerHTML = `
+            <div class="container">
+                <div class="row">
+                    <div class="col-md-12 mb-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">歡迎使用活動報名系統</h5>
+                                <p class="card-text">您可以透過選單查看活動列表或管理您的報名活動。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">近期活動</h5>
+                                <div id="recentEvents">載入中...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">我的活動</h5>
+                                <div id="myRecentEvents">載入中...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 更新導航欄狀態
+        updateNavActive('首頁');
+
+        // 載入近期活動
+        try {
+            const eventsResult = await apiRequest('getEvents');
+            if (eventsResult.success && eventsResult.data) {
+                const recentEvents = eventsResult.data.slice(0, 3); // 只顯示前3個活動
+                document.getElementById('recentEvents').innerHTML = recentEvents.length > 0 
+                    ? recentEvents.map(event => `
+                        <div class="mb-3">
+                            <h6>${event.title}</h6>
+                            <small class="text-muted">
+                                <i class="bi bi-calendar"></i> ${formatDateTime(event.startTime)}
+                            </small>
+                        </div>
+                    `).join('')
+                    : '<p class="text-muted">目前沒有進行中的活動</p>';
+            }
+        } catch (error) {
+            document.getElementById('recentEvents').innerHTML = '<p class="text-danger">載入活動失敗</p>';
+        }
+
+        // 載入我的活動
+        if (globalState.userProfile) {
+            try {
+                const myEventsResult = await apiRequest('getMyEvents', 'GET', {
+                    userId: globalState.userProfile.userId
+                });
+                if (myEventsResult.success && myEventsResult.data) {
+                    const myRecentEvents = myEventsResult.data.slice(0, 3); // 只顯示前3個活動
+                    document.getElementById('myRecentEvents').innerHTML = myRecentEvents.length > 0
+                        ? myRecentEvents.map(event => `
+                            <div class="mb-3">
+                                <h6>${event.title}</h6>
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar"></i> ${formatDateTime(event.startTime)}
+                                </small>
+                            </div>
+                        `).join('')
+                        : '<p class="text-muted">您尚未報名任何活動</p>';
+                }
+            } catch (error) {
+                document.getElementById('myRecentEvents').innerHTML = '<p class="text-danger">載入活動失敗</p>';
+            }
+        }
+    } catch (error) {
+        handleError(error, '載入首頁失敗');
     }
 }
 
@@ -428,10 +514,18 @@ async function checkAdminStatus(userId) {
 }
 
 function updateUIWithUserInfo(profile) {
-    document.getElementById('userPicture').src = profile.pictureUrl || 'default-avatar.png';
-    document.getElementById('userName').textContent = profile.displayName;
-    document.getElementById('userId').textContent = profile.userId;
+    // 修改為正確的元素 ID
+    const avatarElement = document.getElementById('userAvatar');
+    const nameElement = document.getElementById('userName');
+    
+    if (avatarElement) {
+        avatarElement.src = profile.pictureUrl || 'default-avatar.png';
+    }
+    if (nameElement) {
+        nameElement.textContent = profile.displayName || '使用者';
+    }
 }
+
 
 // ================ 個人資料相關功能 ================
 async function loadUserProfile(profile) {
