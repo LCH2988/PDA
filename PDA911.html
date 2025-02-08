@@ -239,7 +239,7 @@
     <script>
       // 常數定義
 const LIFF_ID = '2001679903-r5VXNe5g';
-const API_URL = 'https://script.google.com/macros/s/AKfycbwYpkwG142jfd0x4r1lKSDmWqUGpLVB9hoxWcbgWtHPUpWvZxOz2fVjN90QF1gxJkAfeQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyyXWyhSMsIghLqtsdaBBnEZp5KZzkRjv0N2yG-3t9fv8LE-IXBzyPPNFo1AYqpaqDqEg/exec';
 
 // 全域變數
 let isAdmin = false;
@@ -293,6 +293,142 @@ async function initializeLiff() {
         hideLoading();
     }
 }
+
+
+// API 服務類
+class ApiService {
+    constructor(baseUrl) {
+        this.baseUrl = baseUrl;
+        this.csrfToken = null;
+        this.userId = null;
+    }
+
+    // 設置用戶 ID 和 CSRF Token
+    setUserContext(userId, csrfToken) {
+        this.userId = userId;
+        this.csrfToken = csrfToken;
+    }
+
+    // 通用 API 請求方法
+    async fetchApi(endpoint, method = 'GET', data = null) {
+        try {
+            const url = new URL(endpoint, this.baseUrl);
+            
+            // 對於 GET 請求，將參數加到 URL 中
+            if (method === 'GET' && data) {
+                Object.keys(data).forEach(key => 
+                    url.searchParams.append(key, data[key])
+                );
+            }
+
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            };
+
+            // 只在非 GET 請求時添加 body
+            if (method !== 'GET' && data) {
+                options.body = JSON.stringify({
+                    ...data,
+                    userId: this.userId,
+                    csrfToken: this.csrfToken
+                });
+            }
+
+            const response = await fetch(url, options);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || '操作失敗');
+            }
+
+            return result;
+
+        } catch (error) {
+            console.error('API 請求失敗:', error);
+            throw new Error(`API 請求失敗: ${error.message}`);
+        }
+    }
+
+    // 記錄登入
+    async recordLogin(loginData) {
+        return this.fetchApi('/api', 'POST', {
+            action: 'recordLogin',
+            ...loginData
+        });
+    }
+
+    // 檢查管理員狀態
+    async checkAdmin() {
+        return this.fetchApi('/api', 'GET', {
+            action: 'checkAdmin',
+            userId: this.userId,
+            csrfToken: this.csrfToken
+        });
+    }
+
+    // 獲取用戶資料
+    async getUserProfile() {
+        return this.fetchApi('/api', 'GET', {
+            action: 'getUserProfile',
+            userId: this.userId,
+            csrfToken: this.csrfToken
+        });
+    }
+
+    // 更新用戶資料
+    async updateProfile(profileData) {
+        return this.fetchApi('/api', 'POST', {
+            action: 'updateProfile',
+            ...profileData
+        });
+    }
+
+    // 獲取活動列表
+    async getEvents() {
+        return this.fetchApi('/api', 'GET', {
+            action: 'getEvents',
+            userId: this.userId,
+            csrfToken: this.csrfToken
+        });
+    }
+
+    // 報名活動
+    async registerEvent(eventData) {
+        return this.fetchApi('/api', 'POST', {
+            action: 'registerEvent',
+            ...eventData
+        });
+    }
+
+    // 獲取我的報名記錄
+    async getMyRegistrations() {
+        return this.fetchApi('/api', 'GET', {
+            action: 'getMyRegistrations',
+            userId: this.userId,
+            csrfToken: this.csrfToken
+        });
+    }
+}
+
+// 使用範例
+const apiService = new ApiService(API_URL);
+
+// 初始化時設置用戶上下文
+function initializeApi(userId, csrfToken) {
+    apiService.setUserContext(userId, csrfToken);
+}
+
+// 導出 API 服務實例
+export default apiService;
+
 
 // API 請求處理
 async function apiRequest(action, method = 'GET', data = null) {
