@@ -594,123 +594,134 @@ class Views {
 
 
 // app.js
+// 修改 app.js 的主要初始化邏輯
 class App {
     static async init() {
         try {
-            // 顯示載入畫面
-            document.getElementById('initialLoading').style.display = 'flex';
-            document.getElementById('app').style.display = 'none';
-            
             // 初始化 LIFF
             await liff.init({ liffId: CONFIG.LIFF.ID });
             
-            // 檢查是否登入
+            // 如果未登入，執行登入
             if (!liff.isLoggedIn()) {
                 await liff.login();
                 return;
             }
 
-            try {
-                // 獲取使用者資料
-                const profile = await liff.getProfile();
-                const deviceInfo = Utils.getDeviceInfo();
-                
-                // 記錄登入並檢查管理員權限
-                await Promise.all([
-                    API.recordLogin(profile, deviceInfo),
-                    this.checkAndSetAdminStatus(profile.userId)
-                ]);
-                
-                // 儲存使用者資料
-                Utils.storage.set(CONFIG.STORAGE.USER_PROFILE, profile);
-                
-                // 更新UI並顯示首頁
-                await this.initializeUserInterface(profile);
-                
-            } catch (error) {
-                console.error('獲取用戶資料失敗:', error);
-                Utils.toast.error('獲取用戶資料失敗');
-                throw error;
-            }
+            // 獲取用戶資料
+            const profile = await liff.getProfile();
             
+            // 更新用戶資訊
+            this.updateUserInfo(profile);
+            
+            // 儲存用戶資料
+            Utils.storage.set(CONFIG.STORAGE.USER_PROFILE, profile);
+            
+            // 檢查管理員權限
+            const adminCheck = await API.checkAdmin(profile.userId);
+            Utils.storage.set(CONFIG.STORAGE.IS_ADMIN, adminCheck.isAdmin);
+
+            // 顯示主應用程式
+            document.getElementById('initialLoading').style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+
+            // 載入首頁
+            await this.loadHomePage();
+
         } catch (error) {
             console.error('初始化失敗:', error);
-            document.getElementById('loadingError').textContent = CONFIG.ERRORS.INIT_FAILED;
+            document.getElementById('loadingError').textContent = '應用程式初始化失敗';
             document.getElementById('loadingError').style.display = 'block';
-        } finally {
-            document.getElementById('initialLoading').style.display = 'none';
-            Utils.loading.hide();
-        }
-    }
-
-    static async checkAndSetAdminStatus(userId) {
-        try {
-            const adminCheck = await API.checkAdmin(userId);
-            Utils.storage.set(CONFIG.STORAGE.IS_ADMIN, adminCheck.isAdmin);
-            return adminCheck.isAdmin;
-        } catch (error) {
-            console.error('檢查管理員權限失敗:', error);
-            Utils.storage.set(CONFIG.STORAGE.IS_ADMIN, false);
-            return false;
-        }
-    }
-
-    static async initializeUserInterface(profile) {
-        // 更新用戶資訊
-        this.updateUserInfo(profile);
-        
-        // 綁定事件處理
-        this.bindEventHandlers();
-        
-        // 顯示應用程式
-        document.getElementById('app').style.display = 'block';
-        
-        // 直接載入首頁
-        await this.loadHomePage();
-    }
-
-    static async loadHomePage() {
-        try {
-            Utils.loading.show();
-            
-            // 更新導航狀態
-            document.querySelectorAll('.nav-link').forEach(link => {
-                link.classList.remove('active');
-                if (link.dataset.view === 'home') {
-                    link.classList.add('active');
-                }
-            });
-            
-            // 載入首頁內容
-            await Views.home();
-            
-            // 儲存當前視圖
-            Utils.storage.set(CONFIG.STORAGE.LAST_VIEW, 'home');
-            
-        } catch (error) {
-            console.error('載入首頁失敗:', error);
-            Utils.toast.error('載入首頁失敗');
-        } finally {
-            Utils.loading.hide();
         }
     }
 
     static updateUserInfo(profile) {
-        // 更新用戶頭像
         const userAvatar = document.getElementById('userAvatar');
-        userAvatar.src = profile.pictureUrl || 'images/default-avatar.png';
-        userAvatar.alt = profile.displayName;
+        const userName = document.getElementById('userName');
         
-        // 更新用戶名稱
-        document.getElementById('userName').textContent = profile.displayName;
-        
-        // 顯示/隱藏管理員選項
+        if (userAvatar) userAvatar.src = profile.pictureUrl;
+        if (userName) userName.textContent = profile.displayName;
+
+        // 更新管理員選項顯示
         const isAdmin = Utils.storage.get(CONFIG.STORAGE.IS_ADMIN);
         document.querySelectorAll('.admin-only').forEach(el => {
             el.style.display = isAdmin ? 'block' : 'none';
         });
     }
+
+    static async loadHomePage() {
+        try {
+            const template = `
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <h2>歡迎回來，${Utils.storage.get(CONFIG.STORAGE.USER_PROFILE)?.displayName}</h2>
+                        <p class="lead">這裡可以瀏覽並報名參加各種精彩活動</p>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">近期活動</h5>
+                                <div id="upcomingEvents">載入中...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">我的活動</h5>
+                                <div id="myEvents">載入中...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('content').innerHTML = template;
+
+            // 載入活動資料
+            const events = await API.getEvents({ limit: 5 });
+            if (events.data && events.data.length > 0) {
+                document.getElementById('upcomingEvents').innerHTML = events.data
+                    .map(event => `
+                        <div class="mb-2">
+                            <h6>${event.title}</h6>
+                            <small class="text-muted">${event.date}</small>
+                        </div>
+                    `).join('');
+            } else {
+                document.getElementById('upcomingEvents').innerHTML = '<p>目前沒有活動</p>';
+            }
+
+            // 載入我的活動
+            const myEvents = await API.getMyEvents();
+            if (myEvents.data && myEvents.data.length > 0) {
+                document.getElementById('myEvents').innerHTML = myEvents.data
+                    .map(event => `
+                        <div class="mb-2">
+                            <h6>${event.title}</h6>
+                            <small class="text-muted">${event.date}</small>
+                        </div>
+                    `).join('');
+            } else {
+                document.getElementById('myEvents').innerHTML = '<p>您尚未報名任何活動</p>';
+            }
+
+        } catch (error) {
+            console.error('載入首頁失敗:', error);
+            document.getElementById('content').innerHTML = '<div class="alert alert-danger">載入失敗</div>';
+        }
+    }
 }
+
+// 初始化應用程式
+document.addEventListener('DOMContentLoaded', () => {
+    App.init().catch(error => {
+        console.error('應用程式初始化失敗:', error);
+        document.getElementById('loadingError').textContent = '應用程式初始化失敗';
+        document.getElementById('loadingError').style.display = 'block';
+    });
+});
 
 
 
