@@ -1,117 +1,244 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>LIFF 使用者資訊</title>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <title>活動報名系統</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@8/swiper-bundle.min.css">
     <style>
-      body {
-  font-family: Arial, sans-serif;
-  margin: 20px;
-  text-align: center;
-}
-
-#userInfo {
-  margin-top: 20px;
-  padding: 20px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  display: inline-block;
-  background-color: #fff;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-#userPicture {
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  margin-bottom: 10px;
-  border: 3px solid #f8f8f8;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.info-item {
-  margin: 10px 0;
-  font-size: 16px;
-  color: #333;
-}
-
-#status {
-  color: #4CAF50;
-  font-weight: bold;
-}
-
-.error {
-  color: #f44336;
-}
+        .swiper {
+            width: 100%;
+            padding-top: 50px;
+            padding-bottom: 50px;
+        }
+        .swiper-slide {
+            background-position: center;
+            background-size: cover;
+            width: 300px;
+            height: 300px;
+        }
+        .event-card {
+            width: 100%;
+            height: 100%;
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
     </style>
-  </head>
-  <body>
-    <div id="userInfo">
-      <img id="userPicture" src="" alt="使用者圖片">
-      <div class="info-item">名稱：<span id="userName"></span></div>
-      <div class="info-item">ID：<span id="status"></span></div>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">活動報名系統</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#" data-page="events">活動清單</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-page="my-events">個人活動</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-page="profile">個人基本資料</a>
+                    </li>
+                </ul>
+            </div>
+            <div class="d-flex">
+                <span id="userName" class="navbar-text me-3"></span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- 輪播活動卡片 -->
+        <div id="featuredEvents" class="swiper">
+            <div class="swiper-wrapper">
+                <!-- 動態載入活動卡片 -->
+            </div>
+            <div class="swiper-pagination"></div>
+            <div class="swiper-button-next"></div>
+            <div class="swiper-button-prev"></div>
+        </div>
+
+        <!-- 活動列表 -->
+        <div id="eventsList" class="row mt-4">
+            <!-- 動態載入活動列表 -->
+        </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swiper@8/swiper-bundle.min.js"></script>
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <script>
-      const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw1nyxKv4z5kJ-99RhTi1Zn2P9dRXvaZh5cPxK4shgZkYg3dcLbXWOedIKQhMKGt214/exec';
+      // 常數設定
+const LIFF_ID = '2001679903-r5VXNe5g';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyBbHWP-aEda1c7GS_pF8CQw6d3yieqlbcrukHTnrgm1hCFG-L9eZDbjKQSbhaDb6rP/exec';
 
+// 全域變數
+let userData = null;
+
+// 初始化 LIFF
 async function initializeLiff() {
-  try {
-    await liff.init({ liffId: "2001679903-r5VXNe5g" });
-    
-    if (!liff.isLoggedIn()) {
-      liff.login();
-      return;
+    try {
+        await liff.init({ liffId: LIFF_ID });
+        if (!liff.isLoggedIn()) {
+            liff.login();
+            return;
+        }
+        
+        const profile = await liff.getProfile();
+        userData = {
+            lineId: profile.userId,
+            lineName: profile.displayName
+        };
+        
+        document.getElementById('userName').textContent = userData.lineName;
+        
+        // 儲存使用者資料到 GAS
+        await saveUserData(userData);
+        
+        // 載入活動資料
+        loadEvents();
+    } catch (err) {
+        console.error('LIFF 初始化失敗', err);
     }
-
-    const profile = await liff.getProfile();
-    updateUI(profile);
-    await saveUserData(profile);
-
-  } catch (err) {
-    showError(err);
-  }
 }
 
-function updateUI(profile) {
-  document.getElementById('userPicture').src = profile.pictureUrl;
-  document.getElementById('userName').textContent = profile.displayName;
-  document.getElementById('stastus').textContent = profile.userId;
+// 儲存使用者資料
+async function saveUserData(userData) {
+    try {
+        const response = await fetch(`${GAS_URL}?action=saveUser&lineId=${userData.lineId}&lineName=${userData.lineName}`);
+        const data = await response.json();
+        if (data.status !== 'success') {
+            throw new Error(data.message);
+        }
+    } catch (err) {
+        console.error('儲存使用者資料失敗', err);
+    }
 }
 
-async function saveUserData(profile) {
-  try {
-    const userData = {
-      userId: profile.userId,
-      displayName: profile.displayName,
-      pictureUrl: profile.pictureUrl,
-      timestamp: new Date().toISOString()
-    };
+// 載入活動資料
+async function loadEvents() {
+    try {
+        const response = await fetch(`${GAS_URL}?action=getEvents`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            renderFeaturedEvents(data.data);
+            renderEventsList(data.data);
+        }
+    } catch (err) {
+        console.error('載入活動資料失敗', err);
+    }
+}
 
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify(userData),
-      headers: {
-        'Content-Type': 'application/json'
-      }
+// 渲染輪播活動卡片
+function renderFeaturedEvents(events) {
+    const swiperWrapper = document.querySelector('.swiper-wrapper');
+    swiperWrapper.innerHTML = events.map(event => `
+        <div class="swiper-slide">
+            <div class="event-card">
+                <h5>${event.活動名稱}</h5>
+                <p>日期：${event.活動日期}</p>
+                <p>地點：${event.活動地點}</p>
+                <button class="btn btn-primary" onclick="registerEvent('${event.活動ID}')">
+                    立即報名
+                </button>
+            </div>
+        </div>
+    `).join('');
+
+    // 初始化 Swiper
+    new Swiper('.swiper', {
+        effect: 'cards',
+        grabCursor: true,
+        pagination: {
+            el: '.swiper-pagination',
+        },
+        navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+        },
     });
+}
 
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.message);
+// 渲染活動列表
+function renderEventsList(events) {
+    const eventsList = document.getElementById('eventsList');
+    eventsList.innerHTML = events.map(event => `
+        <div class="col-md-4 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">${event.活動名稱}</h5>
+                    <p class="card-text">日期：${event.活動日期}</p>
+                    <p class="card-text">地點：${event.活動地點}</p>
+                    <p class="card-text">描述：${event.活動描述}</p>
+                    <button class="btn btn-primary" onclick="registerEvent('${event.活動ID}')">
+                        立即報名
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 活動報名
+async function registerEvent(eventId) {
+    if (!userData) {
+        alert('請先登入');
+        return;
     }
-  } catch (err) {
-    showError(err);
-  }
+
+    try {
+        const response = await fetch(`${GAS_URL}?action=register&eventId=${eventId}&lineId=${userData.lineId}`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            alert('報名成功！');
+            loadEvents(); // 重新載入活動資料
+        } else {
+            alert(data.message || '報名失敗');
+        }
+    } catch (err) {
+        console.error('報名失敗', err);
+        alert('報名過程發生錯誤');
+    }
 }
 
-function showError(err) {
-  const status = document.getElementById('status');
-  status.textContent = '錯誤：' + err.message;
-  status.className = 'error';
-}
+// 頁面切換處理
+document.querySelectorAll('[data-page]').forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const page = e.target.dataset.page;
+        
+        // 移除所有 active class
+        document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+        // 添加 active class 到當前項目
+        e.target.classList.add('active');
+        
+        // 根據頁面切換顯示內容
+        switch(page) {
+            case 'events':
+                document.getElementById('featuredEvents').style.display = 'block';
+                document.getElementById('eventsList').style.display = 'block';
+                break;
+            case 'my-events':
+                // TODO: 實作個人活動頁面
+                break;
+            case 'profile':
+                // TODO: 實作個人資料頁面
+                break;
+        }
+    });
+});
 
-window.onload = initializeLiff;
+// 初始化
+document.addEventListener('DOMContentLoaded', initializeLiff);
     </script>
-  </body>
+</body>
 </html>
