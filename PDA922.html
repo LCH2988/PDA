@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>活動報名系統</title>
+
+  <!-- LIFF SDK -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- 設定檔和 API 服務 -->
+  <script>
+    const CONFIG = {
+  LIFF_ID: '2001679903-r5VXNe5g',
+  API_URL: 'https://script.google.com/macros/s/AKfycbz0qKzC6NRIFIdMuFhtcOTG5XnGD4TvJvcU0AXmVK0DybooDIHGuBIzrZ2E5kMwvMfO/exec'
+};
+
+class APIService {
+  constructor(baseUrl) {
+    this.baseUrl = baseUrl;
+  }
+
+  async get(action, params = {}) {
+    const queryString = new URLSearchParams({ action, ...params }).toString();
+    const response = await fetch(`${this.baseUrl}?${queryString}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  }
+
+  async post(action, data = {}) {
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action, data })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  }
+
+  // API 方法
+  async checkAdmin(userId) {
+    return await this.get('checkAdmin', { userId });
+  }
+
+  async getActivities() {
+    return await this.get('getActivities');
+  }
+
+  async getMyRegistrations(userId) {
+    return await this.get('getMyRegistrations', { userId });
+  }
+
+  async register(formData) {
+    return await this.post('register', formData);
+  }
+
+  async cancelRegistration(registrationId) {
+    return await this.post('cancelRegistration', { registrationId });
+  }
+}
+
+const api = new APIService(API_URL);
+
+  </script>
+
+  <style>
+    .nav-btn {
+      @apply px-4 py-2 rounded-lg hover: bg-gray-700 transition-colors;
+    }
+
+    .activity-card {
+      @apply bg-white rounded-lg shadow-md p-4;
+    }
+
+    .btn {
+      @apply px-4 py-2 rounded-md font-medium transition-colors;
+    }
+
+    .btn-primary {
+      @apply bg-green-500 text-white hover: bg-green-600;
+    }
+
+    .btn-secondary {
+      @apply bg-gray-300 hover: bg-gray-400;
+    }
+
+    .form-input {
+      @apply mt-1 block w-full rounded-md border-gray-300 shadow-sm;
+    }
+
+    .form-label {
+      @apply block text-sm font-medium text-gray-700;
+    }
+  </style>
+</head>
+
+<body class="bg-gray-100">
+  <!-- Loading 指示器 -->
+  <div id="loading" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 hidden">
+    <div class="animate-spin rounded-full h-32 w-32 border-b-2 border-white"></div>
+  </div>
+
+  <!-- 登入頁面 -->
+  <div id="loginContainer" class="hidden min-h-screen flex items-center justify-center">
+    <button id="loginButton" class="bg-green-500 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-lg hover:bg-green-600">
+      使用 LINE 登入
+    </button>
+  </div>
+
+  <!-- 主要內容 -->
+  <div id="mainContainer" class="hidden">
+    <nav class="bg-gray-800 text-white p-4">
+      <div class="container mx-auto flex justify-between items-center">
+        <h1 class="text-xl font-bold">活動報名系統</h1>
+        <div class="flex items-center space-x-4">
+          <button id="navActivities" class="nav-btn">活動列表</button>
+          <button id="navRegistrations" class="nav-btn">我的報名</button>
+          <button id="navAdmin" class="nav-btn hidden">管理面板</button>
+          <div class="flex items-center space-x-2">
+            <img id="userPicture" class="w-8 h-8 rounded-full" src="" alt="用戶頭像">
+            <span id="userName"></span>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <main class="container mx-auto p-4">
+      <!-- 活動列表區域 -->
+      <div id="activitiesSection" class="hidden">
+        <h2 class="text-2xl font-bold mb-4">活動列表</h2>
+        <div id="activitiesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        </div>
+      </div>
+
+      <!-- 報名記錄區域 -->
+      <div id="registrationsSection" class="hidden">
+        <h2 class="text-2xl font-bold mb-4">我的報名記錄</h2>
+        <div id="registrationsList">
+        </div>
+      </div>
+
+      <!-- 管理面板區域 -->
+      <div id="adminSection" class="hidden">
+        <h2 class="text-2xl font-bold mb-4">管理面板</h2>
+      </div>
+    </main>
+  </div>
+
+  <!-- 報名表單對話框 -->
+  <div id="registrationModal" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded-lg max-w-md w-full">
+      <h3 class="text-xl font-bold mb-4">活動報名</h3>
+      <form id="registrationForm">
+        <input type="hidden" id="activityId">
+        <div class="space-y-4">
+          <div>
+            <label class="form-label">姓名</label>
+            <input type="text" id="name" required class="form-input">
+          </div>
+          <div>
+            <label class="form-label">電話</label>
+            <input type="tel" id="phone" required class="form-input">
+          </div>
+          <div>
+            <label class="form-label">Email</label>
+            <input type="email" id="email" required class="form-input">
+          </div>
+          <div>
+            <label class="form-label">備註</label>
+            <textarea id="note" class="form-input"></textarea>
+          </div>
+        </div>
+        <div class="mt-6 flex justify-end space-x-3">
+          <button type="button" onclick="closeRegistrationModal()" class="btn btn-secondary">取消</button>
+          <button type="submit" class="btn btn-primary">確認報名</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+
+    // 初始化
+    async function initialize() {
+      showLoading();
+      try {
+        await liff.init({ liffId: CONFIG.LIFF_ID });
+        if (liff.isLoggedIn()) {
+          await handleLoggedIn();
+        } else {
+          showLoginPage();
+        }
+      } catch (err) {
+        console.error('初始化失敗:', err);
+        alert('系統初始化失敗，請重新整理頁面');
+      }
+      hideLoading();
+    }
+
+    // 處理登入後的行為
+    async function handleLoggedIn() {
+      try {
+        const profile = await liff.getProfile();
+        currentUser = {
+          userId: profile.userId,
+          displayName: profile.displayName,
+          pictureUrl: profile.pictureUrl
+        };
+        
+        // 檢查是否為管理員
+        const { isAdmin } = await api.checkAdmin(currentUser.userId);
+        currentUser.isAdmin = isAdmin;
+        
+        updateUIForUser();
+        showMainPage();
+        loadActivities();
+      } catch (err) {
+        console.error('獲取用戶資料失敗:', err);
+        alert('無法獲取用戶資料，請重新登入');
+      }
+    }
+
+    // UI 相關函數
+    function showLoading() {
+      document.getElementById('loading').classList.remove('hidden');
+    }
+
+    function hideLoading() {
+      document.getElementById('loading').classList.add('hidden');
+    }
+
+    function showLoginPage() {
+      document.getElementById('loginContainer').classList.remove('hidden');
+      document.getElementById('mainContainer').classList.add('hidden');
+    }
+
+    function showMainPage() {
+      document.getElementById('loginContainer').classList.add('hidden');
+      document.getElementById('mainContainer').classList.remove('hidden');
+    }
+
+    function updateUIForUser() {
+      document.getElementById('userName').textContent = currentUser.displayName;
+      document.getElementById('userPicture').src = currentUser.pictureUrl;
+      if (currentUser.isAdmin) {
+        document.getElementById('navAdmin').classList.remove('hidden');
+      }
+    }
+
+    // 活動相關函數
+    async function loadActivities() {
+      showLoading();
+      try {
+        const { activities } = await api.getActivities();
+        const container = document.getElementById('activitiesList');
+        container.innerHTML = '';
+        
+        activities.forEach(activity => {
+          container.appendChild(createActivityCard(activity));
+        });
+      } catch (err) {
+        console.error('載入活動失敗:', err);
+        alert('載入活動列表失敗');
+      }
+      hideLoading();
+    }
+
+    function createActivityCard(activity) {
+      const card = document.createElement('div');
+      card.className = 'activity-card';
+      card.innerHTML = `
+        <h3 class="text-xl font-bold mb-2">${activity.title}</h3>
+        <p class="text-gray-600 mb-2">${activity.description}</p>
+        <div class="text-sm text-gray-500">
+          <p>日期：${activity.date}</p>
+          <p>地點：${activity.location}</p>
+          <p>名額：${activity.currentParticipants}/${activity.maxParticipants}</p>
+          <p>報名截止：${activity.deadline}</p>
+        </div>
+        <button onclick="showRegistrationModal('${activity.id}')" 
+                class="btn btn-primary mt-4" 
+                ${activity.currentParticipants >= activity.maxParticipants ? 'disabled' : ''}>
+          ${activity.currentParticipants >= activity.maxParticipants ? '已額滿' : '立即報名'}
+        </button>
+      `;
+      return card;
+    }
+
+    // 報名相關函數
+    function showRegistrationModal(activityId) {
+      document.getElementById('activityId').value = activityId;
+      document.getElementById('registrationModal').classList.remove('hidden');
+    }
+
+    function closeRegistrationModal() {
+      document.getElementById('registrationModal').classList.add('hidden');
+      document.getElementById('registrationForm').reset();
+    }
+
+    async function handleRegistration(event) {
+      event.preventDefault();
+      showLoading();
+      
+      const formData = {
+        activityId: document.getElementById('activityId').value,
+        userId: currentUser.userId,
+        name: document.getElementById('name').value,
+        phone: document.getElementById('phone').value,
+        email: document.getElementById('email').value,
+        note: document.getElementById('note').value
+      };
+      
+      try {
+        const result = await api.register(formData);
+        if (result.success) {
+          alert('報名成功！');
+          closeRegistrationModal();
+          loadActivities();
+        } else {
+          alert(result.message || '報名失敗');
+        }
+      } catch (err) {
+        console.error('報名失敗:', err);
+        alert('報名處理失敗，請稍後再試');
+      }
+      
+      hideLoading();
+    }
+
+    // 載入個人報名記錄
+    async function loadMyRegistrations() {
+      showLoading();
+      try {
+        const { registrations } = await api.getMyRegistrations(currentUser.userId);
+        const container = document.getElementById('registrationsList');
+        container.innerHTML = '';
+        
+        registrations.forEach(registration => {
+          container.appendChild(createRegistrationCard(registration));
+        });
+      } catch (err) {
+        console.error('載入報名記錄失敗:', err);
+        alert('載入報名記錄失敗');
+      }
+      hideLoading();
+    }
+
+    function createRegistrationCard(registration) {
+      const card = document.createElement('div');
+      card.className = 'activity-card mb-4';
+      card.innerHTML = `
+        <h3 class="text-xl font-bold mb-2">${registration.activityTitle}</h3>
+        <div class="text-sm text-gray-500">
+          <p>活動日期：${registration.activityDate}</p>
+          <p>報名狀態：${registration.status}</p>
+          <p>報名者：${registration.name}</p>
+          <p>電話：${registration.phone}</p>
+          <p>Email：${registration.email}</p>
+          ${registration.note ? `<p>備註：${registration.note}</p>` : ''}
+        </div>
+        ${registration.canCancel ? `
+          <button onclick="cancelRegistration('${registration.id}')" 
+                  class="btn btn-secondary mt-4">
+            取消報名
+          </button>
+        ` : ''}
+      `;
+      return card;
+    }
+
+    // 取消報名
+    async function cancelRegistration(registrationId) {
+      if (!confirm('確定要取消報名嗎？')) return;
+      
+      showLoading();
+      try {
+        const result = await api.cancelRegistration(registrationId);
+        if (result.success) {
+          alert('已取消報名');
+          loadMyRegistrations();
+        } else {
+          alert(result.message || '取消報名失敗');
+        }
+      } catch (err) {
+        console.error('取消報名失敗:', err);
+        alert('取消報名處理失敗，請稍後再試');
+      }
+      hideLoading();
+    }
+
+    // 事件監聽器設置
+    document.addEventListener('DOMContentLoaded', () => {
+      initialize();
+      
+      document.getElementById('loginButton').onclick = () => liff.login();
+      document.getElementById('registrationForm').onsubmit = handleRegistration;
+      
+      document.getElementById('navActivities').onclick = () => {
+        document.getElementById('activitiesSection').classList.remove('hidden');
+        document.getElementById('registrationsSection').classList.add('hidden');
+        document.getElementById('adminSection').classList.add('hidden');
+        loadActivities();
+      };
+      
+      document.getElementById('navRegistrations').onclick = () => {
+        document.getElementById('activitiesSection').classList.add('hidden');
+        document.getElementById('registrationsSection').classList.remove('hidden');
+        document.getElementById('adminSection').classList.add('hidden');
+        loadMyRegistrations();
+      };
+      
+      document.getElementById('navAdmin').onclick = () => {
+        document.getElementById('activitiesSection').classList.add('hidden');
+        document.getElementById('registrationsSection').classList.add('hidden');
+        document.getElementById('adminSection').classList.remove('hidden');
+        loadAdminPanel();
+      };
+    });
+  </script>
+</body>
+
+</html>
