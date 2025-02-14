@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>活動管理系統</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+<body class="bg-gray-100">
+  <div id="app" class="container mx-auto px-4 py-8">
+    <!-- Loading 畫面 -->
+    <div id="loading" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center">
+      <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+    </div>
+
+    <!-- 主要內容 -->
+    <div id="content" class="hidden">
+      <!-- 頁面標題 -->
+      <div class="text-center mb-8">
+        <h1 class="text-2xl font-bold text-gray-800">活動管理系統</h1>
+        <p id="userName" class="text-gray-600 mt-2"></p>
+      </div>
+
+      <!-- 功能選單 -->
+      <div class="grid grid-cols-2 gap-4 mb-8">
+        <button onclick="showCreateEvent()" class="bg-blue-500 text-white p-4 rounded-lg shadow hover:bg-blue-600">
+          建立活動
+        </button>
+        <button onclick="showEventList()" class="bg-green-500 text-white p-4 rounded-lg shadow hover:bg-green-600">
+          活動列表
+        </button>
+        <button onclick="showMyEvents()" class="bg-purple-500 text-white p-4 rounded-lg shadow hover:bg-purple-600">
+          我的活動
+        </button>
+        <button onclick="showEventSearch()" class="bg-yellow-500 text-white p-4 rounded-lg shadow hover:bg-yellow-600">
+          活動查詢
+        </button>
+      </div>
+
+      <!-- 各功能區塊 -->
+      <div id="createEventForm" class="hidden bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-bold mb-4">建立新活動</h2>
+        <form onsubmit="handleCreateEvent(event)">
+          <div class="mb-4">
+            <label class="block text-gray-700 mb-2">活動名稱</label>
+            <input type="text" name="name" required class="w-full border rounded p-2">
+          </div>
+          <div class="mb-4">
+            <label class="block text-gray-700 mb-2">日期時間</label>
+            <input type="datetime-local" name="date" required class="w-full border rounded p-2">
+          </div>
+          <div class="mb-4">
+            <label class="block text-gray-700 mb-2">地點</label>
+            <input type="text" name="location" required class="w-full border rounded p-2">
+          </div>
+          <div class="mb-4">
+            <label class="block text-gray-700 mb-2">活動說明</label>
+            <textarea name="description" rows="4" class="w-full border rounded p-2"></textarea>
+          </div>
+          <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+            建立活動
+          </button>
+        </form>
+      </div>
+
+      <div id="eventList" class="hidden">
+        <h2 class="text-xl font-bold mb-4">活動列表</h2>
+        <div id="eventListContent" class="space-y-4"></div>
+      </div>
+
+      <div id="myEvents" class="hidden">
+        <h2 class="text-xl font-bold mb-4">我的活動</h2>
+        <div id="myEventsContent" class="space-y-4"></div>
+      </div>
+
+      <div id="eventSearch" class="hidden">
+        <h2 class="text-xl font-bold mb-4">活動查詢</h2>
+        <div class="mb-4">
+          <input type="text" id="searchInput" placeholder="輸入活動關鍵字" 
+            class="w-full border rounded p-2">
+        </div>
+        <div id="searchResults" class="space-y-4"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let userProfile = null;
+    const GOOGLE_SCRIPT_URL = '您的 Google Apps Script 網頁應用程式 URL';
+
+    // LIFF 初始化
+    async function initializeLiff() {
+      try {
+        await liff.init({ liffId: '您的 LIFF ID' });
+        if (!liff.isLoggedIn()) {
+          liff.login();
+        } else {
+          userProfile = await liff.getProfile();
+          document.getElementById('userName').textContent = `歡迎, ${userProfile.displayName}`;
+          document.getElementById('loading').classList.add('hidden');
+          document.getElementById('content').classList.remove('hidden');
+        }
+      } catch (err) {
+        console.error('LIFF 初始化失敗:', err);
+      }
+    }
+
+    // 顯示/隱藏功能區塊
+    function showSection(sectionId) {
+      const sections = ['createEventForm', 'eventList', 'myEvents', 'eventSearch'];
+      sections.forEach(id => {
+        document.getElementById(id).classList.add('hidden');
+      });
+      document.getElementById(sectionId).classList.remove('hidden');
+    }
+
+    // 建立活動
+    async function handleCreateEvent(event) {
+      event.preventDefault();
+      const formData = new FormData(event.target);
+      try {
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'createEvent',
+            data: {
+              name: formData.get('name'),
+              date: formData.get('date'),
+              location: formData.get('location'),
+              description: formData.get('description'),
+              creator: userProfile.userId
+            }
+          })
+        });
+        const result = await response.json();
+        if (result.success) {
+          alert('活動建立成功！');
+          event.target.reset();
+        } else {
+          alert(result.message);
+        }
+      } catch (err) {
+        console.error('建立活動失敗:', err);
+        alert('建立活動時發生錯誤');
+      }
+    }
+
+    // 載入活動列表
+    async function loadEventList() {
+      try {
+        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getActiveEvents`);
+        const events = await response.json();
+        const container = document.getElementById('eventListContent');
+        container.innerHTML = events.map(event => `
+          <div class="bg-white rounded-lg shadow p-4">
+            <h3 class="font-bold">${event.name}</h3>
+            <p class="text-gray-600">${new Date(event.date).toLocaleString()}</p>
+            <p class="text-gray-600">${event.location}</p>
+            <p class="text-gray-600">報名人數: ${event.participants}</p>
+            <button onclick="registerEvent('${event.id}')" 
+              class="mt-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+              報名
+            </button>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.error('載入活動列表失敗:', err);
+      }
+    }
+
+    // 報名活動
+    async function registerEvent(eventId) {
+      try {
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'register',
+            data: {
+              eventId,
+              userId: userProfile.userId,
+              displayName: userProfile.displayName
+            }
+          })
+        });
+        const result = await response.json();
+        alert(result.message);
+        if (result.success) {
+          loadEventList();
+        }
+      } catch (err) {
+        console.error('報名失敗:', err);
+        alert('報名時發生錯誤');
+      }
+    }
+
+    // 載入我的活動
+    async function loadMyEvents() {
+      try {
+        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getMyEvents&userId=${userProfile.userId}`);
+        const events = await response.json();
+        const container = document.getElementById('myEventsContent');
+        container.innerHTML = events.map(event => `
+          <div class="bg-white rounded-lg shadow p-4">
+            <h3 class="font-bold">${event.name}</h3>
+            <p class="text-gray-600">${new Date(event.date).toLocaleString()}</p>
+            <p class="text-gray-600">${event.location}</p>
+            <p class="text-gray-600">狀態: ${event.status}</p>
+            <button onclick="cancelRegistration('${event.id}')"
+              class="mt-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+              取消報名
+            </button>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.error('載入我的活動失敗:', err);
+      }
+    }
+
+    // 取消報名
+    async function cancelRegistration(eventId) {
+      try {
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'cancelRegistration',
+            data: {
+              eventId,
+              userId: userProfile.userId
+            }
+          })
+        });
+        const result = await response.json();
+        alert(result.message);
+        if (result.success) {
+          loadMyEvents();
+        }
+      } catch (err) {
+        console.error('取消報名失敗:', err);
+        alert('取消報名時發生錯誤');
+      }
+    }
+
+    // 活動搜尋
+    let searchTimeout;
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        searchEvents(e.target.value);
+      }, 500);
+    });
+
+    async function searchEvents(keyword) {
+      try {
+        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=searchEvents&keyword=${keyword}`);
+        const events = await response.json();
+        const container = document.getElementById('searchResults');
+        container.innerHTML = events.map(event => `
+          <div class="bg-white rounded-lg shadow p-4">
+            <h3 class="font-bold">${event.name}</h3>
+            <p class="text-gray-600">${new Date(event.date).toLocaleString()}</p>
+            <p class="text-gray-600">${event.location}</p>
+            <p class="text-gray-600">報名人數: ${event.participants}</p>
+            <button onclick="showEventDetails('${event.id}')"
+              class="mt-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+              查看詳情
+            </button>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.error('搜尋活動失敗:', err);
+      }
+    }
+
+    // 顯示活動詳情
+    async function showEventDetails(eventId) {
+      try {
+        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getEventDetails&eventId=${eventId}`);
+        const event = await response.json();
+        // 使用 LIFF 的 openWindow 來開啟詳情頁
+        liff.openWindow({
+          url: `event-details.html?id=${eventId}`,
+          external: false
+        });
+      } catch (err) {
+        console.error('獲取活動詳情失敗:', err);
+      }
+    }
+
+    // 頁面載入完成後初始化
+    window.onload = initializeLiff;
+  </script>
+</body>
+</html>
