@@ -1658,25 +1658,53 @@
     // ========================================
     // 系統初始化
     // ========================================
+
     
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('系統初始化開始...');
+// 更新系統初始化函數
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('系統初始化開始...');
+    
+    // 設定當前時間顯示
+    updateCurrentTime();
+    setInterval(updateCurrentTime, 1000);
+    
+    // 設定預設日期
+    setDefaultDates();
+    
+    // 測試 API 連線
+    const apiConnected = await testApiConnection();
+    
+    if (apiConnected) {
+      // 載入系統資料
+      await loadSystemData();
+    } else {
+      showMessage('API 連線失敗，部分功能可能無法使用', 'warning');
+    }
+    
+    // 設定事件監聽器
+    setupEventListeners();
+    
+    console.log('系統初始化完成');
+  });
+    
+    // document.addEventListener('DOMContentLoaded', function() {
+    //     console.log('系統初始化開始...');
         
-        // 設定當前時間顯示
-        updateCurrentTime();
-        setInterval(updateCurrentTime, 1000);
+    //     // 設定當前時間顯示
+    //     updateCurrentTime();
+    //     setInterval(updateCurrentTime, 1000);
         
-        // 設定預設日期
-        setDefaultDates();
+    //     // 設定預設日期
+    //     setDefaultDates();
         
-        // 載入系統資料
-        loadSystemData();
+    //     // 載入系統資料
+    //     loadSystemData();
         
-        // 設定事件監聽器
-        setupEventListeners();
+    //     // 設定事件監聽器
+    //     setupEventListeners();
         
-        console.log('系統初始化完成');
-    });
+    //     console.log('系統初始化完成');
+    // });
     
     // 更新當前時間顯示
     function updateCurrentTime() {
@@ -3380,38 +3408,113 @@
     }
     
     // 呼叫Google Apps Script API
-    async function callGoogleAppsScript(functionName, parameters = {}) {
-        try {
-            // 這裡應該替換為實際的Google Apps Script Web App URL
-            const scriptUrl = 'https://script.google.com/macros/s/AKfycbyABvX-CQCWT4D-iu28433IwMq02-fEc8NCS47jqFDDCyeOn-F6VQV32uU4ZRE7Sait8w/exec';
-            
-            const response = await fetch(scriptUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    function: functionName,
-                    parameters: parameters
-                })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            return data;
-            
-        } catch (error) {
-            console.error('API呼叫失敗:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
+// 修正版本的 API 呼叫函數
+async function callGoogleAppsScript(functionName, parameters = {}) {
+  try {
+    // 更新為您的實際 Google Apps Script Web App URL
+    const scriptUrl = 'https://script.google.com/macros/s/AKfycbzJeIsZVsgbFFIgVvnllNbl5iMczRS6BXo-msD3Im1WHJzIw6xvZIB4w-oX1LOxFjQSUg/exec';
+    
+    console.log(`呼叫 API: ${functionName}`, parameters);
+    
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      mode: 'cors', // 明確指定 CORS 模式
+      body: JSON.stringify({
+        function: functionName,
+        parameters: parameters
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
     
+    const data = await response.json();
+    console.log(`API 回應: ${functionName}`, data);
+    
+    return data;
+    
+  } catch (error) {
+    console.error('API呼叫失敗:', error);
+    
+    // 提供更詳細的錯誤資訊
+    let errorMessage = error.message;
+    
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      errorMessage = '網路連線錯誤，請檢查網路連線或稍後再試';
+    } else if (error.message.includes('CORS')) {
+      errorMessage = 'CORS 錯誤，請聯絡系統管理員';
+    }
+    
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+}
+
+// 測試 API 連線的函數
+async function testApiConnection() {
+  try {
+    console.log('測試 API 連線...');
+    
+    const response = await callGoogleAppsScript('getDashboardStats');
+    
+    if (response.success) {
+      console.log('API 連線測試成功');
+      showMessage('API 連線正常', 'success');
+      return true;
+    } else {
+      console.error('API 連線測試失敗:', response.error);
+      showMessage(`API 連線失敗: ${response.error}`, 'danger');
+      return false;
+    }
+    
+  } catch (error) {
+    console.error('API 連線測試錯誤:', error);
+    showMessage('API 連線測試失敗', 'danger');
+    return false;
+  }
+}
+
+// 重試機制的 API 呼叫
+async function callGoogleAppsScriptWithRetry(functionName, parameters = {}, maxRetries = 3) {
+  let lastError;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const result = await callGoogleAppsScript(functionName, parameters);
+      
+      if (result.success || !result.error.includes('網路')) {
+        return result;
+      }
+      
+      lastError = result.error;
+      
+      // 等待後重試
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+      }
+      
+    } catch (error) {
+      lastError = error.message;
+      
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+      }
+    }
+  }
+  
+  return {
+    success: false,
+    error: `重試 ${maxRetries} 次後仍然失敗: ${lastError}`
+  };
+}
+
+
     // 設定事件監聽器
     function setupEventListeners() {
         // 標籤切換事件
