@@ -2122,6 +2122,543 @@
       console.log('台灣帕金森病友權益促進會會計管理系統已載入完成');
       console.log('版本: v4.0.0');
       console.log('最後更新: 2024-12-19');
+
+      // ========================================
+      // 額外功能函數 (接續主程式)
+      // ========================================
+
+      // 清除表單函數
+      function clearTransactionForm() {
+        document.getElementById('transactionForm').reset();
+        document.getElementById('transactionType').value = '';
+        document.getElementById('transactionCategory').innerHTML = '<option value="">請選擇類別</option>';
+        document.getElementById('incomeOptions').style.display = 'none';
+        document.getElementById('expenseOptions').style.display = 'none';
+        document.getElementById('receiptDetails').style.display = 'none';
+        setCurrentDate();
+      }
+
+      function clearReceiptForm() {
+        document.getElementById('receiptForm').reset();
+        setCurrentDate();
+      }
+
+      function clearMemberForm() {
+        document.getElementById('memberForm').reset();
+        setCurrentDate();
+      }
+
+      // 交易類型變更處理
+      function handleTransactionTypeChange() {
+        const type = document.getElementById('transactionType').value;
+        const categorySelect = document.getElementById('transactionCategory');
+        const incomeOptions = document.getElementById('incomeOptions');
+        const expenseOptions = document.getElementById('expenseOptions');
+        
+        // 清空類別選項
+        categorySelect.innerHTML = '<option value="">請選擇類別</option>';
+        
+        if (type === '收入') {
+            const incomeCategories = ['會費', '捐款', '活動收入', '政府補助', '其他收入'];
+            incomeCategories.forEach(category => {
+                categorySelect.innerHTML += `<option value="${category}">${category}</option>`;
+            });
+            incomeOptions.style.display = 'block';
+            expenseOptions.style.display = 'none';
+        } else if (type === '支出') {
+            const expenseCategories = ['活動支出', '辦公用品', '交通費', '餐費', '場地費', '其他支出'];
+            expenseCategories.forEach(category => {
+                categorySelect.innerHTML += `<option value="${category}">${category}</option>`;
+            });
+            incomeOptions.style.display = 'none';
+            expenseOptions.style.display = 'block';
+        } else {
+            incomeOptions.style.display = 'none';
+            expenseOptions.style.display = 'none';
+        }
+      }
+
+      // 收據詳情切換
+      function toggleReceiptDetails() {
+        const checkbox = document.getElementById('generateReceipt');
+        const details = document.getElementById('receiptDetails');
+        details.style.display = checkbox.checked ? 'block' : 'none';
+      }
+
+      // 儀表板更新
+      function updateDashboard() {
+        const currentMonth = new Date().getMonth();
+        const currentYear = new Date().getFullYear();
+        
+        // 計算本月收支
+        const monthlyTransactions = globalData.transactions.filter(t => {
+            const transactionDate = new Date(t.transactionDate);
+            return transactionDate.getMonth() === currentMonth && 
+                  transactionDate.getFullYear() === currentYear;
+        });
+        
+        const monthlyIncome = monthlyTransactions
+            .filter(t => t.transactionType === '收入')
+            .reduce((sum, t) => sum + parseFloat(t.transactionAmount), 0);
+            
+        const monthlyExpense = monthlyTransactions
+            .filter(t => t.transactionType === '支出')
+            .reduce((sum, t) => sum + parseFloat(t.transactionAmount), 0);
+        
+        const monthlyReceipts = globalData.receipts.filter(r => {
+            const receiptDate = new Date(r.receiptDate);
+            return receiptDate.getMonth() === currentMonth && 
+                  receiptDate.getFullYear() === currentYear;
+        }).length;
+        
+        // 更新統計卡片
+        document.getElementById('totalIncome').textContent = formatCurrency(monthlyIncome);
+        document.getElementById('totalExpense').textContent = formatCurrency(monthlyExpense);
+        document.getElementById('receiptCount').textContent = monthlyReceipts;
+        document.getElementById('memberCount').textContent = globalData.members.length;
+        
+        // 更新快速統計
+        document.getElementById('quickTotalIncome').textContent = formatCurrency(monthlyIncome);
+        document.getElementById('quickTotalExpense').textContent = formatCurrency(monthlyExpense);
+        document.getElementById('quickNetAmount').textContent = formatCurrency(monthlyIncome - monthlyExpense);
+        document.getElementById('quickReceiptCount').textContent = monthlyReceipts;
+        
+        // 更新報表快速統計
+        document.getElementById('reportQuickIncome').textContent = formatCurrency(monthlyIncome);
+        document.getElementById('reportQuickExpense').textContent = formatCurrency(monthlyExpense);
+        document.getElementById('reportQuickNet').textContent = formatCurrency(monthlyIncome - monthlyExpense);
+        document.getElementById('reportQuickReceipts').textContent = monthlyReceipts;
+        
+        // 更新最近活動
+        updateRecentActivities();
+      }
+
+      // 更新最近活動
+      function updateRecentActivities() {
+        const container = document.getElementById('recentActivities');
+        const recentItems = [];
+        
+        // 合併所有活動
+        globalData.transactions.forEach(t => {
+            recentItems.push({
+                type: 'transaction',
+                date: t.transactionDate,
+                timestamp: t.timestamp,
+                description: `${t.transactionType}: ${t.transactionName} - ${formatCurrency(t.transactionAmount)}`
+            });
+        });
+        
+        globalData.receipts.forEach(r => {
+            recentItems.push({
+                type: 'receipt',
+                date: r.receiptDate,
+                timestamp: r.timestamp,
+                description: `收據: ${r.receiptPayer} - ${formatCurrency(r.receiptAmount)}`
+            });
+        });
+        
+        globalData.members.forEach(m => {
+            recentItems.push({
+                type: 'member',
+                date: m.memberJoinDate,
+                timestamp: m.timestamp,
+                description: `新會員: ${m.memberName} (${m.memberType})`
+            });
+        });
+        
+        // 排序並取前10筆
+        recentItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const recent10 = recentItems.slice(0, 10);
+        
+        if (recent10.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center">暫無活動記錄</p>';
+            return;
+        }
+        
+        let html = '<div class="list-group list-group-flush">';
+        recent10.forEach(item => {
+            const icon = getActivityIcon(item.type);
+            const color = getActivityColor(item.type);
+            html += `
+                <div class="list-group-item d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-${icon} text-${color}"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="fw-bold">${item.description}</div>
+                        <small class="text-muted">${formatDate(item.date)}</small>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        
+        container.innerHTML = html;
+      }
+
+      function getActivityIcon(type) {
+        const icons = {
+            'transaction': 'exchange-alt',
+            'receipt': 'receipt',
+            'member': 'user-plus'
+        };
+        return icons[type] || 'circle';
+      }
+
+      function getActivityColor(type) {
+        const colors = {
+            'transaction': 'primary',
+            'receipt': 'success',
+            'member': 'info'
+        };
+        return colors[type] || 'secondary';
+      }
+
+      // 表格渲染函數
+      function renderTransactionTable() {
+        const container = document.getElementById('transactionTableContainer');
+        
+        if (globalData.transactions.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center py-4">暫無交易記錄</p>';
+            return;
+        }
+        
+        let html = `
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>姓名</th>
+                        <th>類型</th>
+                        <th>類別</th>
+                        <th>金額</th>
+                        <th>說明</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        globalData.transactions.forEach(transaction => {
+            const typeClass = transaction.transactionType === '收入' ? 'success' : 'danger';
+            html += `
+                <tr>
+                    <td>${formatDate(transaction.transactionDate)}</td>
+                    <td>${transaction.transactionName}</td>
+                    <td><span class="status-badge status-${typeClass}">${transaction.transactionType}</span></td>
+                    <td>${transaction.transactionCategory}</td>
+                    <td class="text-${typeClass}">${formatCurrency(transaction.transactionAmount)}</td>
+                    <td>${transaction.transactionDescription || '-'}</td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn btn-sm btn-outline-primary" onclick="viewTransaction('${transaction.id}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning" onclick="editTransaction('${transaction.id}')">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteTransaction('${transaction.id}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      }
+
+      function renderReceiptTable() {
+        const container = document.getElementById('receiptTableContainer');
+        
+        if (globalData.receipts.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center py-4">暫無收據記錄</p>';
+            return;
+        }
+        
+        let html = `
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>收據編號</th>
+                        <th>日期</th>
+                        <th>付款人</th>
+                        <th>類別</th>
+                        <th>金額</th>
+                        <th>狀態</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        globalData.receipts.forEach(receipt => {
+            html += `
+                <tr>
+                    <td><strong>${receipt.receiptNumber}</strong></td>
+                    <td>${formatDate(receipt.receiptDate)}</td>
+                    <td>${receipt.receiptPayer}</td>
+                    <td>${receipt.receiptCategory}</td>
+                    <td class="text-success">${formatCurrency(receipt.receiptAmount)}</td>
+                    <td><span class="status-badge status-success">${receipt.status}</span></td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn btn-sm btn-outline-primary" onclick="viewReceipt('${receipt.id}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-success" onclick="printReceipt('${receipt.id}')">
+                                <i class="fas fa-print"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" onclick="emailReceipt('${receipt.id}')">
+                                <i class="fas fa-envelope"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      }
+
+      function renderMemberTable() {
+        const container = document.getElementById('memberTableContainer');
+        
+        if (globalData.members.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center py-4">暫無會員資料</p>';
+            return;
+        }
+        
+        let html = `
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>會員編號</th>
+                        <th>姓名</th>
+                        <th>類型</th>
+                        <th>電話</th>
+                        <th>入會日期</th>
+                        <th>狀態</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        globalData.members.forEach(member => {
+            html += `
+                <tr>
+                    <td><strong>${member.memberNumber}</strong></td>
+                    <td>${member.memberName}</td>
+                    <td>${member.memberType}</td>
+                    <td>${member.memberPhone}</td>
+                    <td>${formatDate(member.memberJoinDate)}</td>
+                    <td><span class="status-badge status-success">${member.status}</span></td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn btn-sm btn-outline-primary" onclick="viewMember('${member.id}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning" onclick="editMember('${member.id}')">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" onclick="memberHistory('${member.id}')">
+                                <i class="fas fa-history"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      }
+
+      // 快速操作函數
+      function showTransactionForm() {
+        // 切換到交易記錄分頁
+        const transactionTab = document.getElementById('transaction-tab');
+        const tab = new bootstrap.Tab(transactionTab);
+        tab.show();
+        
+        // 聚焦到姓名欄位
+        setTimeout(() => {
+            document.getElementById('transactionName').focus();
+        }, 300);
+      }
+
+      function showReceiptForm() {
+        // 切換到收據管理分頁
+        const receiptTab = document.getElementById('receipt-tab');
+        const tab = new bootstrap.Tab(receiptTab);
+        tab.show();
+        
+        // 聚焦到付款人欄位
+        setTimeout(() => {
+            document.getElementById('receiptPayer').focus();
+        }, 300);
+      }
+
+      function showMemberForm() {
+        // 切換到會員管理分頁
+        const memberTab = document.getElementById('member-tab');
+        const tab = new bootstrap.Tab(memberTab);
+        tab.show();
+        
+        // 聚焦到姓名欄位
+        setTimeout(() => {
+            document.getElementById('memberName').focus();
+        }, 300);
+      }
+
+      // 離線支援函數
+      function addToOfflineQueue(action, data) {
+        const queue = JSON.parse(localStorage.getItem('offlineQueue') || '[]');
+        queue.push({
+            action: action,
+            data: data,
+            timestamp: new Date().toISOString()
+        });
+        localStorage.setItem('offlineQueue', JSON.stringify(queue));
+        
+        showAlert('資料已暫存，將在連線恢復後同步', 'info');
+      }
+
+      function loadOfflineQueue() {
+        const queue = JSON.parse(localStorage.getItem('offlineQueue') || '[]');
+        if (queue.length > 0 && navigator.onLine) {
+            processOfflineQueue(queue);
+        }
+      }
+
+      async function processOfflineQueue(queue) {
+        for (const item of queue) {
+            try {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: item.action,
+                        data: item.data
+                    })
+                });
+                
+                const result = await response.json();
+                if (!result.success) {
+                    console.error('離線佇列處理失敗:', result.message);
+                }
+            } catch (error) {
+                console.error('離線佇列處理錯誤:', error);
+                break; // 停止處理剩餘項目
+            }
+        }
+        
+        // 清空佇列
+        localStorage.removeItem('offlineQueue');
+        showAlert('離線資料已成功同步', 'success');
+      }
+
+      // 自動儲存功能
+      function enableAutoSave(formId) {
+        const form = document.getElementById(formId);
+        if (!form) return;
+        
+        const inputs = form.querySelectorAll('input, select, textarea');
+        inputs.forEach(input => {
+            input.addEventListener('input', debounce(() => {
+                saveFormDraft(formId);
+            }, 1000));
+        });
+        
+        // 載入已儲存的草稿
+        loadFormDraft(formId);
+      }
+
+      function saveFormDraft(formId) {
+        const form = document.getElementById(formId);
+        if (!form) return;
+        
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        
+        localStorage.setItem(`draft_${formId}`, JSON.stringify(data));
+        showAutoSaveIndicator();
+      }
+
+      function loadFormDraft(formId) {
+        const draft = localStorage.getItem(`draft_${formId}`);
+        if (!draft) return;
+        
+        const data = JSON.parse(draft);
+        const form = document.getElementById(formId);
+        
+        Object.keys(data).forEach(key => {
+            const input = form.querySelector(`[name="${key}"]`);
+            if (input && data[key]) {
+                input.value = data[key];
+            }
+        });
+      }
+
+      function clearFormDraft(formId) {
+        localStorage.removeItem(`draft_${formId}`);
+      }
+
+      function showAutoSaveIndicator() {
+        const indicator = document.querySelector('.auto-save-indicator') || createAutoSaveIndicator();
+        indicator.textContent = '已自動儲存';
+        indicator.classList.add('show');
+        
+        setTimeout(() => {
+            indicator.classList.remove('show');
+        }, 2000);
+      }
+
+      function createAutoSaveIndicator() {
+        const indicator = document.createElement('div');
+        indicator.className = 'auto-save-indicator';
+        document.body.appendChild(indicator);
+        return indicator;
+      }
+
+      // 鍵盤快捷鍵
+      document.addEventListener('keydown', function(event) {
+        if (event.ctrlKey) {
+            switch(event.key) {
+                case 'n':
+                    event.preventDefault();
+                    showTransactionForm();
+                    break;
+                case 'r':
+                    event.preventDefault();
+                    showReceiptForm();
+                    break;
+                case 'm':
+                    event.preventDefault();
+                    showMemberForm();
+                    break;
+            }
+        }
+      });
+
+      // 網路狀態監控
+      window.addEventListener('online', function() {
+        showAlert('網路連線已恢復', 'success');
+        loadOfflineQueue();
+      });
+
+      window.addEventListener('offline', function() {
+        showAlert('網路連線中斷，將使用離線模式', 'warning');
+      });
+
+      console.log('額外功能函數已載入完成');
+
       
   </script>
 </body>
