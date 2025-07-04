@@ -435,15 +435,15 @@
           <div class="form-group">
               <label>特殊需求</label>
               <div class="checkbox-group">
-                  <input type="checkbox" id="wheelchair" name="specialNeeds[]" value="輪椅使用者">
+                  <input type="checkbox" id="wheelchair" name="specialNeeds" value="輪椅使用者">
                   <label for="wheelchair">輪椅使用者</label>
               </div>
               <div class="checkbox-group">
-                  <input type="checkbox" id="caregiver" name="specialNeeds[]" value="照顧者">
+                  <input type="checkbox" id="caregiver" name="specialNeeds" value="照顧者">
                   <label for="caregiver">照顧者</label>
               </div>
               <div class="checkbox-group">
-                  <input type="checkbox" id="dietary" name="specialNeeds[]" value="飲食限制">
+                  <input type="checkbox" id="dietary" name="specialNeeds" value="飲食限制">
                   <label for="dietary">飲食限制</label>
               </div>
           </div>
@@ -505,7 +505,7 @@
 
 <script>
   // 請將此 URL 替換為您的 Google Apps Script Web App URL
-  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzgSR2rXsDoMG-BBPFB2P1WNMYkZEPhkymD011uyGl5PsGZzGwPUu53nPoBHqweGXfHMA/exec';
+  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbymoNKws6rTUN3YfvpQgmnO2AcGZlZyiS3rHH8av4clbArcePTqfuil8aSpQlKsmen_4w/exec';
   
   // DOM 元素
   const form = document.getElementById('registrationForm');
@@ -517,7 +517,7 @@
   const registrationListContainer = document.getElementById('registrationListContainer');
   
   // 表單提交處理
-  form.addEventListener('submit', async function(e) {
+  form.addEventListener('submit', function(e) {
       e.preventDefault();
       
       // 驗證身分證字號
@@ -534,53 +534,61 @@
           return;
       }
       
-      // 收集表單數據
-      const formData = new FormData(this);
-      const data = Object.fromEntries(formData.entries());
-      
-      // 特殊處理特殊需求複選框
-      const specialNeeds = [];
-      document.querySelectorAll('input[name="specialNeeds[]"]:checked').forEach(checkbox => {
-          specialNeeds.push(checkbox.value);
-      });
-      data.specialNeeds = specialNeeds.join(', ');
-      
       // 顯示載入狀態
       showLoading(true);
       
-      try {
-          // 使用 fetch API 發送 POST 請求
-          const response = await fetch(SCRIPT_URL, {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(data)
-          });
-          
-          if (!response.ok) {
-              throw new Error(`伺服器回應錯誤: ${response.status}`);
+      // 收集表單數據
+      const formData = new FormData(form);
+      const jsonData = {};
+      
+      // 處理一般欄位
+      formData.forEach((value, key) => {
+          // 排除特殊需求複選框，稍後單獨處理
+          if (key !== 'specialNeeds') {
+              jsonData[key] = value;
           }
-          
-          const result = await response.json();
-          
-          if (result.success) {
-              successMsgEl.style.display = 'block';
-              form.reset();
-              
-              // 延遲載入清單，給後端時間處理
-              setTimeout(() => {
-                  loadRegistrationList();
-              }, 1000);
+      });
+      
+      // 特殊處理特殊需求複選框
+      const specialNeeds = [];
+      document.querySelectorAll('input[name="specialNeeds"]:checked').forEach(checkbox => {
+          specialNeeds.push(checkbox.value);
+      });
+      jsonData.specialNeeds = specialNeeds.join(', ');
+      
+      // 使用 XMLHttpRequest 發送 POST 請求
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', SCRIPT_URL);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      
+      xhr.onload = function() {
+          if (xhr.status === 200) {
+              try {
+                  const response = JSON.parse(xhr.responseText);
+                  
+                  if (response.success) {
+                      successMsgEl.style.display = 'block';
+                      form.reset();
+                      
+                      // 延遲載入清單，給後端時間處理
+                      setTimeout(() => {
+                          loadRegistrationList();
+                      }, 1000);
+                  } else {
+                      errorMsgEl.textContent = '❌ ' + (response.message || '報名失敗，請檢查資料後重新提交');
+                      errorMsgEl.style.display = 'block';
+                  }
+              } catch (error) {
+                  console.error('Error parsing response:', error);
+                  errorMsgEl.textContent = '❌ 處理回應時發生錯誤';
+                  errorMsgEl.style.display = 'block';
+              }
           } else {
-              throw new Error(result.message || '報名失敗');
+              console.error('Request failed:', xhr.status);
+              errorMsgEl.textContent = '❌ 伺服器回應錯誤: ' + xhr.status;
+              errorMsgEl.style.display = 'block';
           }
           
-      } catch (error) {
-          console.error('Error:', error);
-          errorMsgEl.textContent = '❌ ' + (error.message || '報名失敗，請檢查資料後重新提交');
-          errorMsgEl.style.display = 'block';
-      } finally {
           showLoading(false);
           
           // 5秒後隱藏訊息
@@ -588,7 +596,17 @@
               successMsgEl.style.display = 'none';
               errorMsgEl.style.display = 'none';
           }, 5000);
-      }
+      };
+      
+      xhr.onerror = function() {
+          console.error('Request failed');
+          errorMsgEl.textContent = '❌ 網路連線錯誤，請檢查您的網路連線';
+          errorMsgEl.style.display = 'block';
+          showLoading(false);
+      };
+      
+      // 發送數據
+      xhr.send(JSON.stringify(jsonData));
   });
   
   // 身分證字號驗證函數
@@ -629,44 +647,55 @@
   }
   
   // 載入報名清單
-  async function loadRegistrationList() {
-      try {
-          registrationListContainer.innerHTML = '<p>載入中...</p>';
-          
-          const response = await fetch(`${SCRIPT_URL}?action=getList&t=${new Date().getTime()}`);
-          
-          if (!response.ok) {
-              throw new Error(`伺服器回應錯誤: ${response.status}`);
-          }
-          
-          const result = await response.json();
-          
-          if (result.success && result.data && result.data.length > 0) {
-              // 更新統計數據
-              updateStats(result.data);
-              
-              // 顯示報名清單
-              registrationListContainer.innerHTML = result.data.map((item, index) => `
-                  <div class="registration-item">
-                      <strong>${index + 1}. ${item.name || '未提供'}</strong> 
-                      <span>(${item.gender || '未提供'}, ${item.transportMethod || '未提供'})</span>
-                      ${item.specialNeeds ? `<br><small>🔸 特殊需求: ${item.specialNeeds}</small>` : ''}                      
-                      ${item.timestamp ? `<br><small>⏰ ${formatDate(item.timestamp)}</small>` : ''}
-                  </div>
-              `).join('');
-              
-              // 更新最後更新時間
-              document.getElementById('lastUpdated').textContent = `最後更新：${new Date().toLocaleString('zh-TW')}`;
-              
+  function loadRegistrationList() {
+      registrationListContainer.innerHTML = '<p>載入中...</p>';
+      
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${SCRIPT_URL}?action=getList&t=${new Date().getTime()}`);
+      
+      xhr.onload = function() {
+          if (xhr.status === 200) {
+              try {
+                  const response = JSON.parse(xhr.responseText);
+                  
+                  if (response.success && response.data && response.data.length > 0) {
+                      // 更新統計數據
+                      updateStats(response.data);
+                      
+                      // 顯示報名清單
+                      registrationListContainer.innerHTML = response.data.map((item, index) => `
+                          <div class="registration-item">
+                              <strong>${index + 1}. ${item.name || '未提供'}</strong> 
+                              <span>(${item.gender || '未提供'}, ${item.transportMethod || '未提供'})</span>
+                              ${item.specialNeeds ? `<br><small>🔸 特殊需求: ${item.specialNeeds}</small>` : ''}                      
+                              ${item.timestamp ? `<br><small>⏰ ${formatDate(item.timestamp)}</small>` : ''}
+                          </div>
+                      `).join('');
+                      
+                  } else {
+                      registrationListContainer.innerHTML = '<p>目前尚無報名資料</p>';
+                      updateStats([]);
+                  }
+                  
+                  // 更新最後更新時間
+                  document.getElementById('lastUpdated').textContent = `最後更新：${new Date().toLocaleString('zh-TW')}`;
+                  
+              } catch (error) {
+                  console.error('Error parsing response:', error);
+                  registrationListContainer.innerHTML = '<p>載入失敗，請重新整理頁面</p>';
+              }
           } else {
-              registrationListContainer.innerHTML = '<p>目前尚無報名資料</p>';
-              updateStats([]);
-              document.getElementById('lastUpdated').textContent = `最後更新：${new Date().toLocaleString('zh-TW')}`;
+              console.error('Request failed:', xhr.status);
+              registrationListContainer.innerHTML = '<p>載入失敗，請檢查網路連線或重新整理頁面</p>';
           }
-      } catch (error) {
-          console.error('Error loading list:', error);
-          registrationListContainer.innerHTML = '<p>載入失敗，請檢查網路連線或重新整理頁面</p>';
-      }
+      };
+      
+      xhr.onerror = function() {
+          console.error('Request failed');
+          registrationListContainer.innerHTML = '<p>網路連線錯誤，請檢查您的網路連線</p>';
+      };
+      
+      xhr.send();
   }
   
   // 更新統計數據
