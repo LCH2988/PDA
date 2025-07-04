@@ -435,15 +435,15 @@
           <div class="form-group">
               <label>特殊需求</label>
               <div class="checkbox-group">
-                  <input type="checkbox" id="wheelchair" name="specialNeeds" value="輪椅使用者">
+                  <input type="checkbox" id="wheelchair" name="specialNeeds[]" value="輪椅使用者">
                   <label for="wheelchair">輪椅使用者</label>
               </div>
               <div class="checkbox-group">
-                  <input type="checkbox" id="caregiver" name="specialNeeds" value="照顧者">
+                  <input type="checkbox" id="caregiver" name="specialNeeds[]" value="照顧者">
                   <label for="caregiver">照顧者</label>
               </div>
               <div class="checkbox-group">
-                  <input type="checkbox" id="dietary" name="specialNeeds" value="飲食限制">
+                  <input type="checkbox" id="dietary" name="specialNeeds[]" value="飲食限制">
                   <label for="dietary">飲食限制</label>
               </div>
           </div>
@@ -474,7 +474,7 @@
   <div class="registration-list">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <h3>📋 目前報名狀況</h3>
-          <button class="refresh-btn" onclick="loadRegistrationList()">🔄 重新整理</button>
+          <button class="refresh-btn" id="refreshBtn">🔄 重新整理</button>
       </div>
       
       <div class="last-updated" id="lastUpdated"></div>
@@ -505,31 +505,45 @@
 
 <script>
   // 請將此 URL 替換為您的 Google Apps Script Web App URL
-  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxraZSCPqodV2VjDL0rLZ-QijUutAreLwkiyqRKOgUmsose9aAcrEHYdTDHBqZtEWIylA/exec';
+  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWUi7DS-na91tDe0LCaYHMDslxmehnSSfuLcDI9hmEoCy8h64dNarjo7oNX3Z2bUr8zQ/exec';
+  
+  // DOM 元素
+  const form = document.getElementById('registrationForm');
+  const loadingEl = document.getElementById('loading');
+  const successMsgEl = document.getElementById('successMessage');
+  const errorMsgEl = document.getElementById('errorMessage');
+  const submitBtn = document.getElementById('submitBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const registrationListContainer = document.getElementById('registrationListContainer');
   
   // 表單提交處理
-  document.getElementById('registrationForm').addEventListener('submit', async function(e) {
+  form.addEventListener('submit', async function(e) {
       e.preventDefault();
       
+      // 驗證身分證字號
+      const idNumberInput = document.getElementById('idNumber');
+      if (!validateTaiwanID(idNumberInput.value)) {
+          errorMsgEl.textContent = '❌ 身分證字號格式不正確，請重新輸入';
+          errorMsgEl.style.display = 'block';
+          idNumberInput.focus();
+          
+          setTimeout(() => {
+              errorMsgEl.style.display = 'none';
+          }, 5000);
+          
+          return;
+      }
+      
+      // 收集表單數據
       const formData = new FormData(this);
-      const data = {};
+      const data = Object.fromEntries(formData.entries());
       
-      // 處理一般欄位
-      for (let [key, value] of formData.entries()) {
-          if (key === 'specialNeeds') {
-              if (!data[key]) data[key] = [];
-              data[key].push(value);
-          } else {
-              data[key] = value;
-          }
-      }
-      
-      // 處理特殊需求陣列
-      if (data.specialNeeds) {
-          data.specialNeeds = data.specialNeeds.join(', ');
-      } else {
-          data.specialNeeds = '';
-      }
+      // 特殊處理特殊需求複選框
+      const specialNeeds = [];
+      document.querySelectorAll('input[name="specialNeeds[]"]:checked').forEach(checkbox => {
+          specialNeeds.push(checkbox.value);
+      });
+      data.specialNeeds = specialNeeds.join(', ');
       
       // 顯示載入狀態
       showLoading(true);
@@ -540,14 +554,19 @@
               headers: {
                   'Content-Type': 'application/json'
               },
-              body: JSON.stringify(data)
+              body: JSON.stringify(data),
+              mode: 'cors'
           });
+          
+          if (!response.ok) {
+              throw new Error(`伺服器回應錯誤: ${response.status}`);
+          }
           
           const result = await response.json();
           
           if (result.success) {
-              document.getElementById('successMessage').style.display = 'block';
-              document.getElementById('registrationForm').reset();
+              successMsgEl.style.display = 'block';
+              form.reset();
               
               // 延遲載入清單，給後端時間處理
               setTimeout(() => {
@@ -559,40 +578,75 @@
           
       } catch (error) {
           console.error('Error:', error);
-          document.getElementById('errorMessage').textContent = '❌ ' + (error.message || '報名失敗，請檢查資料後重新提交');
-          document.getElementById('errorMessage').style.display = 'block';
+          errorMsgEl.textContent = '❌ ' + (error.message || '報名失敗，請檢查資料後重新提交');
+          errorMsgEl.style.display = 'block';
+      } finally {
+          showLoading(false);
+          
+          // 5秒後隱藏訊息
+          setTimeout(() => {
+              successMsgEl.style.display = 'none';
+              errorMsgEl.style.display = 'none';
+          }, 5000);
+      }
+  });
+  
+  // 身分證字號驗證函數
+  function validateTaiwanID(id) {
+      // 基本格式檢查
+      if (!/^[A-Z][0-9]{9}$/.test(id)) {
+          return false;
       }
       
-      showLoading(false);
+      // 英文字母轉換
+      const letterMap = {
+          A: 10, B: 11, C: 12, D: 13, E: 14, F: 15, G: 16, H: 17, I: 34,
+          J: 18, K: 19, L: 20, M: 21, N: 22, O: 35, P: 23, Q: 24, R: 25,
+          S: 26, T: 27, U: 28, V: 29, W: 32, X: 30, Y: 31, Z: 33
+      };
       
-      // 5秒後隱藏訊息
-      setTimeout(() => {
-          document.getElementById('successMessage').style.display = 'none';
-          document.getElementById('errorMessage').style.display = 'none';
-      }, 5000);
-  });
+      // 計算檢查碼
+      const firstChar = id.charAt(0);
+      const firstNum = Math.floor(letterMap[firstChar] / 10);
+      const secondNum = letterMap[firstChar] % 10;
+      
+      let sum = firstNum + secondNum * 9;
+      
+      for (let i = 1; i < 9; i++) {
+          sum += parseInt(id.charAt(i)) * (9 - i);
+      }
+      
+      sum += parseInt(id.charAt(9));
+      
+      return sum % 10 === 0;
+  }
   
   // 顯示/隱藏載入狀態
   function showLoading(show) {
-      document.getElementById('loading').style.display = show ? 'block' : 'none';
-      document.getElementById('registrationForm').style.display = show ? 'none' : 'block';
-      document.getElementById('submitBtn').disabled = show;
+      loadingEl.style.display = show ? 'block' : 'none';
+      form.style.display = show ? 'none' : 'block';
+      submitBtn.disabled = show;
   }
   
   // 載入報名清單
   async function loadRegistrationList() {
       try {
-          const response = await fetch(SCRIPT_URL + '?action=getList');
-          const result = await response.json();
+          registrationListContainer.innerHTML = '<p>載入中...</p>';
           
-          const container = document.getElementById('registrationListContainer');
+          const response = await fetch(`${SCRIPT_URL}?action=getList&t=${new Date().getTime()}`);
+          
+          if (!response.ok) {
+              throw new Error(`伺服器回應錯誤: ${response.status}`);
+          }
+          
+          const result = await response.json();
           
           if (result.success && result.data && result.data.length > 0) {
               // 更新統計數據
               updateStats(result.data);
               
               // 顯示報名清單
-              container.innerHTML = result.data.map((item, index) => `
+              registrationListContainer.innerHTML = result.data.map((item, index) => `
                   <div class="registration-item">
                       <strong>${index + 1}. ${item.name || '未提供'}</strong> 
                       <span>(${item.gender || '未提供'}, ${item.transportMethod || '未提供'})</span>
@@ -605,13 +659,13 @@
               document.getElementById('lastUpdated').textContent = `最後更新：${new Date().toLocaleString('zh-TW')}`;
               
           } else {
-              container.innerHTML = '<p>目前尚無報名資料</p>';
+              registrationListContainer.innerHTML = '<p>目前尚無報名資料</p>';
               updateStats([]);
               document.getElementById('lastUpdated').textContent = `最後更新：${new Date().toLocaleString('zh-TW')}`;
           }
       } catch (error) {
           console.error('Error loading list:', error);
-          document.getElementById('registrationListContainer').innerHTML = '<p>載入失敗，請檢查網路連線或重新整理頁面</p>';
+          registrationListContainer.innerHTML = '<p>載入失敗，請檢查網路連線或重新整理頁面</p>';
       }
   }
   
@@ -635,31 +689,11 @@
       return date.toLocaleString('zh-TW');
   }
   
-  // 頁面載入時載入報名清單
-  window.addEventListener('load', loadRegistrationList);
-  
-  // 每30秒自動更新一次清單
-  setInterval(loadRegistrationList, 30000);
-  
-  // 身分證字號驗證
-  document.getElementById('idNumber').addEventListener('input', function(e) {
-      const value = e.target.value.toUpperCase();
-      e.target.value = value;
-      
-      if (value.length === 10) {
-          if (!/^[A-Z][0-9]{9}$/.test(value)) {
-              e.target.setCustomValidity('身分證字號格式不正確');
-          } else {
-              e.target.setCustomValidity('');
-          }
-      }
-  });
-  
   // 電話號碼格式驗證
   function validatePhone(input) {
       input.addEventListener('input', function(e) {
           const value = e.target.value.replace(/\D/g, '');
-          if (value.length > 0 && !/^(09|02|03|04|05|06|07|08)\d{8,9}$/.test(value)) {
+          if (value.length > 0 && !/^(09|02|03|04|05|06|07|08)\d{7,8}$/.test(value)) {
               e.target.setCustomValidity('請輸入正確的電話號碼格式');
           } else {
               e.target.setCustomValidity('');
@@ -667,8 +701,16 @@
       });
   }
   
+  // 綁定事件
   validatePhone(document.getElementById('phone'));
   validatePhone(document.getElementById('emergencyPhone'));
+  refreshBtn.addEventListener('click', loadRegistrationList);
+  
+  // 頁面載入時載入報名清單
+  window.addEventListener('load', loadRegistrationList);
+  
+  // 每30秒自動更新一次清單
+  setInterval(loadRegistrationList, 30000);
 </script>
 </body>
 </html>
