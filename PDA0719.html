@@ -731,7 +731,7 @@
 
   <script>
       // Google Apps Script Web App URL - 請替換為您的實際 URL
-      const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyTeBJ8V5vI9OVkitvIKDkq_E5JaD4-GSFzpMomoCL5f0wJd1RynFyvNSdsIZOmJFn6cw/exec';
+      const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwOFOm-Fe_Q_fj-2zzI_rBQiPxZZJpz5DJMxWQ8bAoVQ4q4sVjncQiLGbY-hXjXRBshtg/exec';
 
       // 全域變數
       let formProgress = 0;
@@ -744,15 +744,43 @@
           testResult.style.color = '#007bff';
 
           try {
-              const response = await fetch(SCRIPT_URL + '?action=test', {
-                  method: 'GET',
-                  mode: 'no-cors'
-              });
-
-              testResult.innerHTML = '✅ API 連接成功！';
-              testResult.style.color = '#28a745';
+              // 使用 JSONP 方式處理 CORS 問題
+              const iframe = document.createElement('iframe');
+              iframe.style.display = 'none';
+              document.body.appendChild(iframe);
+              
+              const form = document.createElement('form');
+              form.method = 'GET';
+              form.action = SCRIPT_URL + '?action=test&callback=handleTestResponse';
+              iframe.contentWindow.document.body.appendChild(form);
+              
+              window.handleTestResponse = function(response) {
+                  if (response && response.success) {
+                      testResult.innerHTML = '✅ API 連接成功！';
+                      testResult.style.color = '#28a745';
+                  } else {
+                      testResult.innerHTML = '❌ API 連接失敗：' + (response?.error || '未知錯誤');
+                      testResult.style.color = '#dc3545';
+                  }
+                  
+                  // 清理
+                  document.body.removeChild(iframe);
+                  delete window.handleTestResponse;
+              };
+              
+              form.submit();
+              
+              // 設置超時
+              setTimeout(() => {
+                  if (document.body.contains(iframe)) {
+                      document.body.removeChild(iframe);
+                      testResult.innerHTML = '❌ API 連接超時：請檢查 SCRIPT_URL 設定';
+                      testResult.style.color = '#dc3545';
+                  }
+              }, 5000);
+              
           } catch (error) {
-              testResult.innerHTML = '❌ API 連接失敗：請檢查 SCRIPT_URL 設定';
+              testResult.innerHTML = '❌ API 連接失敗：' + error.message;
               testResult.style.color = '#dc3545';
           }
       }
@@ -764,13 +792,41 @@
           testResult.style.color = '#007bff';
 
           try {
-              const response = await fetch(SCRIPT_URL + '?action=stats', {
-                  method: 'GET',
-                  mode: 'no-cors'
-              });
-
-              testResult.innerHTML = '✅ 統計功能正常！';
-              testResult.style.color = '#28a745';
+              // 使用 JSONP 方式處理 CORS 問題
+              const iframe = document.createElement('iframe');
+              iframe.style.display = 'none';
+              document.body.appendChild(iframe);
+              
+              const form = document.createElement('form');
+              form.method = 'GET';
+              form.action = SCRIPT_URL + '?action=stats&callback=handleStatsResponse';
+              iframe.contentWindow.document.body.appendChild(form);
+              
+              window.handleStatsResponse = function(response) {
+                  if (response && response.success) {
+                      testResult.innerHTML = '✅ 統計功能正常！';
+                      testResult.style.color = '#28a745';
+                  } else {
+                      testResult.innerHTML = '❌ 統計功能測試失敗：' + (response?.error || '未知錯誤');
+                      testResult.style.color = '#dc3545';
+                  }
+                  
+                  // 清理
+                  document.body.removeChild(iframe);
+                  delete window.handleStatsResponse;
+              };
+              
+              form.submit();
+              
+              // 設置超時
+              setTimeout(() => {
+                  if (document.body.contains(iframe)) {
+                      document.body.removeChild(iframe);
+                      testResult.innerHTML = '❌ 統計功能測試超時';
+                      testResult.style.color = '#dc3545';
+                  }
+              }, 5000);
+              
           } catch (error) {
               testResult.innerHTML = '❌ 統計功能測試失敗：' + error.message;
               testResult.style.color = '#dc3545';
@@ -809,40 +865,101 @@
                   throw new Error(validation.error);
               }
               
-              // 發送資料到 Google Apps Script
-              const response = await fetch(SCRIPT_URL, {
-                  method: 'POST',
-                  headers: {
-                      'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify(data),
-                  mode: 'cors'
-              });
+              // 使用 iframe 提交表單以避免 CORS 問題
+              const iframe = document.createElement('iframe');
+              iframe.name = 'submit_iframe';
+              iframe.style.display = 'none';
+              document.body.appendChild(iframe);
               
-              const result = await response.json();
+              const form = document.createElement('form');
+              form.method = 'POST';
+              form.action = SCRIPT_URL;
+              form.target = 'submit_iframe';
               
-              if (result.success) {
-                  successMessage.innerHTML = `
-                      <h4>🎉 報名成功！</h4>
-                      <p>您的報名編號：<strong>${result.registrationNumber}</strong></p>
-                      <p>請保存此編號以便查詢。確認郵件將發送至您的信箱。</p>
-                      <p><small>感謝您的報名，我們期待與您一起享受美好的輕旅行！</small></p>
-                  `;
-                  successMessage.style.display = 'block';
-                  
-                  // 清空表單和草稿
-                  this.reset();
-                  clearDraft();
-                  updateProgress();
-                  
-                  // 滾動到成功訊息
-                  successMessage.scrollIntoView({ behavior: 'smooth' });
-                  
-                  // 隱藏測試區塊
-                  document.querySelector('.test-section').style.display = 'none';
-              } else {
-                  throw new Error(result.error || '提交失敗，請稍後再試');
+              // 添加所有表單數據
+              for (const [key, value] of Object.entries(data)) {
+                  const input = document.createElement('input');
+                  input.type = 'hidden';
+                  input.name = key;
+                  input.value = value;
+                  form.appendChild(input);
               }
+              
+              document.body.appendChild(form);
+              
+              // 設置接收消息的處理函數
+              window.addEventListener('message', function messageHandler(event) {
+                  try {
+                      const result = JSON.parse(event.data);
+                      
+                      if (result.success) {
+                          successMessage.innerHTML = `
+                              <h4>🎉 報名成功！</h4>
+                              <p>您的報名編號：<strong>${result.registrationNumber}</strong></p>
+                              <p>請保存此編號以便查詢。確認郵件將發送至您的信箱。</p>
+                              <p><small>感謝您的報名，我們期待與您一起享受美好的輕旅行！</small></p>
+                          `;
+                          successMessage.style.display = 'block';
+                          
+                          // 清空表單和草稿
+                          document.getElementById('registrationForm').reset();
+                          clearDraft();
+                          updateProgress();
+                          
+                          // 滾動到成功訊息
+                          successMessage.scrollIntoView({ behavior: 'smooth' });
+                          
+                          // 隱藏測試區塊
+                          document.querySelector('.test-section').style.display = 'none';
+                      } else {
+                          throw new Error(result.error || '提交失敗，請稍後再試');
+                      }
+                  } catch (error) {
+                      errorMessage.innerHTML = `
+                          <h4>❌ 提交失敗</h4>
+                          <p>${error.message}</p>
+                          <p>請檢查網路連線或稍後再試。如果問題持續，請聯絡管理員。</p>
+                          <p><small>您可以按 Ctrl+S 儲存目前填寫的資料作為草稿。</small></p>
+                      `;
+                      errorMessage.style.display = 'block';
+                      errorMessage.scrollIntoView({ behavior: 'smooth' });
+                  } finally {
+                      // 恢復按鈕狀態
+                      submitBtn.disabled = false;
+                      loading.style.display = 'none';
+                      
+                      // 清理
+                      document.body.removeChild(iframe);
+                      document.body.removeChild(form);
+                      window.removeEventListener('message', messageHandler);
+                  }
+              }, {once: true});
+              
+              // 提交表單
+              form.submit();
+              
+              // 設置超時處理
+              setTimeout(() => {
+                  if (document.body.contains(iframe)) {
+                      document.body.removeChild(iframe);
+                      if (document.body.contains(form)) {
+                          document.body.removeChild(form);
+                      }
+                      
+                      errorMessage.innerHTML = `
+                          <h4>❌ 提交超時</h4>
+                          <p>伺服器回應時間過長，請稍後再試。</p>
+                          <p>請檢查網路連線或聯絡管理員。</p>
+                          <p><small>您可以按 Ctrl+S 儲存目前填寫的資料作為草稿。</small></p>
+                      `;
+                      errorMessage.style.display = 'block';
+                      errorMessage.scrollIntoView({ behavior: 'smooth' });
+                      
+                      // 恢復按鈕狀態
+                      submitBtn.disabled = false;
+                      loading.style.display = 'none';
+                  }
+              }, 15000);
               
           } catch (error) {
               console.error('提交錯誤:', error);
@@ -854,7 +971,7 @@
               `;
               errorMessage.style.display = 'block';
               errorMessage.scrollIntoView({ behavior: 'smooth' });
-          } finally {
+              
               // 恢復按鈕狀態
               submitBtn.disabled = false;
               loading.style.display = 'none';
@@ -1543,3 +1660,7 @@
           updateProgress,
           validateFormData
       };
+  </script>
+</body>
+</html>
+
