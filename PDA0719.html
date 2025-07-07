@@ -975,6 +975,1761 @@ function safeSetStyle(element, property, value) {
                   throw new Error(result?.error || '提交失敗，請稍後再試');
               }
           } catch (error) {
+              errorMessage.style.display = 'block';
+              errorMessage.scrollIntoView({ behavior: 'smooth' });
+          } finally {
+              // 恢復按鈕狀態
+              submitBtn.disabled = false;
+              loading.style.display = 'none';
+          }
+      });
+
+      // 備用表單提交方法（使用 iframe）
+      function submitFormFallback(data) {
+          return new Promise((resolve, reject) => {
+              try {
+                  // 創建一個隱藏的 iframe
+                  const iframe = document.createElement('iframe');
+                  iframe.name = 'submit_iframe';
+                  iframe.style.display = 'none';
+                  document.body.appendChild(iframe);
+                  
+                  // 創建表單
+                  const form = document.createElement('form');
+                  form.method = 'POST';
+                  form.action = SCRIPT_URL;
+                  form.target = 'submit_iframe';
+                  
+                  // 添加所有表單數據
+                  for (const [key, value] of Object.entries(data)) {
+                      const input = document.createElement('input');
+                      input.type = 'hidden';
+                      input.name = key;
+                      input.value = value;
+                      form.appendChild(input);
+                  }
+                  
+                  document.body.appendChild(form);
+                  
+                  // 設置超時
+                  const timeout = setTimeout(() => {
+                      if (document.body.contains(iframe)) {
+                          document.body.removeChild(iframe);
+                          if (document.body.contains(form)) {
+                              document.body.removeChild(form);
+                          }
+                          reject(new Error('提交超時，請稍後再試'));
+                      }
+                  }, 15000);
+                  
+                  // 監聽 iframe 載入事件
+                  iframe.onload = function() {
+                      clearTimeout(timeout);
+                      
+                      setTimeout(() => {
+                          // 檢查報名狀態
+                          checkRegistrationStatus(data.idNumber)
+                              .then(result => {
+                                  if (result.success && result.registered) {
+                                      resolve({
+                                          success: true,
+                                          registrationNumber: result.registrationNumber
+                                      });
+                                  } else {
+                                      reject(new Error('無法確認報名狀態'));
+                                  }
+                              })
+                              .catch(error => {
+                                  reject(error);
+                              })
+                              .finally(() => {
+                                  // 清理
+                                  if (document.body.contains(iframe)) {
+                                      document.body.removeChild(iframe);
+                                  }
+                                  if (document.body.contains(form)) {
+                                      document.body.removeChild(form);
+                                  }
+                              });
+                      }, 2000); // 給後端一些處理時間
+                  };
+                  
+                  // 提交表單
+                  form.submit();
+                  
+              } catch (error) {
+                  reject(error);
+              }
+          });
+      }
+
+      // 檢查報名狀態
+      async function checkRegistrationStatus(idNumber) {
+          try {
+              const response = await fetch(`${SCRIPT_URL}?action=check&idNumber=${idNumber}`, {
+                  method: 'GET',
+                  mode: 'cors'
+              });
+              
+              if (!response.ok) {
+                  throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              
+              return await response.json();
+          } catch (error) {
+              console.error('檢查報名狀態錯誤:', error);
+              
+              // 使用備用方法
+              return new Promise((resolve, reject) => {
+                  const script = document.createElement('script');
+                  script.src = `${SCRIPT_URL}?action=check&idNumber=${idNumber}&callback=handleCheckResponse`;
+                  document.body.appendChild(script);
+                  
+                  // 設置超時
+                  const timeout = setTimeout(() => {
+                      if (document.body.contains(script)) {
+                          document.body.removeChild(script);
+                      }
+                      reject(new Error('檢查報名狀態超時'));
+                  }, 5000);
+                  
+                  // 定義回調函數
+                  window.handleCheckResponse = function(response) {
+                      clearTimeout(timeout);
+                      if (document.body.contains(script)) {
+                          document.body.removeChild(script);
+                      }
+                      resolve(response);
+                  };
+              });
+          }
+      }
+
+      // 表單驗證函數
+      function validateFormData(data) {
+          const requiredFields = [
+              { key: 'name', label: '姓名' },
+              { key: 'gender', label: '性別' },
+              { key: 'birthday', label: '出生年月日' },
+              { key: 'idNumber', label: '身分證字號' },
+              { key: 'phone', label: '聯絡電話' },
+              { key: 'emergencyContact', label: '緊急聯絡人姓名' },
+              { key: 'emergencyPhone', label: '緊急聯絡人電話' },
+              { key: 'relationship', label: '與緊急聯絡人關係' },
+              { key: 'identityType', label: '身分別' },
+              { key: 'transportMethod', label: '報到方式' }
+          ];
+          
+          // 檢查必填欄位
+          for (let field of requiredFields) {
+              if (!data[field.key] || data[field.key].trim() === '') {
+                  showFieldError(field.key, `請填寫${field.label}`);
+                  return {
+                      isValid: false,
+                      error: `請填寫必填欄位：${field.label}`
+                  };
+              } else {
+                  hideFieldError(field.key);
+              }
+          }
+          
+          // 身分證字號格式驗證
+          const idPattern = /^[A-Z][12]\d{8}$/;
+          if (!idPattern.test(data.idNumber)) {
+              showFieldError('idNumber', '請輸入正確的身分證字號格式（例：A123456789）');
+              return {
+                  isValid: false,
+                  error: '請輸入正確的身分證字號格式（例：A123456789）'
+              };
+          } else {
+              hideFieldError('idNumber');
+          }
+          
+          // 電話格式驗證
+          const phonePattern = /^[0-9-+().\s]{8,15}$/;
+          if (!phonePattern.test(data.phone)) {
+              showFieldError('phone', '請輸入正確的電話號碼格式');
+              return {
+                  isValid: false,
+                  error: '請輸入正確的電話號碼格式'
+              };
+          } else {
+              hideFieldError('phone');
+          }
+          
+          if (!phonePattern.test(data.emergencyPhone)) {
+              showFieldError('emergencyPhone', '請輸入正確的緊急聯絡人電話格式');
+              return {
+                  isValid: false,
+                  error: '請輸入正確的緊急聯絡人電話格式'
+              };
+          } else {
+              hideFieldError('emergencyPhone');
+          }
+          
+          // 電子郵件格式驗證（如果有填寫）
+          if (data.email && data.email.trim() !== '') {
+              const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              if (!emailPattern.test(data.email)) {
+                  showFieldError('email', '請輸入正確的電子郵件格式');
+                  return {
+                      isValid: false,
+                      error: '請輸入正確的電子郵件格式'
+                  };
+              } else {
+                  hideFieldError('email');
+              }
+          }
+          
+          // 年齡驗證
+          if (data.birthday) {
+              const birthDate = new Date(data.birthday);
+              const today = new Date();
+              const age = today.getFullYear() - birthDate.getFullYear();
+              
+              if (age < 18) {
+                  showFieldError('birthday', '報名者需年滿18歲');
+                  return {
+                      isValid: false,
+                      error: '報名者需年滿18歲'
+                  };
+              } else if (age > 100) {
+                  showFieldError('birthday', '請確認出生年月日是否正確');
+                  return {
+                      isValid: false,
+                      error: '請確認出生年月日是否正確'
+                  };
+              } else {
+                  hideFieldError('birthday');
+              }
+          }
+          
+          return { isValid: true };
+      }
+
+      // 顯示欄位錯誤
+      function showFieldError(fieldName, message) {
+          const field = document.getElementById(fieldName);
+          const errorElement = document.getElementById(fieldName + '-error');
+          
+          if (field) {
+              field.classList.add('field-invalid');
+              field.classList.remove('field-valid');
+          }
+          
+          if (errorElement) {
+              errorElement.textContent = message;
+              errorElement.style.display = 'block';
+          }
+      }
+
+      // 隱藏欄位錯誤
+      function hideFieldError(fieldName) {
+          const field = document.getElementById(fieldName);
+          const errorElement = document.getElementById(fieldName + '-error');
+          
+          if (field) {
+              field.classList.remove('field-invalid');
+              field.classList.add('field-valid');
+          }
+          
+          if (errorElement) {
+              errorElement.style.display = 'none';
+          }
+      }
+
+      // 陪伴需求相關邏輯
+      function setupCompanionLogic() {
+          const companionRadios = document.querySelectorAll('input[name="hasCompanion"]');
+          const companionDetailsGroup = document.getElementById('companionDetailsGroup');
+          const companionBikeGroup = document.getElementById('companionBikeGroup');
+          
+          companionRadios.forEach(radio => {
+              radio.addEventListener('change', function() {
+                  if (this.value === '是') {
+                      companionDetailsGroup.style.display = 'block';
+                      companionBikeGroup.style.display = 'block';
+                  } else {
+                      companionDetailsGroup.style.display = 'none';
+                      companionBikeGroup.style.display = 'none';
+                      // 清空相關欄位
+                      document.getElementById('companionDetails').value = '';
+                      document.querySelectorAll('input[name="companionBikeNeeded"]').forEach(r => r.checked = false);
+                  }
+                  updateProgress();
+              });
+          });
+      }
+
+      // 自動格式化輸入
+      function setupInputFormatting() {
+          // 身分證字號格式化
+          const idInput = document.getElementById('idNumber');
+          idInput.addEventListener('input', function() {
+              this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+              if (this.value.length > 10) {
+                  this.value = this.value.substring(0, 10);
+              }
+              validateField(this);
+          });
+          
+          // 電話號碼格式化
+          const phoneInputs = document.querySelectorAll('input[type="tel"]');
+          phoneInputs.forEach(input => {
+              input.addEventListener('input', function() {
+                  // 移除非數字、非連字符、非括號的字符
+                  this.value = this.value.replace(/[^0-9-+().\s]/g, '');
+                  validateField(this);
+              });
+          });
+          
+          // 姓名輸入限制
+          const nameInputs = document.querySelectorAll('#name, #emergencyContact');
+          nameInputs.forEach(input => {
+              input.addEventListener('input', function() {
+                  // 移除數字和特殊符號
+                  this.value = this.value.replace(/[0-9!@#$%^&*()_+=\[\]{};':"\\|,.<>\/?]/g, '');
+                  validateField(this);
+              });
+          });
+      }
+
+      // 單一欄位驗證
+      function validateField(field) {
+          const fieldName = field.name || field.id;
+          const value = field.value.trim();
+          
+          // 清除之前的錯誤狀態
+          hideFieldError(fieldName);
+          
+          if (field.hasAttribute('required') && !value) {
+              showFieldError(fieldName, '此欄位為必填');
+              return false;
+          }
+          
+          // 特定欄位驗證
+          switch (fieldName) {
+              case 'idNumber':
+                  if (value && !/^[A-Z][12]\d{8}$/.test(value)) {
+                      showFieldError(fieldName, '身分證字號格式錯誤');
+                      return false;
+                  }
+                  break;
+                  
+              case 'email':
+                  if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+                      showFieldError(fieldName, '電子郵件格式錯誤');
+                      return false;
+                  }
+                  break;
+                  
+              case 'phone':
+              case 'emergencyPhone':
+                  if (value && !/^[0-9-+().\s]{8,15}$/.test(value)) {
+                      showFieldError(fieldName, '電話號碼格式錯誤');
+                      return false;
+                  }
+                  break;
+          }
+          
+          return true;
+      }
+
+      // 自動計算年齡級距
+      function setupAgeCalculation() {
+          const birthdayInput = document.getElementById('birthday');
+          const ageGroupSelect = document.getElementById('ageGroup');
+          
+          birthdayInput.addEventListener('change', function() {
+              if (this.value) {
+                  const birthDate = new Date(this.value);
+                  const today = new Date();
+                  const age = today.getFullYear() - birthDate.getFullYear();
+                  
+                  // 調整月份和日期
+                  const monthDiff = today.getMonth() - birthDate.getMonth();
+                  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                      age--;
+                  }
+                  
+                  let ageGroup = '';
+                  if (age >= 18 && age <= 30) {
+                      ageGroup = '18-30歲';
+                  } else if (age >= 31 && age <= 45) {
+                      ageGroup = '31-45歲';
+                  } else if (age >= 46 && age <= 60) {
+                      ageGroup = '46-60歲';
+                  } else if (age >= 61) {
+                      ageGroup = '61歲以上';
+                  }
+                  
+                  if (ageGroup) {
+                      ageGroupSelect.value = ageGroup;
+                  }
+              }
+              validateField(this);
+              updateProgress();
+          });
+      }
+
+      // 進度更新
+      function updateProgress() {
+          const requiredFields = document.querySelectorAll('input[required], select[required]');
+          const radioGroups = {};
+          let completedFields = 0;
+          let totalFields = 0;
+          
+          // 處理一般必填欄位
+          requiredFields.forEach(field => {
+              if (field.type === 'radio') {
+                  const groupName = field.name;
+                  if (!radioGroups[groupName]) {
+                      radioGroups[groupName] = false;
+                      totalFields++;
+                  }
+                  if (field.checked) {
+                      radioGroups[groupName] = true;
+                  }
+              } else {
+                  totalFields++;
+                  if (field.value && field.value.trim() !== '') {
+                      completedFields++;
+                  }
+              }
+          });
+          
+          // 計算已完成的 radio group
+          Object.values(radioGroups).forEach(completed => {
+              if (completed) completedFields++;
+          });
+          
+          const progress = totalFields > 0 ? Math.round((completedFields / totalFields) * 100) : 0;
+          
+          // 更新進度條
+          const progressFill = document.getElementById('progressFill');
+          const progressText = document.getElementById('progressText');
+          const submitBtn = document.getElementById('submitBtn');
+          
+          if (progressFill) {
+              progressFill.style.width = progress + '%';
+          }
+          
+          if (progressText) {
+              progressText.textContent = `填寫進度: ${progress}%`;
+          }
+          
+          // 更新提交按鈕
+          if (submitBtn) {
+              if (progress === 100) {
+                  submitBtn.style.background = 'linear-gradient(45deg, #28a745, #20c997)';
+                  submitBtn.innerHTML = '🎉 完成報名';
+              } else {
+                  submitBtn.style.background = 'linear-gradient(45deg, #2196F3, #21CBF3)';
+                  submitBtn.innerHTML = `🚀 提交報名 (${progress}%)`;
+              }
+          }
+          
+          // 更新表單區塊狀態
+          updateSectionStatus();
+      }
+
+      // 更新表單區塊狀態
+      function updateSectionStatus() {
+          const sections = document.querySelectorAll('.form-section');
+          
+          sections.forEach(section => {
+              const requiredInputs = section.querySelectorAll('input[required], select[required]');
+              const radioGroups = {};
+              let sectionComplete = true;
+              
+              requiredInputs.forEach(input => {
+                  if (input.type === 'radio') {
+                      const groupName = input.name;
+                      if (!radioGroups[groupName]) {
+                          radioGroups[groupName] = false;
+                      }
+                      if (input.checked) {
+                          radioGroups[groupName] = true;
+                      }
+                  } else {
+                      if (!input.value || input.value.trim() === '') {
+                          sectionComplete = false;
+                      }
+                  }
+              });
+              
+              // 檢查 radio groups
+              Object.values(radioGroups).forEach(completed => {
+                  if (!completed) sectionComplete = false;
+              });
+              
+              // 更新區塊樣式
+              if (sectionComplete && requiredInputs.length > 0) {
+                  section.style.borderLeft = '4px solid #28a745';
+                  section.querySelector('h3').style.color = '#28a745';
+              } else {
+                  section.style.borderLeft = '1px solid #e0e0e0';
+                  section.querySelector('h3').style.color = '#2196F3';
+              }
+          });
+      }
+
+      // 本地儲存功能（自動儲存草稿）
+      function saveFormData() {
+          const form = document.getElementById('registrationForm');
+          const formData = new FormData(form);
+          const data = {};
+          
+          for (let [key, value] of formData.entries()) {
+              data[key] = value;
+          }
+          
+          // 儲存 radio button 狀態
+          const radioInputs = form.querySelectorAll('input[type="radio"]');
+          radioInputs.forEach(radio => {
+              if (radio.checked) {
+                  data[radio.name] = radio.value;
+              }
+          });
+          
+          localStorage.setItem('taoyuan_registration_draft', JSON.stringify(data));
+          console.log('表單資料已自動儲存');
+      }
+
+      function loadFormData() {
+          const savedData = localStorage.getItem('taoyuan_registration_draft');
+          if (savedData) {
+              try {
+                  const data = JSON.parse(savedData);
+                  let hasData = false;
+                  
+                  for (let [key, value] of Object.entries(data)) {
+                      if (value && value.trim() !== '') {
+                          hasData = true;
+                          const element = document.querySelector(`[name="${key}"]`);
+                          
+                          if (element) {
+                              if (element.type === 'radio') {
+                                  const radio = document.querySelector(`[name="${key}"][value="${value}"]`);
+                                  if (radio) {
+                                      radio.checked = true;
+                                      // 觸發 change 事件
+                                      radio.dispatchEvent(new Event('change'));
+                                  }
+                              } else {
+                                  element.value = value;
+                              }
+                          }
+                      }
+                  }
+                  
+                  if (hasData) {
+                      // 顯示草稿提示
+                      const draftNotice = document.getElementById('draftNotice');
+                      if (draftNotice) {
+                          draftNotice.style.display = 'block';
+                      }
+                      
+                      // 更新進度
+                      updateProgress();
+                      
+                      console.log('已載入儲存的表單資料');
+                  }
+              } catch (error) {
+                  console.error('載入表單資料失敗:', error);
+                  localStorage.removeItem('taoyuan_registration_draft');
+              }
+          }
+      }
+
+      // 清除草稿
+      function clearDraft() {
+          localStorage.removeItem('taoyuan_registration_draft');
+          const draftNotice = document.getElementById('draftNotice');
+          if (draftNotice) {
+              draftNotice.style.display = 'none';
+          }
+          
+          // 顯示清除提示
+          showToast('📝 草稿已清除');
+      }
+
+      // 顯示提示訊息
+      function showToast(message, type = 'info') {
+          const toast = document.createElement('div');
+          toast.innerHTML = message;
+          toast.style.cssText = `
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              background: ${type === 'success' ? '#28a745' : type === 'error' ? '#dc3545' : '#2196F3'};
+              color: white;
+              padding: 12px 20px;
+              border-radius: 8px;
+              z-index: 1000;
+              font-weight: bold;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+              animation: slideInRight 0.3s ease;
+          `;
+          
+          // 添加動畫樣式
+          const style = document.createElement('style');
+          style.textContent = `
+              @keyframes slideInRight {
+                  from { transform: translateX(100%); opacity: 0; }
+                  to { transform: translateX(0); opacity: 1; }
+              }
+          `;
+          document.head.appendChild(style);
+          
+          document.body.appendChild(toast);
+          
+          setTimeout(() => {
+              if (document.body.contains(toast)) {
+                  document.body.removeChild(toast);
+              }
+              if (document.head.contains(style)) {
+                  document.head.removeChild(style);
+              }
+          }, 3000);
+      }
+
+      // 鍵盤快捷鍵
+      function setupKeyboardShortcuts() {
+          document.addEventListener('keydown', function(e) {
+              // Ctrl + S 儲存草稿
+              if (e.ctrlKey && e.key === 's') {
+                  e.preventDefault();
+                  saveFormData();
+                  showToast('💾 草稿已儲存', 'success');
+              }
+              
+              // Ctrl + Enter 提交表單
+              if (e.ctrlKey && e.key === 'Enter') {
+                  e.preventDefault();
+                  const submitBtn = document.getElementById('submitBtn');
+                  if (submitBtn && !submitBtn.disabled) {
+                      submitBtn.click();
+                  }
+              }
+              
+              // ESC 清除當前欄位錯誤
+              if (e.key === 'Escape') {
+                  const activeElement = document.activeElement;
+                  if (activeElement && activeElement.name) {
+                      hideFieldError(activeElement.name);
+                  }
+              }
+          });
+      }
+
+      // 表單欄位焦點效果
+      function setupFocusEffects() {
+          const formInputs = document.querySelectorAll('input, select, textarea');
+          formInputs.forEach(input => {
+              input.addEventListener('focus', function() {
+                  this.parentElement.style.transform = 'scale(1.02)';
+                  this.parentElement.style.transition = 'transform 0.2s ease';
+              });
+              
+              input.addEventListener('blur', function() {
+                  this.parentElement.style.transform = 'scale(1)';
+                  validateField(this);
+              });
+              
+              // 即時驗證
+              input.addEventListener('input', function() {
+                  clearTimeout(this.validationTimer);
+                  this.validationTimer = setTimeout(() => {
+                      validateField(this);
+                      updateProgress();
+                  }, 500);
+              });
+              
+              input.addEventListener('change', function() {
+                  validateField(this);
+                  updateProgress();
+              });
+          });
+      }
+
+      // 打印功能
+      function printForm() {
+          const printContent = document.querySelector('.container').cloneNode(true);
+          
+          // 移除不需要的元素
+          const elementsToRemove = printContent.querySelectorAll('.test-section, .submit-section, .loading, .success-message, .error-message, button');
+          elementsToRemove.forEach(el => el.remove());
+          
+          const printWindow = window.open('', '_blank');
+          printWindow.document.write(`
+              <!DOCTYPE html>
+              <html>
+              <head>
+                  <title>珍愛桃園輕旅行 - 報名表單</title>
+                  <style>
+                      body { 
+                          font-family: 'Microsoft JhengHei', Arial, sans-serif; 
+                          line-height: 1.6;
+                          color: #333;
+                      }
+                      .container { 
+                          max-width: 800px; 
+                          margin: 0 auto; 
+                          padding: 20px;
+                      }
+                      .form-section { 
+                          border: 1px solid #ddd; 
+                          margin: 20px 0; 
+                          padding: 15px; 
+                          page-break-inside: avoid;
+                      }
+                      .form-section h3 {
+                          color: #2196F3;
+                          border-bottom: 2px solid #ddd;
+                          padding-bottom: 10px;
+                      }
+                      input, select, textarea { 
+                          border: none; 
+                          border-bottom: 1px solid #ddd; 
+                          padding: 5px;
+                          background: transparent;
+                      }
+                      .form-row {
+                          display: flex;
+                          gap: 20px;
+                      }
+                      .form-group {
+                          flex: 1;
+                          margin-bottom: 15px;
+                      }
+                      label {
+                          font-weight: bold;
+                          display: block;
+                          margin-bottom: 5px;
+                      }
+                      .radio-group {
+                          display: flex;
+                          gap: 15px;
+                          flex-wrap: wrap;
+                      }
+                      @media print {
+                          body { font-size: 12px; }
+                          .form-section { page-break-inside: avoid; }
+                      }
+                  </style>
+              </head>
+              <body>${printContent.innerHTML}</body>
+              </html>
+          `);
+          printWindow.document.close();
+          printWindow.print();
+      }
+
+      // 初始化所有功能
+      function initializeForm() {
+          console.log('初始化表單功能...');
+          
+          // 設定各種功能
+          setupCompanionLogic();
+          setupInputFormatting();
+          setupAgeCalculation();
+          setupFocusEffects();
+          setupKeyboardShortcuts();
+          
+          // 載入草稿資料
+          loadFormData();
+          
+          // 初始化進度
+          updateProgress();
+          
+          // 設定自動儲存
+          setInterval(saveFormData, 30000); // 每30秒自動儲存
+          
+          // 頁面離開前儲存
+          window.addEventListener('beforeunload', function() {
+              saveFormData();
+          });
+          
+          // 表單提交成功後清除草稿
+          document.getElementById('registrationForm').addEventListener('submit', function() {
+              setTimeout(() => {
+                  if (document.getElementById('successMessage').style.display === 'block') {
+                      clearDraft();
+                  }
+              }, 1000);
+          });
+          
+          console.log('表單初始化完成！');
+      }
+
+      // 頁面載入完成後初始化
+      document.addEventListener('DOMContentLoaded', function() {
+          initializeForm();
+          
+          // 添加一些使用提示
+          console.log(`
+              🎯 表單功能說明：
+              • Ctrl + S：儲存草稿
+              • Ctrl + Enter：提交表單
+              • ESC：清除當前欄位錯誤
+              • 系統會每30秒自動儲存草稿
+              • 填寫進度會即時更新
+          `);
+      });
+
+      // 修正表單提交處理
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('registrationForm');
+    if (form) {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = safeGetElement('submitBtn');
+            const loading = safeGetElement('loading');
+            const successMessage = safeGetElement('successMessage');
+            const errorMessage = safeGetElement('errorMessage');
+            
+            // 隱藏之前的訊息
+            if (successMessage) successMessage.style.display = 'none';
+            if (errorMessage) errorMessage.style.display = 'none';
+            
+            // 顯示載入狀態
+            if (submitBtn) submitBtn.disabled = true;
+            if (loading) loading.style.display = 'block';
+            
+            // 其餘表單提交邏輯...
+        });
+    } else {
+        console.error('找不到註冊表單元素');
+    }
+});
+
+
+      // 導出一些函數供外部使用
+      window.formUtils = {
+          saveFormData,
+          loadFormData,
+          clearDraft,
+          printForm,
+          updateProgress,
+          validateFormData
+      };
+  </script>
+</body>
+</html>
+
+
+
+          padding: 25px;
+          border: 1px solid #e0e0e0;
+          border-radius: 10px;
+          background: #fafafa;
+          transition: all 0.3s ease;
+      }
+
+      .form-section:hover {
+          box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+      }
+
+      .form-section h3 {
+          color: #2196F3;
+          margin-bottom: 20px;
+          padding-bottom: 10px;
+          border-bottom: 2px solid #e0e0e0;
+          font-size: 1.3em;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+      }
+
+      .form-group {
+          margin-bottom: 20px;
+      }
+
+      .form-row {
+          display: flex;
+          gap: 15px;
+          flex-wrap: wrap;
+      }
+
+      .form-row .form-group {
+          flex: 1;
+          min-width: 200px;
+      }
+
+      label {
+          display: block;
+          margin-bottom: 8px;
+          font-weight: bold;
+          color: #555;
+      }
+
+      .required {
+          color: #e74c3c;
+      }
+
+      input[type="text"],
+      input[type="tel"],
+      input[type="email"],
+      input[type="date"],
+      select,
+      textarea {
+          width: 100%;
+          padding: 12px;
+          border: 2px solid #ddd;
+          border-radius: 8px;
+          font-size: 16px;
+          transition: all 0.3s ease;
+          background: white;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+          outline: none;
+          border-color: #2196F3;
+          box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+          transform: translateY(-1px);
+      }
+
+      textarea {
+          resize: vertical;
+          min-height: 100px;
+      }
+
+      .radio-group,
+      .checkbox-group {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 15px;
+          margin-top: 10px;
+      }
+
+      .radio-item,
+      .checkbox-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 15px;
+          border: 2px solid #ddd;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          background: white;
+          min-width: 120px;
+      }
+
+      .radio-item:hover,
+      .checkbox-item:hover {
+          border-color: #2196F3;
+          background: #f0f8ff;
+          transform: translateY(-2px);
+      }
+
+      .radio-item input[type="radio"]:checked + label,
+      .checkbox-item input[type="checkbox"]:checked + label {
+          color: #2196F3;
+          font-weight: bold;
+      }
+
+      .radio-item input[type="radio"]:checked,
+      .checkbox-item input[type="checkbox"]:checked {
+          accent-color: #2196F3;
+      }
+
+      .submit-section {
+          text-align: center;
+          padding: 30px;
+          background: #f8f9fa;
+          margin-top: 30px;
+      }
+
+      .submit-btn {
+          background: linear-gradient(45deg, #2196F3, #21CBF3);
+          color: white;
+          padding: 15px 40px;
+          border: none;
+          border-radius: 50px;
+          font-size: 1.2em;
+          font-weight: bold;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
+      }
+
+      .submit-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4);
+      }
+
+      .submit-btn:disabled {
+          background: #ccc;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: none;
+      }
+
+      .loading {
+          display: none;
+          text-align: center;
+          padding: 20px;
+      }
+
+      .spinner {
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #2196F3;
+          border-radius: 50%;
+          width: 40px;
+          height: 40px;
+          animation: spin 1s linear infinite;
+          margin: 0 auto 10px;
+      }
+
+      @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+      }
+
+      .success-message,
+      .error-message {
+          padding: 20px;
+          border-radius: 8px;
+          margin: 20px 0;
+          display: none;
+          animation: slideIn 0.5s ease;
+      }
+
+      @keyframes slideIn {
+          from { opacity: 0; transform: translateY(-20px); }
+          to { opacity: 1; transform: translateY(0); }
+      }
+
+      .success-message {
+          background: #d4edda;
+          color: #155724;
+          border: 1px solid #c3e6cb;
+          border-left: 4px solid #28a745;
+      }
+
+      .error-message {
+          background: #f8d7da;
+          color: #721c24;
+          border: 1px solid #f5c6cb;
+          border-left: 4px solid #dc3545;
+      }
+
+      .test-section {
+          background: #fff3cd;
+          border: 1px solid #ffeaa7;
+          border-radius: 8px;
+          padding: 15px;
+          margin: 20px;
+          text-align: center;
+      }
+
+      .test-btn {
+          background: #ffc107;
+          color: #212529;
+          padding: 8px 16px;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          margin: 5px;
+          transition: all 0.3s ease;
+      }
+
+      .test-btn:hover {
+          background: #e0a800;
+          transform: translateY(-1px);
+      }
+
+      .progress-bar {
+          width: 100%;
+          height: 6px;
+          background: #e0e0e0;
+          border-radius: 3px;
+          overflow: hidden;
+          margin: 20px 0;
+      }
+
+      .progress-fill {
+          height: 100%;
+          background: linear-gradient(45deg, #2196F3, #21CBF3);
+          width: 0%;
+          transition: width 0.3s ease;
+          border-radius: 3px;
+      }
+
+      .progress-text {
+          text-align: center;
+          margin-top: 10px;
+          font-weight: bold;
+          color: #2196F3;
+      }
+
+      .draft-notice {
+          background: #e3f2fd;
+          border: 1px solid #2196F3;
+          border-radius: 8px;
+          padding: 15px;
+          margin: 20px;
+          text-align: center;
+          display: none;
+      }
+
+      .validation-error {
+          color: #dc3545;
+          font-size: 0.9em;
+          margin-top: 5px;
+          display: none;
+      }
+
+      .field-valid {
+          border-color: #28a745 !important;
+      }
+
+      .field-invalid {
+          border-color: #dc3545 !important;
+      }
+
+      @media (max-width: 768px) {
+          .container {
+              margin: 10px;
+              border-radius: 10px;
+          }
+
+          .header h1 {
+              font-size: 2em;
+          }
+
+          .form-container {
+              padding: 20px;
+          }
+
+          .form-row {
+              flex-direction: column;
+          }
+
+          .radio-group,
+          .checkbox-group {
+              flex-direction: column;
+          }
+
+          .radio-item,
+          .checkbox-item {
+              min-width: auto;
+          }
+      }
+
+      @media print {
+          body {
+              background: white;
+              padding: 0;
+          }
+          
+          .test-section,
+          .submit-section,
+          .loading,
+          .success-message,
+          .error-message {
+              display: none !important;
+          }
+          
+          .container {
+              box-shadow: none;
+              border: 1px solid #ddd;
+          }
+      }
+  </style>
+</head>
+<body>
+  <div class="container">
+      <div class="header">
+          <h1>🚴‍♀️ 珍愛桃園輕旅行</h1>
+          <p>歡迎報名參加我們的特色自行車體驗活動</p>
+      </div>
+
+      <!-- 測試區塊 -->
+      <!-- <div class="test-section">
+          <h4>🔧 系統測試</h4>
+          <p>部署前請先測試 API 連接：</p>
+          <button class="test-btn" onclick="testConnection()">測試連接</button>
+          <button class="test-btn" onclick="testStats()">測試統計</button>
+          <button class="test-btn" onclick="clearDraft()">清除草稿</button>
+          <div id="testResult" style="margin-top: 10px; font-weight: bold;"></div>
+      </div> -->
+
+      <!-- 草稿提示 -->
+      <div class="draft-notice" id="draftNotice">
+          <h4>📝 發現已儲存的草稿</h4>
+          <p>系統已自動載入您之前填寫的資料</p>
+          <button class="test-btn" onclick="clearDraft()">清除草稿</button>
+      </div>
+
+      <!-- 進度條 -->
+      <div style="padding: 0 20px;">
+          <div class="progress-bar">
+              <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <div class="progress-text" id="progressText">填寫進度: 0%</div>
+      </div>
+
+      <div class="event-info">
+          <h3>📅 活動資訊</h3>
+          <p><strong>日期：</strong>7/19 (六) 13:15-17:00</p>
+          <p><strong>地點：</strong>太平洋自行車博物館</p>
+          <p><strong>報到方式：</strong></p>
+          <ul style="margin-left: 20px; margin-top: 5px;">
+              <li>13:15 富岡車站報到搭乘復康巴士</li>
+              <li>14:00 自行抵達太平洋自行車博物館</li>
+          </ul>
+      </div>
+
+      <form id="registrationForm" class="form-container">
+          <!-- 基本資料 -->
+          <div class="form-section">
+              <h3>👤 基本資料</h3>
+              <div class="form-row">
+                  <div class="form-group">
+                      <label for="name">姓名 <span class="required">*</span></label>
+                      <input type="text" id="name" name="name" required>
+                      <div class="validation-error" id="name-error"></div>
+                  </div>
+                  <div class="form-group">
+                      <label for="gender">性別 <span class="required">*</span></label>
+                      <select id="gender" name="gender" required>
+                          <option value="">請選擇</option>
+                          <option value="男">男</option>
+                          <option value="女">女</option>
+                      </select>
+                      <div class="validation-error" id="gender-error"></div>
+                  </div>
+              </div>
+
+              <div class="form-row">
+                  <div class="form-group">
+                      <label for="birthday">出生年月日 <span class="required">*</span></label>
+                      <input type="date" id="birthday" name="birthday" required>
+                      <div class="validation-error" id="birthday-error"></div>
+                  </div>
+                  <div class="form-group">
+                      <label for="idNumber">身分證字號 <span class="required">*</span></label>
+                      <input type="text" id="idNumber" name="idNumber" required maxlength="10" placeholder="例：A123456789">
+                      <div class="validation-error" id="idNumber-error"></div>
+                  </div>
+              </div>
+
+              <div class="form-row">
+                  <div class="form-group">
+                      <label for="phone">聯絡電話 <span class="required">*</span></label>
+                      <input type="tel" id="phone" name="phone" required placeholder="例：0912345678">
+                      <div class="validation-error" id="phone-error"></div>
+                  </div>
+                  <div class="form-group">
+                      <label for="email">電子郵件</label>
+                      <input type="email" id="email" name="email" placeholder="example@email.com">
+                      <div class="validation-error" id="email-error"></div>
+                  </div>
+              </div>
+          </div>
+
+          <!-- 緊急聯絡人 -->
+          <div class="form-section">
+              <h3>🚨 緊急聯絡人</h3>
+              <div class="form-row">
+                  <div class="form-group">
+                      <label for="emergencyContact">緊急聯絡人姓名 <span class="required">*</span></label>
+                      <input type="text" id="emergencyContact" name="emergencyContact" required>
+                      <div class="validation-error" id="emergencyContact-error"></div>
+                  </div>
+                  <div class="form-group">
+                      <label for="emergencyPhone">緊急聯絡人電話 <span class="required">*</span></label>
+                      <input type="tel" id="emergencyPhone" name="emergencyPhone" required>
+                      <div class="validation-error" id="emergencyPhone-error"></div>
+                  </div>
+              </div>
+              <div class="form-group">
+                  <label for="relationship">與緊急聯絡人關係 <span class="required">*</span></label>
+                  <select id="relationship" name="relationship" required>
+                      <option value="">請選擇</option>
+                      <option value="配偶">配偶</option>
+                      <option value="父母">父母</option>
+                      <option value="子女">子女</option>
+                      <option value="兄弟姊妹">兄弟姊妹</option>
+                      <option value="朋友">朋友</option>
+                      <option value="其他">其他</option>
+                  </select>
+                  <div class="validation-error" id="relationship-error"></div>
+              </div>
+          </div>
+
+          <!-- 身分資訊 -->
+          <div class="form-section">
+              <h3>🆔 身分資訊</h3>
+              <div class="form-group">
+                  <label>身分別 <span class="required">*</span></label>
+                  <div class="radio-group">
+                      <div class="radio-item">
+                          <input type="radio" id="identity1" name="identityType" value="身心障礙者" required>
+                          <label for="identity1">身心障礙者</label>
+                      </div>
+                      <div class="radio-item">
+                          <input type="radio" id="identity2" name="identityType" value="陪伴者" required>
+                          <label for="identity2">陪伴者</label>
+                      </div>
+                  </div>
+                  <div class="validation-error" id="identityType-error"></div>
+              </div>
+
+              <div class="form-group">
+                  <label for="companionInfo">陪伴親友資訊</label>
+                  <textarea id="companionInfo" name="companionInfo" placeholder="如需陪伴，請填寫陪伴者相關資訊"></textarea>
+              </div>
+
+              <div class="form-group">
+                  <label for="disabilityInfo">障別及障度</label>
+                  <input type="text" id="disabilityInfo" name="disabilityInfo" placeholder="請填寫障別及障度資訊">
+              </div>
+
+              <div class="form-group">
+                  <label for="ageGroup">年齡級距</label>
+                  <select id="ageGroup" name="ageGroup">
+                      <option value="">請選擇</option>
+                      <option value="18-30歲">18-30歲</option>
+                      <option value="31-45歲">31-45歲</option>
+                      <option value="46-60歲">46-60歲</option>
+                      <option value="61歲以上">61歲以上</option>
+                  </select>
+              </div>
+          </div>
+
+          <!-- 活動相關 -->
+          <div class="form-section">
+              <h3>🚴‍♂️ 活動相關資訊</h3>
+              <div class="form-group">
+                  <label>報到方式 <span class="required">*</span></label>
+                  <div class="radio-group">
+                      <div class="radio-item">
+                          <input type="radio" id="transport1" name="transportMethod" value="復康巴士" required>
+                          <label for="transport1">13:15 富岡車站搭乘復康巴士</label>
+                      </div>
+                      <div class="radio-item">
+                          <input type="radio" id="transport2" name="transportMethod" value="自行抵達" required>
+                          <label for="transport2">14:00 自行抵達博物館</label>
+                      </div>
+                  </div>
+                  <div class="validation-error" id="transportMethod-error"></div>
+              </div>
+
+              <div class="form-row">
+                  <div class="form-group">
+                      <label for="bikeExperience">自行車經驗</label>
+                      <select id="bikeExperience" name="bikeExperience">
+                          <option value="">請選擇</option>
+                          <option value="無經驗">無經驗</option>
+                          <option value="初學者">初學者</option>
+                          <option value="有經驗">有經驗</option>
+                          <option value="很有經驗">很有經驗</option>
+                      </select>
+                  </div>
+                  <div class="form-group">
+                      <label for="bikeType">使用車種</label>
+                      <select id="bikeType" name="bikeType">
+                          <option value="">請選擇</option>
+                          <option value="一般自行車">一般自行車</option>
+                          <option value="電動自行車">電動自行車</option>
+                          <option value="三輪車">三輪車</option>
+                          <option value="手搖車">手搖車</option>
+                          <option value="其他">其他</option>
+                      </select>
+                  </div>
+              </div>
+          </div>
+
+          <!-- 健康狀況 -->
+          <div class="form-section">
+              <h3>🏥 健康狀況評估</h3>
+              <div class="form-group">
+                  <label for="assistiveDevice">使用輔具</label>
+                  <input type="text" id="assistiveDevice" name="assistiveDevice" placeholder="如：輪椅、助行器、拐杖等">
+              </div>
+
+              <div class="form-row">
+                  <div class="form-group">
+                      <label for="mobilityStatus">移位狀況</label>
+                      <select id="mobilityStatus" name="mobilityStatus">
+                          <option value="">請選擇</option>
+                          <option value="可獨立移位">可獨立移位</option>
+                          <option value="需部分協助">需部分協助</option>
+                          <option value="需完全協助">需完全協助</option>
+                      </select>
+                  </div>
+                  <div class="form-group">
+                      <label for="upperLimbStatus">上肢情況</label>
+                      <select id="upperLimbStatus" name="upperLimbStatus">
+                          <option value="">請選擇</option>
+                          <option value="正常">正常</option>
+                          <option value="輕度障礙">輕度障礙</option>
+                          <option value="中度障礙">中度障礙</option>
+                          <option value="重度障礙">重度障礙</option>
+                      </select>
+                  </div>
+              </div>
+
+              <div class="form-group">
+                  <label for="lowerLimbStatus">下肢情況</label>
+                  <select id="lowerLimbStatus" name="lowerLimbStatus">
+                      <option value="">請選擇</option>
+                      <option value="正常">正常</option>
+                      <option value="輕度障礙">輕度障礙</option>
+                      <option value="中度障礙">中度障礙</option>
+                      <option value="重度障礙">重度障礙</option>
+                  </select>
+              </div>
+
+              <div class="form-group">
+                  <label for="medicalConditions">疾病史/過敏史</label>
+                  <textarea id="medicalConditions" name="medicalConditions" placeholder="請詳細說明相關病史或過敏情況"></textarea>
+              </div>
+          </div>
+
+          <!-- 陪伴需求 -->
+          <div class="form-section">
+              <h3>👥 陪伴需求</h3>
+              <div class="form-group">
+                  <label>是否需要親友陪伴</label>
+                  <div class="radio-group">
+                      <div class="radio-item">
+                          <input type="radio" id="companion1" name="hasCompanion" value="是">
+                          <label for="companion1">是</label>
+                      </div>
+                      <div class="radio-item">
+                          <input type="radio" id="companion2" name="hasCompanion" value="否">
+                          <label for="companion2">否</label>
+                      </div>
+                  </div>
+              </div>
+
+              <div class="form-group" id="companionDetailsGroup" style="display: none;">
+                  <label for="companionDetails">陪伴詳情</label>
+                  <textarea id="companionDetails" name="companionDetails" placeholder="如需陪伴，請說明陪伴者資訊及需求"></textarea>
+              </div>
+
+              <div class="form-group" id="companionBikeGroup" style="display: none;">
+                  <label>陪伴親友是否需要單車</label>
+                  <div class="radio-group">
+                      <div class="radio-item">
+                          <input type="radio" id="companionBike1" name="companionBikeNeeded" value="需要">
+                          <label for="companionBike1">需要</label>
+                      </div>
+                      <div class="radio-item">
+                          <input type="radio" id="companionBike2" name="companionBikeNeeded" value="不需要">
+                          <label for="companionBike2">不需要</label>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          <!-- 其他需求 -->
+          <div class="form-section">
+              <h3>📝 其他資訊</h3>
+              <div class="form-group">
+                  <label>是否參加暖身活動</label>
+                  <div class="radio-group">
+                      <div class="radio-item">
+                          <input type="radio" id="warmup1" name="warmupSession" value="參加">
+                          <label for="warmup1">參加</label>
+                      </div>
+                      <div class="radio-item">
+                          <input type="radio" id="warmup2" name="warmupSession" value="不參加">
+                          <label for="warmup2">不參加</label>
+                      </div>
+                  </div>
+              </div>
+
+              <div class="form-group">
+                  <label for="specialNotes">特殊注意事項</label>
+                  <textarea id="specialNotes" name="specialNotes" placeholder="請說明任何需要特別注意的事項"></textarea>
+              </div>
+
+              <div class="form-group">
+                  <label for="specialNeeds">特殊需求</label>
+                  <textarea id="specialNeeds" name="specialNeeds" placeholder="請說明您的特殊需求，我們會盡力配合"></textarea>
+              </div>
+
+              <div class="form-group">
+                  <label for="remarks">備註</label>
+                  <textarea id="remarks" name="remarks" placeholder="其他想要補充的資訊"></textarea>
+              </div>
+          </div>
+
+          <div class="success-message" id="successMessage"></div>
+          <div class="error-message" id="errorMessage"></div>
+
+          <div class="loading" id="loading">
+              <div class="spinner"></div>
+              <p>正在提交報名資料，請稍候...</p>
+          </div>
+
+          <div class="submit-section">
+              <button type="submit" class="submit-btn" id="submitBtn">
+                  🚀 提交報名
+              </button>
+              <p style="margin-top: 15px; color: #666; font-size: 0.9em;">
+                  提交前請確認所有資料正確無誤<br>
+                  <small>系統會自動儲存您的填寫進度</small>
+              </p>
+          </div>
+      </form>
+  </div>
+
+  <script>
+// 添加到 <script> 標籤開始處
+window.addEventListener('error', function(event) {
+    console.error('全局錯誤捕獲:', event.message, event.filename, event.lineno);
+});
+
+// 添加安全的 DOM 元素訪問函數
+function safeGetElement(id) {
+    const element = document.getElementById(id);
+    if (!element) {
+        console.warn(`找不到 ID 為 "${id}" 的元素`);
+    }
+    return element;
+}
+
+// 安全地設置元素樣式
+function safeSetStyle(element, property, value) {
+    if (element && element.style) {
+        element.style[property] = value;
+    }
+}
+
+      // Google Apps Script Web App URL - 請替換為您的實際 URL
+      const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxlYEvkH1C4r8cgYszu8bBNzaprMHVehmaERgDWoZ0x4BKWXNndy4V-RNlalUKp3sjDFg/exec';
+
+      // 全域變數
+      let formProgress = 0;
+      let autoSaveTimer = null;
+
+      // 測試連接功能
+      async function testConnection() {
+          const testResult = document.getElementById('testResult');
+          testResult.innerHTML = '🔄 測試中...';
+          testResult.style.color = '#007bff';
+
+          try {
+              const response = await fetch(`${SCRIPT_URL}?action=test`, {
+                  method: 'GET',
+                  mode: 'cors'
+              });
+              
+              if (!response.ok) {
+                  throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              
+              const result = await response.json();
+              
+              if (result && result.success) {
+                  testResult.innerHTML = '✅ API 連接成功！';
+                  testResult.style.color = '#28a745';
+              } else {
+                  testResult.innerHTML = '❌ API 連接失敗：' + (result?.error || '未知錯誤');
+                  testResult.style.color = '#dc3545';
+              }
+          } catch (error) {
+              console.error('測試連接錯誤:', error);
+              
+              // 嘗試使用備用方法
+              testConnectionFallback();
+          }
+      }
+
+      // 備用測試連接方法
+      function testConnectionFallback() {
+          const testResult = document.getElementById('testResult');
+          testResult.innerHTML = '🔄 使用備用方法測試中...';
+          
+          // 使用 JSONP 方式處理 CORS 問題
+          const script = document.createElement('script');
+          script.src = `${SCRIPT_URL}?action=test&callback=handleTestResponse`;
+          document.body.appendChild(script);
+          
+          // 設置超時
+          window.testTimeout = setTimeout(() => {
+              testResult.innerHTML = '❌ API 連接失敗：請檢查 SCRIPT_URL 設定';
+              testResult.style.color = '#dc3545';
+              if (document.body.contains(script)) {
+                  document.body.removeChild(script);
+              }
+          }, 5000);
+          
+          // 定義回調函數
+          window.handleTestResponse = function(response) {
+              clearTimeout(window.testTimeout);
+              if (document.body.contains(script)) {
+                  document.body.removeChild(script);
+              }
+              
+              if (response && response.success) {
+                  testResult.innerHTML = '✅ API 連接成功！';
+                  testResult.style.color = '#28a745';
+              } else {
+                  testResult.innerHTML = '❌ API 連接失敗：' + (response?.error || '未知錯誤');
+                  testResult.style.color = '#dc3545';
+              }
+          };
+      }
+
+      // 測試統計功能
+      async function testStats() {
+          const testResult = document.getElementById('testResult');
+          testResult.innerHTML = '🔄 測試統計功能...';
+          testResult.style.color = '#007bff';
+
+          try {
+              const response = await fetch(`${SCRIPT_URL}?action=stats`, {
+                  method: 'GET',
+                  mode: 'cors'
+              });
+              
+              if (!response.ok) {
+                  throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              
+              const result = await response.json();
+              
+              if (result && result.success) {
+                  testResult.innerHTML = '✅ 統計功能正常！';
+                  testResult.style.color = '#28a745';
+              } else {
+                  testResult.innerHTML = '❌ 統計功能測試失敗：' + (result?.error || '未知錯誤');
+                  testResult.style.color = '#dc3545';
+              }
+          } catch (error) {
+              console.error('測試統計錯誤:', error);
+              
+              // 嘗試使用備用方法
+              testStatsFallback();
+          }
+      }
+
+      // 備用測試統計方法
+      function testStatsFallback() {
+          const testResult = document.getElementById('testResult');
+          testResult.innerHTML = '🔄 使用備用方法測試統計...';
+          
+          // 使用 JSONP 方式處理 CORS 問題
+          const script = document.createElement('script');
+          script.src = `${SCRIPT_URL}?action=stats&callback=handleStatsResponse`;
+          document.body.appendChild(script);
+          
+          // 設置超時
+          window.statsTimeout = setTimeout(() => {
+              testResult.innerHTML = '❌ 統計功能測試失敗：請檢查 SCRIPT_URL 設定';
+              testResult.style.color = '#dc3545';
+              if (document.body.contains(script)) {
+                  document.body.removeChild(script);
+              }
+          }, 5000);
+          
+          // 定義回調函數
+          window.handleStatsResponse = function(response) {
+              clearTimeout(window.statsTimeout);
+              if (document.body.contains(script)) {
+                  document.body.removeChild(script);
+              }
+              
+              if (response && response.success) {
+                  testResult.innerHTML = '✅ 統計功能正常！';
+                  testResult.style.color = '#28a745';
+              } else {
+                  testResult.innerHTML = '❌ 統計功能測試失敗：' + (response?.error || '未知錯誤');
+                  testResult.style.color = '#dc3545';
+              }
+          };
+      }
+
+      // 表單提交處理
+      document.getElementById('registrationForm').addEventListener('submit', async function(e) {
+          e.preventDefault();
+          
+          const submitBtn = document.getElementById('submitBtn');
+          const loading = document.getElementById('loading');
+          const successMessage = document.getElementById('successMessage');
+          const errorMessage = document.getElementById('errorMessage');
+          
+          // 隱藏之前的訊息
+          successMessage.style.display = 'none';
+          errorMessage.style.display = 'none';
+          
+          // 顯示載入狀態
+          submitBtn.disabled = true;
+          loading.style.display = 'block';
+          
+          try {
+              // 收集表單資料
+              const formData = new FormData(this);
+              const data = {};
+              
+              for (let [key, value] of formData.entries()) {
+                  data[key] = value;
+              }
+              
+              // 基本驗證
+              const validation = validateFormData(data);
+              if (!validation.isValid) {
+                  throw new Error(validation.error);
+              }
+              
+              let result;
+              
+              // 嘗試使用 fetch API
+              try {
+                  const response = await fetch(SCRIPT_URL, {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify(data),
+                      mode: 'cors'
+                  });
+                  
+                  if (!response.ok) {
+                      throw new Error(`HTTP error! status: ${response.status}`);
+                  }
+                  
+                  result = await response.json();
+              } catch (fetchError) {
+                  console.log('Fetch API 失敗，嘗試使用備用方法:', fetchError);
+                  // 使用備用方法
+                  result = await submitFormFallback(data);
+              }
+              
+              if (result && result.success) {
+                  successMessage.innerHTML = `
+                      <h4>🎉 報名成功！</h4>
+                      <p>您的報名編號：<strong>${result.registrationNumber}</strong></p>
+                      <p>請保存此編號以便查詢。確認郵件將發送至您的信箱。</p>
+                      <p><small>感謝您的報名，我們期待與您一起享受美好的輕旅行！</small></p>
+                  `;
+                  successMessage.style.display = 'block';
+                  
+                  // 清空表單和草稿
+                  document.getElementById('registrationForm').reset();
+                  clearDraft();
+                  updateProgress();
+                  
+                  // 滾動到成功訊息
+                  successMessage.scrollIntoView({ behavior: 'smooth' });
+                  
+                  // 隱藏測試區塊
+                  document.querySelector('.test-section').style.display = 'none';
+              } else {
+                  throw new Error(result?.error || '提交失敗，請稍後再試');
+              }
+          } catch (error) {
               // errorMessage.innerHTML = `
               //     <h4>❌ 提交失敗</h4>
               //     <p>${error.message}</p>
