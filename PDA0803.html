@@ -1241,2373 +1241,1364 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.7.32/sweetalert2.min.js"></script>
 
-  <script>
-      // 全域變數
-      const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzk0PiYUC9w2SX6sIzjrHig0Xe-jsAQ6ZaSS_aKoIVmtA0YSNQ_Y1dPe81A7Tjgp6oC/exec'; // 請替換為實際的Web App URL
-      let currentSection = 'dashboard';
-      let dataCache = {};
-
-      // 頁面載入完成後初始化
-      $(document).ready(function() {
-          initializeApp();
-      });
-
-      // 初始化應用程式
-      function initializeApp() {
-          // 設定當前日期
-          const today = new Date().toISOString().split('T')[0];
-          const currentMonth = new Date().toISOString().slice(0, 7);
-          
-          $('input[type="date"]').val(today);
-          $('input[type="month"]').val(currentMonth);
-          
-          // 生成年份選項
-          generateYearOptions();
-          
-          // 載入儀表板
-          showDashboard();
-          
-          // 設定事件監聽器
-          setupEventListeners();
-          
-          // 載入基礎資料
-          loadBaseData();
-      }
-
-      // 設定事件監聽器
-      function setupEventListeners() {
-          // 側邊欄切換
-          $('#sidebarToggle').click(function() {
-              $('#sidebar').toggleClass('show');
-          });
-
-          // 搜尋功能
-          $('#memberSearch').on('input', debounce(function() {
-              if ($.fn.DataTable.isDataTable('#membersTable')) {
-                  $('#membersTable').DataTable().search(this.value).draw();
-              }
-          }, 300));
-
-          // 篩選器
-          $('#incomeMonthFilter, #incomeCategoryFilter').change(function() {
-              loadIncomeData();
-          });
-
-          $('#expenseMonthFilter, #expenseStatusFilter').change(function() {
-              loadExpensesData();
-          });
-
-          $('#receiptMonthFilter, #receiptStatusFilter').change(function() {
-              loadReceiptsData();
-          });
-
-          $('#accountTypeFilter').change(function() {
-              loadAccountsData();
-          });
-      }
-
-      // API調用函數
-      async function callAPI(action, data = {}) {
-          showLoading(true);
-          
-          try {
-              const response = await fetch(WEB_APP_URL, {
-                  method: 'POST',
-                  headers: {
-                      'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                      action: action,
-                      data: data
-                  })
-              });
-
-              const result = await response.json();
-              
-              if (!result.success && result.message) {
-                  showAlert('error', result.message);
-              }
-              
-              return result;
-          } catch (error) {
-              console.error('API調用錯誤:', error);
-              showAlert('error', '網路錯誤或服務不可用');
-              return {
-                  success: false,
-                  message: '網路錯誤或服務不可用',
-                  error: error.message
-              };
-          } finally {
-              showLoading(false);
-          }
-      }
-
-      // 載入基礎資料
-      async function loadBaseData() {
-          try {
-              // 載入銀行帳戶選項
-              const bankAccountsResult = await callAPI('getBankAccountOptions');
-              if (bankAccountsResult.success) {
-                  updateBankAccountOptions(bankAccountsResult.data);
-              }
-
-              // 載入收入類別
-              const incomeCategories = await callAPI('getSetting', { key: 'income_categories' });
-              if (incomeCategories.success) {
-                  updateCategoryOptions('#incomeCategory', JSON.parse(incomeCategories.data.value || '[]'));
-              }
-
-              // 載入支出類別
-              const expenseCategories = await callAPI('getSetting', { key: 'expense_categories' });
-              if (expenseCategories.success) {
-                  updateCategoryOptions('#expenseCategory', JSON.parse(expenseCategories.data.value || '[]'));
-              }
-
-              // 載入會計科目選項
-              const accountsResult = await callAPI('getAccountOptions');
-              if (accountsResult.success) {
-                  updateAccountOptions(accountsResult.data);
-              }
-
-          } catch (error) {
-              console.error('載入基礎資料錯誤:', error);
-          }
-      }
-
-      // 更新銀行帳戶選項
-      function updateBankAccountOptions(options) {
-          const selectors = ['#incomeBankAccount', '#expenseBankAccount'];
-          
-          selectors.forEach(selector => {
-              const $select = $(selector);
-              $select.empty().append('<option value="">請選擇帳戶</option>');
-              
-              options.forEach(option => {
-                  $select.append(`<option value="${option.value}">${option.label}</option>`);
-              });
-          });
-      }
-
-      // 更新類別選項
-      function updateCategoryOptions(selector, categories) {
-          const $select = $(selector);
-          $select.empty().append('<option value="">請選擇類別</option>');
-          
-          categories.forEach(category => {
-              $select.append(`<option value="${category}">${category}</option>`);
-          });
-      }
-
-      // 更新會計科目選項
-      function updateAccountOptions(options) {
-          const selectors = ['#incomeAccount'];
-          
-          selectors.forEach(selector => {
-              const $select = $(selector);
-              $select.empty().append('<option value="">請選擇科目</option>');
-              
-              options.forEach(option => {
-                  $select.append(`<option value="${option.code}">${option.code} - ${option.name}</option>`);
-              });
-          });
-      }
-
-      // 顯示載入狀態
-      function showLoading(show) {
-          if (show) {
-              $('#loading').show();
-          } else {
-              $('#loading').hide();
-          }
-      }
-
-      // 顯示提示訊息
-      function showAlert(type, message, title = '') {
-          const icons = {
-              success: 'success',
-              error: 'error',
-              warning: 'warning',
-              info: 'info'
-          };
-
-          Swal.fire({
-              icon: icons[type] || 'info',              
-              title: title || (type === 'success' ? '成功' : type === 'error' ? '錯誤' : '提示'),
-              text: message,
-              confirmButtonColor: '#3498db',
-              timer: type === 'success' ? 3000 : undefined,
-              timerProgressBar: type === 'success'
-          });
-      }
-
-      // 防抖函數
-      function debounce(func, wait) {
-          let timeout;
-          return function executedFunction(...args) {
-              const later = () => {
-                  clearTimeout(timeout);
-                  func(...args);
-              };
-              clearTimeout(timeout);
-              timeout = setTimeout(later, wait);
-          };
-      }
-
-      // 生成年份選項
-      function generateYearOptions() {
-          const currentYear = new Date().getFullYear();
-          const yearSelectors = ['#annualReportYear', '#budgetReportYear'];
-          
-          yearSelectors.forEach(selector => {
-              const $select = $(selector);
-              $select.empty();
-              
-              for (let year = currentYear; year >= currentYear - 10; year--) {
-                  $select.append(`<option value="${year}">${year}</option>`);
-              }
-          });
-      }
-
-      // 格式化金額
-      function formatCurrency(amount, currency = 'TWD') {
-          const formatter = new Intl.NumberFormat('zh-TW', {
-              style: 'currency',
-              currency: currency,
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 0
-          });
-          return formatter.format(amount || 0);
-      }
-
-      // 格式化日期
-      function formatDate(dateString) {
-          if (!dateString) return '';
-          const date = new Date(dateString);
-          return date.toLocaleDateString('zh-TW');
-      }
-
-      // 切換內容區域
-      function switchSection(sectionName) {
-          // 隱藏所有內容區域
-          $('.content-section').hide();
-          
-          // 顯示指定區域
-          $(`#${sectionName}`).show();
-          
-          // 更新導航狀態
-          $('.sidebar .nav-link').removeClass('active');
-          $(`.sidebar .nav-link[onclick="show${sectionName.charAt(0).toUpperCase() + sectionName.slice(1)}()"]`).addClass('active');
-          
-          currentSection = sectionName;
-      }
-
-      // 儀表板相關函數
-      async function showDashboard() {
-          switchSection('dashboard');
-          await loadDashboardData();
-      }
-
-      async function loadDashboardData() {
-          try {
-              // 載入統計資料
-              const statsResult = await callAPI('getDashboardStats');
-              if (statsResult.success) {
-                  updateDashboardStats(statsResult.data);
-              }
-
-              // 載入圖表資料
-              await loadDashboardCharts();
-              
-              // 載入最近活動
-              await loadRecentActivities();
-              
-          } catch (error) {
-              console.error('載入儀表板資料錯誤:', error);
-          }
-      }
-
-      function updateDashboardStats(stats) {
-          $('#totalMembers').text(stats.totalMembers || 0);
-          $('#monthlyIncome').text(formatCurrency(stats.monthlyIncome || 0));
-          $('#monthlyExpenses').text(formatCurrency(stats.monthlyExpenses || 0));
-          $('#totalBalance').text(formatCurrency(stats.totalBalance || 0));
-      }
-
-      async function loadDashboardCharts() {
-          try {
-              // 收支趨勢圖
-              const trendResult = await callAPI('getIncomeExpenseTrend', { 
-                  months: 12 
-              });
-              
-              if (trendResult.success) {
-                  createIncomeExpenseChart(trendResult.data);
-              }
-
-              // 收入來源分布圖
-              const sourceResult = await callAPI('getIncomeSourceDistribution');
-              if (sourceResult.success) {
-                  createIncomeSourceChart(sourceResult.data);
-              }
-              
-          } catch (error) {
-              console.error('載入圖表資料錯誤:', error);
-          }
-      }
-
-      function createIncomeExpenseChart(data) {
-          const ctx = document.getElementById('incomeExpenseChart').getContext('2d');
-          
-          new Chart(ctx, {
-              type: 'line',
-              data: {
-                  labels: data.labels,
-                  datasets: [{
-                      label: '收入',
-                      data: data.income,
-                      borderColor: '#27ae60',
-                      backgroundColor: 'rgba(39, 174, 96, 0.1)',
-                      tension: 0.4
-                  }, {
-                      label: '支出',
-                      data: data.expenses,
-                      borderColor: '#e74c3c',
-                      backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                      tension: 0.4
-                  }]
-              },
-              options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                      legend: {
-                          position: 'top',
-                      }
-                  },
-                  scales: {
-                      y: {
-                          beginAtZero: true,
-                          ticks: {
-                              callback: function(value) {
-                                  return formatCurrency(value);
-                              }
-                          }
-                      }
-                  }
-              }
-          });
-      }
-
-      function createIncomeSourceChart(data) {
-          const ctx = document.getElementById('incomeSourceChart').getContext('2d');
-          
-          new Chart(ctx, {
-              type: 'doughnut',
-              data: {
-                  labels: data.labels,
-                  datasets: [{
-                      data: data.values,
-                      backgroundColor: [
-                          '#3498db',
-                          '#2ecc71',
-                          '#f39c12',
-                          '#e74c3c',
-                          '#9b59b6',
-                          '#1abc9c'
-                      ]
-                  }]
-              },
-              options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                      legend: {
-                          position: 'bottom'
-                      }
-                  }
-              }
-          });
-      }
-
-      async function loadRecentActivities() {
-          try {
-              const result = await callAPI('getRecentActivities', { limit: 10 });
-              if (result.success) {
-                  displayRecentActivities(result.data);
-              }
-          } catch (error) {
-              console.error('載入最近活動錯誤:', error);
-          }
-      }
-
-      function displayRecentActivities(activities) {
-          const container = $('#recentActivities');
-          
-          if (activities.length === 0) {
-              container.html('<p class="text-muted">暫無最近活動</p>');
-              return;
-          }
-
-          let html = '<div class="list-group">';
-          activities.forEach(activity => {
-              const icon = getActivityIcon(activity.type);
-              const time = formatDate(activity.timestamp);
-              
-              html += `
-                  <div class="list-group-item d-flex align-items-center">
-                      <i class="${icon} me-3 text-primary"></i>
-                      <div class="flex-grow-1">
-                          <div class="fw-bold">${activity.title}</div>
-                          <small class="text-muted">${activity.description}</small>
-                      </div>
-                      <small class="text-muted">${time}</small>
-                  </div>
-              `;
-          });
-          html += '</div>';
-          
-          container.html(html);
-      }
-
-      function getActivityIcon(type) {
-          const icons = {
-              member: 'fas fa-user-plus',
-              income: 'fas fa-plus-circle',
-              expense: 'fas fa-minus-circle',
-              receipt: 'fas fa-receipt',
-              system: 'fas fa-cog'
-          };
-          return icons[type] || 'fas fa-info-circle';
-      }
-
-      // 會員管理相關函數
-      async function showMembers() {
-          switchSection('members');
-          await loadMembersData();
-      }
-
-      async function loadMembersData() {
-          try {
-              const result = await callAPI('getMembers');
-              if (result.success) {
-                  displayMembersTable(result.data);
-              }
-          } catch (error) {
-              console.error('載入會員資料錯誤:', error);
-          }
-      }
-
-      function displayMembersTable(data) {
-          // 如果表格已存在，先銷毀
-          if ($.fn.DataTable.isDataTable('#membersTable')) {
-              $('#membersTable').DataTable().destroy();
-          }
-
-          const tableBody = $('#membersTable tbody');
-          tableBody.empty();
-
-          data.forEach(member => {
-              const statusBadge = member['是否啟用'] ? 
-                  '<span class="badge bg-success">啟用</span>' : 
-                  '<span class="badge bg-secondary">停用</span>';
-
-              const row = `
-                  <tr>
-                      <td>${member['姓名'] || ''}</td>
-                      <td>${member['電話'] || ''}</td>
-                      <td>${member['電子郵件'] || ''}</td>
-                      <td>${member['會員類型'] || ''}</td>
-                      <td>${formatDate(member['加入日期'])}</td>
-                      <td>${statusBadge}</td>
-                      <td>
-                          <button class="btn btn-sm btn-outline-primary" onclick="editMember('${member.ID}')">
-                              <i class="fas fa-edit"></i>
-                          </button>
-                          <button class="btn btn-sm btn-outline-danger" onclick="deleteMember('${member.ID}')">
-                              <i class="fas fa-trash"></i>
-                          </button>
-                      </td>
-                  </tr>
-              `;
-              tableBody.append(row);
-          });
-
-          // 初始化DataTable
-          $('#membersTable').DataTable({
-              language: {
-                  url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh-HANT.json'
-              },
-              pageLength: 25,
-              order: [[4, 'desc']], // 按加入日期降序排列
-              columnDefs: [
-                  { orderable: false, targets: [6] } // 操作欄不可排序
-              ]
-          });
-      }
-
-      function showAddMemberModal() {
-          $('#addMemberForm')[0].reset();
-          $('#addMemberModal').modal('show');
-      }
-
-      async function addMember() {
-          const form = document.getElementById('addMemberForm');
-          const formData = new FormData(form);
-          const memberData = Object.fromEntries(formData.entries());
-
-          // 驗證必填欄位
-          if (!memberData['姓名'] || !memberData['電話']) {
-              showAlert('warning', '請填寫必填欄位');
-              return;
-          }
-
-          try {
-              const result = await callAPI('addMember', memberData);
-              if (result.success) {
-                  showAlert('success', '會員新增成功');
-                  $('#addMemberModal').modal('hide');
-                  await loadMembersData();
-              }
-          } catch (error) {
-              console.error('新增會員錯誤:', error);
-          }
-      }
-
-      async function editMember(memberId) {
-          // 實作編輯會員功能
-          showAlert('info', '編輯功能開發中');
-      }
-
-      async function deleteMember(memberId) {
-          const result = await Swal.fire({
-              title: '確認刪除',
-              text: '確定要刪除此會員嗎？此操作無法復原。',
-              icon: 'warning',
-              showCancelButton: true,
-              confirmButtonColor: '#e74c3c',
-              cancelButtonColor: '#6c757d',
-              confirmButtonText: '確定刪除',
-              cancelButtonText: '取消'
-          });
-
-          if (result.isConfirmed) {
-              try {
-                  const deleteResult = await callAPI('deleteMember', { id: memberId });
-                  if (deleteResult.success) {
-                      showAlert('success', '會員刪除成功');
-                      await loadMembersData();
-                  }
-              } catch (error) {
-                  console.error('刪除會員錯誤:', error);
-              }
-          }
-      }
-
-      async function exportMembers() {
-          try {
-              const result = await callAPI('exportData', { 
-                  dataType: 'members',
-                  format: 'csv'
-              });
-              
-              if (result.success && result.data.downloadUrl) {
-                  window.open(result.data.downloadUrl, '_blank');
-                  showAlert('success', '會員資料匯出成功');
-              }
-          } catch (error) {
-              console.error('匯出會員資料錯誤:', error);
-          }
-      }
-
-      function showImportMembersModal() {
-          showAlert('info', '批量匯入功能開發中');
-      }
-
-      // 收入管理相關函數
-      async function showIncome() {
-          switchSection('income');
-          await loadIncomeData();
-      }
-
-      async function loadIncomeData() {
-          try {
-              const filters = {
-                  month: $('#incomeMonthFilter').val(),
-                  category: $('#incomeCategoryFilter').val()
-              };
-
-              const result = await callAPI('getIncome', filters);
-              if (result.success) {
-                  displayIncomeTable(result.data);
-              }
-          } catch (error) {
-              console.error('載入收入資料錯誤:', error);
-          }
-      }
-
-      function displayIncomeTable(data) {
-          if ($.fn.DataTable.isDataTable('#incomeTable')) {
-              $('#incomeTable').DataTable().destroy();
-          }
-
-          const tableBody = $('#incomeTable tbody');
-          tableBody.empty();
-
-          data.forEach(income => {
-              const row = `
-                  <tr>
-                      <td>${formatDate(income['日期'])}</td>
-                      <td>${income['捐款人'] || ''}</td>
-                      <td class="text-end">${formatCurrency(income['金額'])}</td>
-                      <td>${income['收入類別'] || ''}</td>
-                      <td>${income['銀行帳戶'] || ''}</td>
-                      <td>${income['收據編號'] || ''}</td>
-                      <td>
-                          <button class="btn btn-sm btn-outline-primary" onclick="editIncome('${income.ID}')">
-                              <i class="fas fa-edit"></i>
-                          </button>
-                          <button class="btn btn-sm btn-outline-danger" onclick="deleteIncome('${income.ID}')">
-                              <i class="fas fa-trash"></i>
-                          </button>
-                      </td>
-                  </tr>
-              `;
-              tableBody.append(row);
-          });
-
-          $('#incomeTable').DataTable({
-              language: {
-                  url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh-HANT.json'
-              },
-              pageLength: 25,
-              order: [[0, 'desc']],
-              columnDefs: [
-                  { orderable: false, targets: [6] }
-              ]
-          });
-      }
-
-      function showAddIncomeModal() {
-          $('#addIncomeForm')[0].reset();
-          // 設定預設日期為今天
-          $('input[name="日期"]').val(new Date().toISOString().split('T')[0]);
-          $('#addIncomeModal').modal('show');
-      }
-
-      async function addIncome() {
-          const form = document.getElementById('addIncomeForm');
-          const formData = new FormData(form);
-          const incomeData = Object.fromEntries(formData.entries());
-
-          // 驗證必填欄位
-          if (!incomeData['日期'] || !incomeData['金額']) {
-              showAlert('warning', '請填寫必填欄位');
-              return;
-          }
-
-          // 轉換金額為數字
-          incomeData['金額'] = parseFloat(incomeData['金額']);
-
-          try {
-              const result = await callAPI('addIncome', incomeData);
-              if (result.success) {
-                  showAlert('success', '收入記錄新增成功');
-                  $('#addIncomeModal').modal('hide');
-                  
-                  // 如果勾選自動生成收據
-                  if ($('#generateReceipt').is(':checked') && incomeData['捐款人']) {
-                      await generateReceiptForIncome(result.data.id, incomeData);
-                  }
-                  
-                  await loadIncomeData();
-              }
-          } catch (error) {
-              console.error('新增收入記錄錯誤:', error);
-          }
-      }
-
-      async function generateReceiptForIncome(incomeId, incomeData) {
-          try {
-              const receiptData = {
-                  '捐款人姓名': incomeData['捐款人'],
-                  '捐款金額': incomeData['金額'],
-                  '捐款日期': incomeData['日期'],
-                  '捐款用途': incomeData['說明'] || '一般捐款',
-                  '收據類型': '個人捐贈',
-                  '發送方式': 'download'
-              };
-
-              const result = await callAPI('generateReceipt', receiptData);
-              if (result.success) {
-                  showAlert('success', '收據已自動生成');
-              }
-          } catch (error) {
-              console.error('生成收據錯誤:', error);
-          }
-      }
-
-      async function editIncome(incomeId) {
-          showAlert('info', '編輯功能開發中');
-      }
-
-      async function deleteIncome(incomeId) {
-          const result = await Swal.fire({
-              title: '確認刪除',
-              text: '確定要刪除此收入記錄嗎？',
-              icon: 'warning',
-              showCancelButton: true,
-              confirmButtonColor: '#e74c3c',
-              cancelButtonColor: '#6c757d',
-              confirmButtonText: '確定刪除',
-              cancelButtonText: '取消'
-          });
-
-          if (result.isConfirmed) {
-              try {
-                  const deleteResult = await callAPI('deleteIncome', { id: incomeId });
-                  if (deleteResult.success) {
-                      showAlert('success', '收入記錄刪除成功');
-                      await loadIncomeData();
-                  }
-              } catch (error) {
-                  console.error('刪除收入記錄錯誤:', error);
-              }
-          }
-      }
-
-      async function exportIncome() {
-          try {
-              const result = await callAPI('exportData', { 
-                  dataType: 'income',
-                  format: 'csv'
-              });
-              
-              if (result.success && result.data.downloadUrl) {
-                  window.open(result.data.downloadUrl, '_blank');
-                  showAlert('success', '收入資料匯出成功');
-              }
-          } catch (error) {
-              console.error('匯出收入資料錯誤:', error);
-          }
-      }
-
-      // 支出管理相關函數
-      async function showExpenses() {
-          switchSection('expenses');
-          await loadExpensesData();
-      }
-
-      async function loadExpensesData() {
-          try {
-              const filters = {
-                  month: $('#expenseMonthFilter').val(),
-                  status: $('#expenseStatusFilter').val()
-              };
-
-              const result = await callAPI('getExpenses', filters);
-              if (result.success) {
-                  displayExpensesTable(result.data);
-              }
-          } catch (error) {
-              console.error('載入支出資料錯誤:', error);
-          }
-      }
-
-      function displayExpensesTable(data) {
-          if ($.fn.DataTable.isDataTable('#expensesTable')) {
-              $('#expensesTable').DataTable().destroy();
-          }
-
-          const tableBody = $('#expensesTable tbody');
-          tableBody.empty();
-
-          data.forEach(expense => {
-              const statusBadge = getExpenseStatusBadge(expense['核准狀態']);
-              
-              const row = `
-                  <tr>
-                      <td>${formatDate(expense['日期'])}</td>
-                      <td>${expense['項目'] || ''}</td>
-                      <td class="text-end">${formatCurrency(expense['金額'])}</td>
-                      <td>${expense['支出類別'] || ''}</td>
-                      <td>${expense['申請人'] || ''}</td>
-                      <td>${statusBadge}</td>
-                      <td>
-                          ${expense['核准狀態'] === '待核准' ? `
-                              <button class="btn btn-sm btn-outline-success" onclick="approveExpense('${expense.ID}')">
-                                  <i class="fas fa-check"></i>
-                              </button>
-                              <button class="btn btn-sm btn-outline-danger" onclick="rejectExpense('${expense.ID}')">
-                                  <i class="fas fa-times"></i>
-                              </button>
-                          ` : ''}
-                          <button class="btn btn-sm btn-outline-primary" onclick="editExpense('${expense.ID}')">
-                              <i class="fas fa-edit"></i>
-                          </button>
-                      </td>
-                  </tr>
-              `;
-              tableBody.append(row);
-          });
-
-          $('#expensesTable').DataTable({
-              language: {
-                  url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh-HANT.json'
-              },
-              pageLength: 25,
-              order: [[0, 'desc']],
-              columnDefs: [
-                  { orderable: false, targets: [6] }
-              ]
-          });
-      }
-
-      function getExpenseStatusBadge(status) {
-          const badges = {
-              '待核准': '<span class="badge bg-warning">待核准</span>',
-              '已核准': '<span class="badge bg-success">已核准</span>',
-              '已拒絕': '<span class="badge bg-danger">已拒絕</span>'
-          };
-          return badges[status] || '<span class="badge bg-secondary">未知</span>';
-      }
-
-      function showAddExpenseModal() {
-          $('#addExpenseForm')[0].reset();
-          $('input[name="日期"]').val(new Date().toISOString().split('T')[0]);
-          $('#addExpenseModal').modal('show');
-      }
-
-      async function addExpense() {
-          const form = document.getElementById('addExpenseForm');
-          const formData = new FormData(form);
-          const expenseData = Object.fromEntries(formData.entries());
-
-          if (!expenseData['日期'] || !expenseData['項目'] || !expenseData['金額']) {
-              showAlert('warning', '請填寫必填欄位');
-              return;
-          }
-
-          expenseData['金額'] = parseFloat(expenseData['金額']);
-          expenseData['核准狀態'] = '待核准';
-
-          try {
-              const result = await callAPI('addExpense', expenseData);
-              if (result.success) {
-                  showAlert('success', '支出記錄新增成功');
-                  $('#addExpenseModal').modal('hide');
-                  await loadExpensesData();
-              }
-          } catch (error) {
-              console.error('新增支出記錄錯誤:', error);
-          }
-      }
-
-      async function approveExpense(expenseId) {
-          const result = await Swal.fire({
-              title: '核准支出',
-              text: '確定要核准此筆支出嗎？',
-              icon: 'question',
-              showCancelButton: true,
-              confirmButtonColor: '#27ae60',
-              cancelButtonColor: '#6c757d',
-              confirmButtonText: '確定核准',
-              cancelButtonText: '取消'
-          });
-
-          if (result.isConfirmed) {
-              try {
-                  const approveResult = await callAPI('approveExpense', { 
-                      id: expenseId,
-                      approver: '系統管理員'
-                  });
-                  
-                  if (approveResult.success) {
-                      showAlert('success', '支出已核准');
-                      await loadExpensesData();
-                  }
-              } catch (error) {
-                  console.error('核准支出錯誤:', error);
-              }
-          }
-      }
-
-      async function rejectExpense(expenseId) {
-          const { value: reason } = await Swal.fire({
-              title: '拒絕支出',
-              input: 'textarea',
-              inputLabel: '請輸入拒絕理由',
-              inputPlaceholder: '請說明拒絕的原因...',
-              showCancelButton: true,
-              confirmButtonText: '確定拒絕',
-              cancelButtonText: '取消',
-              inputValidator: (value) => {
-                  if (!value) {
-                      return '請輸入拒絕理由'
-                  }
-              }
-          });
-
-          if (reason) {
-              try {
-                  const rejectResult = await callAPI('rejectExpense', { 
-                      id: expenseId,
-                      reason: reason
-                  });
-                  
-                  if (rejectResult.success) {
-                      showAlert('success', '支出已拒絕');
-                      await loadExpensesData();
-                  }
-              } catch (error) {
-                  console.error('拒絕支出錯誤:', error);
-              }
-          }
-      }
-
-      async function editExpense(expenseId) {
-          showAlert('info', '編輯功能開發中');
-      }
-
-      async function exportExpenses() {
-          try {
-              const result = await callAPI('exportData', { 
-                  dataType: 'expenses',
-                  format: 'csv'
-              });
-              
-              if (result.success && result.data.downloadUrl) {
-                  window.open(result.data.downloadUrl, '_blank');
-                  showAlert('success', '支出資料匯出成功');
-              }
-          } catch (error) {
-              console.error('匯出支出資料錯誤:', error);
-          }
-      }
-
-      // 銀行帳戶管理相關函數
-      async function showBankAccounts() {
-          switchSection('bankAccounts');
-          await loadBankAccountsData();
-      }
-
-      async function loadBankAccountsData() {
-          try {
-              const result = await callAPI('getBankAccounts');
-              if (result.success) {
-                  displayBankAccountsTable(result.data);
-                  await loadBankAccountsSummary();
-              }
-          } catch (error) {
-              console.error('載入銀行帳戶資料錯誤:', error);
-          }
-      }
-
-      function displayBankAccountsTable(data) {
-          if ($.fn.DataTable.isDataTable('#bankAccountsTable')) {
-              $('#bankAccountsTable').DataTable().destroy();
-          }
-
-          const tableBody = $('#bankAccountsTable tbody');
-          tableBody.empty();
-
-          data.forEach(account => {
-              const statusBadge = account['是否啟用'] ? 
-                  '<span class="badge bg-success">啟用</span>' : 
-                  '<span class="badge bg-secondary">停用</span>';
-
-              const row = `
-                  <tr>
-                      <td>${account['帳戶名稱'] || ''}</td>
-                      <td>${account['銀行名稱'] || ''}</td>
-                      <td>${account['帳號'] || ''}</td>
-                      <td>${account['帳戶類型'] || ''}</td>
-                      <td class="text-end">${formatCurrency(account['目前餘額'], account['幣別'])}</td>
-                      <td>${statusBadge}</td>
-                      <td>
-                          <button class="btn btn-sm btn-outline-info" onclick="reconcileAccount('${account.ID}')">
-                              <i class="fas fa-balance-scale"></i>
-                          </button>
-                          <button class="btn btn-sm btn-outline-primary" onclick="editBankAccount('${account.ID}')">
-                              <i class="fas fa-edit"></i>
-                          </button>
-                      </td>
-                  </tr>
-              `;
-              tableBody.append(row);
-          });
-
-          $('#bankAccountsTable').DataTable({
-              language: {
-                  url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh-HANT.json'
-              },
-              pageLength: 25,
-              columnDefs: [
-                  { orderable: false, targets: [6] }
-              ]
-          });
-      }
-
-      async function loadBankAccountsSummary() {
-          try {
-              const result = await callAPI('getTotalBankBalance');
-              if (result.success) {
-                  displayBankAccountsSummary(result.data);
-              }
-          } catch (error) {
-              console.error('載入銀行帳戶總覽錯誤:', error);
-          }
-      }
-
-      function displayBankAccountsSummary(data) {
-          const summary = $('#bankAccountsSummary');
-          
-          let html = `
-              <div class="row">
-                  <div class="col-md-4">
-                      <div class="text-center">
-                          <h4 class="text-primary">${data.totalAccounts}</h4>
-                          <p class="text-muted mb-0">總帳戶數</p>
-                      </div>
-                  </div>
-                  <div class="col-md-4">
-                      <div class="text-center">
-                          <h4 class="text-success">${formatCurrency(data.totalTWD)}</h4>
-                          <p class="text-muted mb-0">台幣總餘額</p>
-                      </div>
-                  </div>
-                  <div class="col-md-4">
-                      <div class="text-center">
-                          <h4 class="text-info">${formatCurrency(data.totalUSD, 'USD')}</h4>
-                          <p class="text-muted mb-0">美金總餘額</p>
-                      </div>
-                  </div>
-              </div>
-          `;
-          
-          summary.html(html);
-      }
-
-      function showAddBankAccountModal() {
-          $('#addBankAccountForm')[0].reset();
-          $('#addBankAccountModal').modal('show');
-      }
-
-      async function addBankAccount() {
-          const form = document.getElementById('addBankAccountForm');
-          const formData = new FormData(form);
-          const accountData = Object.fromEntries(formData.entries());
-
-          if (!accountData['帳戶名稱'] || !accountData['銀行名稱'] || !accountData['帳號']) {
-              showAlert('warning', '請填寫必填欄位');
-              return;
-          }
-
-          accountData['目前餘額'] = parseFloat(accountData['目前餘額'] || 0);
-          accountData['是否啟用'] = true;
-
-          try {
-              const result = await callAPI('addBankAccount', accountData);
-              if (result.success) {
-                  showAlert('success', '銀行帳戶新增成功');
-                  $('#addBankAccountModal').modal('hide');
-                  await loadBankAccountsData();
-              }
-          } catch (error) {
-              console.error('新增銀行帳戶錯誤:', error);
-          }
-      }
-
-      async function reconcileAccount(accountId) {
-          const { value: formValues } = await Swal.fire({
-              title: '帳戶對帳',
-              html: `
-                  <div class="mb-3">
-                      <label class="form-label">銀行對帳單餘額</label>
-                      <input type="number" id="statementBalance" class="form-control" step="0.01" required>
-                  </div>
-                  <div class="mb-3">
-                      <label class="form-label">對帳日期</label>
-                      <input type="date" id="reconcileDate" class="form-control" value="${new Date().toISOString().split('T')[0]}" required>
-                  </div>
-              `,
-              focusConfirm: false,
-              showCancelButton: true,
-              confirmButtonText: '執行對帳',
-              cancelButtonText: '取消',
-              preConfirm: () => {
-                  return {
-                      statementBalance: document.getElementById('statementBalance').value,
-                      reconcileDate: document.getElementById('reconcileDate').value
-                  }
-              }
-          });
-
-          if (formValues) {
-              try {
-                  const result = await callAPI('reconcileBankAccount', {
-                      accountId: accountId,
-                      statementBalance: parseFloat(formValues.statementBalance),
-                      reconcileDate: formValues.reconcileDate,
-                      autoAdjust: true
-                  });
-
-                  if (result.success) {
-                      showAlert('success', '帳戶對帳完成');
-                      await loadBankAccountsData();
-                  }
-              } catch (error) {
-                  console.error('帳戶對帳錯誤:', error);
-              }
-          }
-      }
-
-      function showReconcileModal() {
-          showAlert('info', '請在帳戶列表中點擊對帳按鈕進行個別帳戶對帳');
-      }
-
-      async function editBankAccount(accountId) {
-          showAlert('info', '編輯功能開發中');
-      }
-
-      // 電子收據管理相關函數
-      async function showReceipts() {
-          switchSection('receipts');
-          await loadReceiptsData();
-      }
-
-      async function loadReceiptsData() {
-          try {
-              const filters = {
-                  month: $('#receiptMonthFilter').val(),
-                  status: $('#receiptStatusFilter').val()
-              };
-
-              const result = await callAPI('getReceipts', filters);
-              if (result.success) {
-                  displayReceiptsTable(result.data);
-              }
-          } catch (error) {
-              console.error('載入收據資料錯誤:', error);
-          }
-      }
-
-      function displayReceiptsTable(data) {
-          if ($.fn.DataTable.isDataTable('#receiptsTable')) {
-              $('#receiptsTable').DataTable().destroy();
-          }
-
-          const tableBody = $('#receiptsTable tbody');
-          tableBody.empty();
-
-          data.forEach(receipt => {
-              const statusBadge = getReceiptStatusBadge(receipt['狀態']);
-              
-              const row = `
-                  <tr>
-                      <td>${receipt['收據編號'] || ''}</td>
-                      <td>${receipt['捐款人姓名'] || ''}</td>
-                      <td class="text-end">${formatCurrency(receipt['捐款金額'])}</td>
-                      <td>${formatDate(receipt['捐款日期'])}</td>
-                      <td>${receipt['收據類型'] || ''}</td>
-                      <td>${statusBadge}</td>
-                      <td>
-                          <button class="btn btn-sm btn-outline-primary" onclick="downloadReceipt('${receipt.ID}')">
-                              <i class="fas fa-download"></i>
-                          </button>
-                          <button class="btn btn-sm btn-outline-success" onclick="resendReceipt('${receipt.ID}')">
-                              <i class="fas fa-paper-plane"></i>
-                          </button>
-                      </td>
-                  </tr>
-              `;
-              tableBody.append(row);
-          });
-
-          $('#receiptsTable').DataTable({
-              language: {
-                  url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh-HANT.json'
-              },
-              pageLength: 25,
-              order: [[3, 'desc']],
-              columnDefs: [
-                  { orderable: false, targets: [6] }
-              ]
-          });
-      }
-
-      function getReceiptStatusBadge(status) {
-          const badges = {
-              '已生成': '<span class="badge bg-info">已生成</span>',
-              '已發送': '<span class="badge bg-success">已發送</span>',
-              '發送失敗': '<span class="badge bg-danger">發送失敗</span>'
-          };
-          return badges[status] || '<span class="badge bg-secondary">未知</span>';
-      }
-
-      function showGenerateReceiptModal() {
-          showAlert('info', '收據生成功能開發中');
-      }
-
-      async function downloadReceipt(receiptId) {
-          try {
-              const result = await callAPI('downloadReceipt', { id: receiptId });
-              if (result.success && result.data.downloadUrl) {
-                  window.open(result.data.downloadUrl, '_blank');
-              }
-          } catch (error) {
-              console.error('下載收據錯誤:', error);
-          }
-      }
-
-      async function resendReceipt(receiptId) {
-          const { value: email } = await Swal.fire({
-              title: '重新發送收據',
-              input: 'email',
-              inputLabel: '收件人電子郵件',
-              inputPlaceholder: '請輸入電子郵件地址',
-              showCancelButton: true,
-              confirmButtonText: '發送',
-              cancelButtonText: '取消',
-              inputValidator: (value) => {
-                  if (!value) {
-                      return '請輸入電子郵件地址'
-                  }
-                  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-                      return '請輸入有效的電子郵件地址'
-                  }
-              }
-          });
-
-          if (email) {
-              try {
-                  const result = await callAPI('resendReceipt', {
-                      receiptId: receiptId,
-                      email: email,
-                      method: 'email'
-                  });
-
-                  if (result.success) {
-                      showAlert('success', '收據已重新發送');
-                      await loadReceiptsData();
-                  }
-              } catch (error) {
-                  console.error('重新發送收據錯誤:', error);
-              }
-          }
-      }
-
-      async function exportReceipts() {
-          try {
-              const result = await callAPI('exportData', { 
-                  dataType: 'receipts',
-                  format: 'csv'
-              });
-              
-              if (result.success && result.data.downloadUrl) {
-                  window.open(result.data.downloadUrl, '_blank');
-                  showAlert('success', '收據列表匯出成功');
-              }
-          } catch (error) {
-              console.error('匯出收據列表錯誤:', error);
-          }
-      }
-
-      // 會計科目管理相關函數
-      async function showAccounts() {
-          switchSection('accounts');
-          await loadAccountsData();
-      }
-
-      async function loadAccountsData() {
-          try {
-              const filters = {
-                  type: $('#accountTypeFilter').val()
-              };
-
-              const result = await callAPI('getAccounts', filters);
-              if (result.success) {
-                  displayAccountsTable(result.data);
-              }
-          } catch (error) {
-              console.error('載入會計科目資料錯誤:', error);
-          }
-      }
-
-      function displayAccountsTable(data) {
-          if ($.fn.DataTable.isDataTable('#accountsTable')) {
-              $('#accountsTable').DataTable().destroy();
-          }
-
-          const tableBody = $('#accountsTable tbody');
-          tableBody.empty();
-
-          data.forEach(account => {
-              const statusBadge = account['是否啟用'] ? 
-                  '<span class="badge bg-success">啟用</span>' : 
-                  '<span class="badge bg-secondary">停用</span>';
-
-              const row = `
-                  <tr>
-                      <td>${account['科目代碼'] || ''}</td>
-                      <td>${account['科目名稱'] || ''}</td>
-                      <td>${account['科目類型'] || ''}</td>
-                      <td>${account['層級'] || ''}</td>
-                      <td>${account['上級科目'] || ''}</td>
-                      <td>${statusBadge}</td>
-                      <td>
-                          <button class="btn btn-sm btn-outline-primary" onclick="editAccount('${account.ID}')">
-                              <i class="fas fa-edit"></i>
-                          </button>
-                      </td>
-                  </tr>
-              `;
-              tableBody.append(row);
-          });
-
-          $('#accountsTable').DataTable({
-              language: {
-                  url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/zh-HANT.json'
-              },
-              pageLength: 25,
-              order: [[0, 'asc']],
-              columnDefs: [
-                  { orderable: false, targets: [6] }
-              ]
-          });
-      }
-
-      function showAddAccountModal() {
-          showAlert('info', '新增會計科目功能開發中');
-      }
-
-      async function editAccount(accountId) {
-          showAlert('info', '編輯功能開發中');
-      }
-
-      async function exportAccounts() {
-          try {
-              const result = await callAPI('exportData', { 
-                  dataType: 'accounts',
-                  format: 'csv'
-              });
-              
-              if (result.success && result.data.downloadUrl) {
-                  window.open(result.data.downloadUrl, '_blank');
-                  showAlert('success', '會計科目表匯出成功');
-              }
-          } catch (error) {
-              console.error('匯出會計科目表錯誤:', error);
-          }
-      }
-
-      // 報表分析相關函數
-      async function showReports() {
-          switchSection('reports');
-          // 預設載入月報表
-          if (!$('#monthlyReportDate').val()) {
-              $('#monthlyReportDate').val(new Date().toISOString().slice(0, 7));
-          }
-      }
-
-      async function generateMonthlyReport() {
-          const month = $('#monthlyReportDate').val();
-          if (!month) {
-              showAlert('warning', '請選擇年月');
-              return;
-          }
-
-          try {
-              const [year, monthNum] = month.split('-');
-              const result = await callAPI('generateMonthlyReport', {
-                  year: parseInt(year),
-                  month: parseInt(monthNum),
-                  includeDetails: true,
-                  format: 'detailed'
-              });
-
-              if (result.success) {
-                  displayMonthlyReport(result.data);
-              }
-          } catch (error) {
-              console.error('生成月報表錯誤:', error);
-          }
-      }
-
-      function displayMonthlyReport(data) {
-          const container = $('#monthlyReportContent');
-          
-          let html = `
-              <div class="row mb-4">
-                  <div class="col-md-4">
-                      <div class="card bg-success text-white">
-                          <div class="card-body">
-                              <h5>本月收入</h5>
-                              <h3>${formatCurrency(data.totalIncome)}</h3>
-                          </div>
-                      </div>
-                  </div>
-                  <div class="col-md-4">
-                      <div class="card bg-danger text-white">
-                          <div class="card-body">
-                              <h5>本月支出</h5>
-                              <h3>${formatCurrency(data.totalExpenses)}</h3>
-                          </div>
-                      </div>
-                  </div>
-                  <div class="col-md-4">
-                      <div class="card bg-info text-white">
-                          <div class="card-body">
-                              <h5>本月結餘</h5>
-                              <h3>${formatCurrency(data.netIncome)}</h3>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          `;
-
-          if (data.details && data.details.length > 0) {
-              html += `
-                  <div class="card">
-                      <div class="card-header">
-                          <h5>詳細記錄</h5>
-                      </div>
-                      <div class="card-body">
-                          <div class="table-responsive">
-                              <table class="table table-striped">
-                                  <thead>
-                                      <tr>
-                                          <th>日期</th>
-                                          <th>項目</th>
-                                          <th>類型</th>
-                                          <th>金額</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody>
-              `;
-
-              data.details.forEach(item => {
-                  const amountClass = item.type === '收入' ? 'text-success' : 'text-danger';
-                  const amountPrefix = item.type === '收入' ? '+' : '-';
-                  
-                  html += `
-                      <tr>
-                          <td>${formatDate(item.date)}</td>
-                          <td>${item.description}</td>
-                          <td>${item.type}</td>
-                          <td class="${amountClass}">${amountPrefix}${formatCurrency(item.amount)}</td>
-                      </tr>
-                  `;
-              });
-
-              html += `
-                                  </tbody>
-                              </table>
-                          </div>
-                      </div>
-                  </div>
-              `;
-          }
-
-          container.html(html);
-      }
-
-      async function generateAnnualReport() {
-          const year = $('#annualReportYear').val();
-          if (!year) {
-              showAlert('warning', '請選擇年度');
-              return;
-          }
-
-          try {
-              const result = await callAPI('generateAnnualReport', {
-                  year: parseInt(year),
-                  reportType: 'comprehensive',
-                  includeCharts: true
-              });
-
-              if (result.success) {
-                  displayAnnualReport(result.data);
-              }
-          } catch (error) {
-              console.error('生成年報表錯誤:', error);
-          }
-      }
-
-      function displayAnnualReport(data) {
-          const container = $('#annualReportContent');
-          
-          let html = `
-              <div class="row mb-4">
-                  <div class="col-md-3">
-                      <div class="card bg-primary text-white">
-                          <div class="card-body text-center">
-                              <h5>年度收入</h5>
-                              <h3>${formatCurrency(data.totalIncome)}</h3>
-                          </div>
-                      </div>
-                  </div>
-                  <div class="col-md-3">
-                      <div class="card bg-warning text-white">
-                          <div class="card-body text-center">
-                              <h5>年度支出</h5>
-                              <h3>${formatCurrency(data.totalExpenses)}</h3>
-                          </div>
-                      </div>
-                  </div>
-                  <div class="col-md-3">
-                      <div class="card bg-success text-white">
-                          <div class="card-body text-center">
-                              <h5>年度結餘</h5>
-                              <h3>${formatCurrency(data.netIncome)}</h3>
-                          </div>
-                      </div>
-                  </div>
-                  <div class="col-md-3">
-                      <div class="card bg-info text-white">
-                          <div class="card-body text-center">
-                              <h5>平均月收入</h5>
-                              <h3>${formatCurrency(data.avgMonthlyIncome)}</h3>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          `;
-
-          if (data.monthlyData) {
-              html += `
-                  <div class="card">
-                      <div class="card-header">
-                          <h5>月度趨勢</h5>
-                      </div>
-                      <div class="card-body">
-                          <canvas id="annualTrendChart" height="400"></canvas>
-                      </div>
-                  </div>
-              `;
-          }
-
-          container.html(html);
-
-          // 繪製年度趨勢圖
-          if (data.monthlyData) {
-              setTimeout(() => {
-                  createAnnualTrendChart(data.monthlyData);
-              }, 100);
-          }
-      }
-
-      function createAnnualTrendChart(data) {
-          const ctx = document.getElementById('annualTrendChart').getContext('2d');
-          
-          new Chart(ctx, {
-              type: 'bar',
-              data: {
-                  labels: data.labels,
-                  datasets: [{
-                      label: '收入',
-                      data: data.income,
-                      backgroundColor: 'rgba(39, 174, 96, 0.8)'
-                  }, {
-                      label: '支出',
-                      data: data.expenses,
-                      backgroundColor: 'rgba(231, 76, 60, 0.8)'
-                  }]
-              },
-              options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                      legend: {
-                          position: 'top',
-                      }
-                  },
-                  scales: {
-                      y: {
-                          beginAtZero: true,
-                          ticks: {
-                              callback: function(value) {
-                                  return formatCurrency(value);
-                              }
-                          }
-                      }
-                  }
-              }
-          });
-      }
-
-      async function generateDonorReport() {
-          const startDate = $('#donorReportStartDate').val();
-          const endDate = $('#donorReportEndDate').val();
-          const minAmount = $('#donorReportMinAmount').val();
-
-          if (!startDate || !endDate) {
-              showAlert('warning', '請選擇查詢日期範圍');
-              return;
-          }
-
-          try {
-              const result = await callAPI('generateDonorReport', {
-                  startDate: startDate,
-                  endDate: endDate,
-                  minAmount: parseFloat(minAmount || 0),
-                  groupBy: 'month',
-                  includeRecurring: true
-              });
-
-              if (result.success) {
-                  displayDonorReport(result.data);
-              }
-          } catch (error) {
-              console.error('生成捐款人報表錯誤:', error);
-          }
-      }
-
-      function displayDonorReport(data) {
-          const container = $('#donorReportContent');
-          
-          let html = `
-              <div class="row mb-4">
-                  <div class="col-md-4">
-                      <div class="card bg-info text-white">
-                          <div class="card-body text-center">
-                              <h5>捐款人數</h5>
-                              <h3>${data.totalDonors}</h3>
-                          </div>
-                      </div>
-                  </div>
-                  <div class="col-md-4">
-                      <div class="card bg-success text-white">
-                          <div class="card-body text-center">
-                              <h5>總捐款金額</h5>
-                              <h3>${formatCurrency(data.totalAmount)}</h3>
-                          </div>
-                      </div>
-                  </div>
-                  <div class="col-md-4">
-                      <div class="card bg-warning text-white">
-                          <div class="card-body text-center">
-                              <h5>平均捐款</h5>
-                              <h3>${formatCurrency(data.avgAmount)}</h3>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          `;
-
-          if (data.donors && data.donors.length > 0) {
-              html += `
-                  <div class="card">
-                      <div class="card-header">
-                          <h5>捐款人明細</h5>
-                      </div>
-                      <div class="card-body">
-                          <div class="table-responsive">
-                              <table class="table table-striped">
-                                  <thead>
-                                      <tr>
-                                          <th>捐款人</th>
-                                          <th>捐款次數</th>
-                                          <th>總金額</th>
-                                          <th>最後捐款日期</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody>
-              `;
-
-              data.donors.forEach(donor => {
-                  html += `
-                      <tr>
-                          <td>${donor.name}</td>
-                          <td>${donor.count}</td>
-                          <td>${formatCurrency(donor.totalAmount)}</td>
-                          <td>${formatDate(donor.lastDonationDate)}</td>
-                      </tr>
-                  `;
-              });
-
-              html += `
-                                  </tbody>
-                              </table>
-                          </div>
-                      </div>
-                  </div>
-              `;
-          }
-
-          container.html(html);
-      }
-
-      async function generateBudgetReport() {
-          const year = $('#budgetReportYear').val();
-          if (!year) {
-              showAlert('warning', '請選擇預算年度');
-              return;
-          }
-
-          try {
-              const result = await callAPI('generateBudgetReport', {
-                  year: parseInt(year),
-                  category: 'all',
-                  comparisonType: 'budget_vs_actual'
-              });
-
-              if (result.success) {
-                  displayBudgetReport(result.data);
-              }
-          } catch (error) {
-              console.error('生成預算報表錯誤:', error);
-          }
-      }
-
-      function displayBudgetReport(data) {
-          const container = $('#budgetReportContent');
-          container.html('<p class="text-muted">預算報表功能開發中...</p>');
-      }
-
-      // 系統管理相關函數
-      async function showSystemManagement() {
-          switchSection('systemManagement');
-          await loadSystemStatus();
-          await loadBackupInfo();
-      }
-
-      async function loadSystemStatus() {
-          try {
-              const result = await callAPI('systemHealthCheck');
-              if (result.success) {
-                  displaySystemStatus(result.data);
-              }
-          } catch (error) {
-              console.error('載入系統狀態錯誤:', error);
-              $('#systemStatus').html('<p class="text-danger">無法載入系統狀態</p>');
-          }
-      }
-
-      function displaySystemStatus(status) {
-          const container = $('#systemStatus');
-          
-          const statusClass = status.overall === 'healthy' ? 'text-success' : 'text-warning';
-          const statusText = status.overall === 'healthy' ? '正常' : '需要注意';
-          
-          let html = `
-              <div class="mb-3">
-                  <h6 class="${statusClass}">
-                      <i class="fas fa-circle me-2"></i>
-                      系統狀態：${statusText}
-                  </h6>
-              </div>
-              <div class="row">
-                  <div class="col-6">
-                      <small class="text-muted">資料庫連接：</small>
-                      <span class="${status.database ? 'text-success' : 'text-danger'}">
-                          ${status.database ? '正常' : '異常'}
-                      </span>
-                  </div>
-                  <div class="col-6">
-                      <small class="text-muted">郵件服務：</small>
-                      <span class="${status.email ? 'text-success' : 'text-danger'}">
-                          ${status.email ? '正常' : '異常'}
-                      </span>
-                  </div>
-              </div>
-              <div class="row mt-2">
-                  <div class="col-6">
-                      <small class="text-muted">儲存空間：</small>
-                      <span class="text-info">${status.storage}%</span>
-                  </div>
-                  <div class="col-6">
-                      <small class="text-muted">最後檢查：</small>
-                      <span class="text-muted">${formatDate(status.lastCheck)}</span>
-                  </div>
-              </div>
-          `;
-          
-          container.html(html);
-      }
-
-      async function systemHealthCheck() {
-          await loadSystemStatus();
-          showAlert('success', '系統狀態檢查完成');
-      }
-
-      async function loadBackupInfo() {
-          try {
-              const result = await callAPI('getBackupInfo');
-              if (result.success) {
-                  displayBackupInfo(result.data);
-              }
-          } catch (error) {
-              console.error('載入備份資訊錯誤:', error);
-              $('#backupInfo').html('<p class="text-danger">無法載入備份資訊</p>');
-          }
-      }
-
-      function displayBackupInfo(info) {
-          const container = $('#backupInfo');
-          
-          let html = `
-              <div class="mb-3">
-                  <small class="text-muted">最後備份：</small>
-                  <span class="fw-bold">${formatDate(info.lastBackup) || '從未備份'}</span>
-              </div>
-              <div class="mb-3">
-                  <small class="text-muted">備份檔案數：</small>
-                  <span class="fw-bold">${info.backupCount || 0}</span>
-              </div>
-              <div class="mb-3">
-                  <small class="text-muted">自動備份：</small>
-                  <span class="${info.autoBackupEnabled ? 'text-success' : 'text-warning'}">
-                      ${info.autoBackupEnabled ? '已啟用' : '已停用'}
-                  </span>
-              </div>
-          `;
-          
-          container.html(html);
-      }
-
-      async function createBackup() {
-          const result = await Swal.fire({
-              title: '建立備份',
-              text: '確定要建立系統備份嗎？',
-              icon: 'question',
-              showCancelButton: true,
-              confirmButtonColor: '#27ae60',
-              cancelButtonColor: '#6c757d',
-              confirmButtonText: '確定備份',
-              cancelButtonText: '取消'
-          });
-
-          if (result.isConfirmed) {
-              try {
-                  const backupResult = await callAPI('createSystemBackup', {
-                      includeFiles: true,
-                      backupName: `手動備份_${new Date().toISOString().slice(0, 10)}`
-                  });
-
-                  if (backupResult.success) {
-                      showAlert('success', '系統備份建立成功');
-                      await loadBackupInfo();
-                  }
-              } catch (error) {
-                  console.error('建立備份錯誤:', error);
-              }
-          }
-      }
-
-      function showRestoreModal() {
-          showAlert('info', '還原備份功能開發中');
-      }
-
-      function showCleanupModal() {
-          showAlert('info', '資料清理功能開發中');
-      }
-
-      function showSystemSettings() {
-          showAlert('info', '系統設定功能開發中');
-      }
-
-      function logout() {
-          showAlert('info', '登出功能開發中');
-      }
-
-      // 載入SweetAlert2 CSS
-      sweetAlertCSS.href = 'https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.7.32/sweetalert2.min.css';
-      document.head.appendChild(sweetAlertCSS);
-
-      // 全域錯誤處理
-      window.addEventListener('error', function(e) {
-          console.error('JavaScript錯誤:', e.error);
-          showAlert('error', '系統發生錯誤，請重新整理頁面或聯繫管理員');
-      });
-
-      // 網路連線狀態檢查
-      window.addEventListener('online', function() {
-          showAlert('success', '網路連線已恢復', '連線狀態');
-      });
-
-      window.addEventListener('offline', function() {
-          showAlert('warning', '網路連線中斷，部分功能可能無法使用', '連線狀態');
-      });
-
-      // 頁面可見性變化處理
-      document.addEventListener('visibilitychange', function() {
-          if (!document.hidden && currentSection === 'dashboard') {
-              // 當頁面重新可見且在儀表板時，重新載入數據
-              setTimeout(() => {
-                  loadDashboardData();
-              }, 1000);
-          }
-      });
-
-      // 響應式處理
-      function handleResize() {
-          if (window.innerWidth <= 768) {
-              // 移動設備處理
-              $('#sidebar').removeClass('show');
-          }
-      }
-
-      window.addEventListener('resize', debounce(handleResize, 250));
-
-      // 鍵盤快捷鍵
-      document.addEventListener('keydown', function(e) {
-          // Ctrl + S 儲存當前表單
-          if (e.ctrlKey && e.key === 's') {
-              e.preventDefault();
-              const activeModal = $('.modal.show');
-              if (activeModal.length > 0) {
-                  const submitBtn = activeModal.find('.btn-primary').last();
-                  if (submitBtn.length > 0) {
-                      submitBtn.click();
-                  }
-              }
-          }
-          
-          // ESC 關閉模態視窗
-          if (e.key === 'Escape') {
-              const activeModal = $('.modal.show');
-              if (activeModal.length > 0) {
-                  activeModal.modal('hide');
-              }
-          }
-      });
-
-      // 表單驗證增強
-      function enhanceFormValidation() {
-          // 為所有必填欄位添加即時驗證
-          $('input[required], select[required], textarea[required]').on('blur', function() {
-              const $this = $(this);
-              if (!$this.val()) {
-                  $this.addClass('is-invalid');
-                  if (!$this.next('.invalid-feedback').length) {
-                      $this.after('<div class="invalid-feedback">此欄位為必填</div>');
-                  }
+<script>
+// 系統設定
+const CONFIG = {
+  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbzYRT0NncXVmd_7ZF7T3VgYB4w_HIJcR6nau_NLbkK9qLwIwaAh0GMr7tBTeeewil5Q/exec',
+  OFFLINE_MODE: true, // 預設開啟離線模式
+  API_TIMEOUT: 5000,
+  CACHE_DURATION: 5 * 60 * 1000,
+  MAX_RETRY_ATTEMPTS: 1
+};
+
+// 全域變數
+let currentSection = 'dashboard';
+let charts = {};
+let tables = {};
+let apiFailureCount = 0;
+
+// 頁面載入完成
+$(document).ready(function() {
+  console.log('系統初始化開始...');
+  
+  // 移除可能導致錯誤的未定義變數
+  if (typeof sweetAlertCSS !== 'undefined') {
+      delete window.sweetAlertCSS;
+  }
+  
+  // 確保 SweetAlert2 已載入
+  if (typeof Swal === 'undefined') {
+      console.warn('SweetAlert2 未載入，使用原生 alert');
+      window.Swal = {
+          fire: function(options) {
+              if (typeof options === 'string') {
+                  alert(options);
               } else {
-                  $this.removeClass('is-invalid').addClass('is-valid');
+                  alert(options.text || options.title || '提示');
               }
-          });
-
-          // 電子郵件格式驗證
-          $('input[type="email"]').on('blur', function() {
-              const $this = $(this);
-              const email = $this.val();
-              if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-                  $this.addClass('is-invalid');
-                  if (!$this.next('.invalid-feedback').length) {
-                      $this.after('<div class="invalid-feedback">請輸入有效的電子郵件格式</div>');
-                  }
-              } else if (email) {
-                  $this.removeClass('is-invalid').addClass('is-valid');
-              }
-          });
-
-          // 電話號碼格式驗證
-          $('input[type="tel"]').on('blur', function() {
-              const $this = $(this);
-              const phone = $this.val();
-              if (phone && !/^[\d\-\+\(\)\s]+$/.test(phone)) {
-                  $this.addClass('is-invalid');
-                  if (!$this.next('.invalid-feedback').length) {
-                      $this.after('<div class="invalid-feedback">請輸入有效的電話號碼</div>');
-                  }
-              } else if (phone) {
-                  $this.removeClass('is-invalid').addClass('is-valid');
-              }
-          });
-
-          // 數字欄位驗證
-          $('input[type="number"]').on('blur', function() {
-              const $this = $(this);
-              const value = $this.val();
-              const min = $this.attr('min');
-              const max = $this.attr('max');
-              
-              if (value) {
-                  const numValue = parseFloat(value);
-                  if (isNaN(numValue)) {
-                      $this.addClass('is-invalid');
-                      if (!$this.next('.invalid-feedback').length) {
-                          $this.after('<div class="invalid-feedback">請輸入有效的數字</div>');
-                      }
-                  } else if (min && numValue < parseFloat(min)) {
-                      $this.addClass('is-invalid');
-                      if (!$this.next('.invalid-feedback').length) {
-                          $this.after(`<div class="invalid-feedback">數值不能小於 ${min}</div>`);
-                      }
-                  } else if (max && numValue > parseFloat(max)) {
-                      $this.addClass('is-invalid');
-                      if (!$this.next('.invalid-feedback').length) {
-                          $this.after(`<div class="invalid-feedback">數值不能大於 ${max}</div>`);
-                      }
-                  } else {
-                      $this.removeClass('is-invalid').addClass('is-valid');
-                  }
-              }
-          });
-      }
-
-      // 數據快取管理
-      const cacheManager = {
-          set: function(key, data, expireMinutes = 5) {
-              const expireTime = new Date().getTime() + (expireMinutes * 60 * 1000);
-              const cacheData = {
-                  data: data,
-                  expire: expireTime
-              };
-              localStorage.setItem(`cache_${key}`, JSON.stringify(cacheData));
-          },
-          
-          get: function(key) {
-              const cacheStr = localStorage.getItem(`cache_${key}`);
-              if (!cacheStr) return null;
-              
-              try {
-                  const cache = JSON.parse(cacheStr);
-                  if (new Date().getTime() > cache.expire) {
-                      localStorage.removeItem(`cache_${key}`);
-                      return null;
-                  }
-                  return cache.data;
-              } catch (e) {
-                  localStorage.removeItem(`cache_${key}`);
-                  return null;
-              }
-          },
-          
-          clear: function(pattern = '') {
-              const keys = Object.keys(localStorage);
-              keys.forEach(key => {
-                  if (key.startsWith('cache_') && key.includes(pattern)) {
-                      localStorage.removeItem(key);
-                  }
-              });
+              return Promise.resolve({ isConfirmed: true });
           }
       };
+  }
+  
+  initializeApp();
+});
 
-      // 性能監控
-      const performanceMonitor = {
-          startTime: {},
-          
-          start: function(operation) {
-              this.startTime[operation] = performance.now();
-          },
-          
-          end: function(operation) {
-              if (this.startTime[operation]) {
-                  const duration = performance.now() - this.startTime[operation];
-                  console.log(`操作 ${operation} 耗時: ${duration.toFixed(2)}ms`);
-                  delete this.startTime[operation];
-                  
-                  // 如果操作耗時超過3秒，顯示警告
-                  if (duration > 3000) {
-                      console.warn(`操作 ${operation} 耗時過長: ${duration.toFixed(2)}ms`);
-                  }
-              }
-          }
-      };
-
-      // 增強的API調用函數（帶快取和重試機制）
-      async function callAPIWithCache(action, data = {}, useCache = false, retries = 3) {
-          const cacheKey = `${action}_${JSON.stringify(data)}`;
-          
-          // 檢查快取
-          if (useCache) {
-              const cachedData = cacheManager.get(cacheKey);
-              if (cachedData) {
-                  console.log(`使用快取數據: ${action}`);
-                  return cachedData;
-              }
-          }
-          
-          performanceMonitor.start(action);
-          
-          for (let attempt = 1; attempt <= retries; attempt++) {
-              try {
-                  const result = await callAPI(action, data);
-                  
-                  // 成功時儲存快取
-                  if (result.success && useCache) {
-                      cacheManager.set(cacheKey, result);
-                  }
-                  
-                  performanceMonitor.end(action);
-                  return result;
-                  
-              } catch (error) {
-                  console.warn(`API調用失敗 (嘗試 ${attempt}/${retries}):`, error);
-                  
-                  if (attempt === retries) {
-                      performanceMonitor.end(action);
-                      throw error;
-                  }
-                  
-                  // 重試前等待
-                  await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-              }
-          }
-      }
-
-      // 批量操作支援
-      async function batchOperation(operations, batchSize = 5) {
-          const results = [];
-          
-          for (let i = 0; i < operations.length; i += batchSize) {
-              const batch = operations.slice(i, i + batchSize);
-              const batchPromises = batch.map(op => callAPI(op.action, op.data));
-              
-              try {
-                  const batchResults = await Promise.all(batchPromises);
-                  results.push(...batchResults);
-                  
-                  // 顯示進度
-                  const progress = Math.min(100, Math.round(((i + batchSize) / operations.length) * 100));
-                  console.log(`批量操作進度: ${progress}%`);
-                  
-              } catch (error) {
-                  console.error('批量操作錯誤:', error);
-                  break;
-              }
-              
-              // 批次間稍作延遲，避免過載
-              if (i + batchSize < operations.length) {
-                  await new Promise(resolve => setTimeout(resolve, 100));
-              }
-          }
-          
-          return results;
-      }
-
-      // 匯出功能增強
-      async function enhancedExport(dataType, format = 'csv', options = {}) {
-          try {
-              showLoading(true);
-              
-              const exportData = {
-                  dataType: dataType,
-                  format: format,
-                  options: {
-                      includeHeaders: true,
-                      dateFormat: 'YYYY-MM-DD',
-                      encoding: 'UTF-8',
-                      ...options
-                  }
-              };
-              
-              const result = await callAPI('exportData', exportData);
-              
-              if (result.success) {
-                  if (result.data.downloadUrl) {
-                      // 創建隱藏的下載連結
-                      const link = document.createElement('a');
-                      link.href = result.data.downloadUrl;
-                      link.download = result.data.filename || `${dataType}_${new Date().toISOString().slice(0, 10)}.${format}`;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      
-                      showAlert('success', `${dataType}資料匯出成功`);
-                  } else if (result.data.content) {
-                      // 直接下載內容
-                      downloadContent(result.data.content, result.data.filename, result.data.mimeType);
-                      showAlert('success', `${dataType}資料匯出成功`);
-                  }
-              }
-              
-          } catch (error) {
-              console.error('匯出錯誤:', error);
-              showAlert('error', '匯出失敗，請稍後再試');
-          } finally {
-              showLoading(false);
-          }
-      }
-
-      // 直接下載內容
-      function downloadContent(content, filename, mimeType = 'text/csv') {
-          const blob = new Blob([content], { type: mimeType });
-          const url = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(url);
-      }
-
-      // 初始化增強功能
-      $(document).ready(function() {
-          enhanceFormValidation();
-          
-          // 設定自動儲存草稿功能
-          let autoSaveTimer;
-          $('form').on('input change', function() {
-              clearTimeout(autoSaveTimer);
-              const formId = $(this).attr('id');
-              if (formId) {
-                  autoSaveTimer = setTimeout(() => {
-                      saveFormDraft(formId);
-                  }, 2000);
-              }
-          });
-      });
-
-      // 表單草稿儲存
-      function saveFormDraft(formId) {
-          const form = document.getElementById(formId);
-          if (form) {
-              const formData = new FormData(form);
-              const draftData = Object.fromEntries(formData.entries());
-              localStorage.setItem(`draft_${formId}`, JSON.stringify(draftData));
-              console.log(`已儲存表單草稿: ${formId}`);
-          }
-      }
-
-      // 載入表單草稿
-      function loadFormDraft(formId) {
-          const draftStr = localStorage.getItem(`draft_${formId}`);
-          if (draftStr) {
-              try {
-                  const draftData = JSON.parse(draftStr);
-                  const form = document.getElementById(formId);
-                  
-                  Object.keys(draftData).forEach(name => {
-                      const input = form.querySelector(`[name="${name}"]`);
-                      if (input) {
-                          input.value = draftData[name];
-                      }
-                  });
-                  
-                  showAlert('info', '已載入之前的草稿內容');
-              } catch (e) {
-                  console.error('載入草稿錯誤:', e);
-              }
-          }
-      }
-
-      // 清除表單草稿
-      function clearFormDraft(formId) {
-          localStorage.removeItem(`draft_${formId}`);
-      }
-
-      // 主題切換功能
-      function toggleTheme() {
-          const currentTheme = document.body.getAttribute('data-theme');
-          const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-          
-          document.body.setAttribute('data-theme', newTheme);
-          localStorage.setItem('theme', newTheme);
-          
-          showAlert('success', `已切換至${newTheme === 'dark' ? '深色' : '淺色'}主題`);
-      }
-
-      // 載入儲存的主題
-      function loadSavedTheme() {
-          const savedTheme = localStorage.getItem('theme') || 'light';
-          document.body.setAttribute('data-theme', savedTheme);
-      }
-
-      // 頁面載入完成後執行
-      $(document).ready(function() {
-          loadSavedTheme();
-      });
-function printReport(elementId) {
-    const element = document.getElementById(elementId);
-    if (!element) return;
-
-    // 開新視窗
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-        alert('請允許瀏覽器彈出視窗，以使用列印功能');
-        return;
-    }
-
-    // HTML 內容
-    const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>列印報表</title>
-            <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
-            <style>
-                @media print {
-                    .no-print { display: none !important; }
-                    body { font-size: 12px; }
-                    .card { border: 1px solid #ddd; margin-bottom: 20px; }
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container-fluid">
-                ${element.innerHTML}
-            </div>
-            <script>
-                window.onload = function() {
-                    setTimeout(function() {
-                        window.print();
-                        window.onafterprint = function() {
-                            window.close();
-                        }
-                    }, 100);
-                }
-            <\/script>
-        </body>
-        </html>
-    `;
-
-    // 寫入內容並關閉 document
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+// 初始化應用程式
+function initializeApp() {
+  try {
+      console.log('開始初始化應用程式...');
+      
+      // 初始化事件監聽
+      initializeEventListeners();
+      
+      // 載入主題設定
+      loadSavedTheme();
+      
+      // 直接使用離線模式
+      console.log('使用離線模式啟動');
+      CONFIG.OFFLINE_MODE = true;
+      
+      // 載入儀表板
+      showDashboard();
+      
+      console.log('系統初始化完成');
+      
+      // 顯示離線模式提示
+      setTimeout(() => {
+          showAlert('info', '目前使用離線模式，顯示示範資料');
+      }, 1000);
+      
+  } catch (error) {
+      console.error('系統初始化錯誤:', error);
+      showAlert('error', '系統初始化失敗，請重新整理頁面');
+  }
 }
 
+// 初始化事件監聽
+function initializeEventListeners() {
+  // 側邊欄切換
+  $('#sidebarToggle').click(function() {
+      $('#sidebar').toggleClass('show');
+      $('#mainContent').toggleClass('shifted');
+  });
 
-      // 全螢幕功能
-      function toggleFullscreen() {
-          if (!document.fullscreenElement) {
-              document.documentElement.requestFullscreen();
+  // 點擊外部關閉側邊欄
+  $(document).click(function(e) {
+      if (!$(e.target).closest('#sidebar, #sidebarToggle').length) {
+          $('#sidebar').removeClass('show');
+          $('#mainContent').removeClass('shifted');
+      }
+  });
+
+  // 表單驗證增強
+  enhanceFormValidation();
+  
+  // 網路狀態檢測
+  checkNetworkStatus();
+}
+
+// 修正的 API 調用函數
+async function callAPI(action, data = {}) {
+  // 直接使用離線模式
+  if (CONFIG.OFFLINE_MODE) {
+      return handleOfflineAPI(action, data);
+  }
+  
+  try {
+      // 嘗試 API 調用
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), CONFIG.API_TIMEOUT);
+      
+      const response = await fetch(CONFIG.WEB_APP_URL, {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+              action: action,
+              ...data
+          }),
+          signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      // 重置失敗計數
+      apiFailureCount = 0;
+      
+      return result;
+      
+  } catch (error) {
+      console.error('API調用錯誤:', error);
+      apiFailureCount++;
+      
+      // 如果連續失敗，切換到離線模式
+      if (apiFailureCount >= CONFIG.MAX_RETRY_ATTEMPTS) {
+          console.log('API調用多次失敗，切換到離線模式');
+          CONFIG.OFFLINE_MODE = true;
+          
+          // 只在第一次切換時顯示提示
+          if (apiFailureCount === CONFIG.MAX_RETRY_ATTEMPTS) {
+              showAlert('warning', '網路連線異常，已切換到離線模式');
+          }
+      }
+      
+      return handleOfflineAPI(action, data);
+  }
+}
+
+// 離線模式 API 處理
+function handleOfflineAPI(action, data) {
+  console.log(`離線模式 API 調用: ${action}`, data);
+  
+  return new Promise((resolve) => {
+      // 模擬網路延遲
+      setTimeout(() => {
+          resolve(getMockResponse(action, data));
+      }, 300 + Math.random() * 200); // 300-500ms 隨機延遲
+  });
+}
+
+// 獲取模擬回應資料
+function getMockResponse(action, data) {
+  const currentDate = new Date();
+  const formatDate = (date) => date.toISOString().split('T')[0];
+  
+  const mockData = {
+      getDashboardStats: {
+          success: true,
+          data: {
+              totalMembers: 156,
+              totalIncome: 2850000,
+              totalExpenses: 1920000,
+              currentBalance: 930000,
+              lastUpdated: formatDate(currentDate)
+          }
+      },
+      
+      getTrendData: {
+          success: true,
+          data: {
+              labels: ['1月', '2月', '3月', '4月', '5月', '6月'],
+              income: [120000, 150000, 180000, 200000, 220000, 250000],
+              expenses: [80000, 95000, 110000, 125000, 140000, 160000]
+          }
+      },
+      
+      getIncomeDistribution: {
+          success: true,
+          data: {
+              labels: ['會員費', '捐款', '活動收入', '政府補助', '其他'],
+              values: [45, 25, 15, 10, 5],
+              colors: ['#4facfe', '#fa709a', '#fee140', '#a8edea', '#c471ed']
+          }
+      },
+      
+      getRecentActivities: {
+          success: true,
+          data: [
+              { 
+                  id: 1,
+                  type: 'income', 
+                  description: '收到會員費 - 張小明', 
+                  amount: 5000, 
+                  date: formatDate(new Date(currentDate.getTime() - 1 * 24 * 60 * 60 * 1000)),
+                  category: '會員費'
+              },
+              { 
+                  id: 2,
+                  type: 'expense', 
+                  description: '辦公用品採購', 
+                  amount: 1200, 
+                  date: formatDate(new Date(currentDate.getTime() - 2 * 24 * 60 * 60 * 1000)),
+                  category: '辦公費用'
+              },
+              { 
+                  id: 3,
+                  type: 'member', 
+                  description: '新增會員：李小華', 
+                  amount: 0, 
+                  date: formatDate(new Date(currentDate.getTime() - 3 * 24 * 60 * 60 * 1000)),
+                  category: '會員管理'
+              },
+              { 
+                  id: 4,
+                  type: 'income', 
+                  description: '收到捐款 - 愛心企業', 
+                  amount: 50000, 
+                  date: formatDate(new Date(currentDate.getTime() - 4 * 24 * 60 * 60 * 1000)),
+                  category: '捐款'
+              },
+              { 
+                  id: 5,
+                  type: 'expense', 
+                  description: '活動場地租金', 
+                  amount: 8000, 
+                  date: formatDate(new Date(currentDate.getTime() - 5 * 24 * 60 * 60 * 1000)),
+                  category: '活動費用'
+              }
+          ]
+      },
+      
+      getMembers: {
+          success: true,
+          data: [
+              { 
+                  id: 1, 
+                  name: '張小明', 
+                  type: 'individual', 
+                  email: 'zhang@example.com', 
+                  phone: '0912345678', 
+                  status: 'active', 
+                  joinDate: '2024-01-15',
+                  address: '台北市中正區',
+                  notes: '創始會員'
+              },
+              { 
+                  id: 2, 
+                  name: '李小華', 
+                  type: 'individual', 
+                  email: 'li@example.com', 
+                  phone: '0987654321', 
+                  status: 'active', 
+                  joinDate: '2024-02-20',
+                  address: '台北市大安區',
+                  notes: '積極參與活動'
+              },
+              { 
+                  id: 3, 
+                  name: '王大明', 
+                  type: 'individual', 
+                  email: 'wang@example.com', 
+                  phone: '0923456789', 
+                  status: 'inactive', 
+                  joinDate: '2024-03-10',
+                  address: '台北市信義區',
+                  notes: '暫停會籍'
+              },
+              { 
+                  id: 4, 
+                  name: '陳美麗', 
+                  type: 'individual', 
+                  email: 'chen@example.com', 
+                  phone: '0934567890', 
+                  status: 'active', 
+                  joinDate: '2024-04-05',
+                  address: '新北市板橋區',
+                  notes: '志工團隊成員'
+              },
+              { 
+                  id: 5, 
+                  name: '財團法人愛心基金會', 
+                  type: 'organization', 
+                  email: 'info@lovefund.org', 
+                  phone: '02-12345678', 
+                  status: 'active', 
+                  joinDate: '2024-01-01',
+                  address: '台北市中山區',
+                  notes: '合作夥伴機構'
+              },
+              { 
+                  id: 6, 
+                  name: '林志明', 
+                  type: 'individual', 
+                  email: 'lin@example.com', 
+                  phone: '0945678901', 
+                  status: 'active', 
+                  joinDate: '2024-05-12',
+                  address: '台中市西區',
+                  notes: '中部地區聯絡人'
+              }
+          ]
+      },
+      
+      addMember: {
+          success: true,
+          message: '會員新增成功',
+          data: {
+              id: Math.floor(Math.random() * 1000) + 100,
+              ...data
+          }
+      },
+      
+      deleteMember: {
+          success: true,
+          message: '會員刪除成功'
+      },
+      
+      updateMember: {
+          success: true,
+          message: '會員資料更新成功'
+      }
+  };
+
+  const response = mockData[action];
+  if (response) {
+      return response;
+  } else {
+      return { 
+          success: false, 
+          message: `未知的API動作: ${action}`,
+          error: 'UNKNOWN_ACTION'
+      };
+  }
+}
+
+// 顯示載入狀態
+function showLoading(show = true) {
+  const overlay = $('#loadingOverlay');
+  if (show) {
+      overlay.css('display', 'flex').fadeIn(200);
+  } else {
+      overlay.fadeOut(200);
+  }
+}
+
+// 顯示提示訊息（改進版）
+function showAlert(type, message, title = '') {
+  // 確保 Swal 可用
+  if (typeof Swal === 'undefined') {
+      alert(message);
+      return;
+  }
+
+  const icons = {
+      success: 'success',
+      error: 'error',
+      warning: 'warning',
+      info: 'info'
+  };
+
+  const titles = {
+      success: '成功',
+      error: '錯誤',
+      warning: '警告',
+      info: '提示'
+  };
+
+  Swal.fire({
+      icon: icons[type] || 'info',
+      title: title || titles[type] || '提示',
+      text: message,
+      confirmButtonText: '確定',
+      timer: type === 'success' ? 3000 : 0,
+      timerProgressBar: type === 'success',
+      showConfirmButton: type !== 'success' || message.length > 20
+  }).catch(error => {
+      console.error('SweetAlert2 錯誤:', error);
+      alert(message); // 降級到原生 alert
+  });
+}
+
+// 顯示區域
+function showSection(sectionName) {
+  // 隱藏所有區域
+  $('.section').removeClass('active');
+  
+  // 顯示指定區域
+  $(`#${sectionName}`).addClass('active');
+  
+  // 更新導航狀態
+  $('.sidebar .nav-link').removeClass('active');
+  $(`.sidebar .nav-link[onclick="showSection('${sectionName}')"]`).addClass('active');
+  
+  currentSection = sectionName;
+  
+  // 載入對應資料
+  switch(sectionName) {
+      case 'dashboard':
+          showDashboard();
+          break;
+      case 'members':
+          loadMembers();
+          break;
+      // 其他區域可以在這裡添加
+  }
+}
+
+// 顯示儀表板
+async function showDashboard() {
+  try {
+      showLoading(true);
+      await loadDashboardData();
+  } catch (error) {
+      console.error('載入儀表板錯誤:', error);
+      showAlert('error', '載入儀表板資料失敗');
+  } finally {
+      showLoading(false);
+  }
+}
+
+// 載入儀表板資料
+async function loadDashboardData() {
+  try {
+      // 載入統計資料
+      const statsResult = await callAPI('getDashboardStats');
+      if (statsResult.success) {
+          updateDashboardStats(statsResult.data);
+      }
+
+      // 載入圖表
+      await loadDashboardCharts();
+      
+      // 載入最近活動
+      await loadRecentActivities();
+      
+  } catch (error) {
+      console.error('載入儀表板資料錯誤:', error);
+      throw error;
+  }
+}
+
+// 更新儀表板統計
+function updateDashboardStats(stats) {
+  $('#totalMembers').text(stats.totalMembers.toLocaleString());
+  $('#totalIncome').text('NT$ ' + stats.totalIncome.toLocaleString());
+  $('#totalExpenses').text('NT$ ' + stats.totalExpenses.toLocaleString());
+  $('#currentBalance').text('NT$ ' + stats.currentBalance.toLocaleString());
+}
+
+// 載入儀表板圖表
+async function loadDashboardCharts() {
+  try {
+      // 載入趨勢圖表
+      const trendResult = await callAPI('getTrendData');
+      if (trendResult.success) {
+          createTrendChart(trendResult.data);
+      }
+
+      // 載入收入分布圖表
+      const incomeResult = await callAPI('getIncomeDistribution');
+      if (incomeResult.success) {
+          createIncomeChart(incomeResult.data);
+      }
+      
+  } catch (error) {
+      console.error('載入圖表錯誤:', error);
+  }
+}
+
+// 建立趨勢圖表
+function createTrendChart(data) {
+  const ctx = document.getElementById('trendChart');
+  if (!ctx) return;
+  
+  const context = ctx.getContext('2d');
+  
+  if (charts.trend) {
+      charts.trend.destroy();
+  }
+  
+  charts.trend = new Chart(context, {
+      type: 'line',
+      data: {
+          labels: data.labels,
+          datasets: [{
+              label: '收入',
+              data: data.income,
+              borderColor: '#4facfe',
+              backgroundColor: 'rgba(79, 172, 254, 0.1)',
+              tension: 0.4,
+              fill: true
+          }, {
+              label: '支出',
+              data: data.expenses,
+              borderColor: '#fa709a',
+              backgroundColor: 'rgba(250, 112, 154, 0.1)',
+              tension: 0.4,
+              fill: true
+          }]
+      },
+      options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+              intersect: false,
+              mode: 'index'
+          },
+          scales: {
+              y: {
+                  beginAtZero: true,
+                  ticks: {
+                      callback: function(value) {
+                          return 'NT$ ' + value.toLocaleString();
+                      }
+                  }
+              }
+          },
+          plugins: {
+              legend: {
+                  position: 'top',
+              },
+              tooltip: {
+                  callbacks: {
+                      label: function(context) {
+                          return context.dataset.label + ': NT$ ' + context.parsed.y.toLocaleString();
+                      }
+                  }
+              }
+          }
+      }
+  });
+}
+
+// 建立收入圖表
+function createIncomeChart(data) {
+  const ctx = document.getElementById('incomeChart');
+  if (!ctx) return;
+  
+  const context = ctx.getContext('2d');
+  
+  if (charts.income) {
+      charts.income.destroy();
+  }
+  
+  charts.income = new Chart(context, {
+      type: 'doughnut',
+      data: {
+          labels: data.labels,
+          datasets: [{
+              data: data.values,
+              backgroundColor: data.colors || [
+                  '#4facfe',
+                  '#fa709a',
+                  '#fee140',
+                  '#a8edea',
+                  '#c471ed'
+              ],
+              borderWidth: 2,
+              borderColor: '#ffffff'
+          }]
+      },
+      options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+              legend: {
+                  position: 'bottom',
+              },
+              tooltip: {
+                  callbacks: {
+                      label: function(context) {
+                          return context.label + ': ' + context.parsed + '%';
+                      }
+                  }
+              }
+          }
+      }
+  });
+}
+
+// 載入最近活動
+async function loadRecentActivities() {
+  try {
+      const result = await callAPI('getRecentActivities');
+      if (result.success) {
+          displayRecentActivities(result.data);
+      }
+  } catch (error) {
+      console.error('載入最近活動錯誤:', error);
+      $('#recentActivities').html('<div class="text-center text-muted">載入失敗</div>');
+  }
+}
+
+// 顯示最近活動
+function displayRecentActivities(activities) {
+  let html = '';
+  
+  if (activities.length === 0) {
+      html = '<div class="text-center text-muted">暫無活動記錄</div>';
+  } else {
+      activities.forEach(activity => {
+          const icon = activity.type === 'income' ? 'fa-arrow-up text-success' : 
+                      activity.type === 'expense' ? 'fa-arrow-down text-danger' : 
+                      'fa-user text-info';
+          
+          html += `
+              <div class="d-flex align-items-center py-2 border-bottom">
+                  <div class="me-3">
+                      <i class="fas ${icon}"></i>
+                  </div>
+                  <div class="flex-grow-1">
+                      <div class="fw-medium">${activity.description}</div>
+                      <small class="text-muted">${activity.date}</small>
+                  </div>
+                  ${activity.amount > 0 ? `<div class="text-end">
+                      <span class="badge bg-${activity.type === 'income' ? 'success' : 'danger'}">
+                          NT$ ${activity.amount.toLocaleString()}
+                      </span>
+                  </div>` : ''}
+              </div>
+          `;
+      });
+  }
+  
+  $('#recentActivities').html(html);
+}
+
+// 載入會員資料
+async function loadMembers() {
+  try {
+      showLoading(true);
+      const result = await callAPI('getMembers');
+      
+      if (result.success) {
+          displayMembers(result.data);
+          initializeMembersTable();
+      } else {
+          showAlert('error', '載入會員資料失敗');
+      }
+  } catch (error) {
+      console.error('載入會員錯誤:', error);
+      showAlert('error', '載入會員資料失敗');
+  } finally {
+      showLoading(false);
+  }
+}
+
+// 顯示會員資料
+function displayMembers(members) {
+  let html = '';
+  
+  if (members.length === 0) {
+      html = '<tr><td colspan="8" class="text-center text-muted">暫無會員資料</td></tr>';
+  } else {
+      members.forEach(member => {
+          const statusBadge = member.status === 'active' ? 
+              '<span class="badge bg-success">啟用</span>' : 
+              '<span class="badge bg-secondary">停用</span>';
+          
+          const typeName = member.type === 'individual' ? '個人' : '機構';
+          
+          html += `
+              <tr>
+                  <td>${member.id}</td>
+                  <td>${member.name}</td>
+                  <td>${typeName}</td>
+                  <td>${member.email}</td>
+                  <td>${member.phone || '-'}</td>
+                  <td>${statusBadge}</td>
+                  <td>${member.joinDate}</td>
+                  <td>
+                      <div class="btn-group btn-group-sm">
+                          <button class="btn btn-outline-primary" onclick="editMember(${member.id})" title="編輯">
+                              <i class="fas fa-edit"></i>
+                          </button>
+                          <button class="btn btn-outline-info" onclick="viewMember(${member.id})" title="檢視">
+                              <i class="fas fa-eye"></i>
+                          </button>
+                          <button class="btn btn-outline-danger" onclick="deleteMember(${member.id})" title="刪除">
+                              <i class="fas fa-trash"></i>
+                          </button>
+                      </div>
+                  </td>
+              </tr>
+          `;
+      });
+  }
+  
+  $('#membersTableBody').html(html);
+}
+
+// 初始化會員表格
+function initializeMembersTable() {
+  if (tables.members) {
+      tables.members.destroy();
+  }
+  
+  // 檢查 DataTables 是否可用
+  if (typeof $.fn.DataTable === 'undefined') {
+      console.warn('DataTables 未載入，使用基本表格');
+      return;
+  }
+  
+  try {
+      tables.members = $('#membersTable').DataTable({
+          language: {
+              url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/zh-HANT.json'
+          },
+          pageLength: 25,
+          responsive: true,
+          order: [[0, 'desc']],
+          columnDefs: [
+              { orderable: false, targets: -1 } // 最後一列（操作列）不可排序
+          ]
+      });
+  } catch (error) {
+      console.error('初始化 DataTables 錯誤:', error);
+  }
+}
+
+// 顯示新增會員模態視窗
+function showAddMemberModal() {
+  $('#addMemberForm')[0].reset();
+  $('#addMemberModal').modal('show');
+}
+
+// 儲存會員
+async function saveMember() {
+  const form = $('#addMemberForm')[0];
+  
+  if (!form.checkValidity()) {
+      form.reportValidity();
+      return;
+  }
+  
+  try {
+      showLoading(true);
+      
+      const formData = new FormData(form);
+      const memberData = Object.fromEntries(formData.entries());
+      
+      const result = await callAPI('addMember', memberData);
+      
+      if (result.success) {
+          $('#addMemberModal').modal('hide');
+          showAlert('success', '會員新增成功');
+          loadMembers(); // 重新載入會員列表
+      } else {
+          showAlert('error', result.message || '新增會員失敗');
+      }
+  } catch (error) {
+      console.error('新增會員錯誤:', error);
+      showAlert('error', '新增會員失敗');
+  } finally {
+      showLoading(false);
+  }
+}
+
+// 編輯會員
+function editMember(id) {
+  showAlert('info', '編輯功能開發中...', '功能提示');
+}
+
+// 檢視會員
+function viewMember(id) {
+  showAlert('info', '檢視功能開發中...', '功能提示');
+}
+
+// 刪除會員
+function deleteMember(id) {
+  Swal.fire({
+      title: '確認刪除',
+      text: '確定要刪除這個會員嗎？此操作無法復原。',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: '確定刪除',
+      cancelButtonText: '取消'
+  }).then(async (result) => {
+      if (result.isConfirmed) {
+          try {
+              showLoading(true);
+              const deleteResult = await callAPI('deleteMember', { id: id });
+              
+              if (deleteResult.success) {
+                  showAlert('success', '會員刪除成功');
+                  loadMembers();
+              } else {
+                  showAlert('error', deleteResult.message || '刪除會員失敗');
+              }
+          } catch (error) {
+              console.error('刪除會員錯誤:', error);
+              showAlert('error', '刪除會員失敗');
+          } finally {
+              showLoading(false);
+          }
+      }
+  });
+}
+
+// 篩選會員
+function filterMembers() {
+  const search = $('#memberSearch').val();
+  const status = $('#memberStatusFilter').val();
+  const type = $('#memberTypeFilter').val();
+  
+  if (tables.members) {
+      // 應用篩選條件
+      tables.members.search(search).draw();
+      
+      // 自定義篩選邏輯可以在這裡添加
+      console.log('篩選條件:', { search, status, type });
+  }
+}
+
+// 匯入會員
+function importMembers() {
+  showAlert('info', '匯入功能開發中...', '功能提示');
+}
+
+// 匯出會員
+function exportMembers() {
+  showAlert('info', '匯出功能開發中...', '功能提示');
+}
+
+// 切換主題
+function toggleTheme() {
+  const currentTheme = document.documentElement.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  
+  document.documentElement.setAttribute('data-theme', newTheme);
+  localStorage.setItem('theme', newTheme);
+  
+  // 更新按鈕圖示
+  const icon = newTheme === 'dark' ? 'fa-sun' : 'fa-moon';
+  $('.navbar .btn i').removeClass('fa-moon fa-sun').addClass(icon);
+}
+
+// 載入儲存的主題
+function loadSavedTheme() {
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  
+  const icon = savedTheme === 'dark' ? 'fa-sun' : 'fa-moon';
+  $('.navbar .btn i').removeClass('fa-moon fa-sun').addClass(icon);
+}
+
+// 增強表單驗證
+function enhanceFormValidation() {
+  // 即時驗證
+  $('input[type="email"]').on('blur', function() {
+      const email = $(this).val();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      
+      if (email && !emailRegex.test(email)) {
+          $(this).addClass('is-invalid');
+          if (!$(this).next('.invalid-feedback').length) {
+              $(this).after('<div class="invalid-feedback">請輸入有效的電子郵件地址</div>');
+          }
+      } else {
+          $(this).removeClass('is-invalid');
+          $(this).next('.invalid-feedback').remove();
+      }
+  });
+
+  // 電話號碼驗證
+  $('input[type="tel"]').on('blur', function() {
+      const phone = $(this).val();
+      const phoneRegex = /^[0-9\-\+\(\)\s]+$/;
+      
+      if (phone && !phoneRegex.test(phone)) {
+          $(this).addClass('is-invalid');
+          if (!$(this).next('.invalid-feedback').length) {
+              $(this).after('<div class="invalid-feedback">請輸入有效的電話號碼</div>');
+          }
+      } else {
+          $(this).removeClass('is-invalid');
+          $(this).next('.invalid-feedback').remove();
+      }
+  });
+
+  // 必填欄位驗證
+  $('input[required], select[required], textarea[required]').on('blur', function() {
+      if (!$(this).val().trim()) {
+          $(this).addClass('is-invalid');
+          if (!$(this).next('.invalid-feedback').length) {
+              $(this).after('<div class="invalid-feedback">此欄位為必填</div>');
+          }
+      } else {
+          $(this).removeClass('is-invalid');
+          $(this).next('.invalid-feedback').remove();
+      }
+  });
+}
+
+// 網路狀態檢測
+function checkNetworkStatus() {
+  if ('navigator' in window && 'onLine' in navigator) {
+      const updateStatus = () => {
+          if (navigator.onLine) {
+              console.log('網路連線已恢復');
+              // 可以嘗試重新連接 API，但保持離線模式以確保穩定性
+              $('#networkStatus').removeClass('offline').addClass('online');
           } else {
-              document.exitFullscreen();
+              console.log('網路連線中斷');
+              CONFIG.OFFLINE_MODE = true;
+              $('#networkStatus').removeClass('online').addClass('offline');
           }
-      }
+      };
+      
+      window.addEventListener('online', updateStatus);
+      window.addEventListener('offline', updateStatus);
+      
+      // 初始檢查
+      updateStatus();
+  }
+}
 
-      // 語音提示功能（如果瀏覽器支援）
-      function speak(text) {
-          if ('speechSynthesis' in window) {
-              const utterance = new SpeechSynthesisUtterance(text);
-              utterance.lang = 'zh-TW';
-              speechSynthesis.speak(utterance);
-          }
-      }
+// 錯誤處理增強
+function handleError(error, context = '操作') {
+  console.error(`${context}錯誤:`, error);
+  
+  let message = `${context}失敗`;
+  
+  if (error.name === 'AbortError') {
+      message = '請求超時，請檢查網路連線';
+  } else if (error.message && error.message.includes('Failed to fetch')) {
+      message = '網路連線異常';
+  } else if (error.message) {
+      message = error.message;
+  }
+  
+  showAlert('error', message);
+}
 
-      // 輔助功能增強
-      function enhanceAccessibility() {
-          // 為所有按鈕添加鍵盤支援
-          $('button, .btn').attr('tabindex', '0').on('keydown', function(e) {
-              if (e.key === 'Enter' || e.key === ' ') {
+// 列印功能
+function printReport(elementId, options = {}) {
+  const element = document.getElementById(elementId);
+  if (!element) {
+      showAlert('error', '找不到要列印的內容');
+      return;
+  }
+
+  const printWindow = window.open('', '_blank');
+  const title = options.title || '報表列印';
+  
+  printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>${title}</title>
+          <meta charset="utf-8">
+          <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+          <style>
+              @media print {
+                  .no-print { display: none !important; }
+                  body { font-size: 12px; color: #000; }
+                  .card { border: 1px solid #ddd; margin-bottom: 20px; page-break-inside: avoid; }
+                  table { width: 100% !important; border-collapse: collapse !important; }
+                  th, td { border: 1px solid #333 !important; padding: 8px !important; }
+                  .btn { display: none !important; }
+                  .badge { border: 1px solid #333 !important; }
+              }
+              @media screen {
+                  body { padding: 20px; }
+              }
+              .print-header {
+                  text-align: center;
+                  margin-bottom: 30px;
+                  border-bottom: 2px solid #333;
+                  padding-bottom: 10px;
+              }
+              .print-footer {
+                  margin-top: 30px;
+                  border-top: 1px solid #333;
+                  padding-top: 10px;
+                  text-align: center;
+                  font-size: 10px;
+              }
+          </style>
+      </head>
+      <body>
+          <div class="print-header">
+              <h2>${title}</h2>
+              <p>列印時間：${new Date().toLocaleString('zh-TW')}</p>
+          </div>
+          <div class="container-fluid">
+              ${element.innerHTML}
+          </div>
+          <div class="print-footer">
+              <p>此報表由系統自動產生</p>
+          </div>
+          <script>
+              window.onload = function() {
+                  // 移除不需要的元素
+                  const elementsToRemove = document.querySelectorAll('.btn, .no-print, .dropdown');
+                  elementsToRemove.forEach(el => el.remove());
+                  
+                  // 自動列印
+                  setTimeout(() => {
+                      window.print();
+                  }, 500);
+                  
+                  window.onafterprint = function() {
+                      window.close();
+                  }
+              }
+          </script>
+      </body>
+      </html>
+  `);
+  printWindow.document.close();
+}
+
+// 匯出資料為 CSV
+function exportToCSV(data, filename = 'export.csv') {
+  if (!data || data.length === 0) {
+      showAlert('warning', '沒有資料可以匯出');
+      return;
+  }
+
+  // 取得欄位標題
+  const headers = Object.keys(data[0]);
+  
+  // 建立 CSV 內容
+  let csvContent = '\uFEFF'; // BOM for UTF-8
+  csvContent += headers.join(',') + '\n';
+  
+  data.forEach(row => {
+      const values = headers.map(header => {
+          const value = row[header] || '';
+          // 處理包含逗號或引號的值
+          return typeof value === 'string' && (value.includes(',') || value.includes('"')) 
+              ? `"${value.replace(/"/g, '""')}"` 
+              : value;
+      });
+      csvContent += values.join(',') + '\n';
+  });
+
+  // 建立下載連結
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  
+  if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      showAlert('success', '檔案匯出成功');
+  } else {
+      showAlert('error', '瀏覽器不支援檔案下載功能');
+  }
+}
+
+// 資料備份功能
+function backupData() {
+  showAlert('info', '資料備份功能開發中...', '功能提示');
+}
+
+// 系統設定功能
+function showSettings() {
+  showAlert('info', '系統設定功能開發中...', '功能提示');
+}
+
+// 使用者說明
+function showHelp() {
+  Swal.fire({
+      title: '系統使用說明',
+      html: `
+          <div class="text-start">
+              <h5>主要功能：</h5>
+              <ul>
+                  <li><strong>儀表板：</strong>查看系統概況和統計資料</li>
+                  <li><strong>會員管理：</strong>新增、編輯、刪除會員資料</li>
+                  <li><strong>財務管理：</strong>記錄收入支出（開發中）</li>
+                  <li><strong>報表功能：</strong>產生各種統計報表（開發中）</li>
+              </ul>
+              <h5>快速操作：</h5>
+              <ul>
+                  <li>點擊左側選單切換功能頁面</li>
+                  <li>使用搜尋功能快速找到資料</li>
+                  <li>點擊右上角切換深色/淺色主題</li>
+              </ul>
+              <h5>注意事項：</h5>
+              <ul>
+                  <li>目前使用離線模式，資料為示範用途</li>
+                  <li>實際部署時需要連接後端 API</li>
+                  <li>建議定期備份重要資料</li>
+              </ul>
+          </div>
+      `,
+      width: '600px',
+      confirmButtonText: '了解',
+      customClass: {
+          htmlContainer: 'text-start'
+      }
+  });
+}
+
+// 關於系統
+function showAbout() {
+  Swal.fire({
+      title: '關於系統',
+      html: `
+          <div class="text-center">
+              <h4>人民團體管理系統</h4>
+              <p class="text-muted">版本 1.0.0</p>
+              <hr>
+              <p>這是一個專為人民團體設計的綜合管理系統，</p>
+              <p>提供會員管理、財務管理、活動管理等功能。</p>
+              <hr>
+              <p><small>開發時間：2024年8月</small></p>
+              <p><small>技術架構：HTML5 + Bootstrap 5 + jQuery + Chart.js</small></p>
+          </div>
+      `,
+      confirmButtonText: '確定',
+      customClass: {
+          htmlContainer: 'text-center'
+      }
+  });
+}
+
+// 鍵盤快捷鍵
+function initializeKeyboardShortcuts() {
+  $(document).keydown(function(e) {
+      // Ctrl + Alt + 組合鍵
+      if (e.ctrlKey && e.altKey) {
+          switch(e.which) {
+              case 68: // D - Dashboard
                   e.preventDefault();
-                  $(this).click();
+                  showSection('dashboard');
+                  break;
+              case 77: // M - Members
+                  e.preventDefault();
+                  showSection('members');
+                  break;
+              case 78: // N - New Member
+                  e.preventDefault();
+                  if (currentSection === 'members') {
+                      showAddMemberModal();
+                  }
+                  break;
+              case 84: // T - Toggle Theme
+                  e.preventDefault();
+                  toggleTheme();
+                  break;
+              case 72: // H - Help
+                  e.preventDefault();
+                  showHelp();
+                  break;
+          }
+      }
+      
+      // ESC 鍵關閉模態視窗
+      if (e.which === 27) {
+          $('.modal').modal('hide');
+      }
+  });
+}
+
+// 自動儲存功能（本地儲存）
+function autoSave(key, data) {
+  try {
+      localStorage.setItem(`pda_${key}`, JSON.stringify({
+          data: data,
+          timestamp: Date.now()
+      }));
+      console.log(`自動儲存: ${key}`);
+  } catch (error) {
+      console.error('自動儲存失敗:', error);
+  }
+}
+
+// 載入自動儲存的資料
+function loadAutoSaved(key) {
+  try {
+      const saved = localStorage.getItem(`pda_${key}`);
+      if (saved) {
+          const parsed = JSON.parse(saved);
+          // 檢查資料是否過期（24小時）
+          if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+              return parsed.data;
+          }
+      }
+  } catch (error) {
+      console.error('載入自動儲存資料失敗:', error);
+  }
+  return null;
+}
+
+// 清理過期的本地儲存
+function cleanupLocalStorage() {
+  try {
+      const keys = Object.keys(localStorage);
+      const pdaKeys = keys.filter(key => key.startsWith('pda_'));
+      
+      pdaKeys.forEach(key => {
+          try {
+              const data = JSON.parse(localStorage.getItem(key));
+              // 清理超過7天的資料
+              if (Date.now() - data.timestamp > 7 * 24 * 60 * 60 * 1000) {
+                  localStorage.removeItem(key);
+                  console.log(`清理過期資料: ${key}`);
+              }
+          } catch (e) {
+              // 如果解析失敗，直接刪除
+              localStorage.removeItem(key);
+          }
+      });
+  } catch (error) {
+      console.error('清理本地儲存失敗:', error);
+  }
+}
+
+// 系統監控
+function initializeSystemMonitoring() {
+  // 記錄系統啟動時間
+  const startTime = Date.now();
+  
+  // 每5分鐘檢查一次系統狀態
+  setInterval(() => {
+      const uptime = Date.now() - startTime;
+      console.log(`系統運行時間: ${Math.floor(uptime / 1000 / 60)} 分鐘`);
+      
+      // 檢查記憶體使用（如果瀏覽器支援）
+      if (performance.memory) {
+          const memory = performance.memory;
+          console.log(`記憶體使用: ${Math.round(memory.usedJSHeapSize / 1024 / 1024)}MB`);
+      }
+      
+      // 清理過期的本地儲存
+      cleanupLocalStorage();
+  }, 5 * 60 * 1000);
+}
+
+// 全域錯誤處理
+window.addEventListener('error', function(e) {
+  console.error('全域錯誤:', e.error);
+  
+  // 忽略特定錯誤
+  const ignoredErrors = [
+      'sweetAlertCSS',
+      'Non-Error promise rejection captured',
+      'ResizeObserver loop limit exceeded',
+      'Script error'
+  ];
+  
+  const shouldIgnore = ignoredErrors.some(ignored => 
+      e.error && e.error.message && e.error.message.includes(ignored)
+  );
+  
+  if (!shouldIgnore && e.error && e.error.message) {
+      console.warn('捕獲到錯誤但已處理:', e.error.message);
+      
+      // 對於嚴重錯誤，可以考慮重新載入頁面
+      if (e.error.message.includes('ChunkLoadError') || 
+          e.error.message.includes('Loading chunk')) {
+          showAlert('warning', '系統資源載入異常，建議重新整理頁面');
+      }
+  }
+});
+
+// 未捕獲的 Promise 拒絕處理
+window.addEventListener('unhandledrejection', function(e) {
+  console.error('未處理的 Promise 拒絕:', e.reason);
+  
+  // 防止在控制台顯示錯誤
+  e.preventDefault();
+  
+  // 如果是網路相關錯誤，確保離線模式啟用
+  if (e.reason && e.reason.message && 
+      (e.reason.message.includes('fetch') || e.reason.message.includes('network'))) {
+      if (!CONFIG.OFFLINE_MODE) {
+          CONFIG.OFFLINE_MODE = true;
+          console.log('檢測到網路錯誤，確保離線模式啟用');
+      }
+  }
+});
+
+// 頁面可見性變化處理
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) {
+      console.log('頁面隱藏');
+      // 可以在這裡暫停一些不必要的操作
+  } else {
+      console.log('頁面顯示');
+      // 頁面重新顯示時，可以檢查資料是否需要更新
+      if (currentSection === 'dashboard') {
+          // 重新載入儀表板資料
+          setTimeout(() => {
+              showDashboard();
+          }, 1000);
+      }
+  }
+});
+
+// 初始化所有功能
+$(document).ready(function() {
+  // 初始化鍵盤快捷鍵
+  initializeKeyboardShortcuts();
+  
+  // 初始化系統監控
+  initializeSystemMonitoring();
+  
+  // 顯示快捷鍵提示（首次使用）
+  if (!localStorage.getItem('pda_shortcuts_shown')) {
+      setTimeout(() => {
+          Swal.fire({
+              title: '快捷鍵提示',
+              html: `
+                  <div class="text-start">
+                      <p>您可以使用以下快捷鍵快速操作：</p>
+                      <ul>
+                          <li><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>D</kbd> - 儀表板</li>
+                          <li><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>M</kbd> - 會員管理</li>
+                          <li><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>N</kbd> - 新增會員</li>
+                          <li><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> - 切換主題</li>
+                          <li><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>H</kbd> - 說明</li>
+                          <li><kbd>ESC</kbd> - 關閉彈窗</li>
+                      </ul>
+                  </div>
+              `,
+              icon: 'info',
+              confirmButtonText: '知道了',
+              showClass: {
+                  popup: 'animate__animated animate__fadeInDown'
+              },
+              hideClass: {
+                  popup: 'animate__animated animate__fadeOutUp'
               }
           });
-          
-          // 為表格添加鍵盤導航
-          $('table').attr('role', 'table');
-          $('th').attr('role', 'columnheader');
-          $('td').attr('role', 'cell');
-          
-          // 為模態視窗添加焦點管理
-          $('.modal').on('shown.bs.modal', function() {
-              $(this).find('input, select, textarea, button').first().focus();
-          });
-      }
+          localStorage.setItem('pda_shortcuts_shown', 'true');
+      }, 3000);
+  }
+});
 
-      // 初始化輔助功能
-      $(document).ready(function() {
-          enhanceAccessibility();
-      });
-
-      console.log('非營利組織財務管理系統已載入完成');
-      console.log('版本: 1.0.0');
-      console.log('最後更新: 2024-08-03');
-  </script>
+console.log('人民團體管理系統載入完成 v1.0.0');
+</script>
 </body>
 </html>
