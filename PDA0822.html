@@ -1178,21 +1178,20 @@
  ================================================================ */
 
 // GAS 後端 URL - 請替換為您的實際部署 URL
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyGxusCLEt-RVo2kd1MYQBtomR_4JYoB6q1c1M6YoCLV8UVk-UtQdwEybwPrnOftGVQwQ/exec';
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzSOwr_atd-AR7pPqiCa3PYZMNUMe_44Bya5quljAYMo7wQcfbrYpHlUZh3PNbbMOopaw/exec';
 
 /* -------------------- API 通訊層 -------------------- */
 const API = {
 async call(action, params = {}) {
   try {
-    const response = await fetch(GAS_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: action,
-        params: params
-      })
+    // 使用 GET 方式避免 CORS preflight
+    const url = new URL(GAS_API_URL);
+    url.searchParams.append('action', action);
+    url.searchParams.append('params', JSON.stringify(params));
+    
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      mode: 'cors'
     });
     
     if (!response.ok) {
@@ -1210,7 +1209,7 @@ async call(action, params = {}) {
     console.error('API Error:', error);
     throw error;
   }
-},
+}
 
 // 測試連線
 async testConnection() {
@@ -2012,6 +2011,183 @@ async save() {
   }
 }
 };
+
+
+const BatchImport = {
+async openTransactions() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx,.xls,.csv';
+  input.onchange = (e) => this.handleTransactionFile(e.target.files[0]);
+  input.click();
+},
+
+async openMembers() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx,.xls,.csv';
+  input.onchange = (e) => this.handleMemberFile(e.target.files[0]);
+  input.click();
+},
+
+async openActivities() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx,.xls,.csv';
+  input.onchange = (e) => this.handleActivityFile(e.target.files[0]);
+  input.click();
+},
+
+async handleTransactionFile(file) {
+  if (!file) return;
+  
+  try {
+    Util.showLoading(true);
+    const data = await this.parseFile(file);
+    
+    // 驗證必要欄位
+    const requiredFields = ['日期', '類型', '類別', '金額'];
+    if (!this.validateFields(data, requiredFields)) {
+      throw new Error('檔案格式不正確，請確認包含必要欄位：' + requiredFields.join(', '));
+    }
+    
+    // 批次儲存
+    for (const row of data) {
+      const transaction = {
+        ID: Util.uuid(),
+        日期: row['日期'],
+        類型: row['類型'],
+        類別: row['類別'],
+        金額: Util.toNumber(row['金額']),
+        對象: row['對象'] || '',
+        帳戶: row['帳戶'] || '',
+        說明: row['說明'] || ''
+      };
+      
+      await API.saveTransaction(transaction);
+    }
+    
+    await Transactions.renderTable();
+    await Dashboard.refresh();
+    Util.showToast('success', `已匯入 ${data.length} 筆交易記錄`);
+    
+  } catch (error) {
+    Util.showToast('error', '匯入失敗：' + error.message);
+  } finally {
+    Util.showLoading(false);
+  }
+},
+
+async handleMemberFile(file) {
+  if (!file) return;
+  
+  try {
+    Util.showLoading(true);
+    const data = await this.parseFile(file);
+    
+    const requiredFields = ['姓名', '電話'];
+    if (!this.validateFields(data, requiredFields)) {
+      throw new Error('檔案格式不正確，請確認包含必要欄位：' + requiredFields.join(', '));
+    }
+    
+    for (const row of data) {
+      const member = {
+        ID: Util.uuid(),
+        姓名: row['姓名'],
+        電話: row['電話'],
+        電子郵件: row['電子郵件'] || '',
+        出生日期: row['出生日期'] || '',
+        性別: row['性別'] || '',
+        地址: row['地址'] || '',
+        加入日期: row['加入日期'] || Util.today(),
+        狀態: row['狀態'] || '啟用',
+        會員類型: row['會員類型'] || '一般會員',
+        年費: Util.toNumber(row['年費']) || 1000
+      };
+      
+      await API.saveMember(member);
+    }
+    
+    await Members.renderTable();
+    await Dashboard.refresh();
+    Util.showToast('success', `已匯入 ${data.length} 位會員`);
+    
+  } catch (error) {
+    Util.showToast('error', '匯入失敗：' + error.message);
+  } finally {
+    Util.showLoading(false);
+  }
+},
+
+async handleActivityFile(file) {
+  if (!file) return;
+  
+  try {
+    Util.showLoading(true);
+    const data = await this.parseFile(file);
+    
+    const requiredFields = ['活動名稱', '活動日期'];
+    if (!this.validateFields(data, requiredFields)) {
+      throw new Error('檔案格式不正確，請確認包含必要欄位：' + requiredFields.join(', '));
+    }
+    
+    for (const row of data) {
+      const activity = {
+        ID: Util.uuid(),
+        活動名稱: row['活動名稱'],
+        活動日期: row['活動日期'],
+        活動類型: row['活動類型'] || '其他',
+        狀態: row['狀態'] || '籌備中',
+        地點: row['地點'] || '',
+        活動描述: row['活動描述'] || '',
+        人數上限: Util.toNumber(row['人數上限']) || 50,
+        費用: Util.toNumber(row['費用']) || 0,
+        報名人數: 0
+      };
+      
+      await API.saveActivity(activity);
+    }
+    
+    await Activities.renderGrid();
+    Util.showToast('success', `已匯入 ${data.length} 個活動`);
+    
+  } catch (error) {
+    Util.showToast('error', '匯入失敗：' + error.message);
+  } finally {
+    Util.showLoading(false);
+  }
+},
+
+async parseFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        resolve(jsonData);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    reader.onerror = () => reject(new Error('檔案讀取失敗'));
+    reader.readAsArrayBuffer(file);
+  });
+},
+
+validateFields(data, requiredFields) {
+  if (!data || data.length === 0) return false;
+  
+  const firstRow = data[0];
+  return requiredFields.every(field => field in firstRow);
+}
+};
+
+
+
 
 /* -------------------- 活動模組 -------------------- */
 const Activities = {
@@ -2914,6 +3090,8 @@ window.Analytics = Analytics;
 window.Reports = Reports;
 window.DataPort = DataPort;
 window.SettingsUI = SettingsUI;
+window.BatchImport = BatchImport;
+
 
 </script>
 </body>
