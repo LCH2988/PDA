@@ -1060,55 +1060,128 @@
   // ================== 配置設定 ==================
   const CONFIG = {
     // 請替換為您的 Google Apps Script Web App URL
-    API_URL: 'https://script.google.com/macros/s/AKfycbwXcL6oLTQa3zM7G40Myqe3ewGYkStTxL32nPBldtmbeIkasD_f8o3mFdVrnoWLg6DXfQ/exec',
+    API_URL: 'https://script.google.com/macros/s/AKfycby1ZI7ApFEq0uGZgjckUYn0-bUK7ZDvI0jjiMXEgo3gZBdTjI_KuHpXF8q40CAnudKVSw/exec',
     // 或者使用測試 URL（開發階段）
     // API_URL: 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/dev'
   };
 
   // ================== API 通信層 ==================
-  const API = {
-    async call(action, data = {}) {
-      try {
-        this.showLoading(true);
+  // const API = {
+  //   async call(action, data = {}) {
+  //     try {
+  //       this.showLoading(true);
         
-        const response = await fetch(CONFIG.API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: action,
-            ...data
-          })
-        });
+  //       const response = await fetch(CONFIG.API_URL, {
+  //         method: 'POST',
+  //         headers: {
+  //           'Content-Type': 'application/json',
+  //         },
+  //         body: JSON.stringify({
+  //           action: action,
+  //           ...data
+  //         })
+  //       });
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
+  //       if (!response.ok) {
+  //         throw new Error(`HTTP error! status: ${response.status}`);
+  //       }
 
-          const result = await response.json();
+  //         const result = await response.json();
           
-          if (result.success) {
-            return result.data;
-          } else {
-            throw new Error(result.error || '操作失敗');
-          }
-        } catch (error) {
-          console.error('API call failed:', error);
-          Util.showToast('error', error.message || '網路連線錯誤');
-          throw error;
-        } finally {
-          this.showLoading(false);
-        }
-      },
+  //         if (result.success) {
+  //           return result.data;
+  //         } else {
+  //           throw new Error(result.error || '操作失敗');
+  //         }
+  //       } catch (error) {
+  //         console.error('API call failed:', error);
+  //         Util.showToast('error', error.message || '網路連線錯誤');
+  //         throw error;
+  //       } finally {
+  //         this.showLoading(false);
+  //       }
+  //     },
 
-      showLoading(show) {
-        const overlay = document.getElementById('loadingOverlay');
-        if (overlay) {
-          overlay.style.display = show ? 'flex' : 'none';
-        }
-      }
-    };
+  //     showLoading(show) {
+  //       const overlay = document.getElementById('loadingOverlay');
+  //       if (overlay) {
+  //         overlay.style.display = show ? 'flex' : 'none';
+  //       }
+  //     }
+  //   };
+
+    // 修改 API 物件
+  const API = {
+  async call(action, data = {}) {
+    try {
+      this.showLoading(true);
+      
+      // 使用 no-cors 模式
+      const response = await fetch(CONFIG.API_URL, {
+        method: 'POST',
+        mode: 'no-cors', // 添加這行
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: action,
+          ...data
+        })
+      });
+
+      // 由於 no-cors 模式，我們無法讀取回應內容
+      // 需要改用其他方法
+      return await this.callWithJSONP(action, data);
+      
+    } catch (error) {
+      console.error('API call failed:', error);
+      Util.showToast('error', error.message || '網路連線錯誤');
+      throw error;
+    } finally {
+      this.showLoading(false);
+    }
+  },
+
+  // JSONP 方式呼叫 API
+  async callWithJSONP(action, data = {}) {
+    return new Promise((resolve, reject) => {
+      const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+      
+      // 創建 script 標籤
+      const script = document.createElement('script');
+      const params = new URLSearchParams({
+        action: action,
+        data: JSON.stringify(data),
+        callback: callbackName
+      });
+      
+      script.src = CONFIG.API_URL + '?' + params.toString();
+      
+      // 設定回調函數
+      window[callbackName] = function(response) {
+        resolve(response);
+        document.head.removeChild(script);
+        delete window[callbackName];
+      };
+      
+      // 錯誤處理
+      script.onerror = function() {
+        reject(new Error('JSONP request failed'));
+        document.head.removeChild(script);
+        delete window[callbackName];
+      };
+      
+      document.head.appendChild(script);
+    });
+  },
+
+  showLoading(show) {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+      overlay.style.display = show ? 'flex' : 'none';
+    }
+  }
+  };
 
     // ================== 工具層 ==================
     const Util = {
