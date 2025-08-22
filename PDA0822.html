@@ -1060,7 +1060,7 @@
   // ================== 配置設定 ==================
   const CONFIG = {
     // 請替換為您的 Google Apps Script Web App URL
-    API_URL: 'https://script.google.com/macros/s/AKfycbz8T9ZZMtqXEcK1o11R6NIZSuEIWHNI8O8V6_nfnP7gMxdAMa86uu6_ZF3lRkJZZBtVAA/exec',
+    API_URL: 'https://script.google.com/macros/s/AKfycbzxy40RRrWopIfBI_Qki9m09a2L0s3y50Sq8rTfgFcX/dev',
     // 或者使用測試 URL（開發階段）
     // API_URL: 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/dev'
   };
@@ -1275,32 +1275,119 @@
     };
 
     // ================== 儀表板 ==================
-    const Dashboard = {
-      async refresh() {
-        try {
-          const data = await API.call('getDashboardData');
-          this.updateStats(data.stats);
-          this.renderAccounts(data.accounts);
-          this.renderRecentTransactions(data.recentTransactions);
-          this.renderRecentMembers(data.recentMembers);
-          this.renderRecentActivities(data.recentActivities);
-        } catch (error) {
-          console.error('Dashboard refresh failed:', error);
+
+const Dashboard = {
+  async refresh() {
+    try {
+      console.log('Dashboard refreshing...');
+      const result = await API.call('getDashboardData');
+      
+      if (result.success && result.data) {
+        console.log('Dashboard data received:', result.data);
+        
+        // 確保 stats 存在
+        if (result.data.stats) {
+          this.updateStats(result.data.stats);
+        } else {
+          console.warn('Stats data not found, using default values');
+          this.updateStats({
+            totalIncome: 0,
+            totalExpense: 0,
+            monthIncome: 0,
+            monthExpense: 0,
+            totalBalance: 0,
+            accountCount: 0,
+            memberTotal: 0,
+            memberOverdue: 0
+          });
         }
-      },
+        
+        // 更新其他區塊
+        if (result.data.accounts) {
+          this.updateAccounts(result.data.accounts);
+        }
+        if (result.data.recentTransactions) {
+          this.updateRecentTransactions(result.data.recentTransactions);
+        }
+        if (result.data.recentMembers) {
+          this.updateRecentMembers(result.data.recentMembers);
+        }
+        if (result.data.recentActivities) {
+          this.updateRecentActivities(result.data.recentActivities);
+        }
+      } else {
+        console.error('Dashboard data fetch failed:', result.error || 'Unknown error');
+        // 顯示預設值
+        this.updateStats({
+          totalIncome: 0,
+          totalExpense: 0,
+          monthIncome: 0,
+          monthExpense: 0,
+          totalBalance: 0,
+          accountCount: 0,
+          memberTotal: 0,
+          memberOverdue: 0
+        });
+      }
+    } catch (error) {
+      console.error('Dashboard refresh failed:', error);
+      // 顯示預設值
+      this.updateStats({
+        totalIncome: 0,
+        totalExpense: 0,
+        monthIncome: 0,
+        monthExpense: 0,
+        totalBalance: 0,
+        accountCount: 0,
+        memberTotal: 0,
+        memberOverdue: 0
+      });
+    }
+  },
 
-      updateStats(stats) {
-        document.getElementById('dashTotalIncome').textContent = '$' + Util.fmtNum(stats.totalIncome);
-        document.getElementById('dashTotalExpense').textContent = '$' + Util.fmtNum(stats.totalExpense);
-        document.getElementById('dashMonthIncome').textContent = '$' + Util.fmtNum(stats.monthIncome);
-        document.getElementById('dashMonthExpense').textContent = '$' + Util.fmtNum(stats.monthExpense);
-        document.getElementById('dashTotalBalance').textContent = '$' + Util.fmtNum(stats.totalBalance);
-        document.getElementById('dashAccountCount').textContent = stats.accountCount;
-        document.getElementById('dashMemberTotal').textContent = stats.memberTotal;
-        document.getElementById('dashMemberOverdue').textContent = stats.memberOverdue;
-      },
+  updateStats(stats) {
+    // 確保 stats 物件存在且有預設值
+    const safeStats = {
+      totalIncome: 0,
+      totalExpense: 0,
+      monthIncome: 0,
+      monthExpense: 0,
+      totalBalance: 0,
+      accountCount: 0,
+      memberTotal: 0,
+      memberOverdue: 0,
+      ...stats // 覆蓋預設值
+    };
 
-      renderAccounts(accounts) {
+    // 更新統計卡片
+    const elements = {
+      totalIncome: document.getElementById('totalIncome'),
+      totalExpense: document.getElementById('totalExpense'),
+      monthIncome: document.getElementById('monthIncome'),
+      monthExpense: document.getElementById('monthExpense'),
+      totalBalance: document.getElementById('totalBalance'),
+      accountCount: document.getElementById('accountCount'),
+      memberTotal: document.getElementById('memberTotal'),
+      memberOverdue: document.getElementById('memberOverdue')
+    };
+
+    // 安全更新每個元素
+    Object.entries(elements).forEach(([key, element]) => {
+      if (element) {
+        const value = safeStats[key];
+        if (key.includes('Income') || key.includes('Expense') || key.includes('Balance')) {
+          element.textContent = `$${(value || 0).toLocaleString()}`;
+        } else {
+          element.textContent = (value || 0).toLocaleString();
+        }
+      } else {
+        console.warn(`Element not found: ${key}`);
+      }
+    });
+  },
+
+
+  renderAccounts(accounts) {
         const container = document.getElementById('dashboardAccountBalances');
         if (!container) return;
         
@@ -1378,7 +1465,9 @@
             <span class="badge ${Activities.statusBadge(a.status)}">${Activities.statusText(a.status)}</span>
           </div>`).join('');
       }
-    };
+};
+
+
 
     // ================== 交易管理 ==================
     const Transactions = {
