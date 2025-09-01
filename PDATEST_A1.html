@@ -1,0 +1,1683 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>帕金森病友會 會計管理系統 - Google 雲端同步強化版</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <!-- 核心樣式 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background:#f5f7fa; font-family:'Microsoft JhengHei','Segoe UI',Roboto,Arial,sans-serif; }
+    header { margin-bottom:1rem; }
+    .app-title { font-weight:600; }
+    .panel { background:#fff; border-radius:14px; padding:18px 22px; box-shadow:0 4px 14px -4px rgba(0,0,0,.08);}
+    .panel + .panel { margin-top:18px; }
+    .log { background:#0f172a; color:#e2e8f0; font-size:12px; padding:10px; height:180px; overflow:auto; border-radius:8px; line-height:1.45; }
+    textarea.code { font-family:ui-monospace,Consolas,monospace; font-size:13px; }
+    .badge-pill { border-radius:30px; }
+    .spin { animation:spin 1s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .table thead th { white-space:nowrap; }
+    .sticky-tools { position:sticky; top:0; background:#fff; z-index:5; }
+    .data-dirty-indicator { width:10px; height:10px; border-radius:50%; display:inline-block; margin-left:6px; background:#ccc; }
+    .data-dirty-indicator.dirty { background:#f59e0b; box-shadow:0 0 0 3px rgba(245,158,11,.25); }
+    .status-ok { color:#16a34a; }
+    .status-warn { color:#d97706; }
+    .status-error { color:#dc2626; }
+    .filter-row .form-select, .filter-row .form-control { font-size:.85rem; }
+    .mini-stat { text-align:center; padding:10px 6px; border-radius:10px; background:linear-gradient(145deg,#f1f5f9,#fff); border:1px solid #e2e8f0; }
+    .mini-stat h5 { margin:4px 0 0; font-weight:600; font-size:1.05rem; }
+    .mini-stat small { display:block; color:#64748b; font-size:.7rem; text-transform:uppercase; letter-spacing:.5px;}
+    .nav-tabs .nav-link { font-weight:500; }
+    .sync-badge { font-size:.7rem; letter-spacing:.5px; }
+    .chart-box { background:#fff; border-radius:14px; padding:14px 18px; box-shadow:0 2px 10px -4px rgba(0,0,0,.06); }
+    .no-data { padding:40px 10px; text-align:center; color:#94a3b8; }
+    .no-data i { font-size:42px; margin-bottom:8px; display:block; }
+    .search-highlight { background:#fef9c3; }
+    .voucher-preview img { max-height:70px; border-radius:6px; margin:4px; cursor:pointer; border:1px solid #e2e8f0; }
+    .floating-sync-btn {
+      position:fixed; right:22px; bottom:22px; background:#2563eb; color:#fff; border:none; width:54px; height:54px;
+      border-radius:50%; box-shadow:0 6px 22px -6px rgba(37,99,235,.55); display:flex; align-items:center; justify-content:center;
+      cursor:pointer; font-size:22px; z-index:50; transition:.25s;
+    }
+    .floating-sync-btn:hover { transform:translateY(-3px) scale(1.04); box-shadow:0 10px 26px -6px rgba(37,99,235,.62); }
+    .conflict-banner { background:#fef3c7; border:1px solid #fcd34d; padding:8px 12px; border-radius:8px; font-size:.85rem; }
+    .receipt-code { font-family:monospace; background:#1e293b; color:#f1f5f9; padding:2px 6px; border-radius:4px; font-size:.75rem; }
+    .table-hover tbody tr.modified { background:#ecfdf5; }
+    .table-hover tbody tr.new-row { background:#eff6ff; }
+    .pagination { margin-bottom:0; }
+    .form-label.required:after { content:" *"; color:#dc2626; }
+    .modal-header { background:linear-gradient(110deg,#2563eb,#1d4ed8); color:#fff; }
+    .modal-header .btn-close { filter:invert(1); }
+    .indicator-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
+    .indicator-dot.syncing { background:#f59e0b; }
+    .indicator-dot.clean { background:#16a34a; }
+    .indicator-dot.dirty { background:#dc2626; }
+    .backup-badge { font-size:.6rem; }
+    .truncate { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    @media (max-width: 992px){
+      .panel { padding:14px 16px; }
+      .mini-stat { margin-bottom:10px; }
+      .floating-sync-btn { width:50px; height:50px; font-size:20px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="d-flex flex-wrap justify-content-between align-items-center">
+    <h4 class="app-title mb-2">
+      <i class="bi bi-heart-pulse-fill text-danger me-1"></i>
+      帕金森病友會 會計管理系統
+      <span class="badge bg-primary ms-1">Google 雲端同步強化版</span>
+    </h4>
+    <div class="text-end small">
+      <div>
+        <span>版本：</span><span id="lblVersion" class="fw-semibold">—</span>
+        <span id="dirtyIndicator" class="data-dirty-indicator" title="資料同步狀態"></span>
+      </div>
+      <div class="mt-1">
+        <span class="me-2">最後更新：<span id="lblUpdatedAt">—</span></span>
+        <span class="me-2">Hash：<code id="lblHash">—</code></span>
+        <span id="syncStatusText" class="text-muted">尚未連線</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 導覽 -->
+  <ul class="nav nav-tabs mb-3" id="mainTabs">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-dashboard">總覽</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-transactions">交易記錄</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-members">會員</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-analytics">統計分析</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-backups">備份 / 還原</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-raw">原始 JSON</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-logs">日誌</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-settings">設定</button></li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- 儀表板 -->
+    <div class="tab-pane fade show active" id="tab-dashboard">
+      <div class="row g-3">
+        <div class="col-6 col-md-3">
+          <div class="mini-stat">
+            <small>總收入</small>
+            <h5 id="dashTotalIncome">$0</h5>
+          </div>
+        </div>
+          <div class="col-6 col-md-3">
+          <div class="mini-stat">
+            <small>總支出</small>
+            <h5 id="dashTotalExpense">$0</h5>
+          </div>
+        </div>
+          <div class="col-6 col-md-3">
+          <div class="mini-stat">
+            <small>結餘</small>
+            <h5 id="dashBalance">$0</h5>
+          </div>
+        </div>
+          <div class="col-6 col-md-3">
+          <div class="mini-stat">
+            <small>會員數</small>
+            <h5 id="dashMembers">0</h5>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-1">
+        <div class="col-lg-8">
+          <div class="chart-box mb-3">
+            <h6 class="mb-2">月度收支趨勢</h6>
+            <canvas id="chartTrend" height="120"></canvas>
+          </div>
+          <div class="chart-box">
+            <h6 class="mb-2">支出類別分佈</h6>
+            <canvas id="chartCategory" height="160"></canvas>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="panel">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">最近 5 筆交易</h6>
+              <button class="btn btn-sm btn-outline-primary" onclick="openTransactionModal()">新增</button>
+            </div>
+            <div id="recentTxList" class="small"></div>
+            <hr>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">最新 5 位會員</h6>
+              <button class="btn btn-sm btn-outline-success" onclick="openMemberModal()">新增</button>
+            </div>
+            <div id="recentMemberList" class="small"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 交易記錄 -->
+    <div class="tab-pane fade" id="tab-transactions">
+      <div class="panel mb-3">
+        <div class="d-flex flex-wrap gap-2 align-items-end filter-row">
+          <div>
+            <label class="form-label mb-1 small">年份</label>
+            <select class="form-select form-select-sm" id="filterTxYear" onchange="renderTransactions()"></select>
+          </div>
+          <div>
+            <label class="form-label mb-1 small">月份</label>
+            <select class="form-select form-select-sm" id="filterTxMonth" onchange="renderTransactions()">
+              <option value="">全部</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label mb-1 small">類型</label>
+            <select class="form-select form-select-sm" id="filterTxType" onchange="renderTransactions()">
+              <option value="">全部</option>
+              <option value="收入">收入</option>
+              <option value="支出">支出</option>
+            </select>
+          </div>
+          <div class="flex-grow-1">
+            <label class="form-label mb-1 small">關鍵字</label>
+            <input type="text" class="form-control form-control-sm" id="filterTxKeyword" placeholder="搜尋分類 / 對象 / 說明..." oninput="renderTransactions()">
+          </div>
+          <div>
+            <label class="form-label mb-1 small d-block">&nbsp;</label>
+            <button class="btn btn-sm btn-primary" onclick="openTransactionModal()"><i class="bi bi-plus-circle me-1"></i>新增交易</button>
+          </div>
+          <div>
+            <label class="form-label mb-1 small d-block">&nbsp;</label>
+            <div class="dropdown">
+              <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                匯出 / 更多
+              </button>
+              <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="#" onclick="exportTransactionsCSV()">匯出 CSV</a></li>
+                <li><a class="dropdown-item" href="#" onclick="exportTransactionsJSON()">匯出 JSON</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item text-danger" href="#" onclick="batchDeleteTransactions()">刪除選取</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm align-middle">
+            <thead class="table-light">
+              <tr>
+                <th><input type="checkbox" id="chkTxAll" onchange="toggleSelectAllTx()"></th>
+                <th>日期</th>
+                <th>類型</th>
+                <th>類別</th>
+                <th class="text-end">金額</th>
+                <th>對象</th>
+                <th>說明</th>
+                <th>帳戶</th>
+                <th>收據</th>
+                <th>更新</th>
+                <th style="width:80px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody">
+              <tr><td colspan="11" class="no-data"><i class="bi bi-receipt"></i>無資料</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <nav>
+          <ul class="pagination pagination-sm justify-content-center mt-2" id="txPagination"></ul>
+        </nav>
+      </div>
+    </div>
+
+    <!-- 會員 -->
+    <div class="tab-pane fade" id="tab-members">
+      <div class="panel mb-3">
+        <div class="d-flex flex-wrap gap-2 align-items-end filter-row">
+          <div>
+            <label class="form-label mb-1 small">狀態</label>
+            <select class="form-select form-select-sm" id="filterMemberStatus" onchange="renderMembers()">
+              <option value="">全部</option>
+              <option value="active">正常</option>
+              <option value="inactive">停權</option>
+              <option value="pending">待審</option>
+            </select>
+          </div>
+          <div class="flex-grow-1">
+            <label class="form-label mb-1 small">搜尋</label>
+            <input type="text" class="form-control form-control-sm" id="filterMemberKeyword" placeholder="姓名 / 電話 / Email / 標籤..." oninput="renderMembers()">
+          </div>
+          <div>
+            <label class="form-label mb-1 small d-block">&nbsp;</label>
+            <button class="btn btn-sm btn-success" onclick="openMemberModal()"><i class="bi bi-person-plus me-1"></i>新增會員</button>
+          </div>
+          <div>
+            <label class="form-label mb-1 small d-block">&nbsp;</label>
+            <div class="dropdown">
+              <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                匯出 / 更多
+              </button>
+              <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="#" onclick="exportMembersCSV()">匯出 CSV</a></li>
+                <li><a class="dropdown-item" href="#" onclick="exportMembersJSON()">匯出 JSON</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item text-danger" href="#" onclick="batchDeleteMembers()">刪除選取</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm align-middle">
+            <thead class="table-light">
+              <tr>
+                <th><input type="checkbox" id="chkMemberAll" onchange="toggleSelectAllMembers()"></th>
+                <th>姓名</th>
+                <th>電話 / Email</th>
+                <th>加入</th>
+                <th>狀態</th>
+                <th>會費</th>
+                <th>標籤</th>
+                <th>更新</th>
+                <th style="width:90px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="memberTableBody">
+              <tr><td colspan="9" class="no-data"><i class="bi bi-people"></i>無資料</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <nav>
+          <ul class="pagination pagination-sm justify-content-center mt-2" id="memberPagination"></ul>
+        </nav>
+      </div>
+    </div>
+
+    <!-- 統計分析 -->
+    <div class="tab-pane fade" id="tab-analytics">
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="chart-box mb-3">
+            <h6 class="mb-2">年度月度收支對比</h6>
+            <canvas id="chartMonthlyBar" height="160"></canvas>
+          </div>
+          <div class="chart-box">
+            <h6 class="mb-2">收入來源構成</h6>
+            <canvas id="chartIncomeCategory" height="160"></canvas>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="chart-box mb-3">
+            <h6 class="mb-2">會員累積成長</h6>
+            <canvas id="chartMemberGrowth" height="160"></canvas>
+          </div>
+          <div class="panel">
+            <h6 class="mb-2">摘要</h6>
+            <div id="analyticsSummary" class="small"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 備份 / 還原 -->
+    <div class="tab-pane fade" id="tab-backups">
+      <div class="panel mb-3">
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-sm btn-success" onclick="createBackup()"><i class="bi bi-hdd-stack me-1"></i>建立備份</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="listBackups()"><i class="bi bi-arrow-repeat me-1"></i>更新列表</button>
+          <select id="backupSelect" class="form-select form-select-sm" style="max-width:300px;">
+            <option value="">選擇備份</option>
+          </select>
+          <button class="btn btn-sm btn-warning" onclick="restoreSelected()"><i class="bi bi-arrow-counterclockwise me-1"></i>還原</button>
+          <div class="ms-auto small text-muted">
+            備份上限：<span id="backupLimitInfo">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <h6 class="mb-2">備份列表</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>備份ID</th>
+                <th>版本</th>
+                <th>建立時間</th>
+                <th>大小</th>
+                <th>Hash</th>
+                <th>加密</th>
+              </tr>
+            </thead>
+            <tbody id="backupTableBody">
+              <tr><td colspan="6" class="no-data"><i class="bi bi-cloud-slash"></i>尚無備份</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 原始 JSON -->
+    <div class="tab-pane fade" id="tab-raw">
+      <div class="panel">
+        <div class="mb-2">
+          <button class="btn btn-sm btn-outline-primary me-2" onclick="refreshRawJSON()">重新載入</button>
+          <button class="btn btn-sm btn-outline-success" onclick="downloadAllJSON()">下載 JSON</button>
+        </div>
+        <textarea id="rawJsonArea" rows="20" class="form-control code" spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <!-- 日誌 -->
+    <div class="tab-pane fade" id="tab-logs">
+      <div class="panel">
+        <div class="d-flex align-items-center mb-2 gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-secondary" onclick="clearLog()">清空畫面日誌</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="openPush(true)">強制推送(force)</button>
+          <div class="form-check ms-2">
+            <input class="form-check-input" type="checkbox" id="chkAutoPull" onchange="toggleAutoPull()">
+            <label class="form-check-label small" for="chkAutoPull">自動每 5 分鐘拉取</label>
+          </div>
+        </div>
+        <div id="log" class="log"></div>
+      </div>
+    </div>
+
+    <!-- 設定 -->
+    <div class="tab-pane fade" id="tab-settings">
+      <div class="panel mb-3">
+        <h6>基本設定</h6>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label required">組織名稱</label>
+            <input type="text" class="form-control" id="settingOrgName" oninput="markConfigChanged()">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">收據前綴</label>
+            <input type="text" class="form-control" id="settingReceiptPrefix" oninput="markConfigChanged()">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">預設年費</label>
+            <input type="number" class="form-control" id="settingDefaultFee" oninput="markConfigChanged()">
+          </div>
+        </div>
+        <div class="mt-3">
+          <button class="btn btn-primary btn-sm" onclick="applySettings()">套用設定</button>
+          <button class="btn btn-outline-secondary btn-sm ms-2" onclick="loadSettingsToForm()">重載</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h6>系統資訊</h6>
+        <div id="systemStats" class="small text-muted">—</div>
+        <div class="mt-2">
+          <button class="btn btn-sm btn-outline-secondary" onclick="fetchStats()">更新統計</button>
+          <button class="btn btn-sm btn-outline-danger ms-2" onclick="confirmClearLocal()">清除本機暫存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 浮動同步按鈕 -->
+  <button class="floating-sync-btn" title="拉取或推送" onclick="toggleSyncQuick()">
+    <i class="bi bi-cloud-arrow-up"></i>
+  </button>
+
+  <!-- 交易 Modal -->
+  <div class="modal fade" id="transactionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title" id="txModalTitle">新增交易</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="txForm">
+            <input type="hidden" id="txId">
+            <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label required">日期</label>
+                <input type="date" class="form-control" id="txDate" required>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">類型</label>
+                <select class="form-select" id="txType" required onchange="populateCategoryOptions()">
+                  <option value="">選擇</option>
+                  <option value="收入">收入</option>
+                  <option value="支出">支出</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">類別</label>
+                <select class="form-select" id="txCategory" required></select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label required">金額</label>
+                <input type="number" class="form-control" id="txAmount" min="0" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">對象</label>
+                <input type="text" class="form-control" id="txCounterparty" list="counterpartyList">
+                <datalist id="counterpartyList"></datalist>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">帳戶</label>
+                <select class="form-select" id="txAccount">
+                  <option value="現金">現金</option>
+                  <option value="銀行">銀行</option>
+                  <option value="支票">支票</option>
+                  <option value="信用卡">信用卡</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">收據編號</label>
+                <input type="text" class="form-control" id="txReceiptNumber" placeholder="自動產生 (可覆寫)">
+              </div>
+              <div class="col-12">
+                <label class="form-label">說明</label>
+                <textarea class="form-control" id="txDescription" rows="2"></textarea>
+              </div>
+              <div class="col-12">
+                <label class="form-label">憑證（僅示意，未上傳）</label>
+                <input type="file" id="txVoucherFiles" multiple class="form-control" accept="image/*,application/pdf" onchange="previewVouchers(event)">
+                <div id="voucherPreview" class="voucher-preview mt-2"></div>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+          <button class="btn btn-primary btn-sm" onclick="saveTransaction()"><i class="bi bi-save me-1"></i>儲存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 會員 Modal -->
+  <div class="modal fade" id="memberModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title" id="memberModalTitle">新增會員</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="memberForm">
+            <input type="hidden" id="memberId">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label required">姓名</label>
+                <input type="text" id="mName" class="form-control" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">電話</label>
+                <input type="tel" id="mPhone" class="form-control" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Email</label>
+                <input type="email" id="mEmail" class="form-control">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">出生日期</label>
+                <input type="date" id="mBirth" class="form-control">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">性別</label>
+                <select id="mGender" class="form-select">
+                  <option value="">—</option>
+                  <option value="男">男</option>
+                  <option value="女">女</option>
+                  <option value="其他">其他</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">身分證字號</label>
+                <input type="text" id="mIdNumber" class="form-control">
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">地址</label>
+                <input type="text" id="mAddress" class="form-control">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label required">加入日期</label>
+                <input type="date" id="mJoinDate" class="form-control" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">狀態</label>
+                <select id="mStatus" class="form-select">
+                  <option value="active">正常</option>
+                  <option value="inactive">停權</option>
+                  <option value="pending">待審</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">會員類型</label>
+                <select id="mType" class="form-select">
+                  <option value="regular">一般</option>
+                  <option value="honorary">榮譽</option>
+                  <option value="life">終身</option>
+                  <option value="family">家屬</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">年費金額</label>
+                <input type="number" id="mFee" class="form-control" value="1000">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">最後繳費日</label>
+                <input type="date" id="mLastPay" class="form-control">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">標籤 (逗號分隔)</label>
+                <input type="text" id="mTags" class="form-control">
+              </div>
+              <div class="col-12">
+                <label class="form-label">備註</label>
+                <textarea id="mNotes" class="form-control" rows="2"></textarea>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+          <button class="btn btn-success btn-sm" onclick="saveMember()"><i class="bi bi-save me-1"></i>儲存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 快速同步對話框 -->
+  <div class="modal fade" id="quickSyncModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title">同步操作</h6>
+          <button class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted mb-2">本機版本：<code id="quickLocalVersion">—</code><br>雲端版本：<code id="quickServerVersion">—</code></p>
+          <div class="d-grid gap-2">
+            <button class="btn btn-outline-primary" onclick="pullData()"><i class="bi bi-cloud-download me-1"></i>拉取最新 (Pull)</button>
+            <button class="btn btn-primary" onclick="pushData()"><i class="bi bi-cloud-upload me-1"></i>推送變更 (Push)</button>
+            <button class="btn btn-outline-danger" onclick="pushData(true)"><i class="bi bi-exclamation-triangle me-1"></i>強制推送 (Force)</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="form-check me-auto">
+            <input class="form-check-input" type="checkbox" id="chkConfirmForce">
+            <label class="form-check-label small" for="chkConfirmForce">允許強制覆蓋</label>
+          </div>
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">關閉</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 依賴腳本 -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <script>
+    /*************************************************
+     *  請填入後端 Web App Deploy URL (以 /exec 結尾)
+     *************************************************/
+    const API_BASE = 'https://script.google.com/macros/s/AKfycby7xjhbbcYs16-QoPrWsp7B4dH0_Lzpn0Cn7Q4fV9q1FS63B71zBLrH8SO49OVhfz5kGw/exec'; // TODO: 替換
+
+    /*************************************************
+     *  全域狀態
+     *************************************************/
+    let deviceId = getOrCreateDeviceId();
+    let transactions = [];
+    let members = [];
+    let settings = {
+      organizationName:'帕金森病友會',
+      receiptPrefix:'R',
+      defaultMembershipFee:1000
+    };
+
+    let currentVersion = null;
+    let lastHash = null;
+    let dirty = false;
+    let autoPullTimer = null;
+
+    const txCategories = {
+      '收入': ['會費','捐款','活動收入','政府補助','利息收入','其他收入'],
+      '支出': ['活動費用','辦公費用','交通費','餐費','場地費','設備費','印刷費','郵電費','保險費','其他支出']
+    };
+
+    // Chart 參考
+    const charts = {
+      trend:null,
+      category:null,
+      monthlyBar:null,
+      incomeCategory:null,
+      memberGrowth:null
+    };
+
+    /*************************************************
+     *  初始化
+     *************************************************/
+    (function init(){
+      initFilters();
+      loadLocal();
+      renderAll();
+      listBackups();
+      pullData(); // 初次拉取
+      fetchStats();
+      refreshRawJSON();
+      logLine('系統初始化完成，Device='+deviceId);
+    })();
+
+    /*************************************************
+     *  基本工具
+     *************************************************/
+    function getOrCreateDeviceId(){
+      let id = localStorage.getItem('deviceId');
+      if (!id){
+        id = 'dev_'+Math.random().toString(36).slice(2,10);
+        localStorage.setItem('deviceId', id);
+      }
+      return id;
+    }
+    function logLine(msg,type='info'){
+      const box = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      const color = type==='error'?'#f87171': (type==='warn'?'#fbbf24':'#60a5fa');
+      const div = document.createElement('div');
+      div.innerHTML = '<span style="color:#94a3b8">['+time+']</span> <span style="color:'+color+'">'+type+'</span> '+ msg;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+      if (type==='error') console.error(msg);
+    }
+    function setDirty(state=true){
+      dirty = state;
+      const el = document.getElementById('dirtyIndicator');
+      el.classList.toggle('dirty',dirty);
+    }
+    function formatCurrency(n){
+      return (Number(n)||0).toLocaleString('zh-TW',{minimumFractionDigits:0});
+    }
+    function uuid(){
+      return Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+    }
+    function today(){
+      return new Date().toISOString().split('T')[0];
+    }
+    function escapeHtml(str=''){
+      return str.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+    }
+
+    /*************************************************
+     *  Local Storage
+     *************************************************/
+    function loadLocal(){
+      try {
+        const tx = localStorage.getItem('txData');
+        const mb = localStorage.getItem('memberData');
+        const st = localStorage.getItem('appSettings');
+        const cv = localStorage.getItem('dataVersion');
+        const h  = localStorage.getItem('dataHash');
+        if (tx) transactions = JSON.parse(tx);
+        if (mb) members = JSON.parse(mb);
+        if (st) settings = {...settings, ...JSON.parse(st)};
+        if (cv) currentVersion = cv;
+        if (h)  lastHash = h;
+        document.getElementById('lblVersion').textContent = currentVersion || '—';
+        document.getElementById('lblHash').textContent = lastHash || '—';
+      } catch(e){
+        logLine('讀取本機資料失敗: '+e.message,'error');
+      }
+    }
+    function saveLocal(){
+      localStorage.setItem('txData', JSON.stringify(transactions));
+      localStorage.setItem('memberData', JSON.stringify(members));
+      localStorage.setItem('appSettings', JSON.stringify(settings));
+      if (currentVersion) localStorage.setItem('dataVersion', currentVersion);
+      if (lastHash) localStorage.setItem('dataHash', lastHash);
+      setDirty(false);
+    }
+    function confirmClearLocal(){
+      if (confirm('確定清除本機暫存？此操作不會刪除雲端資料。')){
+        localStorage.removeItem('txData');
+        localStorage.removeItem('memberData');
+        localStorage.removeItem('appSettings');
+        localStorage.removeItem('dataVersion');
+        localStorage.removeItem('dataHash');
+        logLine('本機暫存已清除');
+      }
+    }
+
+    /*************************************************
+     *  同步 API
+     *************************************************/
+    function pullData(){
+      document.getElementById('syncStatusText').textContent = '拉取中...';
+      logLine('開始拉取資料');
+      fetch(API_BASE,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          action:'pullData',
+          deviceId,
+          clientVersion: currentVersion
+        })
+      }).then(r=>r.json())
+        .then(res=>{
+          if (!res.success){
+            logLine('拉取失敗:'+res.message,'error');
+            document.getElementById('syncStatusText').textContent = '拉取失敗';
+            return;
+          }
+          if (res.data.notModified){
+            logLine('資料未變動，版本='+res.data.version);
+            document.getElementById('syncStatusText').textContent = '已最新';
+            return;
+          }
+          // 更新
+          const d = res.data.data;
+          transactions = d.transactions||[];
+          members = d.members||[];
+          settings = {...settings, ...(d.settings||{})};
+          currentVersion = res.data.version;
+          lastHash = res.data.hash;
+          document.getElementById('lblVersion').textContent = currentVersion;
+          document.getElementById('lblHash').textContent = lastHash;
+          document.getElementById('lblUpdatedAt').textContent = res.data.updatedAt || new Date().toISOString();
+          document.getElementById('syncStatusText').textContent = '拉取成功';
+          logLine('拉取成功，新版本='+currentVersion);
+          saveLocal();
+          renderAll();
+          refreshRawJSON();
+          updateQuickSyncModal();
+        })
+        .catch(err=>{
+          logLine('拉取錯誤:'+err.message,'error');
+          document.getElementById('syncStatusText').textContent = '拉取錯誤';
+        });
+    }
+
+    function pushData(force=false){
+      if (!force && !confirm('確認推送目前本機資料到雲端？')) return;
+      document.getElementById('syncStatusText').textContent = '推送中...';
+      logLine('開始推送資料 force='+force);
+      fetch(API_BASE,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          action:'pushData',
+          deviceId,
+          baseVersion: currentVersion,
+          force,
+          data:{
+            transactions,
+            members,
+            settings
+          }
+        })
+      }).then(r=>r.json())
+        .then(res=>{
+          if (!res.success){
+            if (res.data && res.data.conflict){
+              logLine('推送衝突：伺服端版本='+res.data.serverVersion,'warn');
+              document.getElementById('syncStatusText').textContent='版本衝突：請先拉取';
+              alert('版本衝突：請先拉取 (Pull) 後再推送，或使用強制推送。');
+            } else {
+              logLine('推送失敗:'+res.message,'error');
+              document.getElementById('syncStatusText').textContent='推送失敗';
+            }
+            return;
+          }
+          currentVersion = res.data.version;
+          lastHash = res.data.hash;
+          document.getElementById('lblVersion').textContent=currentVersion;
+          document.getElementById('lblHash').textContent=lastHash;
+          document.getElementById('lblUpdatedAt').textContent=new Date().toISOString();
+          document.getElementById('syncStatusText').textContent='推送成功';
+          logLine('推送成功，新版本='+currentVersion);
+          saveLocal();
+          refreshRawJSON();
+          updateQuickSyncModal();
+        })
+        .catch(err=>{
+          logLine('推送錯誤:'+err.message,'error');
+          document.getElementById('syncStatusText').textContent='推送錯誤';
+        });
+    }
+
+    function openPush(force=false){
+      pushData(force);
+    }
+
+    function toggleAutoPull(){
+      const enabled = document.getElementById('chkAutoPull').checked;
+      if (enabled){
+        if (autoPullTimer) clearInterval(autoPullTimer);
+        autoPullTimer = setInterval(()=> pullData(), 5*60*1000);
+        logLine('自動拉取啟用 (5 分鐘)');
+      } else {
+        if (autoPullTimer) clearInterval(autoPullTimer);
+        logLine('自動拉取停用');
+      }
+    }
+
+    /*************************************************
+     *  備份 / 還原
+     *************************************************/
+    function createBackup(){
+      logLine('建立備份中...');
+      fetch(API_BASE,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'createBackup', deviceId})
+      }).then(r=>r.json())
+        .then(res=>{
+          if (!res.success){
+            logLine('備份失敗:'+res.message,'error');
+            return;
+          }
+          logLine('備份建立成功:'+res.data.backupId);
+          listBackups();
+        }).catch(err=>{
+          logLine('建立備份錯誤:'+err.message,'error');
+        });
+    }
+    function listBackups(){
+      fetch(API_BASE,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'listBackups', deviceId})
+      }).then(r=>r.json())
+        .then(res=>{
+          if (!res.success){
+            logLine('取得備份失敗:'+res.message,'error');
+            return;
+          }
+          const tbody = document.getElementById('backupTableBody');
+          tbody.innerHTML='';
+          const sel = document.getElementById('backupSelect');
+          sel.innerHTML='<option value="">選擇備份</option>';
+          if (!res.data.backups.length){
+            tbody.innerHTML='<tr><td colspan="6" class="no-data"><i class="bi bi-cloud-slash"></i>尚無備份</td></tr>';
+            return;
+          }
+          res.data.backups.forEach(b=>{
+            const tr=document.createElement('tr');
+            tr.innerHTML = '<td class="truncate">'+b.backupId+'</td>'+
+                           '<td>'+b.version+'</td>'+
+                           '<td>'+new Date(b.createdAt).toLocaleString()+'</td>'+
+                           '<td>'+b.size+'</td>'+
+                           '<td><code>'+(b.hash||'')+'</code></td>'+
+                           '<td>'+(b.encrypted?'是':'否')+'</td>';
+            tbody.appendChild(tr);
+            const opt = document.createElement('option');
+            opt.value = b.backupId;
+            opt.textContent = b.backupId + ' ('+b.version+')';
+            sel.appendChild(opt);
+          });
+          logLine('備份列表更新，'+res.data.backups.length+' 筆');
+          document.getElementById('backupLimitInfo').textContent = '最大 '+ (res.data.backups.length) + ' / (後端設定上限可調)';
+        }).catch(err=>{
+          logLine('列出備份錯誤:'+err.message,'error');
+        });
+    }
+    function restoreSelected(){
+      const id = document.getElementById('backupSelect').value;
+      if (!id) { alert('請先選擇備份'); return; }
+      if (!confirm('確定還原備份 '+id+'? 會覆蓋雲端資料並生成新版本。')) return;
+      logLine('還原中... '+id);
+      fetch(API_BASE,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'restoreBackup', deviceId, backupId:id})
+      }).then(r=>r.json())
+        .then(res=>{
+          if (!res.success){
+            logLine('還原失敗:'+res.message,'error');
+            return;
+          }
+          logLine('還原成功，新版本='+res.data.version+', 重新拉取...');
+          setTimeout(()=> pullData(), 1200);
+        }).catch(err=>{
+          logLine('還原錯誤:'+err.message,'error');
+        });
+    }
+
+    /*************************************************
+     *  交易 CRUD
+     *************************************************/
+    function openTransactionModal(id=null){
+      resetTxForm();
+      if (id){
+        const tx = transactions.find(t=> t.id===id);
+          if (!tx){ alert('找不到交易'); return; }
+          document.getElementById('txId').value = tx.id;
+          document.getElementById('txDate').value = tx.date || today();
+          document.getElementById('txType').value = tx.type;
+          populateCategoryOptions();
+          document.getElementById('txCategory').value = tx.category;
+          document.getElementById('txAmount').value = tx.amount;
+          document.getElementById('txCounterparty').value = tx.counterparty||'';
+          document.getElementById('txAccount').value = tx.account||'現金';
+          document.getElementById('txReceiptNumber').value = tx.receiptNumber||'';
+          document.getElementById('txDescription').value = tx.description||'';
+          document.getElementById('txModalTitle').textContent='編輯交易';
+      } else {
+        document.getElementById('txDate').value = today();
+        document.getElementById('txModalTitle').textContent='新增交易';
+      }
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('transactionModal')).show();
+    }
+    function resetTxForm(){
+      document.getElementById('txForm').reset();
+      document.getElementById('txId').value='';
+      document.getElementById('voucherPreview').innerHTML='';
+    }
+    function populateCategoryOptions(){
+      const type = document.getElementById('txType').value;
+      const sel = document.getElementById('txCategory');
+      sel.innerHTML='<option value="">選擇類別</option>';
+      (txCategories[type]||[]).forEach(c=>{
+        const opt=document.createElement('option');
+        opt.value=c; opt.textContent=c;
+        sel.appendChild(opt);
+      });
+    }
+    function generateReceiptNumber(){
+      const prefix = settings.receiptPrefix || 'R';
+      const datePart = new Date().toISOString().slice(0,10).replace(/-/g,'');
+      const seq = (transactions.filter(t=> (t.receiptNumber||'').startsWith(prefix+datePart)).length + 1)
+        .toString().padStart(3,'0');
+      return prefix + datePart + '-' + seq;
+    }
+    function saveTransaction(){
+      const id = document.getElementById('txId').value;
+      const obj = {
+        id: id || uuid(),
+        date: document.getElementById('txDate').value,
+        type: document.getElementById('txType').value,
+        category: document.getElementById('txCategory').value,
+        amount: Number(document.getElementById('txAmount').value)||0,
+        counterparty: document.getElementById('txCounterparty').value.trim(),
+        description: document.getElementById('txDescription').value.trim(),
+        account: document.getElementById('txAccount').value,
+        receiptNumber: document.getElementById('txReceiptNumber').value.trim() || generateReceiptNumber(),
+        vouchers: [], // 預留
+        updatedAt: new Date().toISOString(),
+        createdAt: id ? (transactions.find(t=>t.id===id)?.createdAt||new Date().toISOString()) : new Date().toISOString(),
+        deviceId
+      };
+      if (!obj.date || !obj.type || !obj.category){
+        alert('請填寫必填欄位');
+        return;
+      }
+      if (id){
+        const idx = transactions.findIndex(t=> t.id===id);
+        if (idx>-1) transactions[idx]=obj;
+        logLine('更新交易：'+id);
+      } else {
+        transactions.push(obj);
+        logLine('新增交易：'+obj.id);
+      }
+      saveLocal();
+      setDirty(true);
+      bootstrap.Modal.getInstance(document.getElementById('transactionModal')).hide();
+      renderTransactions();
+      renderDashboard();
+      refreshRawJSON();
+    }
+    function deleteTransaction(id){
+      if (!confirm('確定刪除此交易？')) return;
+      const idx = transactions.findIndex(t=> t.id===id);
+      if (idx>-1){
+        transactions.splice(idx,1);
+        logLine('刪除交易：'+id);
+        saveLocal();
+        setDirty(true);
+        renderTransactions();
+        renderDashboard();
+        refreshRawJSON();
+      }
+    }
+    function batchDeleteTransactions(){
+      const checked = [...document.querySelectorAll('.chk-tx-row:checked')].map(c=>c.value);
+      if (!checked.length){ alert('未選取任何交易'); return; }
+      if (!confirm('確定刪除選取 '+checked.length+' 筆交易？')) return;
+      transactions = transactions.filter(t=> !checked.includes(t.id));
+      logLine('批次刪除交易：'+checked.length+' 筆');
+      saveLocal();
+      setDirty(true);
+      renderTransactions();
+      renderDashboard();
+      refreshRawJSON();
+    }
+    function toggleSelectAllTx(){
+      const on = document.getElementById('chkTxAll').checked;
+      document.querySelectorAll('.chk-tx-row').forEach(c=> c.checked=on);
+    }
+    function previewVouchers(evt){
+      const files = evt.target.files;
+      const container = document.getElementById('voucherPreview');
+      container.innerHTML='';
+      [...files].forEach(f=>{
+        if (f.type.startsWith('image/')){
+          const url = URL.createObjectURL(f);
+          const img=document.createElement('img');
+          img.src=url;
+          container.appendChild(img);
+        } else {
+          const span=document.createElement('span');
+          span.className='badge bg-secondary me-1';
+          span.textContent=f.name;
+          container.appendChild(span);
+        }
+      });
+    }
+
+    /*************************************************
+     *  會員 CRUD
+     *************************************************/
+    function openMemberModal(id=null){
+      resetMemberForm();
+      if (id){
+        const m = members.find(x=> x.id===id);
+        if (!m){ alert('找不到會員'); return; }
+        document.getElementById('memberId').value = m.id;
+        document.getElementById('mName').value = m.name||'';
+        document.getElementById('mPhone').value = m.phone||'';
+        document.getElementById('mEmail').value = m.email||'';
+        document.getElementById('mBirth').value = m.birthDate||'';
+        document.getElementById('mGender').value = m.gender||'';
+        document.getElementById('mIdNumber').value = m.idNumber||'';
+        document.getElementById('mAddress').value = m.address||'';
+        document.getElementById('mJoinDate').value = m.joinDate||today();
+        document.getElementById('mStatus').value = m.status||'active';
+        document.getElementById('mType').value = m.type||'regular';
+        document.getElementById('mFee').value = m.membershipFee||settings.defaultMembershipFee||0;
+        document.getElementById('mLastPay').value = m.lastPaymentDate||'';
+        document.getElementById('mTags').value = m.tags||'';
+        document.getElementById('mNotes').value = m.notes||'';
+        document.getElementById('memberModalTitle').textContent='編輯會員';
+      } else {
+        document.getElementById('mJoinDate').value = today();
+        document.getElementById('mFee').value = settings.defaultMembershipFee||1000;
+        document.getElementById('memberModalTitle').textContent='新增會員';
+      }
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('memberModal')).show();
+    }
+    function resetMemberForm(){
+      document.getElementById('memberForm').reset();
+      document.getElementById('memberId').value='';
+    }
+    function saveMember(){
+      const id = document.getElementById('memberId').value;
+      const obj = {
+        id: id || uuid(),
+        name: document.getElementById('mName').value.trim(),
+        phone: document.getElementById('mPhone').value.trim(),
+        email: document.getElementById('mEmail').value.trim(),
+        birthDate: document.getElementById('mBirth').value||'',
+        gender: document.getElementById('mGender').value||'',
+        idNumber: document.getElementById('mIdNumber').value||'',
+        address: document.getElementById('mAddress').value||'',
+        joinDate: document.getElementById('mJoinDate').value,
+        status: document.getElementById('mStatus').value||'active',
+        type: document.getElementById('mType').value||'regular',
+        membershipFee: Number(document.getElementById('mFee').value)||0,
+        lastPaymentDate: document.getElementById('mLastPay').value||'',
+        tags: document.getElementById('mTags').value||'',
+        notes: document.getElementById('mNotes').value||'',
+        updatedAt: new Date().toISOString(),
+        createdAt: id ? (members.find(m=>m.id===id)?.createdAt||new Date().toISOString()) : new Date().toISOString(),
+        deviceId
+      };
+      if (!obj.name || !obj.phone || !obj.joinDate){
+        alert('必填欄位未填寫');
+        return;
+      }
+      if (id){
+        const idx = members.findIndex(m=> m.id===id);
+        if (idx>-1) members[idx]=obj;
+        logLine('更新會員：'+id);
+      } else {
+        members.push(obj);
+        logLine('新增會員：'+obj.id);
+      }
+      saveLocal();
+      setDirty(true);
+      bootstrap.Modal.getInstance(document.getElementById('memberModal')).hide();
+      renderMembers();
+      renderDashboard();
+      refreshRawJSON();
+    }
+    function deleteMember(id){
+      if (!confirm('確定刪除此會員？')) return;
+      const idx = members.findIndex(m=> m.id===id);
+      if (idx>-1){
+        members.splice(idx,1);
+        logLine('刪除會員：'+id);
+        saveLocal();
+        setDirty(true);
+        renderMembers();
+        renderDashboard();
+        refreshRawJSON();
+      }
+    }
+    function batchDeleteMembers(){
+      const checked = [...document.querySelectorAll('.chk-member-row:checked')].map(c=>c.value);
+      if (!checked.length){ alert('未選取任何會員'); return; }
+      if (!confirm('確定刪除 '+checked.length+' 位會員？')) return;
+      members = members.filter(m=> !checked.includes(m.id));
+      logLine('批次刪除會員：'+checked.length+' 位');
+      saveLocal();
+      setDirty(true);
+      renderMembers();
+      renderDashboard();
+      refreshRawJSON();
+    }
+    function toggleSelectAllMembers(){
+      const on = document.getElementById('chkMemberAll').checked;
+      document.querySelectorAll('.chk-member-row').forEach(c=> c.checked=on);
+    }
+
+    /*************************************************
+     *  篩選 / 分頁 & 呈現
+     *************************************************/
+    let txPage=1, txPageSize=12;
+    function initFilters(){
+      const yearSel = document.getElementById('filterTxYear');
+      yearSel.innerHTML='<option value="">全部</option>';
+      const nowY = new Date().getFullYear();
+      for (let y=nowY; y>=nowY-10; y--){
+        const opt = document.createElement('option');
+        opt.value = y; opt.textContent = y+'年';
+        yearSel.appendChild(opt);
+      }
+      const monthSel = document.getElementById('filterTxMonth');
+      for (let m=1;m<=12;m++){
+        const opt=document.createElement('option');
+        opt.value=m; opt.textContent=m+'月';
+        monthSel.appendChild(opt);
+      }
+    }
+    function renderTransactions(){
+      const tbody = document.getElementById('txTableBody');
+      const kw = document.getElementById('filterTxKeyword').value.trim().toLowerCase();
+      const year = document.getElementById('filterTxYear').value;
+      const month= document.getElementById('filterTxMonth').value;
+      const type = document.getElementById('filterTxType').value;
+
+      let list = transactions.slice().sort((a,b)=> new Date(b.date)-new Date(a.date));
+      list = list.filter(t=>{
+        if (year && (!t.date || !t.date.startsWith(year))) return false;
+        if (month){
+          const m = String(new Date(t.date).getMonth()+1);
+          if (m!==month) return false;
+        }
+        if (type && t.type!==type) return false;
+        if (kw){
+          const blob = (t.category||'')+' '+(t.counterparty||'')+' '+(t.description||'');
+          if (!blob.toLowerCase().includes(kw)) return false;
+        }
+        return true;
+      });
+
+      const totalPages = Math.max(1, Math.ceil(list.length/txPageSize));
+      if (txPage>totalPages) txPage=totalPages;
+      const start = (txPage-1)*txPageSize;
+      const pageItems = list.slice(start,start+txPageSize);
+
+      if (!pageItems.length){
+        tbody.innerHTML='<tr><td colspan="11" class="no-data"><i class="bi bi-receipt"></i>無符合資料</td></tr>';
+      } else {
+        tbody.innerHTML='';
+        pageItems.forEach(t=>{
+          const tr=document.createElement('tr');
+          tr.innerHTML='<td><input type="checkbox" class="form-check-input chk-tx-row" value="'+t.id+'"></td>'+
+                       '<td>'+escapeHtml(t.date||'')+'</td>'+
+                       '<td><span class="badge '+(t.type==='收入'?'bg-success':'bg-danger')+'">'+t.type+'</span></td>'+
+                       '<td>'+escapeHtml(t.category||'')+'</td>'+
+                       '<td class="text-end '+(t.type==='收入'?'text-success':'text-danger')+'">'+formatCurrency(t.amount)+'</td>'+
+                       '<td class="truncate" title="'+escapeHtml(t.counterparty||'')+'">'+escapeHtml(t.counterparty||'')+'</td>'+
+                       '<td class="truncate" title="'+escapeHtml(t.description||'')+'">'+escapeHtml(t.description||'')+'</td>'+
+                       '<td>'+escapeHtml(t.account||'')+'</td>'+
+                       '<td><code class="receipt-code">'+escapeHtml(t.receiptNumber||'')+'</code></td>'+
+                       '<td><small class="text-muted">'+(t.updatedAt? new Date(t.updatedAt).toLocaleDateString():'')+'</small></td>'+
+                       '<td>'+
+                         '<div class="btn-group btn-group-sm">'+
+                           '<button class="btn btn-outline-primary" onclick="openTransactionModal(\''+t.id+'\')"><i class="bi bi-pencil"></i></button>'+
+                           '<button class="btn btn-outline-danger" onclick="deleteTransaction(\''+t.id+'\')"><i class="bi bi-trash"></i></button>'+
+                         '</div>'+
+                       '</td>';
+          tbody.appendChild(tr);
+        });
+      }
+      // pagination
+      const ul = document.getElementById('txPagination');
+      ul.innerHTML='';
+      for (let p=1;p<=totalPages;p++){
+        const li=document.createElement('li');
+        li.className='page-item'+(p===txPage?' active':'');
+        li.innerHTML='<a class="page-link" href="#">'+p+'</a>';
+        li.addEventListener('click', e=>{ e.preventDefault(); txPage=p; renderTransactions(); });
+        ul.appendChild(li);
+      }
+      updateCounterpartyList();
+    }
+    function updateCounterpartyList(){
+      const set = new Set();
+      transactions.forEach(t=> { if (t.counterparty) set.add(t.counterparty); });
+      const dl = document.getElementById('counterpartyList');
+      dl.innerHTML = [...set].map(c=>'<option value="'+escapeHtml(c)+'">').join('');
+    }
+
+    let memberPage=1, memberPageSize=12;
+    function renderMembers(){
+      const tbody = document.getElementById('memberTableBody');
+      const kw = document.getElementById('filterMemberKeyword').value.trim().toLowerCase();
+      const status = document.getElementById('filterMemberStatus').value;
+
+      let list = members.slice().sort((a,b)=> new Date(b.joinDate)-new Date(a.joinDate));
+      list = list.filter(m=>{
+        if (status && m.status!==status) return false;
+        if (kw){
+          const blob = (m.name||'')+' '+(m.phone||'')+' '+(m.email||'')+' '+(m.tags||'');
+          if (!blob.toLowerCase().includes(kw)) return false;
+        }
+        return true;
+      });
+
+      const totalPages = Math.max(1,Math.ceil(list.length/memberPageSize));
+      if (memberPage>totalPages) memberPage=totalPages;
+      const start=(memberPage-1)*memberPageSize;
+      const pageItems=list.slice(start,start+memberPageSize);
+
+      if (!pageItems.length){
+        tbody.innerHTML='<tr><td colspan="9" class="no-data"><i class="bi bi-people"></i>無符合資料</td></tr>';
+      } else {
+        tbody.innerHTML='';
+        pageItems.forEach(m=>{
+          const overdue = isOverdueMember(m);
+          const tr=document.createElement('tr');
+          tr.innerHTML='<td><input type="checkbox" class="form-check-input chk-member-row" value="'+m.id+'"></td>'+
+                       '<td><strong>'+escapeHtml(m.name||'')+'</strong><br><small class="text-muted">'+(m.type||'')+'</small></td>'+
+                       '<td><small>'+escapeHtml(m.phone||'')+'</small><br><small class="text-muted">'+escapeHtml(m.email||'')+'</small></td>'+
+                       '<td>'+(m.joinDate||'')+'</td>'+
+                       '<td>'+renderMemberStatus(m.status)+'</td>'+
+                       '<td><span class="badge '+(overdue?'bg-danger':'bg-success')+'">'+(overdue?'逾期':'正常')+'</span></td>'+
+                       '<td class="truncate" title="'+escapeHtml(m.tags||'')+'">'+escapeHtml(m.tags||'')+'</td>'+
+                       '<td><small class="text-muted">'+(m.updatedAt? new Date(m.updatedAt).toLocaleDateString():'')+'</small></td>'+
+                       '<td>'+
+                         '<div class="btn-group btn-group-sm">'+
+                           '<button class="btn btn-outline-primary" onclick="openMemberModal(\''+m.id+'\')"><i class="bi bi-pencil"></i></button>'+
+                           '<button class="btn btn-outline-danger" onclick="deleteMember(\''+m.id+'\')"><i class="bi bi-trash"></i></button>'+
+                         '</div>'+
+                       '</td>';
+          tbody.appendChild(tr);
+        });
+      }
+      // pagination
+      const ul=document.getElementById('memberPagination');
+      ul.innerHTML='';
+      for (let p=1;p<=totalPages;p++){
+        const li=document.createElement('li');
+        li.className='page-item'+(p===memberPage?' active':'');
+        li.innerHTML='<a class="page-link" href="#">'+p+'</a>';
+        li.addEventListener('click',e=>{ e.preventDefault(); memberPage=p; renderMembers(); });
+        ul.appendChild(li);
+      }
+    }
+    function renderMemberStatus(status){
+      switch(status){
+        case 'active': return '<span class="badge bg-success">正常</span>';
+        case 'inactive': return '<span class="badge bg-secondary">停權</span>';
+        case 'pending': return '<span class="badge bg-warning text-dark">待審</span>';
+        default: return '<span class="badge bg-light text-muted">未知</span>';
+      }
+    }
+    function isOverdueMember(m){
+      if (!m.lastPaymentDate) return true;
+      const last = new Date(m.lastPaymentDate);
+      const threshold = new Date(); threshold.setFullYear(threshold.getFullYear()-1);
+      return last < threshold;
+    }
+
+    /*************************************************
+     *  儀表板 / 近期列表
+     *************************************************/
+    function renderDashboard(){
+      const income = transactions.filter(t=> t.type==='收入').reduce((s,t)=> s+Number(t.amount||0),0);
+      const expense= transactions.filter(t=> t.type==='支出').reduce((s,t)=> s+Number(t.amount||0),0);
+      document.getElementById('dashTotalIncome').textContent='$'+formatCurrency(income);
+      document.getElementById('dashTotalExpense').textContent='$'+formatCurrency(expense);
+      document.getElementById('dashBalance').textContent='$'+formatCurrency(income-expense);
+      document.getElementById('dashMembers').textContent=members.length;
+
+      // recent tx
+      const recentTx = transactions.slice().sort((a,b)=> new Date(b.date)-new Date(a.date)).slice(0,5);
+      const txDiv = document.getElementById('recentTxList');
+      txDiv.innerHTML = recentTx.length? recentTx.map(t=>(
+        '<div class="d-flex justify-content-between border-bottom py-1">'+
+          '<div><strong>'+escapeHtml(t.category||'')+'</strong><br><small class="text-muted">'+escapeHtml(t.date||'')+'</small></div>'+
+          '<div class="'+(t.type==='收入'?'text-success':'text-danger')+' fw-semibold">'+ (t.type==='收入'?'+':'-')+formatCurrency(t.amount)+'</div>'+
+        '</div>'
+      )).join('') : '<div class="text-muted">無交易</div>';
+
+      const recentMembers = members.slice().sort((a,b)=> new Date(b.joinDate)-new Date(a.joinDate)).slice(0,5);
+      const mbDiv = document.getElementById('recentMemberList');
+      mbDiv.innerHTML = recentMembers.length? recentMembers.map(m=>(
+        '<div class="d-flex justify-content-between border-bottom py-1">'+
+          '<div><strong>'+escapeHtml(m.name||'')+'</strong><br><small class="text-muted">'+escapeHtml(m.joinDate||'')+'</small></div>'+
+          '<div>'+renderMemberStatus(m.status)+'</div>'+
+        '</div>'
+      )).join('') : '<div class="text-muted">無會員</div>';
+
+      buildCharts();
+      buildAnalyticsCharts();
+    }
+
+    /*************************************************
+     *  匯出
+     *************************************************/
+    function exportTransactionsCSV(){
+      if (!transactions.length){ alert('無交易資料'); return; }
+      const headers=['ID','日期','類型','類別','金額','對象','說明','帳戶','收據編號','建立時間','更新時間'];
+      const lines=[headers.join(',')];
+      transactions.forEach(t=>{
+        lines.push([
+          t.id,t.date,t.type,t.category,t.amount,t.counterparty||'',(t.description||'').replace(/,/g,';'),
+          t.account||'',t.receiptNumber||'',t.createdAt||'',t.updatedAt||''
+        ].map(v=> '"'+(v??'')+'"').join(','));
+      });
+      downloadText(lines.join('\n'),'transactions.csv','text/csv');
+    }
+    function exportTransactionsJSON(){
+      downloadText(JSON.stringify(transactions,null,2),'transactions.json','application/json');
+    }
+    function exportMembersCSV(){
+      if (!members.length){ alert('無會員資料'); return; }
+      const headers=['ID','姓名','電話','Email','加入日期','狀態','類型','年費','最後繳費','標籤','備註','建立時間','更新時間'];
+      const lines=[headers.join(',')];
+      members.forEach(m=>{
+        lines.push([
+          m.id,m.name,m.phone,m.email||'',m.joinDate||'',m.status||'',m.type||'',m.membershipFee||'',
+          m.lastPaymentDate||'',(m.tags||'').replace(/,/g,';'), (m.notes||'').replace(/,/g,';'),
+          m.createdAt||'',m.updatedAt||''
+        ].map(v=> '"'+(v??'')+'"').join(','));
+      });
+      downloadText(lines.join('\n'),'members.csv','text/csv');
+    }
+    function exportMembersJSON(){
+      downloadText(JSON.stringify(members,null,2),'members.json','application/json');
+    }
+    function downloadAllJSON(){
+      const blob = {
+        version: currentVersion,
+        hash: lastHash,
+        transactions,
+        members,
+        settings,
+        exportedAt: new Date().toISOString()
+      };
+      downloadText(JSON.stringify(blob,null,2),'all_data.json','application/json');
+    }
+    function downloadText(text, filename, mime){
+      const blob = new Blob([text],{type:mime});
+      const url = URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download=filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    /*************************************************
+     *  原始 JSON
+     *************************************************/
+    function refreshRawJSON(){
+      const obj = {
+        version: currentVersion,
+        hash: lastHash,
+        transactions,
+        members,
+        settings
+      };
+      document.getElementById('rawJsonArea').value=JSON.stringify(obj,null,2);
+    }
+
+    /*************************************************
+     *  設定
+     *************************************************/
+    function loadSettingsToForm(){
+      document.getElementById('settingOrgName').value = settings.organizationName||'';
+      document.getElementById('settingReceiptPrefix').value = settings.receiptPrefix||'R';
+      document.getElementById('settingDefaultFee').value = settings.defaultMembershipFee||1000;
+    }
+    function applySettings(){
+      settings.organizationName = document.getElementById('settingOrgName').value.trim()||settings.organizationName;
+      settings.receiptPrefix = document.getElementById('settingReceiptPrefix').value.trim()||'R';
+      settings.defaultMembershipFee = Number(document.getElementById('settingDefaultFee').value)||1000;
+      saveLocal();
+      setDirty(true);
+      logLine('設定已更新');
+    }
+    function markConfigChanged(){
+      setDirty(true);
+    }
+
+    /*************************************************
+     *  系統統計
+     *************************************************/
+    function fetchStats(){
+      fetch(API_BASE,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'stats', deviceId})
+      }).then(r=>r.json())
+        .then(res=>{
+          if (!res.success){
+            logLine('統計失敗:'+res.message,'error');
+            return;
+          }
+          const st = res.data.stats;
+          const div = document.getElementById('systemStats');
+          div.innerHTML = [
+            '交易：'+st.transactions,
+            '會員：'+st.members,
+            '設備：'+st.devices,
+            '備份：'+st.backups,
+            '日誌：'+st.logs,
+            '版本：'+(st.version||'—'),
+            '最後更新：'+(st.lastUpdate? new Date(st.lastUpdate).toLocaleString():'—')
+          ].join(' | ');
+        })
+        .catch(err=> logLine('統計錯誤:'+err.message,'error'));
+    }
+
+    /*************************************************
+     *  圖表
+     *************************************************/
+    function buildCharts(){
+      // 趨勢 (收入 vs 支出)
+      const monthlyIncome = Array(12).fill(0);
+      const monthlyExpense= Array(12).fill(0);
+      transactions.forEach(t=>{
+        if (!t.date) return;
+        const m = new Date(t.date).getMonth();
+        if (t.type==='收入') monthlyIncome[m]+= Number(t.amount)||0;
+        if (t.type==='支出') monthlyExpense[m]+= Number(t.amount)||0;
+      });
+      if (charts.trend) charts.trend.destroy();
+      charts.trend = new Chart(document.getElementById('chartTrend'),{
+        type:'line',
+        data:{
+          labels: ['1','2','3','4','5','6','7','8','9','10','11','12'],
+          datasets:[
+            {label:'收入', data:monthlyIncome, borderColor:'#16a34a', backgroundColor:'rgba(22,163,74,.15)', tension:.3, fill:true},
+            {label:'支出', data:monthlyExpense, borderColor:'#dc2626', backgroundColor:'rgba(220,38,38,.15)', tension:.3, fill:true}
+          ]
+        },
+        options:{responsive:true, plugins:{legend:{display:true}}}
+      });
+
+      // 支出類別
+      const expenseMap={};
+      transactions.filter(t=> t.type==='支出').forEach(t=>{
+        expenseMap[t.category] = (expenseMap[t.category]||0)+ Number(t.amount)||0;
+      });
+      if (charts.category) charts.category.destroy();
+      charts.category = new Chart(document.getElementById('chartCategory'),{
+        type:'doughnut',
+        data:{
+          labels:Object.keys(expenseMap),
+          datasets:[{
+            data:Object.values(expenseMap),
+            backgroundColor:[
+              '#0ea5e9','#6366f1','#f59e0b','#ef4444','#10b981','#84cc16',
+              '#ec4899','#8b5cf6','#14b8a6','#f97316','#475569'
+            ]
+          }]
+        },
+        options:{plugins:{legend:{position:'bottom'}}}
+      });
+    }
+
+    function buildAnalyticsCharts(){
+      // 月度收支柱狀
+      const inc = Array(12).fill(0), exp = Array(12).fill(0);
+      transactions.forEach(t=>{
+        if (!t.date) return;
+        const m = new Date(t.date).getMonth();
+        if (t.type==='收入') inc[m]+=Number(t.amount)||0;
+        else if (t.type==='支出') exp[m]+=Number(t.amount)||0;
+      });
+      if (charts.monthlyBar) charts.monthlyBar.destroy();
+      charts.monthlyBar = new Chart(document.getElementById('chartMonthlyBar'),{
+        type:'bar',
+        data:{
+          labels:['1','2','3','4','5','6','7','8','9','10','11','12'],
+          datasets:[
+            {label:'收入', data:inc, backgroundColor:'#16a34a'},
+            {label:'支出', data:exp, backgroundColor:'#dc2626'}
+          ]
+        },
+        options:{responsive:true, plugins:{legend:{position:'bottom'}}}
+      });
+
+      // 收入分類
+      const incomeMap={};
+      transactions.filter(t=> t.type==='收入').forEach(t=>{
+        incomeMap[t.category] = (incomeMap[t.category]||0) + Number(t.amount)||0;
+      });
+      if (charts.incomeCategory) charts.incomeCategory.destroy();
+      charts.incomeCategory = new Chart(document.getElementById('chartIncomeCategory'),{
+        type:'pie',
+        data:{
+          labels:Object.keys(incomeMap),
+          datasets:[{
+            data:Object.values(incomeMap),
+            backgroundColor:['#0d9488','#0284c7','#6366f1','#9333ea','#d946ef','#f97316','#f59e0b','#84cc16','#10b981','#475569']
+          }]
+        },
+        options:{plugins:{legend:{position:'bottom'}}}
+      });
+
+      // 會員成長
+      const monthlyCount = Array(12).fill(0);
+      members.forEach(m=>{
+        if (!m.joinDate) return;
+        const month = new Date(m.joinDate).getMonth();
+        monthlyCount[month]++;
+      });
+      // 累積
+      for (let i=1;i<12;i++) monthlyCount[i]+=monthlyCount[i-1];
+      if (charts.memberGrowth) charts.memberGrowth.destroy();
+      charts.memberGrowth = new Chart(document.getElementById('chartMemberGrowth'),{
+        type:'line',
+        data:{ labels:['1','2','3','4','5','6','7','8','9','10','11','12'],
+          datasets:[{ label:'累積會員', data:monthlyCount, borderColor:'#2563eb', fill:false, tension:.3 }]},
+        options:{plugins:{legend:{display:true}}}
+      });
+
+      // 摘要
+      const totalIncome = inc.reduce((a,b)=>a+b,0);
+      const totalExpense = exp.reduce((a,b)=>a+b,0);
+      const summary = document.getElementById('analyticsSummary');
+      summary.innerHTML = `
+        <div>年度收入：<strong class="text-success">$${formatCurrency(totalIncome)}</strong></div>
+        <div>年度支出：<strong class="text-danger">$${formatCurrency(totalExpense)}</strong></div>
+        <div>年度結餘：<strong>$${formatCurrency(totalIncome-totalExpense)}</strong></div>
+        <div>平均月收入：$${formatCurrency(totalIncome/12)}</div>
+        <div>平均月支出：$${formatCurrency(totalExpense/12)}</div>
+        <div>會員總數：${members.length}</div>
+      `;
+    }
+
+    /*************************************************
+     *  全面重新渲染
+     *************************************************/
+    function renderAll(){
+      renderTransactions();
+      renderMembers();
+      renderDashboard();
+      loadSettingsToForm();
+    }
+
+    /*************************************************
+     *  快速同步面板
+     *************************************************/
+    function toggleSyncQuick(){
+      updateQuickSyncModal();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('quickSyncModal')).show();
+    }
+    function updateQuickSyncModal(){
+      document.getElementById('quickLocalVersion').textContent = currentVersion||'—';
+      document.getElementById('quickServerVersion').textContent = currentVersion||'（拉取後顯示）';
+    }
+
+    /*************************************************
+     *  匯出內部函數
+     *************************************************/
+    function renderMemberStatusBadge(status){
+      switch(status){
+        case 'active': return '<span class="badge bg-success">'+status+'</span>';
+        case 'inactive': return '<span class="badge bg-secondary">'+status+'</span>';
+        default: return '<span class="badge bg-warning text-dark">'+status+'</span>';
+      }
+    }
+
+    /*************************************************
+     *  其他功能
+     *************************************************/
+    function clearLog(){
+      document.getElementById('log').innerHTML='';
+    }
+
+    // 鍵盤快捷鍵
+    document.addEventListener('keydown',e=>{
+      if (e.ctrlKey){
+        switch(e.key.toLowerCase()){
+          case 's':
+            e.preventDefault();
+            saveLocal();
+            logLine('手動儲存本機暫存');
+            break;
+          case 'p':
+            e.preventDefault();
+            pullData();
+            break;
+          case 'u':
+            e.preventDefault();
+            pushData();
+            break;
+          case 'n':
+            e.preventDefault();
+            openTransactionModal();
+            break;
+        }
+      }
+    });
+
+    /*************************************************
+     *  完成
+     *************************************************/
+    logLine('前端載入完成');
+  </script>
+</body>
+</html>
