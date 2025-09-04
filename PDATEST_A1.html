@@ -32,6 +32,7 @@
       .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
       .btn-secondary { background: #f0f0f0; color: #333; }
       .btn:hover { transform: translateY(-1px); }
+      .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
       .quick-actions { display: flex; flex-direction: column; gap: 0.5rem; }
       .quick-btn { width: 100%; padding: 0.75rem; background: #f8f9ff; border: 1px solid #e0e7ff; border-radius: 8px; text-align: left; cursor: pointer; transition: all 0.2s; }
       .quick-btn:hover { background: #e0e7ff; }
@@ -41,7 +42,7 @@
       .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
       .modal.show { display: flex; }
       .modal-content { background: white; border-radius: 12px; max-width: 90%; max-height: 80%; overflow-y: auto; }
-      .modal-header { padding: 1rem; border-bottom: 1px solid #e5e5e5; display: flex; justify-content: between; align-items: center; }
+      .modal-header { padding: 1rem; border-bottom: 1px solid #e5e5e5; display: flex; justify-content: space-between; align-items: center; }
       .modal-body { padding: 1rem; }
       .form-group { margin-bottom: 1rem; }
       .form-label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
@@ -59,6 +60,8 @@
       .item-actions { display: flex; gap: 0.5rem; }
       .action-btn { padding: 0.25rem 0.5rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
       .hidden { display: none !important; }
+      .empty-state { text-align: center; padding: 2rem; color: #666; }
+      .empty-icon { font-size: 3rem; margin-bottom: 1rem; }
   </style>
 </head>
 <body>
@@ -76,6 +79,7 @@
           <!-- 標題 -->
           <div class="header">
               <h1>📱 LINE群組管理系統</h1>
+              <p id="userInfo" style="font-size: 0.8rem; opacity: 0.9; margin-top: 0.5rem;"></p>
           </div>
 
           <!-- 導航 -->
@@ -112,12 +116,12 @@
                   <div class="stats-grid">
                       <div class="stat-card">
                           <div class="stat-icon" style="background: #dcfce7; color: #16a34a;">👥</div>
-                          <div class="stat-value" id="totalMembers">0</div>
+                          <div class="stat-value" id="totalMembers">-</div>
                           <div class="stat-label">總成員</div>
                       </div>
                       <div class="stat-card">
                           <div class="stat-icon" style="background: #ede9fe; color: #7c3aed;">📅</div>
-                          <div class="stat-value" id="totalEvents">0</div>
+                          <div class="stat-value" id="totalEvents">-</div>
                           <div class="stat-label">活動數</div>
                       </div>
                   </div>
@@ -144,7 +148,11 @@
                       <h2>成員管理</h2>
                       <button class="btn btn-primary" onclick="showAddMemberForm()">新增</button>
                   </div>
-                  <div id="membersList"></div>
+                  <div id="membersList">
+                      <div class="loading">
+                          <div class="spinner"></div>
+                      </div>
+                  </div>
               </div>
 
               <!-- 活動管理 -->
@@ -153,7 +161,11 @@
                       <h2>活動管理</h2>
                       <button class="btn btn-primary" onclick="showCreateEventForm()">建立</button>
                   </div>
-                  <div id="eventsList"></div>
+                  <div id="eventsList">
+                      <div class="loading">
+                          <div class="spinner"></div>
+                      </div>
+                  </div>
               </div>
 
               <!-- 公告管理 -->
@@ -162,7 +174,11 @@
                       <h2>公告管理</h2>
                       <button class="btn btn-primary" onclick="showCreateAnnouncementForm()">發布</button>
                   </div>
-                  <div id="announcementsList"></div>
+                  <div id="announcementsList">
+                      <div class="loading">
+                          <div class="spinner"></div>
+                      </div>
+                  </div>
               </div>
           </div>
       </div>
@@ -180,42 +196,30 @@
   </div>
 
   <script>
+      // 配置常數 - 請替換為您的實際值
+      const CONFIG = {
+          LIFF_ID: '1656516134-VaGgmaPm', // 替換為您的 LIFF ID
+          GAS_URL: 'https://script.google.com/macros/s/AKfycbzhJqW9xflf6IFEtjZ20_CYr25e4Oh7ENskxiRImU-gkDJBwH5LRLOJgPJwK3OKHQGK/exec' // 替換為您的 GAS URL
+      };
+
       // 全域變數
       let currentPage = 'dashboard';
-      let currentGroupId = 'demo-group';
-      let userData = { displayName: '測試用戶', userId: 'test-user' };
-      
-      // 模擬數據
-      let mockData = {
-          members: [
-              { 用戶ID: 'user1', 顯示名稱: '張小明', 角色: '管理員', 狀態: '活躍', 加入時間: '2024-01-01' },
-              { 用戶ID: 'user2', 顯示名稱: '李小華', 角色: '成員', 狀態: '活躍', 加入時間: '2024-01-02' },
-              { 用戶ID: 'user3', 顯示名稱: '王小美', 角色: '成員', 狀態: '活躍', 加入時間: '2024-01-03' }
-          ],
-          events: [
-              { 活動ID: 'event1', 活動名稱: '團隊聚餐', 描述: '月度團隊聚餐活動', 開始時間: '2024-12-20 18:00', 結束時間: '2024-12-20 21:00', 參與人數: 15 },
-              { 活動ID: 'event2', 活動名稱: '讀書會', 描述: '技術分享讀書會', 開始時間: '2024-12-25 14:00', 結束時間: '2024-12-25 16:00', 參與人數: 8 }
-          ],
-          announcements: [
-              { 公告ID: 'ann1', 標題: '重要通知', 內容: '請大家注意群組使用規範', 發布者: '管理員', 發布時間: '2024-12-01 10:00' },
-              { 公告ID: 'ann2', 標題: '活動預告', 內容: '下週將舉辦團隊聚餐', 發布者: '管理員', 發布時間: '2024-12-10 15:00' }
-          ]
-      };
+      let currentGroupId = null;
+      let userData = null;
+      let isLoading = false;
 
       // 初始化
       document.addEventListener('DOMContentLoaded', function() {
-          // 檢查是否有 LIFF SDK
           if (typeof liff !== 'undefined') {
               initializeLiff();
           } else {
-              // 演示模式
-              initializeDemoMode();
+              showError('請在 LINE 應用程式中開啟此頁面');
           }
       });
 
       async function initializeLiff() {
           try {
-              await liff.init({ liffId: '1656516134-VaGgmaPm' });
+              await liff.init({ liffId: CONFIG.LIFF_ID });
               
               if (!liff.isLoggedIn()) {
                   liff.login();
@@ -224,21 +228,21 @@
 
               userData = await liff.getProfile();
               const context = liff.getContext();
+              
               if (context && context.type === 'group') {
                   currentGroupId = context.groupId;
+              } else {
+                  currentGroupId = 'default-group';
               }
+
+              // 更新用戶資訊顯示
+              document.getElementById('userInfo').textContent = `歡迎，${userData.displayName}`;
 
               initializeApp();
           } catch (error) {
               console.error('LIFF初始化失敗:', error);
-              showNotification('LIFF初始化失敗，使用演示模式', 'error');
-              initializeDemoMode();
+              showError('LIFF初始化失敗：' + error.message);
           }
-      }
-
-      function initializeDemoMode() {
-          showNotification('演示模式 - 使用模擬數據', 'info');
-          setTimeout(initializeApp, 1000);
       }
 
       function initializeApp() {
@@ -250,23 +254,27 @@
       }
 
       function bindEventListeners() {
-          // 導航按鈕
           document.querySelectorAll('.nav-btn').forEach(btn => {
               btn.addEventListener('click', (e) => {
                   const page = e.currentTarget.dataset.page;
                   showPage(page);
               });
           });
+
+          // 點擊模態框背景關閉
+          document.getElementById('modal').addEventListener('click', (e) => {
+              if (e.target === e.currentTarget) {
+                  closeModal();
+              }
+          });
       }
 
       function showPage(pageName) {
-          // 更新導航狀態
           document.querySelectorAll('.nav-btn').forEach(btn => {
               btn.classList.remove('active');
           });
           document.querySelector(`[data-page="${pageName}"]`).classList.add('active');
 
-          // 更新頁面顯示
           document.querySelectorAll('.page').forEach(page => {
               page.classList.remove('active');
           });
@@ -274,7 +282,6 @@
           
           currentPage = pageName;
 
-          // 載入頁面數據
           switch (pageName) {
               case 'members':
                   loadMembers();
@@ -288,24 +295,75 @@
           }
       }
 
+      // API 調用函數
+      async function apiCall(action, type, data = null, method = 'GET') {
+          if (isLoading) return null;
+          
+          try {
+              isLoading = true;
+              let url = `${CONFIG.GAS_URL}?action=${action}&type=${type}&groupId=${currentGroupId}`;
+              
+              const options = {
+                  method: method,
+                  headers: {
+                      'Content-Type': 'application/x-www-form-urlencoded',
+                  }
+              };
+
+              if (data && method === 'POST') {
+                  options.body = `data=${encodeURIComponent(JSON.stringify(data))}`;
+              }
+
+              const response = await fetch(url, options);
+              const result = await response.json();
+              
+              if (!result.success) {
+                  throw new Error(result.error || '操作失敗');
+              }
+              
+              return result.data;
+          } catch (error) {
+              console.error('API 調用錯誤:', error);
+              showError('網路錯誤：' + error.message);
+              return null;
+          } finally {
+              isLoading = false;
+          }
+      }
+
+      // 數據載入函數
       async function loadDashboardData() {
           try {
-              const members = mockData.members;
-              const events = mockData.events;
+              const [members, events] = await Promise.all([
+                  apiCall('getData', 'members'),
+                  apiCall('getData', 'events')
+              ]);
 
-              document.getElementById('totalMembers').textContent = members.length;
-              document.getElementById('totalEvents').textContent = events.length;
+              if (members) {
+                  document.getElementById('totalMembers').textContent = members.length;
+              }
+              if (events) {
+                  document.getElementById('totalEvents').textContent = events.length;
+              }
           } catch (error) {
               console.error('載入儀表板數據失敗:', error);
           }
       }
 
-      function loadMembers() {
-          const members = mockData.members;
+      async function loadMembers() {
           const container = document.getElementById('membersList');
+          container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
           
-          if (members.length === 0) {
-              container.innerHTML = '<div style="text-align: center; padding: 2rem; color: #666;">尚無成員資料</div>';
+          const members = await apiCall('getData', 'members');
+          
+          if (!members || members.length === 0) {
+              container.innerHTML = `
+                  <div class="empty-state">
+                      <div class="empty-icon">👥</div>
+                      <p>尚無成員資料</p>
+                      <button class="btn btn-primary" onclick="showAddMemberForm()" style="margin-top: 1rem;">新增第一個成員</button>
+                  </div>
+              `;
               return;
           }
 
@@ -313,23 +371,33 @@
               <div class="member-item">
                   <div class="item-header">
                       <div>
-                          <div class="item-title">${member.顯示名稱}</div>
-                          <div class="item-meta">${member.角色} • ${member.狀態}</div>
+                          <div class="item-title">${member['顯示名稱'] || '未知用戶'}</div>
+                          <div class="item-meta">${member['角色'] || '成員'} • ${member['狀態'] || '未知'}</div>
+                          <div class="item-meta">加入時間：${formatDateTime(member['加入時間'])}</div>
                       </div>
                       <div class="item-actions">
-                          <button class="action-btn btn-secondary" onclick="editMember('${member.用戶ID}')">編輯</button>
+                          <button class="action-btn btn-secondary" onclick="editMember('${member['用戶ID']}')">編輯</button>
+                          <button class="action-btn" style="background: #fee2e2; color: #dc2626;" onclick="deleteMember('${member['用戶ID']}')">刪除</button>
                       </div>
                   </div>
               </div>
           `).join('');
       }
 
-      function loadEvents() {
-          const events = mockData.events;
+      async function loadEvents() {
           const container = document.getElementById('eventsList');
+          container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
           
-          if (events.length === 0) {
-              container.innerHTML = '<div style="text-align: center; padding: 2rem; color: #666;">尚無活動資料</div>';
+          const events = await apiCall('getData', 'events');
+          
+          if (!events || events.length === 0) {
+              container.innerHTML = `
+                  <div class="empty-state">
+                      <div class="empty-icon">📅</div>
+                      <p>尚無活動資料</p>
+                      <button class="btn btn-primary" onclick="showCreateEventForm()" style="margin-top: 1rem;">建立第一個活動</button>
+                  </div>
+              `;
               return;
           }
 
@@ -337,24 +405,34 @@
               <div class="event-item">
                   <div class="item-header">
                       <div>
-                          <div class="item-title">${event.活動名稱}</div>
-                          <div class="item-meta">${event.描述}</div>
-                          <div class="item-meta">${event.開始時間} - ${event.結束時間}</div>
+                          <div class="item-title">${event['活動名稱'] || '未命名活動'}</div>
+                          <div class="item-meta">${event['描述'] || '無描述'}</div>
+                          <div class="item-meta">時間：${formatDateTime(event['開始時間'])} - ${formatDateTime(event['結束時間'])}</div>
+                          <div class="item-meta">參與人數：${event['參與人數'] || 0} 人</div>
                       </div>
                       <div class="item-actions">
-                          <button class="action-btn btn-secondary" onclick="editEvent('${event.活動ID}')">編輯</button>
+                          <button class="action-btn btn-secondary" onclick="editEvent('${event['活動ID']}')">編輯</button>
+                          <button class="action-btn" style="background: #fee2e2; color: #dc2626;" onclick="deleteEvent('${event['活動ID']}')">刪除</button>
                       </div>
                   </div>
               </div>
           `).join('');
       }
 
-      function loadAnnouncements() {
-          const announcements = mockData.announcements;
+      async function loadAnnouncements() {
           const container = document.getElementById('announcementsList');
+          container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
           
-          if (announcements.length === 0) {
-              container.innerHTML = '<div style="text-align: center; padding: 2rem; color: #666;">尚無公告資料</div>';
+          const announcements = await apiCall('getData', 'announcements');
+          
+          if (!announcements || announcements.length === 0) {
+              container.innerHTML = `
+                  <div class="empty-state">
+                      <div class="empty-icon">📢</div>
+                      <p>尚無公告資料</p>
+                      <button class="btn btn-primary" onclick="showCreateAnnouncementForm()" style="margin-top: 1rem;">發布第一則公告</button>
+                  </div>
+              `;
               return;
           }
 
@@ -362,12 +440,13 @@
               <div class="announcement-item">
                   <div class="item-header">
                       <div>
-                          <div class="item-title">${announcement.標題}</div>
-                          <div class="item-meta">${announcement.內容}</div>
-                          <div class="item-meta">${announcement.發布者} • ${announcement.發布時間}</div>
+                          <div class="item-title">${announcement['標題'] || '無標題'}</div>
+                          <div class="item-meta" style="margin: 0.5rem 0;">${announcement['內容'] || '無內容'}</div>
+                          <div class="item-meta">${announcement['發布者'] || '未知'} • ${formatDateTime(announcement['發布時間'])}</div>
                       </div>
                       <div class="item-actions">
-                          <button class="action-btn btn-secondary" onclick="editAnnouncement('${announcement.公告ID}')">編輯</button>
+                          <button class="action-btn btn-secondary" onclick="editAnnouncement('${announcement['公告ID']}')">編輯</button>
+                          <button class="action-btn" style="background: #fee2e2; color: #dc2626;" onclick="deleteAnnouncement('${announcement['公告ID']}')">刪除</button>
                       </div>
                   </div>
               </div>
@@ -380,11 +459,11 @@
               <form id="addMemberForm">
                   <div class="form-group">
                       <label class="form-label">用戶ID</label>
-                      <input type="text" name="userId" class="form-input" required>
+                      <input type="text" name="userId" class="form-input" required placeholder="請輸入用戶ID">
                   </div>
                   <div class="form-group">
                       <label class="form-label">顯示名稱</label>
-                      <input type="text" name="displayName" class="form-input" required>
+                      <input type="text" name="displayName" class="form-input" required placeholder="請輸入顯示名稱">
                   </div>
                   <div class="form-group">
                       <label class="form-label">角色</label>
@@ -396,29 +475,38 @@
                   </div>
                   <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
                       <button type="button" class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">取消</button>
-                      <button type="submit" class="btn btn-primary" style="flex: 1;">新增</button>
+                      <button type="submit" class="btn btn-primary" style="flex: 1;" id="submitBtn">新增</button>
                   </div>
               </form>
           `;
           
           showModal('新增成員', content);
           
-          document.getElementById('addMemberForm').addEventListener('submit', (e) => {
+          document.getElementById('addMemberForm').addEventListener('submit', async (e) => {
               e.preventDefault();
+              const submitBtn = document.getElementById('submitBtn');
+              submitBtn.disabled = true;
+              submitBtn.textContent = '處理中...';
+              
               const formData = new FormData(e.target);
-              const newMember = {
-                  用戶ID: formData.get('userId'),
-                  顯示名稱: formData.get('displayName'),
-                  角色: formData.get('role'),
-                  狀態: '活躍',
-                  加入時間: new Date().toISOString().split('T')[0]
+              const memberData = {
+                  userId: formData.get('userId'),
+                  displayName: formData.get('displayName'),
+                  role: formData.get('role'),
+                  groupId: currentGroupId
               };
               
-              mockData.members.push(newMember);
-              closeModal();
-              showNotification('成員新增成功', 'success');
-              if (currentPage === 'members') loadMembers();
-              loadDashboardData();
+              const result = await apiCall('saveData', 'member', memberData, 'POST');
+              
+              if (result) {
+                  closeModal();
+                  showSuccess('成員新增成功');
+                  if (currentPage === 'members') loadMembers();
+                  loadDashboardData();
+              }
+              
+              submitBtn.disabled = false;
+              submitBtn.textContent = '新增';
           });
       }
 
@@ -427,11 +515,11 @@
               <form id="createEventForm">
                   <div class="form-group">
                       <label class="form-label">活動名稱</label>
-                      <input type="text" name="eventName" class="form-input" required>
+                      <input type="text" name="eventName" class="form-input" required placeholder="請輸入活動名稱">
                   </div>
                   <div class="form-group">
                       <label class="form-label">活動描述</label>
-                      <textarea name="description" class="form-input" rows="3"></textarea>
+                      <textarea name="description" class="form-input" rows="3" placeholder="請輸入活動描述"></textarea>
                   </div>
                   <div class="form-group">
                       <label class="form-label">開始時間</label>
@@ -441,32 +529,47 @@
                       <label class="form-label">結束時間</label>
                       <input type="datetime-local" name="endTime" class="form-input" required>
                   </div>
+                  <div class="form-group">
+                      <label class="form-label">地點</label>
+                      <input type="text" name="location" class="form-input" placeholder="請輸入活動地點">
+                  </div>
                   <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
                       <button type="button" class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">取消</button>
-                      <button type="submit" class="btn btn-primary" style="flex: 1;">建立</button>
+                      <button type="submit" class="btn btn-primary" style="flex: 1;" id="submitBtn">建立</button>
                   </div>
               </form>
           `;
           
           showModal('建立活動', content);
           
-          document.getElementById('createEventForm').addEventListener('submit', (e) => {
+          document.getElementById('createEventForm').addEventListener('submit', async (e) => {
               e.preventDefault();
+              const submitBtn = document.getElementById('submitBtn');
+              submitBtn.disabled = true;
+              submitBtn.textContent = '處理中...';
+              
               const formData = new FormData(e.target);
-              const newEvent = {
-                  活動ID: 'event' + Date.now(),
-                  活動名稱: formData.get('eventName'),
-                  描述: formData.get('description'),
-                  開始時間: formData.get('startTime'),
-                  結束時間: formData.get('endTime'),
-                  參與人數: 0
+              const eventData = {
+                  eventName: formData.get('eventName'),
+                  description: formData.get('description'),
+                  startTime: formData.get('startTime'),
+                  endTime: formData.get('endTime'),
+                  location: formData.get('location'),
+                  creator: userData.displayName,
+                  groupId: currentGroupId
               };
               
-              mockData.events.push(newEvent);
-              closeModal();
-              showNotification('活動建立成功', 'success');
-              if (currentPage === 'events') loadEvents();
-              loadDashboardData();
+              const result = await apiCall('saveData', 'event', eventData, 'POST');
+              
+              if (result) {
+                  closeModal();
+                  showSuccess('活動建立成功');
+                  if (currentPage === 'events') loadEvents();
+                  loadDashboardData();
+              }
+              
+              submitBtn.disabled = false;
+              submitBtn.textContent = '建立';
           });
       }
 
@@ -475,50 +578,117 @@
               <form id="createAnnouncementForm">
                   <div class="form-group">
                       <label class="form-label">公告標題</label>
-                      <input type="text" name="title" class="form-input" required>
+                      <input type="text" name="title" class="form-input" required placeholder="請輸入公告標題">
                   </div>
                   <div class="form-group">
                       <label class="form-label">公告內容</label>
-                      <textarea name="content" class="form-input" rows="4" required></textarea>
+                      <textarea name="content" class="form-input" rows="4" required placeholder="請輸入公告內容"></textarea>
+                  </div>
+                  <div class="form-group">
+                      <label class="form-label">重要性</label>
+                      <select name="importance" class="form-input">
+                          <option value="一般">一般</option>
+                          <option value="重要">重要</option>
+                          <option value="緊急">緊急</option>
+                      </select>
                   </div>
                   <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
                       <button type="button" class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">取消</button>
-                      <button type="submit" class="btn btn-primary" style="flex: 1;">發布</button>
+                      <button type="submit" class="btn btn-primary" style="flex: 1;" id="submitBtn">發布</button>
                   </div>
               </form>
           `;
           
           showModal('發布公告', content);
           
-          document.getElementById('createAnnouncementForm').addEventListener('submit', (e) => {
+          document.getElementById('createAnnouncementForm').addEventListener('submit', async (e) => {
               e.preventDefault();
+              const submitBtn = document.getElementById('submitBtn');
+              submitBtn.disabled = true;
+              submitBtn.textContent = '處理中...';
+              
               const formData = new FormData(e.target);
-              const newAnnouncement = {
-                  公告ID: 'ann' + Date.now(),
-                  標題: formData.get('title'),
-                  內容: formData.get('content'),
-                  發布者: userData.displayName,
-                  發布時間: new Date().toLocaleString('zh-TW')
+              const announcementData = {
+                  title: formData.get('title'),
+                  content: formData.get('content'),
+                  importance: formData.get('importance'),
+                  publisher: userData.displayName,
+                  groupId: currentGroupId
               };
               
-              mockData.announcements.unshift(newAnnouncement);
-              closeModal();
-              showNotification('公告發布成功', 'success');
-              if (currentPage === 'announcements') loadAnnouncements();
+              const result = await apiCall('saveData', 'announcement', announcementData, 'POST');
+              
+              if (result) {
+                  closeModal();
+                  showSuccess('公告發布成功');
+                  if (currentPage === 'announcements') loadAnnouncements();
+              }
+              
+              submitBtn.disabled = false;
+              submitBtn.textContent = '發布';
           });
       }
 
-      // 編輯函數 (簡化版)
-      function editMember(memberId) {
-          showNotification('編輯功能開發中', 'info');
+      // 編輯和刪除函數
+      async function editMember(memberId) {
+          showInfo('編輯功能開發中');
       }
 
-      function editEvent(eventId) {
-          showNotification('編輯功能開發中', 'info');
+      async function deleteMember(memberId) {
+          if (!confirm('確定要刪除此成員嗎？')) return;
+          
+          const result = await apiCall('deleteData', 'members', null, 'DELETE');
+          if (result) {
+              showSuccess('成員刪除成功');
+              loadMembers();
+              loadDashboardData();
+          }
       }
 
-      function editAnnouncement(announcementId) {
-          showNotification('編輯功能開發中', 'info');
+      async function editEvent(eventId) {
+          showInfo('編輯功能開發中');
+      }
+
+      async function deleteEvent(eventId) {
+          if (!confirm('確定要刪除此活動嗎？')) return;
+          
+          const result = await apiCall('deleteData', 'events', null, 'DELETE');
+          if (result) {
+              showSuccess('活動刪除成功');
+              loadEvents();
+              loadDashboardData();
+          }
+      }
+
+      async function editAnnouncement(announcementId) {
+          showInfo('編輯功能開發中');
+      }
+
+      async function deleteAnnouncement(announcementId) {
+          if (!confirm('確定要刪除此公告嗎？')) return;
+          
+          const result = await apiCall('deleteData', 'announcements', null, 'DELETE');
+          if (result) {
+              showSuccess('公告刪除成功');
+              loadAnnouncements();
+          }
+      }
+
+      // 工具函數
+      function formatDateTime(dateString) {
+          if (!dateString) return '未設定';
+          try {
+              const date = new Date(dateString);
+              return date.toLocaleString('zh-TW', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit'
+              });
+          } catch (error) {
+              return dateString;
+          }
       }
 
       // 模態框函數
@@ -543,6 +713,18 @@
           setTimeout(() => {
               notification.remove();
           }, 3000);
+      }
+
+      function showSuccess(message) {
+          showNotification(message, 'success');
+      }
+
+      function showError(message) {
+          showNotification(message, 'error');
+      }
+
+      function showInfo(message) {
+          showNotification(message, 'info');
       }
   </script>
 </body>
