@@ -430,6 +430,7 @@ tr:hover td { background:#fdfdfd; }
       <button class="subtab-btn" data-subtab="finance">財務管理</button>
       <button class="subtab-btn" data-subtab="audit">支出審核</button>
       <button class="subtab-btn" data-subtab="reports">報表</button>
+      <button class="subtab-btn" data-subtab="board">理監事</button>
     </div>
 
     <!-- 總覽 -->
@@ -574,6 +575,39 @@ tr:hover td { background:#fdfdfd; }
         <div id="pending-expense-list"></div>
       </div>
     </div>
+    
+    <!-- 理監事審查模組 -->
+    <div class="admin-subpanel hidden" id="admin-board">
+      <div class="card">
+        <h3 style="margin-top:0">🗓 建立會議</h3>
+        <div class="grid cols-2">
+          <div>
+            <label>標題 *</label>
+            <input id="board-meeting-title" type="text">
+          </div>
+          <div>
+            <label>日期時間 *</label>
+            <input id="board-meeting-date" type="datetime-local">
+          </div>
+        </div>
+        <div class="actions mt">
+          <button class="btn" id="btn-create-board-meeting"><span class="text">建立會議</span></button>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">📋 會議列表</h3>
+        <div id="board-meeting-list"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">🧾 議程 / 決議</h3>
+        <div class="inline" style="gap:8px;">
+          <input id="agenda-meeting-id" placeholder="會議ID">
+          <button class="btn small outline" id="btn-load-agenda"><span class="text">載入議程</span></button>
+        </div>
+        <div id="agenda-list" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
 
     <!-- 報表 -->
     <div class="admin-subpanel hidden" id="admin-reports">
@@ -616,7 +650,7 @@ tr:hover td { background:#fdfdfd; }
 ============================== */
 const APP = {
   LIFF_ID: '1656516134-VaGgmaPm', // TODO: 替換為實際 LIFF ID
-  API_URL: 'https://script.google.com/macros/s/AKfycbxok8h2avNucFOpu8LzmAmVYvcjmrQJHf_8mrqXsqgaWzmmbFYLkwDzkuod9O-O9rNLww/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbyRx_t84tcKiwtmnolIr0U-X1kCWF0J95eue8ho938okyr5BhqymQA4MQDLVAyv11eDmQ/exec',
   API_KEY: 'AAbb8520258185202581',
   RETRIES: 3,
   RETRY_DELAY: 800,
@@ -1946,6 +1980,70 @@ async function createActivity(){
     showNotification('建立失敗：'+res.message,'error');
   }
 }
+
+
+/* ==============================
+ 理監事 平台
+============================== */
+async function createBoardMeeting(){
+  const title = document.getElementById('board-meeting-title').value.trim();
+  const date = document.getElementById('board-meeting-date').value;
+  if (!title || !date){ showNotification('請填寫標題與日期','warn'); return; }
+  const res = await callAPI('createBoardMeeting',{ operatorLineId: currentUser.lineId, title, meetingDate: date });
+  if (res.success){
+    showNotification('會議建立成功','success');
+    document.getElementById('board-meeting-title').value='';
+    document.getElementById('board-meeting-date').value='';
+    loadBoardMeetings();
+  } else showNotification(res.message,'error');
+}
+async function loadBoardMeetings(){
+  const res = await callAPI('listBoardMeetings',{ operatorLineId: currentUser.lineId });
+  const box = document.getElementById('board-meeting-list');
+  if (!res.success){ box.innerHTML = '<div class="notice error">'+res.message+'</div>'; return; }
+  const arr = res.data||[];
+  if (!arr.length){ box.innerHTML='<div class="empty"><div class="icon">🗓</div>尚無會議</div>'; return; }
+  box.innerHTML = arr.map(m=>`
+    <div class="list-item">
+      <h4>${m.title} <span class="badge">${m.status}</span></h4>
+      <div class="meta">
+        <span>ID: ${m.id}</span>
+        <span>📅 ${fmtDateTime(m.meetingDate)}</span>
+        <span>${m.locked?'🔒 已鎖定':''}</span>
+      </div>
+      <div class="actions" style="margin-top:6px;">
+        <button class="btn small outline" data-board-load="${m.id}"><span class="text">載入議程</span></button>
+      </div>
+    </div>
+  `).join('');
+  box.querySelectorAll('[data-board-load]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.getElementById('agenda-meeting-id').value = b.getAttribute('data-board-load');
+      loadAgendaItems();
+    });
+  });
+}
+async function loadAgendaItems(){
+  const mid = document.getElementById('agenda-meeting-id').value.trim();
+  const box = document.getElementById('agenda-list');
+  if (!mid){ showNotification('請輸入會議ID','warn'); return; }
+  const res = await callAPI('listAgenda',{ operatorLineId: currentUser.lineId, meetingId: mid });
+  if (!res.success){ box.innerHTML='<div class="notice error">'+res.message+'</div>'; return; }
+  const arr = res.data||[];
+  if (!arr.length){ box.innerHTML='<div class="empty"><div class="icon">📑</div>尚無議程</div>'; return;}
+  box.innerHTML = arr.map(a=>`
+    <div class="list-item">
+      <h4>${a.order}. ${a.title} <span class="badge">${a.status}</span></h4>
+      <div class="meta">
+        <span>類型:${a.type}</span>
+        <span>提出:${a.presenter||'-'}</span>
+        <span>ID:${a.id}</span>
+      </div>
+      <div style="margin-top:6px;font-size:12.5px;">${a.description||''}</div>
+    </div>
+  `).join('');
+}
+
 
 /* ==============================
  啟動
