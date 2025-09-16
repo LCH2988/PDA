@@ -386,7 +386,594 @@
     let userId = null;
     let userProfile = null;
     let userInfo = null;
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbzEr_T5Adjl9GlvTftASVFg1OfihuqudH6WofRMQff-iHKJgjICS8JDOklfBPhE_AKr/exec';
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbx-wqvQ5Ko4rTPp8SQFAOx2ucRHFAnYNqskdWdY2wjlYwdlLXq9TCnV-TWEz29g9_ETzg/exec';
+
+    // 初始化 LIFF
+    liff.init({ liffId: '1656516134-X9oq92g9' }).then(() => {
+        if (!liff.isLoggedIn()) {
+            liff.login();
+            return;
+        }
+        
+        liff.getProfile().then(profile => {
+            userProfile = profile;
+            userId = profile.userId;
+            loadUserData();
+        }).catch(err => {
+            console.error('取得用戶資料失敗:', err);
+            showError('無法取得用戶資料，請重新開啟頁面');
+        });
+    }).catch(err => {
+        console.error('LIFF初始化失敗:', err);
+        showError('系統初始化失敗，請重新開啟頁面');
+    });
+
+    // 載入用戶資料
+    async function loadUserData() {
+        try {
+            document.getElementById('userAvatar').src = userProfile.pictureUrl || 'https://via.placeholder.com/100';
+            document.getElementById('userName').textContent = userProfile.displayName;
+
+            const response = await fetch(`${GAS_URL}?action=getUserInfo&userId=${encodeURIComponent(userId)}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                userInfo = data.data.userInfo;
+                const stats = data.data.stats;
+                displayUserInfo(stats);
+            } else {
+                throw new Error(data.message || '載入用戶資料失敗');
+            }
+            
+            document.getElementById('loadingScreen').style.display = 'none';
+            document.getElementById('profileCard').style.display = 'block';
+            
+        } catch (error) {
+            console.error('載入用戶資料失敗:', error);
+            showError(`載入資料失敗：${error.message}`);
+        }
+    }
+
+    // 顯示用戶資訊
+    function displayUserInfo(stats) {
+        const membershipCard = document.getElementById('membershipStatus');
+        const membershipInfo = document.getElementById('membershipInfo');
+        
+        if (userInfo.是否會員) {
+            membershipCard.classList.add('premium');
+            membershipInfo.innerHTML = `
+                <i class="bi bi-star-fill me-2"></i>正式會員
+                <div class="mt-1" style="font-size: 0.9rem;">
+                    會員編號：${userInfo.會員編號 || 'M' + userId.substring(0, 8)}
+                </div>
+            `;
+            document.getElementById('userStatus').textContent = '正式會員';
+        } else {
+            membershipInfo.innerHTML = `
+                <i class="bi bi-person me-2"></i>一般用戶
+                <div class="mt-1" style="font-size: 0.9rem;">
+                    歡迎加入我們的大家庭
+                </div>
+            `;
+        }
+
+        document.getElementById('totalDonations').textContent = stats.捐款次數 || 0;
+        document.getElementById('totalAmount').textContent = `$${(stats.捐款總額 || 0).toLocaleString()}`;
+
+        document.getElementById('displayRealName').textContent = userInfo.真實姓名 || '未設定';
+        document.getElementById('displayPhone').textContent = userInfo.電話 || '未設定';
+        document.getElementById('displayEmail').textContent = userInfo.電子郵件 || '未設定';
+        document.getElementById('displayAddress').textContent = userInfo.地址 || '未設定';
+        document.getElementById('displayBirthday').textContent = userInfo.生日 ? formatDate(userInfo.生日) : '未設定';
+        document.getElementById('displayIsPatient').textContent = userInfo.是否患者 || '未設定';
+        document.getElementById('displayRelationship').textContent = userInfo.與患者關係 || '未設定';
+        document.getElementById('displayEmergencyContact').textContent = userInfo.緊急聯絡人 || '未設定';
+    }
+
+    // 顯示編輯表單
+    function showEditForm() {
+        document.getElementById('realName').value = userInfo.真實姓名 || '';
+        document.getElementById('phone').value = userInfo.電話 || '';
+        document.getElementById('email').value = userInfo.電子郵件 || '';
+        document.getElementById('address').value = userInfo.地址 || '';
+        document.getElementById('birthday').value = userInfo.生日 || '';
+        document.getElementById('isPatient').value = userInfo.是否患者 || '';
+        document.getElementById('relationship').value = userInfo.與患者關係 || '';
+        document.getElementById('emergencyContact').value = userInfo.緊急聯絡人 || '';
+        document.getElementById('emergencyPhone').value = userInfo.緊急聯絡電話 || '';
+
+        document.getElementById('profileView').style.display = 'none';
+        document.getElementById('editForm').style.display = 'block';
+    }
+
+    // 隱藏編輯表單
+    function hideEditForm() {
+        document.getElementById('editForm').style.display = 'none';
+        document.getElementById('profileView').style.display = 'block';
+    }
+
+    // 表單提交處理
+    document.getElementById('profileForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="spinner-border spinner-border-sm me-2"></i>儲存中...';
+        submitBtn.disabled = true;
+        
+        try {
+            const formData = {
+                action: 'updateUserProfile',
+                userId: userId,
+                真實姓名: document.getElementById('realName').value,
+                電話: document.getElementById('phone').value,
+                電子郵件: document.getElementById('email').value,
+                地址: document.getElementById('address').value,
+                生日: document.getElementById('birthday').value,
+                是否患者: document.getElementById('isPatient').value,
+                與患者關係: document.getElementById('relationship').value,
+                緊急聯絡人: document.getElementById('emergencyContact').value,
+                緊急聯絡電話: document.getElementById('emergencyPhone').value,
+                最後更新時間: new Date().toISOString()
+            };
+            
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain'
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                Object.assign(userInfo, formData);
+                displayUserInfo({ 捐款次數: userInfo.捐款次數, 捐款總額: userInfo.捐款總額 });
+                hideEditForm();
+                showSuccess('資料更新成功！');
+            } else {
+                throw new Error(result.message || '更新失敗');
+            }
+            
+        } catch (error) {
+            console.error('更新個人資料失敗:', error);
+            showError(error.message || '更新失敗，請稍後再試');
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
+    });
+
+    function formatDate(dateString) {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('zh-TW');
+    }
+
+    function showError(message) {
+        document.getElementById('errorMessage').textContent = message;
+        document.getElementById('errorAlert').style.display = 'block';
+        document.getElementById('successAlert').style.display = 'none';
+        document.getElementById('loadingScreen').style.display = 'none';
+        
+        // 3秒後自動隱藏
+        setTimeout(() => {
+            document.getElementById('errorAlert').style.display = 'none';
+        }, 5000);
+    }
+
+    function showSuccess(message) {
+        document.getElementById('successMessage').textContent = message;
+        document.getElementById('successAlert').style.display = 'block';
+        document.getElementById('errorAlert').style.display = 'none';
+        
+        // 3秒後自動隱藏
+        setTimeout(() => {
+            document.getElementById('successAlert').style.display = 'none';
+        }, 3000);
+    }
+</script>
+</body>
+</html>
+              <!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>個人資料</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<style>
+    body {
+        font-family: 'Noto Sans TC', sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px 0;
+    }
+    .profile-container {
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    .profile-card {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+        overflow: hidden;
+        margin-bottom: 20px;
+    }
+    .profile-header {
+        background: linear-gradient(135deg, #4a90e2, #2c5aa0);
+        color: white;
+        padding: 30px 25px;
+        text-align: center;
+    }
+    .profile-avatar {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        border: 4px solid white;
+        margin: 0 auto 15px;
+        display: block;
+        object-fit: cover;
+    }
+    .profile-name {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+    .profile-status {
+        background: rgba(255,255,255,0.2);
+        padding: 5px 15px;
+        border-radius: 20px;
+        display: inline-block;
+        font-size: 0.9rem;
+    }
+    .profile-body {
+        padding: 25px;
+    }
+    .info-section {
+        margin-bottom: 25px;
+    }
+    .info-section h6 {
+        color: #4a90e2;
+        font-weight: bold;
+        margin-bottom: 15px;
+        border-bottom: 2px solid #e9ecef;
+        padding-bottom: 8px;
+    }
+    .info-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid #f8f9fa;
+    }
+    .info-item:last-child {
+        border-bottom: none;
+    }
+    .info-label {
+        font-weight: 600;
+        color: #6c757d;
+        display: flex;
+        align-items: center;
+    }
+    .info-label i {
+        margin-right: 8px;
+        width: 16px;
+    }
+    .info-value {
+        color: #495057;
+        font-weight: 500;
+    }
+    .edit-form {
+        display: none;
+    }
+    .form-floating {
+        margin-bottom: 15px;
+    }
+    .form-floating .form-control, .form-floating .form-select {
+        border-radius: 10px;
+        border: 2px solid #e9ecef;
+        transition: all 0.3s ease;
+    }
+    .form-floating .form-control:focus, .form-floating .form-select:focus {
+        border-color: #4a90e2;
+        box-shadow: 0 0 0 0.2rem rgba(74, 144, 226, 0.25);
+    }
+    .btn-primary {
+        background: linear-gradient(135deg, #4a90e2, #2c5aa0);
+        border: none;
+        border-radius: 10px;
+        padding: 12px 25px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(74, 144, 226, 0.4);
+    }
+    .btn-outline-primary {
+        border: 2px solid #4a90e2;
+        color: #4a90e2;
+        border-radius: 10px;
+        padding: 12px 25px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .btn-outline-primary:hover {
+        background: #4a90e2;
+        border-color: #4a90e2;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(74, 144, 226, 0.4);
+    }
+    .stats-card {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        color: white;
+        border-radius: 15px;
+        padding: 20px;
+        text-align: center;
+        margin-bottom: 15px;
+    }
+    .stats-number {
+        font-size: 2rem;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+    .stats-label {
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+    .membership-card {
+        background: linear-gradient(135deg, #ffc107, #e0a800);
+        color: #212529;
+        border-radius: 15px;
+        padding: 20px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .membership-card.premium {
+        background: linear-gradient(135deg, #dc3545, #c82333);
+        color: white;
+    }
+    .loading-spinner {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 40px;
+    }
+    .alert {
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    @media (max-width: 768px) {
+        .profile-container {
+            padding: 0 15px;
+        }
+        .profile-header {
+            padding: 25px 20px;
+        }
+        .profile-body {
+            padding: 20px;
+        }
+        .info-item {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 5px;
+        }
+    }
+</style>
+</head>
+<body>
+<div class="profile-container">
+    <!-- 載入中畫面 -->
+    <div id="loadingScreen" class="profile-card">
+        <div class="loading-spinner">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">載入中...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 錯誤訊息 -->
+    <div id="errorAlert" class="alert alert-danger" style="display: none;">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        <span id="errorMessage"></span>
+    </div>
+
+    <!-- 成功訊息 -->
+    <div id="successAlert" class="alert alert-success" style="display: none;">
+        <i class="bi bi-check-circle me-2"></i>
+        <span id="successMessage"></span>
+    </div>
+
+    <!-- 個人資料卡片 -->
+    <div id="profileCard" class="profile-card" style="display: none;">
+        <div class="profile-header">
+            <img id="userAvatar" src="" alt="用戶頭像" class="profile-avatar">
+            <div class="profile-name" id="userName">載入中...</div>
+            <div class="profile-status" id="userStatus">一般用戶</div>
+        </div>
+        
+        <div class="profile-body">
+            <!-- 會員狀態卡片 -->
+            <div id="membershipStatus" class="membership-card">
+                <h6 class="mb-2">會員狀態</h6>
+                <div id="membershipInfo">載入中...</div>
+            </div>
+
+            <!-- 統計資訊 -->
+            <div class="row mb-4">
+                <div class="col-6">
+                    <div class="stats-card">
+                        <div class="stats-number" id="totalDonations">0</div>
+                        <div class="stats-label">累計捐款次數</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="stats-card" style="background: linear-gradient(135deg, #17a2b8, #138496);">
+                        <div class="stats-number" id="totalAmount">$0</div>
+                        <div class="stats-label">累計捐款金額</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 基本資料顯示 -->
+            <div id="profileView">
+                <div class="info-section">
+                    <h6><i class="bi bi-person-circle me-2"></i>基本資料</h6>
+                    <div class="info-item">
+                        <div class="info-label">
+                            <i class="bi bi-person"></i>真實姓名
+                        </div>
+                        <div class="info-value" id="displayRealName">未設定</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">
+                            <i class="bi bi-telephone"></i>聯絡電話
+                        </div>
+                        <div class="info-value" id="displayPhone">未設定</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">
+                            <i class="bi bi-envelope"></i>電子郵件
+                        </div>
+                        <div class="info-value" id="displayEmail">未設定</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">
+                            <i class="bi bi-geo-alt"></i>聯絡地址
+                        </div>
+                        <div class="info-value" id="displayAddress">未設定</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">
+                            <i class="bi bi-calendar"></i>生日
+                        </div>
+                        <div class="info-value" id="displayBirthday">未設定</div>
+                    </div>
+                </div>
+
+                <div class="info-section">
+                    <h6><i class="bi bi-heart me-2"></i>關懷資訊</h6>
+                    <div class="info-item">
+                        <div class="info-label">
+                            <i class="bi bi-person-check"></i>是否為患者
+                        </div>
+                        <div class="info-value" id="displayIsPatient">未設定</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">
+                            <i class="bi bi-people"></i>關係
+                        </div>
+                        <div class="info-value" id="displayRelationship">未設定</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">
+                            <i class="bi bi-person-hearts"></i>緊急聯絡人
+                        </div>
+                        <div class="info-value" id="displayEmergencyContact">未設定</div>
+                    </div>
+                </div>
+
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" onclick="showEditForm()">
+                        <i class="bi bi-pencil-square me-2"></i>編輯個人資料
+                    </button>
+                </div>
+            </div>
+
+            <!-- 編輯表單 -->
+            <div id="editForm" class="edit-form">
+                <form id="profileForm">
+                    <div class="info-section">
+                        <h6><i class="bi bi-person-circle me-2"></i>基本資料</h6>
+                        <div class="form-floating">
+                            <input type="text" class="form-control" id="realName" placeholder="真實姓名" required>
+                            <label for="realName">真實姓名 *</label>
+                        </div>
+                        <div class="form-floating">
+                            <input type="tel" class="form-control" id="phone" placeholder="聯絡電話" required>
+                            <label for="phone">聯絡電話 *</label>
+                        </div>
+                        <div class="form-floating">
+                            <input type="email" class="form-control" id="email" placeholder="電子郵件">
+                            <label for="email">電子郵件</label>
+                        </div>
+                        <div class="form-floating">
+                            <textarea class="form-control" id="address" placeholder="聯絡地址" style="height: 80px;"></textarea>
+                            <label for="address">聯絡地址</label>
+                        </div>
+                        <div class="form-floating">
+                            <input type="date" class="form-control" id="birthday" placeholder="生日">
+                            <label for="birthday">生日</label>
+                        </div>
+                    </div>
+
+                    <div class="info-section">
+                        <h6><i class="bi bi-heart me-2"></i>關懷資訊</h6>
+                        <div class="form-floating">
+                            <select class="form-select" id="isPatient">
+                                <option value="">請選擇</option>
+                                <option value="是">是</option>
+                                <option value="否">否</option>
+                            </select>
+                            <label for="isPatient">是否為帕金森病患者</label>
+                        </div>
+                        <div class="form-floating">
+                            <select class="form-select" id="relationship">
+                                <option value="">請選擇</option>
+                                <option value="患者本人">患者本人</option>
+                                <option value="配偶">配偶</option>
+                                <option value="子女">子女</option>
+                                <option value="父母">父母</option>
+                                <option value="兄弟姊妹">兄弟姊妹</option>
+                                <option value="朋友">朋友</option>
+                                <option value="照護者">照護者</option>
+                                <option value="其他">其他</option>
+                            </select>
+                            <label for="relationship">與患者關係</label>
+                        </div>
+                        <div class="form-floating">
+                            <input type="text" class="form-control" id="emergencyContact" placeholder="緊急聯絡人">
+                            <label for="emergencyContact">緊急聯絡人</label>
+                        </div>
+                        <div class="form-floating">
+                            <input type="tel" class="form-control" id="emergencyPhone" placeholder="緊急聯絡電話">
+                            <label for="emergencyPhone">緊急聯絡電話</label>
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-2"></i>儲存變更
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" onclick="hideEditForm()">
+                            <i class="bi bi-x-circle me-2"></i>取消編輯
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let userId = null;
+    let userProfile = null;
+    let userInfo = null;
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbx-wqvQ5Ko4rTPp8SQFAOx2ucRHFAnYNqskdWdY2wjlYwdlLXq9TCnV-TWEz29g9_ETzg/exec';
 
     // 初始化 LIFF
     liff.init({ liffId: '1656516134-X9oq92g9' }).then(() => {
