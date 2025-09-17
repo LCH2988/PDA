@@ -1634,6 +1634,1155 @@ body {
 
     // 其他原有功能函數（提案、支出、動議等）保持原樣...
     // [這裡包含所有原有的功能函數，為節省空間不重複列出]
+    // === 活動管理功能 ===
+    
+    // 顯示活動表單
+    function showActivityForm() {
+        document.getElementById('activityForm').style.display = 'block';
+        document.getElementById('activityDate').value = new Date().toISOString().split('T')[0];
+    }
+    
+    // 隱藏活動表單
+    function hideActivityForm() {
+        document.getElementById('activityForm').style.display = 'none';
+        document.getElementById('newActivityForm').reset();
+    }
+    
+    // 提交活動表單
+    document.getElementById('newActivityForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="spinner-border spinner-border-sm me-1"></i>建立中...';
+        submitBtn.disabled = true;
+        
+        const activityData = {
+            action: 'addActivity',
+            活動名稱: document.getElementById('activityName').value,
+            活動類型: document.getElementById('activityType').value,
+            活動日期: document.getElementById('activityDate').value,
+            活動時間: document.getElementById('activityTime').value,
+            活動地點: document.getElementById('activityLocation').value,
+            人數上限: parseInt(document.getElementById('activityMaxPeople').value) || 50,
+            活動描述: document.getElementById('activityDescription').value,
+            建立者: userId
+        };
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify(activityData)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess('活動已建立成功');
+                hideActivityForm();
+                loadActivityList();
+                loadDashboard();
+            } else {
+                throw new Error(result.message || '建立失敗');
+            }
+        } catch (error) {
+            console.error('建立活動失敗:', error);
+            showError(`建立失敗：${error.message}`);
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
+    });
+    
+    // 載入活動列表
+    async function loadActivityList() {
+        try {
+            const response = await fetch(`${GAS_URL}?action=getActivityList`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success && result.data.length > 0) {
+                document.getElementById('activityList').innerHTML = result.data.map(a => `
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card h-100">
+                            <div class="card-header bg-primary text-white">
+                                <h6 class="mb-0">${a.活動名稱}</h6>
+                                <small>${a.活動類型}</small>
+                            </div>
+                            <div class="card-body">
+                                <p class="card-text">${a.活動描述 || '無描述'}</p>
+                                <div class="mb-2">
+                                    <i class="bi bi-calendar me-1"></i>
+                                    <small>${formatDate(a.活動日期)} ${a.活動時間 || ''}</small>
+                                </div>
+                                ${a.活動地點 ? `
+                                    <div class="mb-2">
+                                        <i class="bi bi-geo-alt me-1"></i>
+                                        <small>${a.活動地點}</small>
+                                    </div>
+                                ` : ''}
+                                <div class="mb-2">
+                                    <i class="bi bi-people me-1"></i>
+                                    <small>報名：${a.報名人數 || 0}/${a.人數上限}</small>
+                                </div>
+                                <div class="progress mb-2" style="height: 5px;">
+                                    <div class="progress-bar" style="width: ${((a.報名人數 || 0) / a.人數上限) * 100}%"></div>
+                                </div>
+                            </div>
+                            <div class="card-footer">
+                                <div class="d-flex justify-content-between">
+                                    <span class="badge ${getActivityStatusBadge(a.活動狀態)}">${a.活動狀態}</span>
+                                    <div>
+                                        <button class="btn btn-outline-primary btn-sm" onclick="viewActivityDetail('${a.活動ID}')" title="查看詳情">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <button class="btn btn-outline-success btn-sm" onclick="exportActivityMembers('${a.活動ID}')" title="匯出名單">
+                                            <i class="bi bi-download"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                document.getElementById('activityList').innerHTML = 
+                    '<div class="col-12 text-center text-muted">暫無活動資料</div>';
+            }
+        } catch (error) {
+            console.error('載入活動列表失敗:', error);
+            document.getElementById('activityList').innerHTML = 
+                '<div class="col-12 text-center text-danger">載入活動列表失敗</div>';
+        }
+    }
+    
+    // 取得活動狀態徽章樣式
+    function getActivityStatusBadge(status) {
+        switch (status) {
+            case '報名中': return 'bg-success';
+            case '進行中': return 'bg-primary';
+            case '已結束': return 'bg-secondary';
+            case '已取消': return 'bg-danger';
+            default: return 'bg-info';
+        }
+    }
+    
+    // 查看活動詳情
+    async function viewActivityDetail(activityId) {
+        // 實作活動詳情查看功能
+        alert('活動詳情功能開發中');
+    }
+    
+    // 匯出活動成員名單
+    async function exportActivityMembers(activityId) {
+        try {
+            const response = await fetch(`${GAS_URL}?action=exportActivityMembers&activityId=${encodeURIComponent(activityId)}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // 下載CSV檔案
+                const csvContent = result.data;
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `活動報名名單_${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showSuccess('名單已匯出');
+            } else {
+                throw new Error(result.message || '匯出失敗');
+            }
+        } catch (error) {
+            console.error('匯出活動名單失敗:', error);
+            showError(`匯出失敗：${error.message}`);
+        }
+    }
+
+    // === 提案審查功能 ===
+    
+    // 顯示提案表單
+    function showProposalForm() {
+        document.getElementById('proposalForm').style.display = 'block';
+        const today = new Date();
+        const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+        document.getElementById('proposalDeadline').value = nextWeek.toISOString().split('T')[0];
+    }
+    
+    // 隱藏提案表單
+    function hideProposalForm() {
+        document.getElementById('proposalForm').style.display = 'none';
+        document.getElementById('newProposalForm').reset();
+    }
+    
+    // 提交提案表單
+    document.getElementById('newProposalForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="spinner-border spinner-border-sm me-1"></i>提交中...';
+        submitBtn.disabled = true;
+        
+        const proposalData = {
+            action: 'addProposal',
+            提案標題: document.getElementById('proposalTitle').value,
+            提案類型: document.getElementById('proposalType').value,
+            提案內容: document.getElementById('proposalContent').value,
+            預算金額: parseInt(document.getElementById('proposalBudget').value) || 0,
+            執行期限: document.getElementById('proposalDeadline').value,
+            提案人: userId
+        };
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify(proposalData)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess('提案已提交，等待審查');
+                hideProposalForm();
+                loadProposalList();
+                loadDashboard();
+            } else {
+                throw new Error(result.message || '提交失敗');
+            }
+        } catch (error) {
+            console.error('提交提案失敗:', error);
+            showError(`提交失敗：${error.message}`);
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
+    });
+    
+    // 載入提案列表
+    async function loadProposalList() {
+        try {
+            const response = await fetch(`${GAS_URL}?action=getProposalList`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success && result.data.length > 0) {
+                document.getElementById('proposalList').innerHTML = result.data.map(p => `
+                    <div class="proposal-card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">${p.提案標題}</h6>
+                                <small class="text-light">${p.提案類型} | 提案人：${p.提案人姓名 || '匿名'}</small>
+                            </div>
+                            <span class="badge ${getProposalStatusBadge(p.審查狀態)}">${p.審查狀態}</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-3">${p.提案內容}</p>
+                            ${p.預算金額 > 0 ? `<p class="mb-2"><strong>預算：</strong>$${p.預算金額.toLocaleString()}</p>` : ''}
+                            ${p.執行期限 ? `<p class="mb-2"><strong>執行期限：</strong>${formatDate(p.執行期限)}</p>` : ''}
+                            <p class="mb-0 text-muted small">提案時間：${formatDateTime(p.提案時間)}</p>
+                            
+                            ${p.審查狀態 === '待審查' && ['admin', 'chairman', 'director'].includes(userRole) ? `
+                                <div class="vote-buttons">
+                                    <button class="btn btn-success btn-sm" onclick="voteProposal('${p.提案ID}', '通過')">
+                                        <i class="bi bi-check-circle me-1"></i>通過
+                                    </button>
+                                    <button class="btn btn-danger btn-sm" onclick="voteProposal('${p.提案ID}', '否決')">
+                                        <i class="bi bi-x-circle me-1"></i>否決
+                                    </button>
+                                    <button class="btn btn-warning btn-sm" onclick="voteProposal('${p.提案ID}', '修正')">
+                                        <i class="bi bi-pencil me-1"></i>需修正
+                                    </button>
+                                </div>
+                            ` : ''}
+                            
+                            ${p.投票結果 ? `
+                                <div class="vote-status">
+                                    <div>
+                                        <span class="text-success">贊成：${p.投票結果.贊成 || 0}</span>
+                                        <span class="text-danger ms-2">反對：${p.投票結果.反對 || 0}</span>
+                                        <span class="text-warning ms-2">修正：${p.投票結果.修正 || 0}</span>
+                                    </div>
+                                    <small class="text-muted">投票進度：${p.投票結果.總投票數}/${p.投票結果.應投票數}</small>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                document.getElementById('proposalList').innerHTML = 
+                    '<div class="text-center text-muted">暫無提案資料</div>';
+            }
+        } catch (error) {
+            console.error('載入提案列表失敗:', error);
+            document.getElementById('proposalList').innerHTML = 
+                '<div class="text-center text-danger">載入提案列表失敗</div>';
+        }
+    }
+    
+    // 取得提案狀態徽章樣式
+    function getProposalStatusBadge(status) {
+        switch (status) {
+            case '待審查': return 'bg-warning text-dark';
+            case '審查中': return 'bg-info';
+            case '已通過': return 'bg-success';
+            case '已否決': return 'bg-danger';
+            case '需修正': return 'bg-secondary';
+            default: return 'bg-light text-dark';
+        }
+    }
+    
+    // 投票提案
+    async function voteProposal(proposalId, vote) {
+        const comment = vote === '修正' ? prompt('請輸入修正建議：') : prompt('請輸入投票理由（選填）：');
+        if (vote === '修正' && (!comment || comment.trim() === '')) {
+            showError('修正建議不能為空');
+            return;
+        }
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'voteProposal',
+                    proposalId: proposalId,
+                    vote: vote,
+                    comment: comment || '',
+                    voterId: userId
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess('投票已提交');
+                loadProposalList();
+                loadDashboard();
+            } else {
+                throw new Error(result.message || '投票失敗');
+            }
+        } catch (error) {
+            console.error('投票失敗:', error);
+            showError(`投票失敗：${error.message}`);
+        }
+    }
+
+    // === 支出審核功能 ===
+    
+    // 顯示支出憑證表單
+    function showExpenseForm() {
+        document.getElementById('expenseForm').style.display = 'block';
+        document.getElementById('expenseDate').value = new Date().toISOString().split('T')[0];
+    }
+    
+    // 隱藏支出憑證表單
+    function hideExpenseForm() {
+        document.getElementById('expenseForm').style.display = 'none';
+        document.getElementById('newExpenseForm').reset();
+    }
+    
+    // 提交支出憑證表單
+    document.getElementById('newExpenseForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="spinner-border spinner-border-sm me-1"></i>提交中...';
+        submitBtn.disabled = true;
+        
+        const fileInput = document.getElementById('expenseReceipt');
+        const file = fileInput.files[0];
+        
+        if (!file) {
+            showError('請選擇憑證圖片');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            return;
+        }
+        
+        // 將圖片轉換為 base64
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const expenseData = {
+                action: 'addExpense',
+                支出日期: document.getElementById('expenseDate').value,
+                支出金額: parseInt(document.getElementById('expenseAmount').value),
+                支出類別: document.getElementById('expenseCategory').value,
+                廠商店家: document.getElementById('expenseVendor').value,
+                支出說明: document.getElementById('expenseDescription').value,
+                憑證圖片: e.target.result,
+                檔案名稱: file.name,
+                提交人: userId
+            };
+            
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify(expenseData)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showSuccess('支出憑證已提交，等待審核');
+                    hideExpenseForm();
+                    loadExpenseList();
+                    loadDashboard();
+                } else {
+                    throw new Error(result.message || '提交失敗');
+                }
+            } catch (error) {
+                console.error('提交支出憑證失敗:', error);
+                showError(`提交失敗：${error.message}`);
+            } finally {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            }
+        };
+        
+        reader.readAsDataURL(file);
+    });
+    
+    // 載入支出憑證列表
+    async function loadExpenseList() {
+        try {
+            const response = await fetch(`${GAS_URL}?action=getExpenseList`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success && result.data.length > 0) {
+                document.getElementById('expenseList').innerHTML = result.data.map(e => `
+                    <div class="expense-receipt">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <h6 class="mb-1">${e.廠商店家} - $${e.支出金額.toLocaleString()}</h6>
+                                <small class="text-muted">${formatDate(e.支出日期)} | ${e.支出類別}</small>
+                            </div>
+                            <span class="badge ${getExpenseStatusBadge(e.審核狀態)}">${e.審核狀態}</span>
+                        </div>
+                        
+                        <p class="mb-2">${e.支出說明}</p>
+                        
+                        ${e.憑證圖片連結 ? `
+                            <img src="${e.憑證圖片連結}" class="receipt-image" alt="支出憑證" onclick="window.open('${e.憑證圖片連結}', '_blank')">
+                        ` : ''}
+                        
+                        <div class="d-flex justify-content-between align-items-center mt-2">
+                            <small class="text-muted">提交人：${e.提交人姓名 || '匿名'} | ${formatDateTime(e.提交時間)}</small>
+                            
+                            ${e.審核狀態 === '待審核' && ['admin', 'chairman', 'supervisor'].includes(userRole) ? `
+                                <div>
+                                    <button class="btn btn-success btn-sm me-1" onclick="approveExpense('${e.憑證ID}', '通過')">
+                                        <i class="bi bi-check-circle"></i>
+                                    </button>
+                                    <button class="btn btn-danger btn-sm" onclick="approveExpense('${e.憑證ID}', '駁回')">
+                                        <i class="bi bi-x-circle"></i>
+                                    </button>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        ${e.審核意見 ? `
+                            <div class="approval-section">
+                                <small><strong>審核意見：</strong>${e.審核意見}</small><br>
+                                <small class="text-muted">審核人：${e.審核人姓名} | ${formatDateTime(e.審核時間)}</small>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+            } else {
+                document.getElementById('expenseList').innerHTML = 
+                    '<div class="text-center text-muted">暫無支出憑證</div>';
+            }
+        } catch (error) {
+            console.error('載入支出憑證列表失敗:', error);
+            document.getElementById('expenseList').innerHTML = 
+                '<div class="text-center text-danger">載入支出憑證列表失敗</div>';
+        }
+    }
+    
+    // 取得支出狀態徽章樣式
+    function getExpenseStatusBadge(status) {
+        switch (status) {
+            case '待審核': return 'bg-warning text-dark';
+            case '已通過': return 'bg-success';
+            case '已駁回': return 'bg-danger';
+            default: return 'bg-secondary';
+        }
+    }
+    
+    // 審核支出憑證
+    async function approveExpense(expenseId, decision) {
+        const comment = prompt(decision === '駁回' ? '請輸入駁回理由：' : '請輸入審核意見（選填）：');
+        if (decision === '駁回' && (!comment || comment.trim() === '')) {
+            showError('駁回理由不能為空');
+            return;
+        }
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'approveExpense',
+                    expenseId: expenseId,
+                    decision: decision,
+                    comment: comment || '',
+                    reviewerId: userId
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess(`憑證已${decision}`);
+                loadExpenseList();
+                loadDashboard();
+            } else {
+                throw new Error(result.message || '審核失敗');
+            }
+        } catch (error) {
+            console.error('審核支出憑證失敗:', error);
+            showError(`審核失敗：${error.message}`);
+        }
+    }
+
+    // === 臨時動議功能 ===
+    
+    // 顯示臨時動議表單
+    function showMotionForm() {
+        document.getElementById('motionForm').style.display = 'block';
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        document.getElementById('motionDeadline').value = tomorrow.toISOString().split('T')[0];
+    }
+    
+    // 隱藏臨時動議表單
+    function hideMotionForm() {
+        document.getElementById('motionForm').style.display = 'none';
+        document.getElementById('newMotionForm').reset();
+    }
+    
+    // 提交臨時動議表單
+    document.getElementById('newMotionForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="spinner-border spinner-border-sm me-1"></i>提出中...';
+        submitBtn.disabled = true;
+        
+        const motionData = {
+            action: 'addMotion',
+            動議標題: document.getElementById('motionTitle').value,
+            緊急程度: document.getElementById('motionUrgency').value,
+            希望決議期限: document.getElementById('motionDeadline').value,
+            動議內容: document.getElementById('motionContent').value,
+            提出理由: document.getElementById('motionReason').value,
+            提出人: userId
+        };
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify(motionData)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess('臨時動議已提出');
+                hideMotionForm();
+                loadMotionList();
+                loadDashboard();
+            } else {
+                throw new Error(result.message || '提出失敗');
+            }
+        } catch (error) {
+            console.error('提出臨時動議失敗:', error);
+            showError(`提出失敗：${error.message}`);
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
+    });
+    
+    // 載入臨時動議列表
+    async function loadMotionList() {
+        try {
+            const response = await fetch(`${GAS_URL}?action=getMotionList`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success && result.data.length > 0) {
+                document.getElementById('motionList').innerHTML = result.data.map(m => `
+                    <div class="card mb-3 border-${getMotionUrgencyColor(m.緊急程度)}">
+                        <div class="card-header bg-${getMotionUrgencyColor(m.緊急程度)} text-white d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">${m.動議標題}</h6>
+                                <small>提出人：${m.提出人姓名 || '匿名'} | ${m.緊急程度}</small>
+                            </div>
+                            <span class="badge ${getMotionStatusBadge(m.處理狀態)}">${m.處理狀態}</span>
+                        </div>
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 text-muted">動議內容</h6>
+                            <p class="card-text">${m.動議內容}</p>
+                            
+                            <h6 class="card-subtitle mb-2 text-muted">提出理由</h6>
+                            <p class="card-text">${m.提出理由}</p>
+                            
+                            ${m.希望決議期限 ? `<p class="mb-2"><strong>希望決議期限：</strong>${formatDate(m.希望決議期限)}</p>` : ''}
+                            <p class="mb-0 text-muted small">提出時間：${formatDateTime(m.提出時間)}</p>
+                            
+                            ${m.處理狀態 === '待處理' && ['admin', 'chairman'].includes(userRole) ? `
+                                <div class="mt-3">
+                                    <button class="btn btn-success btn-sm me-2" onclick="processMotion('${m.動議ID}', '接受')">
+                                        <i class="bi bi-check-circle me-1"></i>接受處理
+                                    </button>
+                                    <button class="btn btn-warning btn-sm me-2" onclick="processMotion('${m.動議ID}', '延後')">
+                                        <i class="bi bi-clock me-1"></i>延後處理
+                                    </button>
+                                    <button class="btn btn-danger btn-sm" onclick="processMotion('${m.動議ID}', '拒絕')">
+                                        <i class="bi bi-x-circle me-1"></i>拒絕處理
+                                    </button>
+                                </div>
+                            ` : ''}
+                            
+                            ${m.處理意見 ? `
+                                <div class="mt-3 p-2 bg-light rounded">
+                                    <small><strong>處理意見：</strong>${m.處理意見}</small><br>
+                                    <small class="text-muted">處理人：${m.處理人姓名} | ${formatDateTime(m.處理時間)}</small>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                document.getElementById('motionList').innerHTML = 
+                    '<div class="text-center text-muted">暫無臨時動議</div>';
+            }
+        } catch (error) {
+            console.error('載入臨時動議列表失敗:', error);
+            document.getElementById('motionList').innerHTML = 
+                '<div class="text-center text-danger">載入臨時動議列表失敗</div>';
+        }
+    }
+    
+    // 取得動議緊急程度顏色
+    function getMotionUrgencyColor(urgency) {
+        switch (urgency) {
+            case '緊急': return 'danger';
+            case '重要': return 'warning';
+            case '一般': return 'info';
+            default: return 'secondary';
+        }
+    }
+    
+    // 取得動議狀態徽章樣式
+    function getMotionStatusBadge(status) {
+        switch (status) {
+            case '待處理': return 'bg-warning text-dark';
+            case '處理中': return 'bg-info';
+            case '已接受': return 'bg-success';
+            case '已延後': return 'bg-secondary';
+            case '已拒絕': return 'bg-danger';
+            default: return 'bg-light text-dark';
+        }
+    }
+    
+    // 處理臨時動議
+    async function processMotion(motionId, action) {
+        const comment = prompt(`請輸入${action}理由：`);
+        if (!comment || comment.trim() === '') {
+            showError(`${action}理由不能為空`);
+            return;
+        }
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'processMotion',
+                    motionId: motionId,
+                    decision: action,
+                    comment: comment,
+                    processerId: userId
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess(`動議已${action}`);
+                loadMotionList();
+                loadDashboard();
+            } else {
+                throw new Error(result.message || '處理失敗');
+            }
+        } catch (error) {
+            console.error('處理臨時動議失敗:', error);
+            showError(`處理失敗：${error.message}`);
+        }
+    }
+
+    // === 會員管理功能 ===
+    
+    // 查看會員詳情
+    async function viewMemberDetail(memberId) {
+        try {
+            const response = await fetch(`${GAS_URL}?action=getMemberDetail&memberId=${encodeURIComponent(memberId)}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                const member = result.data;
+                const modalHtml = `
+                    <div class="modal fade" id="memberDetailModal" tabindex="-1">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">會員詳情 - ${member.真實姓名 || member.LINE名稱}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <h6>基本資料</h6>
+                                            <p><strong>姓名：</strong>${member.真實姓名 || '未提供'}</p>
+                                            <p><strong>LINE名稱：</strong>${member.LINE名稱}</p>
+                                            <p><strong>電話：</strong>${member.電話 || '未提供'}</p>
+                                            <p><strong>Email：</strong>${member.Email || '未提供'}</p>
+                                            <p><strong>會員狀態：</strong>
+                                                <span class="badge ${member.是否會員 ? 'bg-success' : 'bg-secondary'}">
+                                                    ${member.是否會員 ? '正式會員' : '一般用戶'}
+                                                </span>
+                                            </p>
+                                            <p><strong>加入日期：</strong>${formatDate(member.加入日期)}</p>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6>捐款統計</h6>
+                                            <p><strong>總捐款金額：</strong>$${(member.總捐款金額 || 0).toLocaleString()}</p>
+                                            <p><strong>捐款次數：</strong>${member.捐款次數 || 0} 次</p>
+                                            <p><strong>最後捐款：</strong>${member.最後捐款日期 ? formatDate(member.最後捐款日期) : '無'}</p>
+                                            <p><strong>平均捐款：</strong>$${member.捐款次數 > 0 ? Math.round((member.總捐款金額 || 0) / member.捐款次數).toLocaleString() : '0'}</p>
+                                        </div>
+                                    </div>
+                                    
+                                    ${member.捐款記錄 && member.捐款記錄.length > 0 ? `
+                                        <hr>
+                                        <h6>最近捐款記錄</h6>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th>日期</th>
+                                                        <th>金額</th>
+                                                        <th>類別</th>
+                                                        <th>收據</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    ${member.捐款記錄.slice(0, 5).map(d => `
+                                                        <tr>
+                                                            <td>${formatDate(d.日期)}</td>
+                                                            <td class="text-success">$${d.金額.toLocaleString()}</td>
+                                                            <td>${d.類別}</td>
+                                                            <td>${d.收據編號 || '-'}</td>
+                                                        </tr>
+                                                    `).join('')}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ` : ''}
+                                    
+                                    ${member.活動參與 && member.活動參與.length > 0 ? `
+                                        <hr>
+                                        <h6>活動參與記錄</h6>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th>活動名稱</th>
+                                                        <th>日期</th>
+                                                        <th>狀態</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    ${member.活動參與.slice(0, 5).map(a => `
+                                                        <tr>
+                                                            <td>${a.活動名稱}</td>
+                                                            <td>${formatDate(a.活動日期)}</td>
+                                                            <td>
+                                                                <span class="badge ${a.參與狀態 === '已參加' ? 'bg-success' : 'bg-warning'}">
+                                                                    ${a.參與狀態}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    `).join('')}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+                                    ${member.是否會員 ? `
+                                        <button type="button" class="btn btn-warning" onclick="updateMemberStatus('${member.用戶ID}', false)">
+                                            取消會員資格
+                                        </button>
+                                    ` : `
+                                        <button type="button" class="btn btn-success" onclick="updateMemberStatus('${member.用戶ID}', true)">
+                                            升級為會員
+                                        </button>
+                                    `}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 移除舊的 modal
+                const oldModal = document.getElementById('memberDetailModal');
+                if (oldModal) {
+                    oldModal.remove();
+                }
+                
+                // 加入新的 modal
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                const modal = new bootstrap.Modal(document.getElementById('memberDetailModal'));
+                modal.show();
+                
+            } else {
+                throw new Error(result.message || '載入會員詳情失敗');
+            }
+        } catch (error) {
+            console.error('查看會員詳情失敗:', error);
+            showError(`查看會員詳情失敗：${error.message}`);
+        }
+    }
+    
+    // 更新會員狀態
+    async function updateMemberStatus(memberId, isMember) {
+        const action = isMember ? '升級為會員' : '取消會員資格';
+        if (!confirm(`確定要${action}嗎？`)) return;
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'updateMemberStatus',
+                    memberId: memberId,
+                    isMember: isMember,
+                    updaterId: userId
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess(`會員狀態已更新`);
+                bootstrap.Modal.getInstance(document.getElementById('memberDetailModal')).hide();
+                loadMemberList();
+                loadDashboard();
+            } else {
+                throw new Error(result.message || '更新失敗');
+            }
+        } catch (error) {
+            console.error('更新會員狀態失敗:', error);
+            showError(`更新失敗：${error.message}`);
+        }
+    }
+
+    // === 交易管理功能補充 ===
+    
+    // 刪除交易記錄
+    async function deleteTransaction(transactionId) {
+        if (!confirm('確定要刪除這筆交易記錄嗎？此操作無法復原。')) return;
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'deleteTransaction',
+                    transactionId: transactionId,
+                    deleterId: userId
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess('交易記錄已刪除');
+                loadTransactionList();
+                loadDashboard();
+            } else {
+                throw new Error(result.message || '刪除失敗');
+            }
+        } catch (error) {
+            console.error('刪除交易記錄失敗:', error);
+            showError(`刪除失敗：${error.message}`);
+        }
+    }
+
+    // === 系統功能 ===
+    
+    // 匯出資料
+    async function exportData(dataType) {
+        try {
+            const response = await fetch(`${GAS_URL}?action=exportData&dataType=${dataType}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // 下載CSV檔案
+                const csvContent = result.data;
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `${dataType}_${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showSuccess(`${dataType}資料已匯出`);
+            } else {
+                throw new Error(result.message || '匯出失敗');
+            }
+        } catch (error) {
+            console.error('匯出資料失敗:', error);
+            showError(`匯出失敗：${error.message}`);
+        }
+    }
+    
+    // 系統備份
+    async function backupSystem() {
+        if (!confirm('確定要進行系統備份嗎？這可能需要幾分鐘時間。')) return;
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'backupSystem',
+                    backuperId: userId
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess('系統備份已完成');
+            } else {
+                throw new Error(result.message || '備份失敗');
+            }
+        } catch (error) {
+            console.error('系統備份失敗:', error);
+            showError(`備份失敗：${error.message}`);
+        }
+    }
+    
+    // 發送系統通知
+    async function sendSystemNotification() {
+        const message = prompt('請輸入要發送給所有會員的通知訊息：');
+        if (!message || message.trim() === '') return;
+        
+        const sendToAll = confirm('是否發送給所有用戶？\n確定：所有用戶\n取消：僅會員');
+        
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'sendSystemNotification',
+                    message: message.trim(),
+                    sendToAll: sendToAll,
+                    senderId: userId
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showSuccess(`通知已發送給 ${result.data.sentCount} 位用戶`);
+            } else {
+                throw new Error(result.message || '發送失敗');
+            }
+        } catch (error) {
+            console.error('發送系統通知失敗:', error);
+            showError(`發送失敗：${error.message}`);
+        }
+    }
+    
+    // 頁面載入完成後初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        // 設定預設標籤頁
+        const defaultTab = document.querySelector('#adminTabs a[href="#dashboard"]');
+        if (defaultTab) {
+            defaultTab.click();
+        }
+        
+        // 設定自動刷新儀表板（每5分鐘）
+        setInterval(() => {
+            const activeTab = document.querySelector('#adminTabs .nav-link.active');
+            if (activeTab && activeTab.getAttribute('href') === '#dashboard') {
+                loadDashboard();
+            }
+        }, 5 * 60 * 1000);
+    });
+    
+    // 頁面關閉前確認
+    window.addEventListener('beforeunload', function(e) {
+        // 檢查是否有未儲存的表單
+        const forms = document.querySelectorAll('form');
+        let hasUnsavedChanges = false;
+        
+        forms.forEach(form => {
+            if (form.style.display !== 'none' && form.querySelector('input, textarea, select')) {
+                const inputs = form.querySelectorAll('input, textarea, select');
+                inputs.forEach(input => {
+                    if (input.value && input.value.trim() !== '') {
+                        hasUnsavedChanges = true;
+                    }
+                });
+            }
+        });
+        
+        if (hasUnsavedChanges) {
+            e.preventDefault();
+            e.returnValue = '您有未儲存的變更，確定要離開嗎？';
+            return e.returnValue;
+        }
+    });
+
+    // === 快捷鍵支援 ===
+    document.addEventListener('keydown', function(e) {
+        // Ctrl + S: 快速儲存（如果有開啟的表單）
+        if (e.ctrlKey && e.key === 's') {
+            e.preventDefault();
+            const visibleForm = document.querySelector('form[style*="display: block"], form:not([style*="display: none"])');
+            if (visibleForm) {
+                const submitBtn = visibleForm.querySelector('button[type="submit"]');
+                if (submitBtn && !submitBtn.disabled) {
+                    submitBtn.click();
+                }
+            }
+        }
+        
+        // Esc: 關閉開啟的表單或 Modal
+        if (e.key === 'Escape') {
+            const visibleModal = document.querySelector('.modal.show');
+            if (visibleModal) {
+                const modal = bootstrap.Modal.getInstance(visibleModal);
+                if (modal) modal.hide();
+            } else {
+                // 關閉開啟的表單
+                const forms = ['transactionForm', 'manualReceiptForm', 'activityForm', 'proposalForm', 'expenseForm', 'motionForm'];
+                forms.forEach(formId => {
+                    const form = document.getElementById(formId);
+                    if (form && form.style.display !== 'none') {
+                        form.style.display = 'none';
+                    }
+                });
+            }
+        }
+    });
+
+    // === 錯誤處理和日誌 ===
+    window.addEventListener('error', function(e) {
+        console.error('JavaScript錯誤:', e.error);
+        // 可以在這裡加入錯誤回報機制
+    });
+    
+    window.addEventListener('unhandledrejection', function(e) {
+        console.error('未處理的Promise拒絕:', e.reason);
+        // 可以在這裡加入錯誤回報機制
+    });
     
 </script>
 </body>
