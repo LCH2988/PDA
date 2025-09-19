@@ -1110,49 +1110,141 @@
             });
         }
 
-        async function initializeLiff() {
-            try {
-                updateLoadingStatus('檢查 LIFF 環境...');
-                updateLiffStatus(false, '檢查中');
+        // async function initializeLiff() {
+        //     try {
+        //         updateLoadingStatus('檢查 LIFF 環境...');
+        //         updateLiffStatus(false, '檢查中');
                 
-                isLiffAvailable = await checkLiffAvailability();
+        //         isLiffAvailable = await checkLiffAvailability();
                 
-                if (!isLiffAvailable) {
-                    console.log('LIFF 不可用，使用測試模式');
-                    updateLiffStatus(false, '不可用（測試模式）');
-                    await initializeTestMode();
-                    return;
-                }
+        //         if (!isLiffAvailable) {
+        //             console.log('LIFF 不可用，使用測試模式');
+        //             updateLiffStatus(false, '不可用（測試模式）');
+        //             await initializeTestMode();
+        //             return;
+        //         }
                 
-                updateLoadingStatus('初始化 LIFF...');
-                console.log('開始初始化 LIFF...');
+        //         updateLoadingStatus('初始化 LIFF...');
+        //         console.log('開始初始化 LIFF...');
                 
-                await liff.init({ liffId: CONFIG.LIFF_ID });
+        //         await liff.init({ liffId: CONFIG.LIFF_ID });
                 
-                if (!liff.isLoggedIn()) {
-                    console.log('用戶未登入，導向登入頁面');
-                    updateLiffStatus(false, '未登入');
-                    liff.login();
-                    return;
-                }
+        //         if (!liff.isLoggedIn()) {
+        //             console.log('用戶未登入，導向登入頁面');
+        //             updateLiffStatus(false, '未登入');
+        //             liff.login();
+        //             return;
+        //         }
                 
-                console.log('LIFF 初始化成功');
-                updateLiffStatus(true, '已連線');
+        //         console.log('LIFF 初始化成功');
+        //         updateLiffStatus(true, '已連線');
                 
-                userProfile = await liff.getProfile();
+        //         userProfile = await liff.getProfile();
                 
-                console.log('用戶資料:', userProfile);
+        //         console.log('用戶資料:', userProfile);
                 
-                await loadUserData();
-                await loadDashboard();
-                showNotification('系統初始化完成', 'success');
+        //         await loadUserData();
+        //         await loadDashboard();
+        //         showNotification('系統初始化完成', 'success');
                 
-            } catch (error) {
-                console.error('LIFF 初始化失敗:', error);
-                updateLiffStatus(false, '初始化失敗');
-                await initializeTestMode();
-            }
-        }
+        //     } catch (error) {
+        //         console.error('LIFF 初始化失敗:', error);
+        //         updateLiffStatus(false, '初始化失敗');
+        //         await initializeTestMode();
+        //     }
+        // }
+
+// 在現有的 initializeLIFF 函數中加入更詳細的環境檢查
+function initializeLIFF() {
+  showLoadingStatus('初始化 LIFF...');
+  console.log('開始初始化 LIFF...');
+  
+  // 檢查 LIFF 環境
+  const isInClient = liff.isInClient();
+  const isLoggedIn = liff.isLoggedIn();
+  
+  console.log('LIFF 環境詳細資訊:');
+  console.log('- 是否在 LINE 客戶端:', isInClient);
+  console.log('- 是否已登入:', isLoggedIn);
+  console.log('- LIFF 版本:', liff.getVersion());
+  console.log('- 作業系統:', liff.getOS());
+  
+  if (!isLoggedIn) {
+    console.log('用戶未登入，導向登入頁面');
+    liff.login({
+      redirectUri: window.location.href
+    });
+    return;
+  }
+  
+  // 取得用戶資料
+  liff.getProfile().then(profile => {
+    console.log('用戶資料:', profile);
+    window.currentUser = {
+      lineId: profile.userId,
+      lineName: profile.displayName,
+      pictureUrl: profile.pictureUrl
+    };
+    
+    showLoadingStatus('載入用戶資料...');
+    loadUserData();
+    
+  }).catch(error => {
+    console.error('取得用戶資料失敗:', error);
+    showError('無法取得用戶資料，請重新整理頁面');
+  });
+}
+
+// 加入更詳細的錯誤處理
+function handleLIFFError(error) {
+  console.error('LIFF 錯誤詳情:', error);
+  
+  let errorMessage = '系統初始化失敗';
+  
+  if (error.code) {
+    switch (error.code) {
+      case 'INVALID_LIFF_ID':
+        errorMessage = 'LIFF ID 無效，請檢查設定';
+        break;
+      case 'FORBIDDEN':
+        errorMessage = '權限不足，請確認 LIFF 應用程式設定';
+        break;
+      case 'NETWORK_ERROR':
+        errorMessage = '網路連線問題，請檢查網路狀態';
+        break;
+      default:
+        errorMessage = `系統錯誤 (${error.code}): ${error.message}`;
+    }
+  }
+  
+  showError(errorMessage);
+  
+  // 提供重試選項
+  setTimeout(() => {
+    if (confirm('是否要重新載入頁面？')) {
+      window.location.reload();
+    }
+  }, 3000);
+}
+
+// 修正載入狀態顯示
+function showLoadingStatus(message) {
+  console.log('載入狀態:', message);
+  
+  const statusElement = document.querySelector('.loading-status');
+  if (statusElement) {
+    statusElement.textContent = message;
+  }
+  
+  // 更新 LIFF 狀態顯示
+  const liffStatusElement = document.querySelector('.liff-status');
+  if (liffStatusElement) {
+    if (message.includes('LIFF')) {
+      liffStatusElement.textContent = 'LIFF 狀態: ' + message;
+      liffStatusElement.style.color = '#4CAF50'; // 綠色表示正常
+    }
+  }
+}
 
         async function initializeTestMode() {
             updateLoadingStatus('使用測試模式...');
