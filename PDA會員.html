@@ -1,0 +1,180 @@
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>會員專區 - 三鐵協會</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <style>
+    body { font-family:Arial,sans-serif; margin:0; background:linear-gradient(135deg,#667eea,#764ba2); color:#333; min-height:100vh; }
+    header { background:rgba(255,255,255,.95); padding:1rem 1.5rem; display:flex; justify-content:space-between; flex-wrap:wrap; align-items:center; box-shadow:0 4px 15px rgba(0,0,0,.1); }
+    h1 { margin:0; font-size:1.5rem; color:#667eea; }
+    .btn { padding:8px 16px; border:none; border-radius:24px; cursor:pointer; font-weight:bold; background:#667eea; color:#fff; }
+    .btn-outline { background:transparent; border:2px solid #667eea; color:#667eea; }
+    .btn-danger { background:#e74c3c; }
+    .btn:hover { opacity:.9; }
+    .container { max-width:1200px; margin:20px auto; padding:0 20px; }
+    .section { background:rgba(255,255,255,.95); padding:1.7rem; border-radius:18px; box-shadow:0 6px 22px -5px rgba(0,0,0,.15); margin-bottom:2rem; }
+    .section h2 { margin-top:0; font-size:1.2rem; color:#4b56d6; }
+    .events-grid { display:grid; gap:18px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+    .event-card { background:#f9f9ff; border:1px solid #dfe3fa; padding:1.1rem; border-radius:14px; position:relative; display:flex; flex-direction:column; }
+    .event-card h3 { margin:6px 0 4px; font-size:1.05rem; color:#333; }
+    .meta { font-size:.75rem; color:#666; line-height:1.4; }
+    .fee { font-weight:bold; color:#e74c3c; margin-top:4px; }
+    .actions { margin-top:auto; display:flex; gap:8px; flex-wrap:wrap; }
+    .registration-card { border-left:4px solid #667eea; background:#eef2ff; padding:1rem 1.2rem; border-radius:12px; margin-bottom:14px; }
+    .status-tag { display:inline-block; padding:4px 10px; border-radius:16px; background:#d4edda; color:#155724; font-size:.65rem; font-weight:bold; letter-spacing:.5px; }
+    .empty { text-align:center; padding:1.5rem; color:#666; font-style:italic; }
+    .loading { text-align:center; padding:1.5rem; font-size:.85rem; color:#555; }
+    .spinner { width:34px; height:34px; border:4px solid #eee; border-top:4px solid #667eea; border-radius:50%; margin:0 auto 10px; animation:spin 1s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @media (max-width:600px){ .events-grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🏊‍♂️🚴‍♂️🏃‍♂️ 會員專區</h1>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <span id="welcome" style="font-size:.85rem; font-weight:bold; color:#333;"></span>
+      <a href="index.html" class="btn btn-outline">首頁</a>
+      <button class="btn btn-danger" onclick="logout()">登出</button>
+    </div>
+  </header>
+  <div class="container">
+    <div class="section">
+      <h2>🎯 可報名活動</h2>
+      <div id="eventsLoading" class="loading" style="display:none;">
+        <div class="spinner"></div>載入活動中...
+      </div>
+      <div id="eventsGrid" class="events-grid"></div>
+    </div>
+    <div class="section">
+      <h2>📋 我的報名</h2>
+      <div id="regsLoading" class="loading" style="display:none;">
+        <div class="spinner"></div>載入報名中...
+      </div>
+      <div id="registrationsContainer"></div>
+    </div>
+  </div>
+  <script>
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxf3ZQ-egGXbxH8ujY6YUOj3kSY5kraOTzTy14qeXTW8Vc_bUt4Wmyd7u56EGoffdU/exec'; // <-- 替換
+    let member = null;
+    let token = null;
+
+    document.addEventListener('DOMContentLoaded', init);
+
+    async function init() {
+      const m = localStorage.getItem('memberInfo');
+      token = localStorage.getItem('sessionToken');
+      if (!m || !token) {
+        alert('請先登入'); location.href='index.html'; return;
+      }
+      member = JSON.parse(m);
+      document.getElementById('welcome').textContent = `歡迎，${member.name}`;
+      const ok = await verifySession();
+      if (!ok) { alert('會話失效，請重新登入'); logout(); return; }
+      loadEvents();
+      loadMyRegistrations();
+    }
+    async function verifySession() {
+      try {
+        const res = await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'checkSession', sessionToken:token})});
+        const j = await res.json(); return j.success;
+      } catch { return false; }
+    }
+    async function loadEvents() {
+      const grid = document.getElementById('eventsGrid');
+      const loading = document.getElementById('eventsLoading');
+      grid.innerHTML=''; loading.style.display='block';
+      try {
+        const res = await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'getEvents'})});
+        const j = await res.json();
+        if (!j.success) { grid.innerHTML = `<div class="empty" style="color:#c00;">載入失敗</div>`; return; }
+        const events = j.events.filter(e => e.status === '開放報名');
+        if (!events.length) { grid.innerHTML = `<div class="empty">目前無開放活動</div>`; return; }
+        events.forEach(ev => {
+          const filled = Number(ev.currentParticipants)||0;
+          const max = Number(ev.maxParticipants)||0;
+          const isFull = filled >= max;
+          const card = document.createElement('div');
+          card.className='event-card';
+          card.innerHTML = `
+            <h3>${ev.name}</h3>
+            <div class="meta">📅 ${ev.date} ⏰ ${ev.time}</div>
+            <div class="meta">📍 ${ev.location}</div>
+            <div class="meta">👥 ${filled}/${max}</div>
+            <div class="fee">💰 NT$ ${ev.fee}</div>
+            <div class="actions">
+              <button class="btn" style="flex:1; ${isFull?'background:#888;cursor:not-allowed;':''}"
+                ${isFull?'disabled':''}
+                onclick="registerEvent('${ev.id}')">${isFull?'名額已滿':'立即報名'}</button>
+            </div>`;
+          grid.appendChild(card);
+        });
+      } catch(err) {
+        grid.innerHTML = `<div class="empty" style="color:#c00;">錯誤：${err}</div>`;
+      } finally {
+        loading.style.display='none';
+      }
+    }
+    async function registerEvent(eventId) {
+      if (!confirm('確定要報名此活動？')) return;
+      try {
+        const res = await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'registerEvent', memberId:member.id, eventId})});
+        const j = await res.json();
+        alert(j.message);
+        if (j.success) { loadEvents(); loadMyRegistrations(); }
+      } catch(err) {
+        alert('錯誤：'+err);
+      }
+    }
+    async function loadMyRegistrations() {
+      const box = document.getElementById('registrationsContainer');
+      const loading = document.getElementById('regsLoading');
+      box.innerHTML=''; loading.style.display='block';
+      try {
+        const res = await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'getUserRegistrations', memberId:member.id})});
+        const j = await res.json();
+        if (!j.success) { box.innerHTML=`<div class="empty" style="color:#c00;">載入失敗</div>`; return; }
+        if (!j.registrations.length) { box.innerHTML=`<div class="empty">尚無報名</div>`; return; }
+        j.registrations.forEach(r => {
+          const div = document.createElement('div');
+          div.className='registration-card';
+          div.innerHTML = `
+            <div class="status-tag">已報名</div>
+            <h3 style="margin:6px 0 4px;">${r.eventName}</h3>
+            <div class="meta">📅 ${r.eventDate} ⏰ ${r.eventTime}</div>
+            <div class="meta">📍 ${r.location}</div>
+            <div class="meta">📝 報名日期：${r.registrationDate.substring(0,10)}</div>
+            <div class="fee">💰 NT$ ${r.fee}</div>
+            <div style="margin-top:8px;">
+              <button class="btn btn-danger" onclick="cancelReg('${r.registrationId}')">取消報名</button>
+            </div>
+          `;
+          box.appendChild(div);
+        });
+      } catch(err) {
+        box.innerHTML=`<div class="empty" style="color:#c00;">錯誤：${err}</div>`;
+      } finally {
+        loading.style.display='none';
+      }
+    }
+    async function cancelReg(registrationId) {
+      if (!confirm('確定要取消？')) return;
+      try {
+        const res = await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'cancelRegistration', registrationId})});
+        const j = await res.json();
+        alert(j.message);
+        if (j.success) { loadEvents(); loadMyRegistrations(); }
+      } catch(err) { alert('錯誤：'+err); }
+    }
+    function logout() {
+      if (confirm('確定登出？')) {
+        localStorage.removeItem('memberInfo');
+        localStorage.removeItem('sessionToken');
+        location.href='index.html';
+      }
+    }
+  </script>
+</body>
+</html>
