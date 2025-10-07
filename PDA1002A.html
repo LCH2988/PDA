@@ -417,53 +417,63 @@
       }
       
       async function handleLiffLogin() {
-          debugLog('開始處理 LINE 登入...');
-          showLoading(true);
-          
-          try {
-              const profile = await liff.getProfile();
-              const lineId = profile.userId;
-              const lineName = profile.displayName;
-              
-              debugLog('取得 LINE 個人資料', { lineId, lineName });
-              
-              // 檢查是否為首次登入
-              debugLog('發送 checkLineUser 請求到 GAS');
-              const response = await fetch(GAS_URL, {
-                  method: 'POST',
-                  mode: 'cors',
-                  headers: {
-                      'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                      action: 'checkLineUser',
-                      lineId: lineId
-                  })
-              });
-              
-              debugLog('收到 GAS 回應', { status: response.status });
-              const result = await response.json();
-              debugLog('解析回應資料', result);
-              
-              if (result.exists) {
-                  // 已註冊，直接登入
-                  showMessage('LINE 登入成功！歡迎回來 ' + result.name, 'success');
-                  setTimeout(() => {
-                      alert('登入成功！\n\n會員資料：\n姓名：' + result.name + '\nLINE ID：' + lineId);
-                  }, 1000);
-              } else {
-                  // 首次登入，要求實名制登記
-                  debugLog('首次登入，顯示註冊表單');
-                  showFirstTimeRegistration(lineId, lineName);
-              }
-          } catch (error) {
-              debugLog('LINE 登入錯誤', error);
-              console.error('LINE login error:', error);
-              showMessage('LINE 登入失敗：' + error.message, 'error');
-          } finally {
-              showLoading(false);
-          }
-      }
+        try {
+            debugLog('開始處理 LINE 登入...');
+            
+            // 取得 LINE 個人資料
+            const profile = await liff.getProfile();
+            debugLog('取得 LINE 個人資料', {
+                lineId: profile.userId,
+                lineName: profile.displayName
+            });
+            
+            // 先檢查是否已註冊
+            const checkResponse = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    action: 'lineLogin',
+                    lineUserId: profile.userId
+                })
+            });
+            
+            const checkResult = await checkResponse.json();
+            debugLog('LINE 登入檢查結果', checkResult);
+            
+            if (checkResult.success) {
+                // 已註冊，直接登入
+                debugLog('LINE 會員已存在，直接登入');
+                localStorage.setItem('userName', checkResult.name);
+                localStorage.setItem('userPhone', checkResult.phone);
+                localStorage.setItem('lineUserId', profile.userId);
+                showSuccess('登入成功！歡迎回來 ' + checkResult.name);
+                
+                setTimeout(() => {
+                    window.location.href = 'PDA1002B.html';
+                }, 1500);
+            } else {
+                // 未註冊，顯示註冊表單
+                debugLog('LINE 會員不存在，需要註冊');
+                document.getElementById('loginSection').style.display = 'none';
+                document.getElementById('registerSection').style.display = 'block';
+                document.getElementById('lineRegisterSection').style.display = 'block';
+                document.getElementById('manualRegisterSection').style.display = 'none';
+                
+                // 預填 LINE 資料
+                document.getElementById('lineName').value = profile.displayName;
+                document.getElementById('lineUserId').value = profile.userId;
+                
+                showInfo('請完成註冊資訊');
+            }
+            
+        } catch (error) {
+            debugLog('LINE 登入錯誤', error);
+            showError('LINE 登入失敗：' + error.message);
+        }
+    }
+
       
       // ==================== 首次 LINE 登入註冊 ====================
       function showFirstTimeRegistration(lineId, lineName) {
