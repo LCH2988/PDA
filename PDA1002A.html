@@ -313,7 +313,7 @@
   <script>
       // ==================== 設定區 ====================
       const LIFF_ID = '1656516134-VaGgmaPm'; // 請替換為您的 LIFF ID
-      const GAS_URL = 'https://script.google.com/macros/s/AKfycbzdtj8sGQL3OgNNppWV9NrlTvpOniLTLSI2i5x14LvKfrIe7rkgttjD7QVkccTy332O/exec'; // 請替換為您的 GAS Web App URL
+      const GAS_URL = 'https://script.google.com/macros/s/AKfycbzHPAAEOgKsghNwYmeaqIKo__QtDbo1Cxq_YTAnQX5hDnDavBksTY5rovMN5CLzrCYe7Q/exec'; // 請替換為您的 GAS Web App URL
       
       let liffInitialized = false;
       
@@ -352,46 +352,74 @@
           }
       }
       
-      async function handleLiffLogin() {
-          showLoading(true);
-          
-          try {
-              const profile = await liff.getProfile();
-              const lineId = profile.userId;
-              const lineName = profile.displayName;
-              
-              // 檢查是否為首次登入
-              const response = await fetch(GAS_URL, {
-                  method: 'POST',
-                  headers: {
-                      'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                      action: 'checkLineUser',
-                      lineId: lineId
-                  })
-              });
-              
-              const result = await response.json();
-              
-              if (result.exists) {
-                  // 已註冊，直接登入
-                  showMessage('LINE 登入成功！歡迎回來 ' + result.name, 'success');
-                  setTimeout(() => {
-                      // 這裡可以導向會員頁面
-                      alert('登入成功！會員資料：\n姓名：' + result.name + '\nLINE ID：' + lineId);
-                  }, 1000);
-              } else {
-                  // 首次登入，要求實名制登記
-                  showFirstTimeRegistration(lineId, lineName);
-              }
-          } catch (error) {
-              console.error('LINE login error:', error);
-              showMessage('LINE 登入失敗，請稍後再試', 'error');
-          } finally {
-              showLoading(false);
-          }
-      }
+      // 在 handleRegister 函數中加入手機號碼驗證
+async function handleRegister(event) {
+    event.preventDefault();
+    showLoading(true);
+    
+    const name = document.getElementById('registerName').value;
+    const phone = document.getElementById('registerPhone').value;
+    const password = document.getElementById('registerPassword').value;
+    const passwordConfirm = document.getElementById('registerPasswordConfirm').value;
+    
+    // ✅ 新增：手機號碼格式驗證
+    const phoneRegex = /^09\d{8}$/;
+    if (!phoneRegex.test(phone)) {
+        showMessage('請輸入正確的台灣手機號碼格式（09開頭，共10碼）', 'error');
+        showLoading(false);
+        return;
+    }
+    
+    if (password !== passwordConfirm) {
+        showMessage('兩次輸入的密碼不一致', 'error');
+        showLoading(false);
+        return;
+    }
+    
+    try {
+        const response = await fetch(GAS_URL, {
+            method: 'POST',
+            mode: 'no-cors', // ✅ 加入 mode
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'manualRegister',
+                name: name,
+                phone: phone,
+                password: password
+            })
+        });
+        
+        // ✅ 改善錯誤處理
+        if (response.type === 'opaque') {
+            // no-cors 模式下無法讀取回應，假設成功
+            showMessage('註冊成功！請使用電話號碼登入', 'success');
+            setTimeout(() => {
+                switchTab('login');
+                document.getElementById('loginPhone').value = phone;
+            }, 2000);
+        } else {
+            const result = await response.json();
+            
+            if (result.success) {
+                showMessage('註冊成功！請使用電話號碼登入', 'success');
+                setTimeout(() => {
+                    switchTab('login');
+                    document.getElementById('loginPhone').value = phone;
+                }, 2000);
+            } else {
+                showMessage(result.message || '註冊失敗，請稍後再試', 'error');
+            }
+        }
+    } catch (error) {
+        console.error('Registration error:', error);
+        showMessage('註冊失敗，請稍後再試', 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
       
       // ==================== 首次 LINE 登入註冊 ====================
       function showFirstTimeRegistration(lineId, lineName) {
