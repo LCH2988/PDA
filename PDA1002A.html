@@ -1,5 +1,3 @@
-
-// ========================= 前端（index.html） =========================
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -279,7 +277,7 @@ body {
       <div class="card-body">
         <p><strong>會員類型：</strong><span id="userMemberType">-</span></p>
         <p><strong>LINE ID：</strong><span id="userLineId">-</span></p>
-        <p class="mb-0"><strong>版本：</strong>v2.0.0</p>
+        <p class="mb-0"><strong>版本：</strong>v2.0.1</p>
       </div>
     </div>
   </div>
@@ -291,13 +289,7 @@ body {
         <div class="d-grid gap-2">
           <button class="btn btn-outline-primary" onclick="showNewActivityModal()"><i class="bi bi-calendar-plus me-2"></i>新增活動</button>
           <button class="btn btn-outline-success" onclick="showNewVolunteerNeedModal()"><i class="bi bi-people me-2"></i>新增志工需求</button>
-          <button class="btn btn-outline-info" onclick="exportMembers()"><i class="bi bi-download me-2"></i>匯出會員資料</button>
-          <button class="btn btn-outline-warning" onclick="exportFinanceData()"><i class="bi bi-file-earmark-spreadsheet me-2"></i>匯出財務報表</button>
-...（前文保留，你的 index.html 在「系統」被截斷處繼續）
-
-          <button class="btn btn-outline-secondary" onclick="backupSystem()"><i class="bi bi-cloud-upload me-2"></i>系統備份</button>
-          <button class="btn btn-outline-dark" onclick="showSystemNotificationModal()"><i class="bi bi-megaphone me-2"></i>全體通知</button>
-          <button class="btn btn-outline-danger" onclick="showManualReceiptModal()"><i class="bi bi-file-earmark-plus me-2"></i>手動開立收據</button>
+          <button class="btn btn-outline-secondary" onclick="showManualReceiptModal()"><i class="bi bi-file-earmark-plus me-2"></i>手動開立收據</button>
           <button class="btn btn-outline-primary" onclick="showSettingsModal()"><i class="bi bi-sliders me-2"></i>系統設定</button>
         </div>
       </div>
@@ -533,26 +525,6 @@ body {
   </div>
 </div>
 
-<div class="modal fade" id="systemNotificationModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <form class="modal-content" id="systemNotificationForm">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-megaphone me-2"></i>全體通知</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="關閉"></button>
-      </div>
-      <div class="modal-body">
-        <div class="form-floating">
-          <textarea class="form-control" name="message" style="height:120px;" required></textarea>
-          <label>通知內容 *</label>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-gradient" type="submit">送出</button>
-      </div>
-    </form>
-  </div>
-</div>
-
 <div class="modal fade" id="manualReceiptModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <form class="modal-content" id="manualReceiptForm">
@@ -640,20 +612,19 @@ body {
 
 <script>
 const APPCONFIG = {
-  apiUrl: 'https://script.google.com/macros/s/AKfycbx9HT_IB_eLes22Ve43s60GmTD3g8IqeJYjZvFh6roRTIsHHlXSyGB5mg6j1DrEoBef/exec', // TODO: 換成你的部署網址
+  apiUrl: 'https://script.google.com/macros/s/AKfycbzwohgERsUIQwbQ4GO45JDgwpbJSAFC8pqUUmzqppOJ8YIuXJC3f5k3Koyg5ZkTlVJ0/exec', // TODO: 換成你的部署網址
   apiKey: 'AAbb8520258185202581', // 與後端 CONFIG.API_KEY 一致
   liffId: '1656516134-VaGgmaPm' // TODO: 換成你的 LIFF ID
 };
 
 let state = {
-  profile: null, // LIFF profile
-  lineId: '',    // 用戶 lineId（以 LIFF userId 代入）
+  profile: null,
+  lineId: '',
   isAdmin: false,
   settings: {
     incomeCategories: [],
     expenseCategories: []
-  },
-  caches: {}
+  }
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -708,7 +679,6 @@ function switchPage(target){
   $$('.bottom-nav .nav-item').forEach(n=>n.classList.remove('active'));
   $(`.bottom-nav .nav-item[data-target="${target}"]`).classList.add('active');
 
-  // Lazy load
   if(target==='activities'){ loadActivities(); loadMyRegistrations(); }
   if(target==='volunteer'){ loadVolunteerData(); }
   if(target==='finance'){ loadFinance(); }
@@ -725,9 +695,9 @@ function bindNav(){
 function fmtDate(d){
   try{
     if(!d) return '-';
-    d = new Date(d);
-    if(isNaN(d.getTime())) return '-';
-    const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const day=String(d.getDate()).padStart(2,'0');
+    const dt = new Date(d);
+    if(isNaN(dt.getTime())) return '-';
+    const y=dt.getFullYear(); const m=String(dt.getMonth()+1).padStart(2,'0'); const day=String(dt.getDate()).padStart(2,'0');
     return `${y}/${m}/${day}`;
   }catch{ return '-'; }
 }
@@ -743,28 +713,27 @@ async function initLIFF(){
   $('#userAvatar').src = profile.pictureUrl || 'https://via.placeholder.com/36';
   $('#userName').textContent = profile.displayName || '用戶';
 
-  // 使用 userId 當作 lineId（與伺服器一致）
+  // 使用 userId 當作 lineId
   state.lineId = profile.userId;
   $('#userLineId').textContent = state.lineId;
 
-  // 載入用戶資訊（若未註冊則自動註冊）
+  // 取得用戶資訊，無則註冊
   const info = await api('getUserInfo',{ lineId: state.lineId }).catch(()=>null);
   if(!info || !info.success){
-    const reg = await api('registerUser',{ lineId: state.lineId, lineName: profile.displayName, realName: profile.displayName, memberType: '病友' });
+    await api('registerUser',{ lineId: state.lineId, lineName: profile.displayName, realName: profile.displayName, memberType: '病友' });
     toast('已完成首次註冊','success');
     state.isAdmin = false;
   }else{
     const u = info.data || {};
     state.isAdmin = !!u.isAdmin;
     $('#userMemberType').textContent = u.memberType || '-';
-    // 填入個人資料
     const f = $('#profileForm');
     f.realName.value = u.realName || profile.displayName || '';
     f.memberType.value = u.memberType || '';
     f.phone.value = u.phone || '';
     f.email.value = u.email || '';
-    if(u.birthday) f.birthday.value = new Date(u.birthday).toISOString().slice(0,10);
-    if(u.diagnosisDate) f.diagnosisDate.value = new Date(u.diagnosisDate).toISOString().slice(0,10);
+    if(u.birthday){ const d = new Date(u.birthday); if(!isNaN(d)) f.birthday.value = d.toISOString().slice(0,10); }
+    if(u.diagnosisDate){ const d = new Date(u.diagnosisDate); if(!isNaN(d)) f.diagnosisDate.value = d.toISOString().slice(0,10); }
     f.address.value = u.address || '';
   }
 
@@ -802,29 +771,19 @@ async function loadDashboard(){
 
 /* Settings */
 async function loadSettings(){
-  if(!state.isAdmin){
-    // 也需要類別，讓一般用戶可選類別
-    const { data } = await api('getSettings',{ lineId: state.lineId });
-    state.settings.incomeCategories = data.incomeCategories || [];
-    state.settings.expenseCategories = data.expenseCategories || [];
-  }else{
-    const { data } = await api('getSettings',{ lineId: state.lineId });
-    state.settings = {
-      ...state.settings,
-      incomeCategories: data.incomeCategories || [],
-      expenseCategories: data.expenseCategories || [],
-      receiptTemplateDocId: data.receiptTemplateDocId || '',
-      emailReplyTemplate: data.emailReplyTemplate || '',
-      expenseVoucherTemplateDocId: data.expenseVoucherTemplateDocId || ''
-    };
-    // 填入設定 modal
+  const { data } = await api('getSettings',{ lineId: state.lineId });
+  state.settings.incomeCategories = data.incomeCategories || [];
+  state.settings.expenseCategories = data.expenseCategories || [];
+  if(state.isAdmin){
+    state.settings.receiptTemplateDocId = data.receiptTemplateDocId || '';
+    state.settings.emailReplyTemplate = data.emailReplyTemplate || '';
+    state.settings.expenseVoucherTemplateDocId = data.expenseVoucherTemplateDocId || '';
     $('#receiptTemplateDocId').value = state.settings.receiptTemplateDocId || '';
     $('#expenseVoucherTemplateDocId').value = state.settings.expenseVoucherTemplateDocId || '';
     $('#emailReplyTemplate').value = state.settings.emailReplyTemplate || '';
     $('#incomeCategories').value = (state.settings.incomeCategories || []).join('\n');
     $('#expenseCategories').value = (state.settings.expenseCategories || []).join('\n');
   }
-  // 填入捐款/支出類別選單
   const dc = $('#donationCategory');
   const ec = $('#expenseCategory');
   if(dc){
@@ -928,311 +887,296 @@ async function loadVolunteerData(){
     }).join('');
   }
 
-  const recWrap = $('#myVolunteerRecords');
-  if(!data.records || !data.records.length){
-    recWrap.innerHTML = `<div class="empty-state"><i class="bi bi-journal-x"></i><p>尚無志工紀錄</p></div>`;
-  }else{
-    recWrap.innerHTML = data.records.map(r=>`
-      <div class="activity-item">
-        <div class="activity-title">${r.title||'-'}</div>
-        <div class="activity-meta">
-          <span><i class="bi bi-calendar"></i>${fmtDate(r.date)}</span>
-          <span><i class="bi bi-hourglass-split"></i>${r.hours||0} 小時</span>
-          <span>${statusBadge(r.status||'')}</span>
+    const recWrap = $('#myVolunteerRecords');
+    if(!data.records || !data.records.length){
+      recWrap.innerHTML = `<div class="empty-state"><i class="bi bi-journal-x"></i><p>尚無志工紀錄</p></div>`;
+    }else{
+      recWrap.innerHTML = data.records.map(r=>`
+        <div class="activity-item">
+          <div class="activity-title">${r.title||'-'}</div>
+          <div class="activity-meta">
+            <span><i class="bi bi-calendar"></i>${fmtDate(r.date)}</span>
+            <span><i class="bi bi-hourglass-split"></i>${r.hours||0} 小時</span>
+            <span>${statusBadge(r.status||'')}</span>
+          </div>
+          ${r.feedback? `<div class="mt-2 text-muted small">回饋：${r.feedback}</div>`:''}
         </div>
-        ${r.feedback? `<div class="mt-2 text-muted small">回饋：${r.feedback}</div>`:''}
-      </div>
-    `).join('');
-  }
-}
-
-async function applyVolunteer(needId){
-  await api('applyVolunteer',{ lineId: state.lineId, needId });
-  toast('志工報名成功','success');
-  await loadVolunteerData();
-}
-
-/* Finance */
-function showDonationModal(){ new bootstrap.Modal($('#donationModal')).show(); }
-function showNewExpenseModal(){ new bootstrap.Modal($('#newExpenseModal')).show(); }
-
-$('#donationForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const payload = {
-    lineId: state.lineId,
-    category: fd.get('category'),
-    amount: Number(fd.get('amount')),
-    description: fd.get('description') || '',
-    needReceipt: !!fd.get('needReceipt')
-  };
-  await api('createDonation', payload);
-  toast('捐款已建立','success');
-  bootstrap.Modal.getInstance($('#donationModal')).hide();
-  await Promise.all([loadFinance(), loadDashboard(), loadReceipts()]);
-});
-
-$('#newExpenseForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const payload = {
-    lineId: state.lineId,
-    category: fd.get('category'),
-    amount: Number(fd.get('amount')),
-    description: fd.get('description') || ''
-  };
-  await api('createExpense', payload);
-  toast('支出申請已送出','success');
-  bootstrap.Modal.getInstance($('#newExpenseModal')).hide();
-  await loadFinance();
-});
-
-async function loadFinance(){
-  const { data } = await api('getFinanceData',{ lineId: state.lineId });
-  $('#finTotalDonation').textContent = (data.stats?.totalDonation || 0).toLocaleString();
-  $('#finPendingExpenses').textContent = data.stats?.pendingExpenses || 0;
-
-  const dWrap = $('#myDonationsList');
-  const donations = data.donations || [];
-  if(!donations.length){
-    dWrap.innerHTML = `<div class="empty-state"><i class="bi bi-heart"></i><p>尚無捐款紀錄</p></div>`;
-  }else{
-    dWrap.innerHTML = donations.map(r=>`
-      <div class="activity-item">
-        <div class="activity-title">${r.category||'-'} <span class="text-success">+${Number(r.amount||0).toLocaleString()}</span></div>
-        <div class="activity-meta">
-          <span><i class="bi bi-calendar"></i>${fmtDate(r.createdAt)}</span>
-          <span>${statusBadge(r.status||'')}</span>
-          ${r.receiptNumber? `<span><i class="bi bi-receipt"></i>#${r.receiptNumber}</span>`:''}
-        </div>
-        ${r.description? `<div class="mt-2 text-muted small">${r.description}</div>`:''}
-      </div>
-    `).join('');
+      `).join('');
+    }
   }
 
-  const eWrap = $('#myExpensesList');
-  const expenses = data.expenses || [];
-  if(!expenses.length){
-    eWrap.innerHTML = `<div class="empty-state"><i class="bi bi-receipt"></i><p>尚無支出紀錄</p></div>`;
-  }else{
-    eWrap.innerHTML = expenses.map(r=>`
-      <div class="activity-item">
-        <div class="activity-title">${r.category||'-'} <span class="text-danger">-${Number(r.amount||0).toLocaleString()}</span></div>
-        <div class="activity-meta">
-          <span><i class="bi bi-calendar"></i>${fmtDate(r.createdAt)}</span>
-          <span>${statusBadge(r.status||'')}</span>
-          ${r.paymentMethod? `<span><i class="bi bi-credit-card"></i>${r.paymentMethod}</span>`:''}
-        </div>
-        ${r.description? `<div class="mt-2 text-muted small">${r.description}</div>`:''}
-      </div>
-    `).join('');
+  async function applyVolunteer(needId){
+    await api('applyVolunteer',{ lineId: state.lineId, needId });
+    toast('志工報名成功','success');
+    await loadVolunteerData();
   }
-}
 
-/* Profile */
-$('#profileForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const payload = {
-    lineId: state.lineId,
-    realName: fd.get('realName'),
-    memberType: fd.get('memberType'),
-    phone: fd.get('phone'),
-    email: fd.get('email'),
-    birthday: fd.get('birthday') || '',
-    diagnosisDate: fd.get('diagnosisDate') || '',
-    address: fd.get('address') || ''
-  };
-  await api('updateProfile', payload);
-  toast('個人資料已更新','success');
-  await loadDashboard();
-});
+  /* Finance */
+  function showDonationModal(){ new bootstrap.Modal($('#donationModal')).show(); }
+  function showNewExpenseModal(){ new bootstrap.Modal($('#newExpenseModal')).show(); }
 
-async function loadReceipts(){
-  const { data:list } = await api('getMyReceipts',{ lineId: state.lineId });
-  const wrap = $('#myReceiptsList');
-  if(!list || !list.length){
-    wrap.innerHTML = `<div class="empty-state"><i class="bi bi-file-earmark-text"></i><p>尚無收據</p></div>`;
-    return;
-  }
-  wrap.innerHTML = list.map(r=>`
-    <div class="activity-item">
-      <div class="activity-title">收據 #${r.receiptNumber||'-'} - ${Number(r.amount||0).toLocaleString()}</div>
-      <div class="activity-meta">
-        <span><i class="bi bi-calendar"></i>${fmtDate(r.issueDate)}</span>
-        <span>${statusBadge(r.status||'')}</span>
-        ${r.pdfUrl? `<a class="text-decoration-none" target="_blank" href="${r.pdfUrl}"><i class="bi bi-box-arrow-up-right"></i> 檢視</a>`:''}
-      </div>
-    </div>
-  `).join('');
-}
-
-/* Admin */
-function showNewActivityModal(){ new bootstrap.Modal($('#newActivityModal')).show(); }
-function showNewVolunteerNeedModal(){ new bootstrap.Modal($('#newVolunteerNeedModal')).show(); }
-function showSystemNotificationModal(){ new bootstrap.Modal($('#systemNotificationModal')).show(); }
-function showManualReceiptModal(){ new bootstrap.Modal($('#manualReceiptModal')).show(); }
-function showSettingsModal(){ new bootstrap.Modal($('#settingsModal')).show(); }
-
-$('#newActivityForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const payload = {
-    lineId: state.lineId,
-    title: fd.get('title'),
-    description: fd.get('description') || '',
-    date: fd.get('date'),
-    time: fd.get('time') || '',
-    location: fd.get('location') || '',
-    maxParticipants: Number(fd.get('maxParticipants')),
-    fee: Number(fd.get('fee')||0)
-  };
-  await api('createActivity', payload);
-  toast('活動已建立','success');
-  bootstrap.Modal.getInstance($('#newActivityModal')).hide();
-  await loadActivities();
-});
-
-$('#newVolunteerNeedForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const payload = {
-    lineId: state.lineId,
-    title: fd.get('title'),
-    description: fd.get('description') || '',
-    date: fd.get('date'),
-    time: fd.get('time') || '',
-    needCount: Number(fd.get('needCount')),
-    hours: Number(fd.get('hours'))
-  };
-  await api('createVolunteerNeed', payload);
-  toast('志工需求已建立','success');
-  bootstrap.Modal.getInstance($('#newVolunteerNeedModal')).hide();
-  await loadVolunteerData();
-});
-
-$('#systemNotificationForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  await api('sendSystemNotification',{ lineId: state.lineId, message: fd.get('message') });
-  toast('通知已記錄','success');
-  bootstrap.Modal.getInstance($('#systemNotificationModal')).hide();
-});
-
-$('#manualReceiptForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const payload = {
-    lineId: state.lineId,
-    targetLineId: fd.get('targetLineId'),
-    type: fd.get('type'),
-    amount: Number(fd.get('amount')),
-    createDonation: !!fd.get('createDonation')
-  };
-  const { data } = await api('createManualReceipt', payload);
-  toast(`收據建立成功：${data.receiptNumber}`,'success');
-  bootstrap.Modal.getInstance($('#manualReceiptModal')).hide();
-  await loadAdminReceipts();
-});
-
-$('#settingsForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const payload = {
-    lineId: state.lineId
-  };
-  // 讀值
-  const receiptTemplateDocId = $('#receiptTemplateDocId').value.trim();
-  const expenseVoucherTemplateDocId = $('#expenseVoucherTemplateDocId').value.trim();
-  const emailReplyTemplate = $('#emailReplyTemplate').value;
-  const incomeCategories = $('#incomeCategories').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  const expenseCategories = $('#expenseCategories').value.split('\n').map(s=>s.trim()).filter(Boolean);
-
-  if(receiptTemplateDocId!=='') payload.receiptTemplateDocId = receiptTemplateDocId;
-  if(expenseVoucherTemplateDocId!=='') payload.expenseVoucherTemplateDocId = expenseVoucherTemplateDocId;
-  payload.emailReplyTemplate = emailReplyTemplate;
-  payload.incomeCategories = incomeCategories;
-  payload.expenseCategories = expenseCategories;
-
-  await api('updateSettings', payload);
-  toast('設定已更新','success');
-  bootstrap.Modal.getInstance($('#settingsModal')).hide();
-  await loadSettings();
-});
-
-async function exportMembers(){
-  const { data } = await api('exportMembers',{ lineId: state.lineId });
-  toast('會員匯出完成','success');
-  window.open(data.fileUrl,'_blank');
-}
-
-async function exportFinanceData(){
-  const { data } = await api('exportFinanceData',{ lineId: state.lineId });
-  toast('財務匯出完成','success');
-  window.open(data.donationUrl,'_blank');
-  window.open(data.expenseUrl,'_blank');
-}
-
-async function backupSystem(){
-  const { data } = await api('backupSystem',{ lineId: state.lineId });
-  toast('系統備份完成','success');
-}
-
-async function loadAdminOverview(){
-  const { data } = await api('getAdminData',{ lineId: state.lineId });
-  const ov = $('#adminOverview');
-  const tx = data.transactions || [];
-  const receipts = data.receipts || [];
-
-  // 顯示總覽（簡化）
-  let totalIncome = 0, totalExpense = 0;
-  tx.forEach(t=>{
-    if(t.type==='收入') totalIncome += Number(t.amount||0);
-    if(t.type==='支出') totalExpense += Number(t.amount||0);
+  $('#donationForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const payload = {
+      lineId: state.lineId,
+      category: fd.get('category'),
+      amount: Number(fd.get('amount')),
+      description: fd.get('description') || '',
+      needReceipt: !!fd.get('needReceipt')
+    };
+    await api('createDonation', payload);
+    toast('捐款已建立','success');
+    bootstrap.Modal.getInstance($('#donationModal')).hide();
+    await Promise.all([loadFinance(), loadDashboard(), loadReceipts()]);
   });
-  const balance = totalIncome - totalExpense;
 
-  ov.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-card"><div class="stat-icon"><i class="bi bi-wallet2"></i></div><div class="stat-value">${totalIncome.toLocaleString()}</div><div class="stat-label">總收入</div></div>
-      <div class="stat-card"><div class="stat-icon"><i class="bi bi-cart-dash"></i></div><div class="stat-value">${totalExpense.toLocaleString()}</div><div class="stat-label">總支出</div></div>
-      <div class="stat-card"><div class="stat-icon"><i class="bi bi-piggy-bank"></i></div><div class="stat-value">${balance.toLocaleString()}</div><div class="stat-label">當前餘額</div></div>
-      <div class="stat-card"><div class="stat-icon"><i class="bi bi-receipt"></i></div><div class="stat-value">${receipts.length}</div><div class="stat-label">收據數量</div></div>
-    </div>
-  `;
-}
+  $('#newExpenseForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const payload = {
+      lineId: state.lineId,
+      category: fd.get('category'),
+      amount: Number(fd.get('amount')),
+      description: fd.get('description') || ''
+    };
+    await api('createExpense', payload);
+    toast('支出申請已送出','success');
+    bootstrap.Modal.getInstance($('#newExpenseModal')).hide();
+    await loadFinance();
+  });
 
-async function loadAdminReceipts(){
-  const { data } = await api('getAdminData',{ lineId: state.lineId });
-  const list = data.receipts || [];
-  const tb = $('#adminReceiptsTableBody');
-  if(!list.length){
-    tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted">尚無資料</td></tr>`;
-    return;
+  async function loadFinance(){
+    // 以現有 API 取得個人捐款與支出
+    const [{ data: donationsData }, { data: expensesData }] = await Promise.all([
+      api('getDonations',{ lineId: state.lineId }),
+      api('getExpenses',{ lineId: state.lineId })
+    ]);
+
+    const donations = donationsData || [];
+    const expenses = expensesData || [];
+
+    // 累計捐款
+    const totalDonation = donations.reduce((s,r)=> s + (Number(r.amount)||0), 0);
+    // 待審核支出
+    const pendingExpenses = expenses.filter(r=> r.status==='審核中').length;
+
+    $('#finTotalDonation').textContent = totalDonation.toLocaleString();
+    $('#finPendingExpenses').textContent = pendingExpenses;
+
+    const dWrap = $('#myDonationsList');
+    if(!donations.length){
+      dWrap.innerHTML = `<div class="empty-state"><i class="bi bi-heart"></i><p>尚無捐款紀錄</p></div>`;
+    }else{
+      dWrap.innerHTML = donations.map(r=>`
+        <div class="activity-item">
+          <div class="activity-title">${r.category||'-'} <span class="text-success">+${Number(r.amount||0).toLocaleString()}</span></div>
+          <div class="activity-meta">
+            <span><i class="bi bi-calendar"></i>${fmtDate(r.createdAt)}</span>
+            <span>${statusBadge(r.status||'')}</span>
+            ${r.receiptNumber? `<span><i class="bi bi-receipt"></i>#${r.receiptNumber}</span>`:''}
+          </div>
+          ${r.description? `<div class="mt-2 text-muted small">${r.description}</div>`:''}
+        </div>
+      `).join('');
+    }
+
+    const eWrap = $('#myExpensesList');
+    if(!expenses.length){
+      eWrap.innerHTML = `<div class="empty-state"><i class="bi bi-receipt"></i><p>尚無支出紀錄</p></div>`;
+    }else{
+      eWrap.innerHTML = expenses.map(r=>`
+        <div class="activity-item">
+          <div class="activity-title">${r.category||'-'} <span class="text-danger">-${Number(r.amount||0).toLocaleString()}</span></div>
+          <div class="activity-meta">
+            <span><i class="bi bi-calendar"></i>${fmtDate(r.createdAt)}</span>
+            <span>${statusBadge(r.status||'')}</span>
+            ${r.paymentMethod? `<span><i class="bi bi-credit-card"></i>${r.paymentMethod}</span>`:''}
+          </div>
+          ${r.description? `<div class="mt-2 text-muted small">${r.description}</div>`:''}
+        </div>
+      `).join('');
+    }
   }
-  tb.innerHTML = list.map(r=>`
-    <tr>
-      <td>${fmtDate(r.issueDate)}</td>
-      <td>${r.receiptNumber||'-'}</td>
-      <td class="text-truncate" style="max-width:140px;">${r.lineId||'-'}</td>
-      <td>${r.type||'-'}</td>
-      <td>${Number(r.amount||0).toLocaleString()}</td>
-      <td>${r.status||'-'}</td>
-      <td>${r.pdfUrl? `<a href="${r.pdfUrl}" target="_blank">檢視</a>`:'-'}</td>
-    </tr>
-  `).join('');
-}
 
-/* 初始化 */
-document.addEventListener('DOMContentLoaded', async ()=>{
-  bindNav();
-  try{
-    await initLIFF();
-  }catch(e){
-    console.error(e);
-    toast('LIFF 初始化失敗','error',4000);
+  /* Profile */
+  $('#profileForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const payload = {
+      lineId: state.lineId,
+      realName: fd.get('realName'),
+      memberType: fd.get('memberType'),
+      phone: fd.get('phone'),
+      email: fd.get('email'),
+      birthday: fd.get('birthday') || '',
+      diagnosisDate: fd.get('diagnosisDate') || '',
+      address: fd.get('address') || ''
+    };
+    await api('updateProfile', payload);
+    toast('個人資料已更新','success');
+    await loadDashboard();
+  });
+
+  async function loadReceipts(){
+    const { data:list } = await api('getMyReceipts',{ lineId: state.lineId });
+    const wrap = $('#myReceiptsList');
+    if(!list || !list.length){
+      wrap.innerHTML = `<div class="empty-state"><i class="bi bi-file-earmark-text"></i><p>尚無收據</p></div>`;
+      return;
+    }
+    wrap.innerHTML = list.map(r=>`
+      <div class="activity-item">
+        <div class="activity-title">收據 #${r.receiptNumber||'-'} - ${Number(r.amount||0).toLocaleString()}</div>
+        <div class="activity-meta">
+          <span><i class="bi bi-calendar"></i>${fmtDate(r.issueDate)}</span>
+          <span>${statusBadge(r.status||'')}</span>
+          ${r.pdfUrl? `<a class="text-decoration-none" target="_blank" href="${r.pdfUrl}"><i class="bi bi-box-arrow-up-right"></i> 檢視</a>`:''}
+        </div>
+      </div>
+    `).join('');
   }
-});
-</script>
 
-</body>
-</html>
+  /* Admin */
+  function showNewActivityModal(){ new bootstrap.Modal($('#newActivityModal')).show(); }
+  function showNewVolunteerNeedModal(){ new bootstrap.Modal($('#newVolunteerNeedModal')).show(); }
+  function showManualReceiptModal(){ new bootstrap.Modal($('#manualReceiptModal')).show(); }
+  function showSettingsModal(){ new bootstrap.Modal($('#settingsModal')).show(); }
+
+  $('#newActivityForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const payload = {
+      lineId: state.lineId,
+      title: fd.get('title'),
+      description: fd.get('description') || '',
+      date: fd.get('date'),
+      time: fd.get('time') || '',
+      location: fd.get('location') || '',
+      maxParticipants: Number(fd.get('maxParticipants')),
+      fee: Number(fd.get('fee')||0)
+    };
+    await api('createActivity', payload);
+    toast('活動已建立','success');
+    bootstrap.Modal.getInstance($('#newActivityModal')).hide();
+    await loadActivities();
+  });
+
+  $('#newVolunteerNeedForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const payload = {
+      lineId: state.lineId,
+      title: fd.get('title'),
+      description: fd.get('description') || '',
+      date: fd.get('date'),
+      time: fd.get('time') || '',
+      needCount: Number(fd.get('needCount')),
+      hours: Number(fd.get('hours'))
+    };
+    await api('createVolunteerNeed', payload);
+    toast('志工需求已建立','success');
+    bootstrap.Modal.getInstance($('#newVolunteerNeedModal')).hide();
+    await loadVolunteerData();
+  });
+
+  $('#manualReceiptForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const payload = {
+      lineId: state.lineId,
+      targetLineId: fd.get('targetLineId'),
+      type: fd.get('type'),
+      amount: Number(fd.get('amount')),
+      createDonation: !!fd.get('createDonation')
+    };
+    const { data } = await api('createManualReceipt', payload);
+    toast(`收據建立成功：${data.receiptNumber}`,'success');
+    bootstrap.Modal.getInstance($('#manualReceiptModal')).hide();
+    await loadAdminReceipts();
+  });
+
+  $('#settingsForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const payload = { lineId: state.lineId };
+    const receiptTemplateDocId = $('#receiptTemplateDocId').value.trim();
+    const expenseVoucherTemplateDocId = $('#expenseVoucherTemplateDocId').value.trim();
+    const emailReplyTemplate = $('#emailReplyTemplate').value;
+    const incomeCategories = $('#incomeCategories').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    const expenseCategories = $('#expenseCategories').value.split('\n').map(s=>s.trim()).filter(Boolean);
+
+    if(receiptTemplateDocId!=='') payload.receiptTemplateDocId = receiptTemplateDocId;
+    if(expenseVoucherTemplateDocId!=='') payload.expenseVoucherTemplateDocId = expenseVoucherTemplateDocId;
+    payload.emailReplyTemplate = emailReplyTemplate;
+    payload.incomeCategories = incomeCategories;
+    payload.expenseCategories = expenseCategories;
+
+    await api('updateSettings', payload);
+    toast('設定已更新','success');
+    bootstrap.Modal.getInstance($('#settingsModal')).hide();
+    await loadSettings();
+  });
+
+  async function loadAdminOverview(){
+    // 以現有 API 彙整概覽
+    const [{ data: donations }, { data: expenses }, { data: activities }, { data: vol }] = await Promise.all([
+      api('getDonations',{ lineId: state.lineId }),
+      api('getExpenses',{ lineId: state.lineId }),
+      api('getActivities',{}),
+      api('getVolunteerData',{ lineId: state.lineId })
+    ]);
+
+    const txIncome = (donations||[]).reduce((s,r)=> s + (Number(r.amount)||0), 0);
+    const txExpense = (expenses||[]).reduce((s,r)=> s + (Number(r.amount)||0), 0);
+    const balance = txIncome - txExpense;
+    const receiptsCount = 0; // 若需全域收據數，建議新增後端 getAdminData 或 getAllReceipts
+
+    const ov = $('#adminOverview');
+    ov.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-icon"><i class="bi bi-wallet2"></i></div><div class="stat-value">${txIncome.toLocaleString()}</div><div class="stat-label">總收入（我的）</div></div>
+        <div class="stat-card"><div class="stat-icon"><i class="bi bi-cart-dash"></i></div><div class="stat-value">${txExpense.toLocaleString()}</div><div class="stat-label">總支出（我的）</div></div>
+        <div class="stat-card"><div class="stat-icon"><i class="bi bi-piggy-bank"></i></div><div class="stat-value">${balance.toLocaleString()}</div><div class="stat-label">當前餘額（我的）</div></div>
+        <div class="stat-card"><div class="stat-icon"><i class="bi bi-receipt"></i></div><div class="stat-value">${receiptsCount}</div><div class="stat-label">收據數量</div></div>
+      </div>
+      <div class="mt-2 text-muted small">
+        提示：若需全體資料總覽，請於後端新增 getAdminData 或各別的全域查詢 API。
+      </div>
+    `;
+  }
+
+  async function loadAdminReceipts(){
+    // 目前僅能載入「我的收據」，如需全體收據請新增後端 API
+    const { data:list } = await api('getMyReceipts',{ lineId: state.lineId });
+    const tb = $('#adminReceiptsTableBody');
+    if(!list || !list.length){
+      tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted">尚無資料</td></tr>`;
+      return;
+    }
+    tb.innerHTML = list.map(r=>`
+      <tr>
+        <td>${fmtDate(r.issueDate)}</td>
+        <td>${r.receiptNumber||'-'}</td>
+        <td class="text-truncate" style="max-width:140px;">${r.lineId||'-'}</td>
+        <td>${r.type||'-'}</td>
+        <td>${Number(r.amount||0).toLocaleString()}</td>
+        <td>${r.status||'-'}</td>
+        <td>${r.pdfUrl? `<a href="${r.pdfUrl}" target="_blank">檢視</a>`:'-'}</td>
+      </tr>
+    `).join('');
+  }
+
+  /* 初始化 */
+  document.addEventListener('DOMContentLoaded', async ()=>{
+    bindNav();
+    try{
+      await initLIFF();
+    }catch(e){
+      console.error(e);
+      toast('LIFF 初始化失敗','error',4000);
+    }
+  });
+  </script>
+
+  </body>
+  </html>
