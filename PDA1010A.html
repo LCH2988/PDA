@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>帕金森病友會</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .tab-active { border-bottom: 3px solid #10b981; color: #10b981; font-weight: 600; }
+    .loading { border: 3px solid #f3f3f3; border-top: 3px solid #10b981; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="app"></div>
+  
+  <script>
+    const API_URL = 'https://script.google.com/macros/s/AKfycbzAmAau7te3LZnr0bpTNUCrQzaSv_a3F9fZ9jKdtOpho6WA47g-clUXVdwJhzBmk3mmIA/exec';
+    const API_KEY = 'AAbb8520258185202581';
+    let liffProfile = null;
+    
+    async function callAPI(action, data = {}) {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: API_KEY, action, ...data })
+      });
+      return await res.json();
+    }
+    
+    async function initLiff() {
+      try {
+        await liff.init({ liffId: '1656516134-X9oq92g9' });
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return;
+        }
+        liffProfile = await liff.getProfile();
+        checkRegistration();
+      } catch (e) {
+        alert('LIFF 初始化失敗: ' + e);
+      }
+    }
+    
+    async function checkRegistration() {
+      const result = await callAPI('getUserInfo', { lineId: liffProfile.userId });
+      if (result.success) {
+        showMainApp(result.data);
+      } else {
+        showRegistrationForm();
+      }
+    }
+    
+    function showRegistrationForm() {
+      document.getElementById('app').innerHTML = `
+        <div class="min-h-screen flex items-center justify-center p-4">
+          <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+            <h2 class="text-2xl font-bold text-center mb-6">會員註冊</h2>
+            <form id="regForm" class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium mb-1">真實姓名 *</label>
+                <input type="text" id="realName" required class="w-full border rounded px-3 py-2">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1">會員類型 *</label>
+                <select id="memberType" required class="w-full border rounded px-3 py-2">
+                  <option value="">請選擇</option>
+                  <option value="病友">病友</option>
+                  <option value="家屬">家屬</option>
+                  <option value="志工">志工</option>
+                </select>
+              </div>
+              <button type="submit" class="w-full bg-green-500 text-white py-3 rounded-lg font-semibold">
+                完成註冊
+              </button>
+            </form>
+          </div>
+        </div>
+      `;
+      
+      document.getElementById('regForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const result = await callAPI('registerUser', {
+          lineId: liffProfile.userId,
+          lineName: liffProfile.displayName,
+          realName: document.getElementById('realName').value,
+          memberType: document.getElementById('memberType').value
+        });
+        if (result.success) {
+          alert('註冊成功！');
+          checkRegistration();
+        } else {
+          alert('註冊失敗: ' + result.message);
+        }
+      };
+    }
+    
+    function showMainApp(userData) {
+      document.getElementById('app').innerHTML = `
+        <div class="pb-16">
+          <div class="bg-green-500 text-white p-4">
+            <h1 class="text-xl font-bold">帕金森病友會</h1>
+            <p class="text-sm">歡迎，${userData.realName || userData.lineName}</p>
+          </div>
+          
+          <div id="content" class="p-4"></div>
+          
+          <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex">
+            <button onclick="showTab('dashboard')" class="flex-1 py-3 text-center tab-active" data-tab="dashboard">
+              首頁
+            </button>
+            <button onclick="showTab('activities')" class="flex-1 py-3 text-center" data-tab="activities">
+              活動
+            </button>
+            <button onclick="showTab('volunteer')" class="flex-1 py-3 text-center" data-tab="volunteer">
+              志工
+            </button>
+            <button onclick="showTab('finance')" class="flex-1 py-3 text-center" data-tab="finance">
+              財務
+            </button>
+            <button onclick="showTab('profile')" class="flex-1 py-3 text-center" data-tab="profile">
+              我的
+            </button>
+          </nav>
+        </div>
+      `;
+      
+      showTab('dashboard');
+    }
+    
+    window.showTab = function(tab) {
+      document.querySelectorAll('[data-tab]').forEach(btn => {
+        btn.classList.remove('tab-active');
+      });
+      document.querySelector(`[data-tab="${tab}"]`).classList.add('tab-active');
+      
+      const tabs = {
+        dashboard: showDashboard,
+        activities: showActivities,
+        volunteer: showVolunteer,
+        finance: showFinance,
+        profile: showProfile
+      };
+      
+      if (tabs[tab]) tabs[tab]();
+    };
+    
+    async function showDashboard() {
+      document.getElementById('content').innerHTML = '<div class="flex justify-center py-8"><div class="loading"></div></div>';
+      const result = await callAPI('getDashboardData', { lineId: liffProfile.userId });
+      if (result.success) {
+        const d = result.data;
+        document.getElementById('content').innerHTML = `
+          <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div class="bg-white p-4 rounded-lg shadow">
+                <div class="text-2xl font-bold text-green-600">${d.totalActivities}</div>
+                <div class="text-sm text-gray-600">開放活動</div>
+              </div>
+              <div class="bg-white p-4 rounded-lg shadow">
+                <div class="text-2xl font-bold text-blue-600">${d.myRegistrations}</div>
+                <div class="text-sm text-gray-600">我的報名</div>
+              </div>
+              <div class="bg-white p-4 rounded-lg shadow">
+                <div class="text-2xl font-bold text-purple-600">${d.myVolunteerHours}</div>
+                <div class="text-sm text-gray-600">志工時數</div>
+              </div>
+              <div class="bg-white p-4 rounded-lg shadow">
+                <div class="text-2xl font-bold text-orange-600">$${d.myDonationAmount}</div>
+                <div class="text-sm text-gray-600">捐款總額</div>
+              </div>
+            </div>
+            
+            <div class="bg-white rounded-lg shadow p-4">
+              <h3 class="font-bold mb-3">最新活動</h3>
+              ${d.recentActivity.length ? d.recentActivity.map(a => `
+                <div class="border-b py-2 last:border-0">
+                  <div class="font-medium">${a.title}</div>
+                  <div class="text-sm text-gray-600">${a.date}</div>
+                </div>
+              `).join('') : '<p class="text-gray-500 text-center py-4">暫無活動</p>'}
+            </div>
+          </div>
+        `;
+      }
+    }
+    
+    async function showActivities() {
+      document.getElementById('content').innerHTML = '<div class="flex justify-center py-8"><div class="loading"></div></div>';
+      const result = await callAPI('getActivities');
+      if (result.success) {
+        document.getElementById('content').innerHTML = `
+          <div class="space-y-3">
+            ${result.data.length ? result.data.map(act => `
+              <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-bold text-lg">${act.title}</h3>
+                <p class="text-sm text-gray-600 mt-1">${act.description || ''}</p>
+                <div class="flex justify-between items-center mt-3">
+                  <span class="text-sm text-gray-500">${act.date} ${act.time || ''}</span>
+                  <button onclick="registerActivity('${act.id}')" class="bg-green-500 text-white px-4 py-2 rounded text-sm">
+                    報名
+                  </button>
+                </div>
+              </div>
+            `).join('') : '<p class="text-center text-gray-500 py-8">暫無活動</p>'}
+          </div>
+        `;
+      }
+    }
+    
+    window.registerActivity = async function(activityId) {
+      if (!confirm('確定要報名此活動嗎？')) return;
+      const result = await callAPI('registerActivity', {
+        lineId: liffProfile.userId,
+        activityId
+      });
+      alert(result.message);
+      if (result.success) showActivities();
+    };
+    
+    async function showVolunteer() {
+      document.getElementById('content').innerHTML = '<div class="flex justify-center py-8"><div class="loading"></div></div>';
+      const result = await callAPI('getVolunteerData', { lineId: liffProfile.userId });
+      if (result.success) {
+        const d = result.data;
+        document.getElementById('content').innerHTML = `
+          <div class="space-y-4">
+            <div class="bg-white rounded-lg shadow p-4">
+              <h3 class="font-bold mb-2">我的志工統計</h3>
+              <div class="text-2xl font-bold text-green-600">${d.stats.totalHours} 小時</div>
+              <div class="text-sm text-gray-600">累計服務時數</div>
+            </div>
+            
+            <h3 class="font-bold">可報名志工需求</h3>
+            ${d.needs.length ? d.needs.map(need => `
+              <div class="bg-white rounded-lg shadow p-4">
+                <h4 class="font-bold">${need.title}</h4>
+                <p class="text-sm text-gray-600 mt-1">${need.description}</p>
+                <div class="flex justify-between items-center mt-3">
+                  <span class="text-sm">${need.date} | ${need.hours}小時</span>
+                  <button onclick="applyVolunteer('${need.id}')" class="bg-purple-500 text-white px-4 py-2 rounded text-sm">
+                    報名
+                  </button>
+                </div>
+              </div>
+            `).join('') : '<p class="text-center text-gray-500 py-4">暫無志工需求</p>'}
+          </div>
+        `;
+      }
+    }
+    
+    window.applyVolunteer = async function(needId) {
+      if (!confirm('確定要報名此志工服務嗎？')) return;
+      const result = await callAPI('applyVolunteer', {
+        lineId: liffProfile.userId,
+        needId
+      });
+      alert(result.message);
+      if (result.success) showVolunteer();
+    };
+    
+    async function showFinance() {
+      document.getElementById('content').innerHTML = '<div class="flex justify-center py-8"><div class="loading"></div></div>';
+      const result = await callAPI('getMyFinance', { lineId: liffProfile.userId });
+      if (result.success) {
+        const d = result.data;
+        document.getElementById('content').innerHTML = `
+          <div class="space-y-4">
+            <div class="bg-white rounded-lg shadow p-4">
+              <h3 class="font-bold mb-3">我的財務紀錄</h3>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <div class="text-2xl font-bold text-green-600">$${d.totalDonation}</div>
+                  <div class="text-sm text-gray-600">捐款總額</div>
+                </div>
+                <div>
+                  <div class="text-2xl font-bold text-blue-600">${d.donations.length}</div>
+                  <div class="text-sm text-gray-600">捐款次數</div>
+                </div>
+              </div>
+            </div>
+            
+            <button onclick="showDonationForm()" class="w-full bg-green-500 text-white py-3 rounded-lg font-semibold">
+              我要捐款
+            </button>
+            
+            <h3 class="font-bold">捐款紀錄</h3>
+            ${d.donations.length ? d.donations.map(don => `
+              <div class="bg-white rounded-lg shadow p-4">
+                <div class="flex justify-between items-start">
+                  <div>
+                    <div class="font-bold">$${don.amount}</div>
+                    <div class="text-sm text-gray-600">${don.category}</div>
+                    <div class="text-xs text-gray-500">${new Date(don.createdAt).toLocaleDateString()}</div>
+                  </div>
+                  <span class="px-2 py-1 rounded text-xs ${
+                    don.status === '已入帳' ? 'bg-green-100 text-green-800' : 
+                    don.status === '待確認' ? 'bg-yellow-100 text-yellow-800' : 
+                    'bg-gray-100 text-gray-800'
+                  }">${don.status}</span>
+                </div>
+                ${don.receiptNumber ? `<div class="text-xs text-blue-600 mt-2">收據號碼: ${don.receiptNumber}</div>` : ''}
+              </div>
+            `).join('') : '<p class="text-center text-gray-500 py-4">尚無捐款紀錄</p>'}
+            
+            <h3 class="font-bold mt-6">支出申請</h3>
+            <button onclick="showExpenseForm()" class="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold mb-3">
+              申請支出
+            </button>
+            ${d.expenses.length ? d.expenses.map(exp => `
+              <div class="bg-white rounded-lg shadow p-4">
+                <div class="flex justify-between items-start">
+                  <div>
+                    <div class="font-bold">$${exp.amount}</div>
+                    <div class="text-sm text-gray-600">${exp.category}</div>
+                    <div class="text-xs text-gray-500">${exp.description || ''}</div>
+                  </div>
+                  <span class="px-2 py-1 rounded text-xs ${
+                    exp.status === '已核准' ? 'bg-green-100 text-green-800' : 
+                    exp.status === '待審核' ? 'bg-yellow-100 text-yellow-800' : 
+                    exp.status === '已拒絕' ? 'bg-red-100 text-red-800' : 
+                    'bg-gray-100 text-gray-800'
+                  }">${exp.status}</span>
+                </div>
+              </div>
+            `).join('') : '<p class="text-center text-gray-500 py-4">尚無支出申請</p>'}
+          </div>
+        `;
+      }
+    }
+    
+    window.showDonationForm = function() {
+      document.getElementById('content').innerHTML = `
+        <div class="bg-white rounded-lg shadow p-4">
+          <h3 class="font-bold text-lg mb-4">捐款申請</h3>
+          <form id="donationForm" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1">捐款類別 *</label>
+              <select id="donCategory" required class="w-full border rounded px-3 py-2">
+                <option value="">請選擇</option>
+                <option value="一般捐款">一般捐款</option>
+                <option value="活動贊助">活動贊助</option>
+                <option value="指定用途">指定用途</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">金額 *</label>
+              <input type="number" id="donAmount" required min="1" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">說明</label>
+              <textarea id="donDesc" class="w-full border rounded px-3 py-2" rows="3"></textarea>
+            </div>
+            <div>
+              <label class="flex items-center">
+                <input type="checkbox" id="needReceipt" class="mr-2">
+                <span class="text-sm">需要捐款收據</span>
+              </label>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" onclick="showFinance()" class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg">
+                取消
+              </button>
+              <button type="submit" class="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold">
+                提交
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+      
+      document.getElementById('donationForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const result = await callAPI('createDonation', {
+          lineId: liffProfile.userId,
+          category: document.getElementById('donCategory').value,
+          amount: document.getElementById('donAmount').value,
+          description: document.getElementById('donDesc').value,
+          needReceipt: document.getElementById('needReceipt').checked
+        });
+        alert(result.message);
+        if (result.success) showFinance();
+      };
+    };
+    
+    window.showExpenseForm = function() {
+      document.getElementById('content').innerHTML = `
+        <div class="bg-white rounded-lg shadow p-4">
+          <h3 class="font-bold text-lg mb-4">支出申請</h3>
+          <form id="expenseForm" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1">支出類別 *</label>
+              <select id="expCategory" required class="w-full border rounded px-3 py-2">
+                <option value="">請選擇</option>
+                <option value="活動費用">活動費用</option>
+                <option value="行政支出">行政支出</option>
+                <option value="設備支出">設備支出</option>
+                <option value="其他支出">其他支出</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">金額 *</label>
+              <input type="number" id="expAmount" required min="1" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">說明 *</label>
+              <textarea id="expDesc" required class="w-full border rounded px-3 py-2" rows="3"></textarea>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">收據圖片連結</label>
+              <input type="text" id="expReceipt" placeholder="請上傳至雲端後貼上連結" class="w-full border rounded px-3 py-2">
+            </div>
+            <div class="flex gap-2">
+              <button type="button" onclick="showFinance()" class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg">
+                取消
+              </button>
+              <button type="submit" class="flex-1 bg-blue-500 text-white py-3 rounded-lg font-semibold">
+                提交
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+      
+      document.getElementById('expenseForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const result = await callAPI('createExpense', {
+          lineId: liffProfile.userId,
+          category: document.getElementById('expCategory').value,
+          amount: document.getElementById('expAmount').value,
+          description: document.getElementById('expDesc').value,
+          receiptImage: document.getElementById('expReceipt').value
+        });
+        alert(result.message);
+        if (result.success) showFinance();
+      };
+    };
+    
+    async function showProfile() {
+      document.getElementById('content').innerHTML = '<div class="flex justify-center py-8"><div class="loading"></div></div>';
+      const result = await callAPI('getUserInfo', { lineId: liffProfile.userId });
+      if (result.success) {
+        const u = result.data;
+        document.getElementById('content').innerHTML = `
+          <div class="space-y-4">
+            <div class="bg-white rounded-lg shadow p-4">
+              <div class="flex items-center gap-4 mb-4">
+                <img src="${liffProfile.pictureUrl}" class="w-16 h-16 rounded-full">
+                <div>
+                  <div class="font-bold text-lg">${u.realName || u.lineName}</div>
+                  <div class="text-sm text-gray-600">${u.memberType}</div>
+                </div>
+              </div>
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                  <span class="text-gray-600">電話</span>
+                  <span>${u.phone || '未設定'}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-600">Email</span>
+                  <span>${u.email || '未設定'}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-600">加入日期</span>
+                  <span>${u.joinDate ? new Date(u.joinDate).toLocaleDateString() : '-'}</span>
+                </div>
+              </div>
+            </div>
+            
+            <button onclick="showEditProfile()" class="w-full bg-green-500 text-white py-3 rounded-lg font-semibold">
+              編輯個人資料
+            </button>
+            
+            <div class="bg-white rounded-lg shadow p-4">
+              <h3 class="font-bold mb-3">快速功能</h3>
+              <div class="space-y-2">
+                <button onclick="showMyRegistrations()" class="w-full text-left px-4 py-3 hover:bg-gray-50 rounded">
+                  我的活動報名
+                </button>
+                <button onclick="showMyVolunteerRecords()" class="w-full text-left px-4 py-3 hover:bg-gray-50 rounded">
+                  我的志工紀錄
+                </button>
+                <button onclick="showMyDonations()" class="w-full text-left px-4 py-3 hover:bg-gray-50 rounded">
+                  我的捐款紀錄
+                </button>
+              </div>
+            </div>
+            
+            <button onclick="liff.logout(); location.reload();" class="w-full bg-red-500 text-white py-3 rounded-lg">
+              登出
+            </button>
+          </div>
+        `;
+      }
+    }
+    
+    window.showEditProfile = async function() {
+      const result = await callAPI('getUserInfo', { lineId: liffProfile.userId });
+      if (!result.success) return;
+      const u = result.data;
+      
+      document.getElementById('content').innerHTML = `
+        <div class="bg-white rounded-lg shadow p-4">
+          <h3 class="font-bold text-lg mb-4">編輯個人資料</h3>
+          <form id="profileForm" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1">真實姓名</label>
+              <input type="text" id="realName" value="${u.realName || ''}" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">電話</label>
+              <input type="tel" id="phone" value="${u.phone || ''}" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Email</label>
+              <input type="email" id="email" value="${u.email || ''}" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">生日</label>
+              <input type="date" id="birthday" value="${u.birthday || ''}" class="w-full border rounded px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">地址</label>
+              <textarea id="address" class="w-full border rounded px-3 py-2" rows="2">${u.address || ''}</textarea>
+            </div>
+            
+            ${u.memberType === '病友' ? `
+              <div class="border-t pt-4">
+                <h4 class="font-bold mb-3">病友資訊</h4>
+                <div class="space-y-3">
+                  <div>
+                    <label class="block text-sm font-medium mb-1">確診日期</label>
+                    <input type="date" id="diagnosisDate" value="${u.diagnosisDate || ''}" class="w-full border rounded px-3 py-2">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">疾病階段</label>
+                    <select id="diseaseStage" class="w-full border rounded px-3 py-2">
+                      <option value="">請選擇</option>
+                      <option value="第一期" ${u.diseaseStage === '第一期' ? 'selected' : ''}>第一期</option>
+                      <option value="第二期" ${u.diseaseStage === '第二期' ? 'selected' : ''}>第二期</option>
+                      <option value="第三期" ${u.diseaseStage === '第三期' ? 'selected' : ''}>第三期</option>
+                      <option value="第四期" ${u.diseaseStage === '第四期' ? 'selected' : ''}>第四期</option>
+                      <option value="第五期" ${u.diseaseStage === '第五期' ? 'selected' : ''}>第五期</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">用藥情況</label>
+                    <textarea id="medications" class="w-full border rounded px-3 py-2" rows="2">${u.medications || ''}</textarea>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1">主要症狀</label>
+                    <textarea id="symptoms" class="w-full border rounded px-3 py-2" rows="2">${u.symptoms || ''}</textarea>
+                  </div>
+                </div>
+              </div>
+            ` : ''}
+            
+            <div class="flex gap-2">
+              <button type="button" onclick="showProfile()" class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg">
+                取消
+              </button>
+              <button type="submit" class="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold">
+                儲存
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+      
+      document.getElementById('profileForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const data = {
+          lineId: liffProfile.userId,
+          realName: document.getElementById('realName').value,
+          phone: document.getElementById('phone').value,
+          email: document.getElementById('email').value,
+          birthday: document.getElementById('birthday').value,
+          address: document.getElementById('address').value
+        };
+        
+        if (u.memberType === '病友') {
+          data.diagnosisDate = document.getElementById('diagnosisDate').value;
+          data.diseaseStage = document.getElementById('diseaseStage').value;
+          data.medications = document.getElementById('medications').value;
+          data.symptoms = document.getElementById('symptoms').value;
+        }
+        
+        const result = await callAPI('updateUserInfo', data);
+        alert(result.message);
+        if (result.success) showProfile();
+      };
+    };
+    
+    window.showMyRegistrations = async function() {
+      const result = await callAPI('getMyRegistrations', { lineId: liffProfile.userId });
+      if (!result.success) return alert(result.message);
+      
+      document.getElementById('content').innerHTML = `
+        <div class="space-y-3">
+          <button onclick="showProfile()" class="text-green-600 mb-2">← 返回</button>
+          <h3 class="font-bold text-lg">我的活動報名</h3>
+          ${result.data.length ? result.data.map(reg => `
+            <div class="bg-white rounded-lg shadow p-4">
+              <div class="font-bold">${reg.activityTitle}</div>
+              <div class="text-sm text-gray-600 mt-1">報名時間: ${new Date(reg.registrationTime).toLocaleString()}</div>
+              <div class="flex justify-between items-center mt-2">
+                <span class="px-2 py-1 rounded text-xs ${
+                  reg.status === '已確認' ? 'bg-green-100 text-green-800' : 
+                  reg.status === '已取消' ? 'bg-red-100 text-red-800' : 
+                  'bg-yellow-100 text-yellow-800'
+                }">${reg.status}</span>
+                ${reg.status === '已確認' && !reg.attended ? `
+                  <button onclick="submitFeedback('${reg.activityId}', '${reg.activityTitle}')" class="text-blue-600 text-sm">
+                    填寫回饋
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `).join('') : '<p class="text-center text-gray-500 py-8">尚無報名紀錄</p>'}
+        </div>
+      `;
+    };
+    
+    window.submitFeedback = function(activityId, activityTitle) {
+      document.getElementById('content').innerHTML = `
+        <div class="bg-white rounded-lg shadow p-4">
+          <h3 class="font-bold text-lg mb-4">活動回饋</h3>
+          <div class="mb-4 text-gray-700">${activityTitle}</div>
+          <form id="feedbackForm" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1">評分 *</label>
+              <select id="rating" required class="w-full border rounded px-3 py-2">
+                <option value="">請選擇</option>
+                <option value="5">⭐⭐⭐⭐⭐ 非常滿意</option>
+                <option value="4">⭐⭐⭐⭐ 滿意</option>
+                <option value="3">⭐⭐⭐ 普通</option>
+                <option value="2">⭐⭐ 不滿意</option>
+                <option value="1">⭐ 非常不滿意</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">意見與建議 *</label>
+              <textarea id="comment" required class="w-full border rounded px-3 py-2" rows="4"></textarea>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" onclick="showMyRegistrations()" class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg">
+                取消
+              </button>
+              <button type="submit" class="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold">
+                提交
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+      
+      document.getElementById('feedbackForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const result = await callAPI('createFeedback', {
+          lineId: liffProfile.userId,
+          activityId,
+          activityTitle,
+          rating: document.getElementById('rating').value,
+          comment: document.getElementById('comment').value
+        });
+        alert(result.message);
+        if (result.success) showMyRegistrations();
+      };
+    };
+    
+    window.showMyVolunteerRecords = async function() {
+      const result = await callAPI('getMyVolunteerRecords', { lineId: liffProfile.userId });
+      if (!result.success) return alert(result.message);
+      
+      document.getElementById('content').innerHTML = `
+        <div class="space-y-3">
+          <button onclick="showProfile()" class="text-green-600 mb-2">← 返回</button>
+          <h3 class="font-bold text-lg">我的志工紀錄</h3>
+          <div class="bg-green-50 p-4 rounded-lg">
+            <div class="text-2xl font-bold text-green-600">${result.data.stats.totalHours} 小時</div>
+            <div class="text-sm text-gray-600">累計服務時數</div>
+          </div>
+          ${result.data.records.length ? result.data.records.map(rec => `
+            <div class="bg-white rounded-lg shadow p-4">
+              <div class="font-bold">${rec.title}</div>
+              <div class="text-sm text-gray-600 mt-1">${rec.date} | ${rec.hours} 小時</div>
+              <span class="inline-block mt-2 px-2 py-1 rounded text-xs ${
+                rec.status === '已完成' ? 'bg-green-100 text-green-800' : 
+                rec.status === '已媒合' ? 'bg-blue-100 text-blue-800' : 
+                'bg-yellow-100 text-yellow-800'
+              }">${rec.status}</span>
+            </div>
+          `).join('') : '<p class="text-center text-gray-500 py-8">尚無志工紀錄</p>'}
+        </div>
+      `;
+    };
+    
+    window.showMyDonations = async function() {
+      const result = await callAPI('getMyDonations', { lineId: liffProfile.userId });
+      if (!result.success) return alert(result.message);
+      
+      document.getElementById('content').innerHTML = `
+        <div class="space-y-3">
+          <button onclick="showProfile()" class="text-green-600 mb-2">← 返回</button>
+          <h3 class="font-bold text-lg">我的捐款紀錄</h3>
+          <div class="bg-green-50 p-4 rounded-lg">
+            <div class="text-2xl font-bold text-green-600">$${result.data.total}</div>
+            <div class="text-sm text-gray-600">累計捐款金額</div>
+          </div>
+          ${result.data.donations.length ? result.data.donations.map(don => `
+            <div class="bg-white rounded-lg shadow p-4">
+              <div class="flex justify-between items-start">
+                <div>
+                  <div class="font-bold">$${don.amount}</div>
+                  <div class="text-sm text-gray-600">${don.category}</div>
+                  <div class="text-xs text-gray-500">${new Date(don.createdAt).toLocaleDateString()}</div>
+                </div>
+                <span class="px-2 py-1 rounded text-xs ${
+                  don.status === '已入帳' ? 'bg-green-100 text-green-800' : 
+                  'bg-yellow-100 text-yellow-800'
+                }">${don.status}</span>
+              </div>
+              ${don.receiptNumber ? `
+                <div class="mt-2 text-xs text-blue-600">
+                  收據號碼: ${don.receiptNumber}
+                </div>
+              ` : ''}
+            </div>
+          `).join('') : '<p class="text-center text-gray-500 py-8">尚無捐款紀錄</p>'}
+        </div>
+      `;
+    };
+    
+    initLiff();
+  </script>
+</body>
+</html>
+
