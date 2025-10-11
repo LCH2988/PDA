@@ -527,8 +527,10 @@
   </div>
   
   <script>
-    const API_URL = 'https://script.google.com/macros/s/AKfycbzpOkQc8i6ZJLnSW58nVFhqx847vZ8s-ZHQnmqJquNFX0Dwn6emckDKwQwGYHlcUA9kmw/exec'; // 替換成你的 GAS Web App URL
-    const LINE_ID = ['U09b4c2535730fbb5643274ba1526ec9c']; // 替換成管理員的 LINE ID
+     // ========== 配置設定 ==========
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyeckYETUsrXaZCYMUoNjtDNy0CrEPEreUJh_n4XlQGs3VdP6247ExTROVIPkTVMM815w/exec'; // 🔴 必須替換
+    const API_KEY = 'AAbb8520258185202581';
+    const ADMIN_LINE_ID = ['U09b4c2535730fbb5643274ba1526ec9c']; // 🔴 必須替換為您的管理員 LINE ID
     
     let selectedDonations = [];
     let selectedExpenses = [];
@@ -558,16 +560,34 @@
     
     async function apiCall(action, data = {}) {
       try {
+        const payload = {
+          apiKey: API_KEY,
+          action: action,
+          lineId: ADMIN_LINE_ID,
+          ...data
+        };
+        
         const response = await fetch(API_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, lineId: LINE_ID, ...data })
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload)
         });
-        return await response.json();
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.message || '操作失敗');
+        }
+        
+        return result;
       } catch (error) {
         console.error('API 錯誤:', error);
-        showAlert('網路錯誤，請稍後再試', 'error');
-        return { success: false, message: '網路錯誤' };
+        showAlert('錯誤：' + error.message, 'error');
+        throw error;
       }
     }
     
@@ -577,21 +597,34 @@
       alertDiv.textContent = message;
       
       const container = document.querySelector('.tab-content.active .section');
-      container.insertBefore(alertDiv, container.firstChild);
-      
-      setTimeout(() => alertDiv.remove(), 5000);
+      if (container) {
+        container.insertBefore(alertDiv, container.firstChild);
+        setTimeout(() => alertDiv.remove(), 5000);
+      } else {
+        alert(message);
+      }
     }
     
     function formatDate(date) {
       if (!date) return '-';
-      const d = new Date(date);
-      return d.toLocaleDateString('zh-TW');
+      try {
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return '-';
+        return d.toLocaleDateString('zh-TW');
+      } catch {
+        return '-';
+      }
     }
     
     function formatDateTime(date) {
       if (!date) return '-';
-      const d = new Date(date);
-      return d.toLocaleString('zh-TW');
+      try {
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return '-';
+        return d.toLocaleString('zh-TW');
+      } catch {
+        return '-';
+      }
     }
     
     function formatCurrency(amount) {
@@ -604,63 +637,61 @@
       const table = document.getElementById('membersTable');
       table.innerHTML = '<div class="loading">載入中...</div>';
       
-      const result = await apiCall('getAllMembers');
-      
-      if (!result.success) {
-        table.innerHTML = '<div class="empty-state">載入失敗</div>';
-        return;
-      }
-      
-      const memberType = document.getElementById('memberTypeFilter').value;
-      const status = document.getElementById('memberStatusFilter').value;
-      
-      let members = result.data || [];
-      if (memberType) members = members.filter(m => m.memberType === memberType);
-      if (status) members = members.filter(m => m.status === status);
-      
-      if (members.length === 0) {
-        table.innerHTML = '<div class="empty-state">無會員資料</div>';
-        return;
-      }
-      
-      let html = `
-        <table>
-          <thead>
-            <tr>
-              <th>LINE 名稱</th>
-              <th>真實姓名</th>
-              <th>類型</th>
-              <th>電話</th>
-              <th>Email</th>
-              <th>狀態</th>
-              <th>註冊日期</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-      
-      members.forEach(m => {
-        const statusBadge = m.status === '已註冊' ? 'badge-success' : 'badge-danger';
-        html += `
-          <tr>
-            <td>${m.lineName || '-'}</td>
-            <td>${m.realName || '-'}</td>
-            <td>${m.memberType || '-'}</td>
-            <td>${m.phone || '-'}</td>
-            <td>${m.email || '-'}</td>
-            <td><span class="badge ${statusBadge}">${m.status || '-'}</span></td>
-            <td>${formatDate(m.registerDate)}</td>
-            <td>
-              <button class="btn btn-warning btn-sm" onclick="editMember('${m.lineId}')">編輯</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteMember('${m.lineId}')">停用</button>
-            </td>
-          </tr>
+      try {
+        const result = await apiCall('getAllMembers');
+        
+        const memberType = document.getElementById('memberTypeFilter').value;
+        const status = document.getElementById('memberStatusFilter').value;
+        
+        let members = result.data || [];
+        if (memberType) members = members.filter(m => m.memberType === memberType);
+        if (status) members = members.filter(m => m.status === status);
+        
+        if (members.length === 0) {
+          table.innerHTML = '<div class="empty-state">無會員資料</div>';
+          return;
+        }
+        
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th>LINE 名稱</th>
+                <th>真實姓名</th>
+                <th>類型</th>
+                <th>電話</th>
+                <th>Email</th>
+                <th>狀態</th>
+                <th>註冊日期</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
         `;
-      });
-      
-      html += '</tbody></table>';
-      table.innerHTML = html;
+        
+        members.forEach(m => {
+          const statusBadge = m.status === '已註冊' ? 'badge-success' : 'badge-danger';
+          html += `
+            <tr>
+              <td>${m.lineName || '-'}</td>
+              <td>${m.realName || '-'}</td>
+              <td>${m.memberType || '-'}</td>
+              <td>${m.phone || '-'}</td>
+              <td>${m.email || '-'}</td>
+              <td><span class="badge ${statusBadge}">${m.status || '-'}</span></td>
+              <td>${formatDate(m.joinDate)}</td>
+              <td>
+                <button class="btn btn-danger btn-sm" onclick="deleteMember('${m.lineId}')">停用</button>
+              </td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        table.innerHTML = html;
+      } catch (error) {
+        table.innerHTML = '<div class="empty-state">載入失敗：' + error.message + '</div>';
+      }
     }
     
     async function importMembers() {
@@ -670,20 +701,19 @@
         return;
       }
       
-      const result = await apiCall('batchImportMembers', { csvData });
-      
-      if (result.success) {
+      try {
+        const result = await apiCall('batchImportMembers', { csvData });
         showAlert(`匯入成功：${result.data.imported} 筆，跳過：${result.data.skipped} 筆`);
         document.getElementById('csvData').value = '';
         loadMembers();
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('匯入失敗：' + error.message, 'error');
       }
     }
     
     function downloadTemplate() {
       const template = 'lineName,realName,memberType,phone,email,birthday,address\n張三,張三,病友,0912345678,test@example.com,1970/01/01,台北市';
-      const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob(['\ufeff' + template], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = '會員匯入範本.csv';
@@ -693,13 +723,12 @@
     async function deleteMember(lineId) {
       if (!confirm('確定要停用此會員嗎？')) return;
       
-      const result = await apiCall('deleteMember', { targetLineId: lineId });
-      
-      if (result.success) {
+      try {
+        await apiCall('deleteMember', { targetLineId: lineId });
         showAlert('會員已停用');
         loadMembers();
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('停用失敗：' + error.message, 'error');
       }
     }
     
@@ -709,61 +738,74 @@
       const table = document.getElementById('donationsTable');
       table.innerHTML = '<div class="loading">載入中...</div>';
       
-      const result = await apiCall('getPendingDonations');
-      
-      if (!result.success) {
-        table.innerHTML = '<div class="empty-state">載入失敗</div>';
-        return;
-      }
-      
-      const donations = result.data || [];
-      document.getElementById('pendingDonationsCount').textContent = donations.length;
-      
-      if (donations.length === 0) {
-        table.innerHTML = '<div class="empty-state">無待確認捐款</div>';
-        return;
-      }
-      
-      let html = `
-        <table>
-          <thead>
-            <tr>
-              <th><input type="checkbox" onchange="toggleAllDonations(this)"></th>
-              <th>捐款人</th>
-              <th>類別</th>
-              <th>金額</th>
-              <th>捐款日期</th>
-              <th>狀態</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-      
-      donations.forEach(d => {
-        html += `
-          <tr>
-            <td><input type="checkbox" class="donation-checkbox" value="${d.donationId}"></td>
-            <td>${d.donorName || d.lineId}</td>
-            <td>${d.category || '-'}</td>
-            <td>${formatCurrency(d.amount)}</td>
-            <td>${formatDate(d.donationDate)}</td>
-            <td><span class="badge badge-warning">${d.status}</span></td>
-            <td>
-              <button class="btn btn-success btn-sm" onclick="confirmSingleDonation('${d.donationId}')">確認入帳</button>
-            </td>
-          </tr>
+      try {
+        const result = await apiCall('getPendingDonations');
+        const donations = result.data || [];
+        
+        document.getElementById('pendingDonationsCount').textContent = donations.length;
+        
+        if (donations.length === 0) {
+          table.innerHTML = '<div class="empty-state">無待確認捐款</div>';
+          return;
+        }
+        
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th><input type="checkbox" onchange="toggleAllDonations(this)"></th>
+                <th>捐款人</th>
+                <th>類別</th>
+                <th>金額</th>
+                <th>捐款日期</th>
+                <th>狀態</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
         `;
-      });
-      
-      html += '</tbody></table>';
-      table.innerHTML = html;
+        
+        donations.forEach(d => {
+          html += `
+            <tr>
+              <td><input type="checkbox" class="donation-checkbox" value="${d.donationId}"></td>
+              <td>${d.donorName || d.lineId}</td>
+              <td>${d.category || '-'}</td>
+              <td>${formatCurrency(d.amount)}</td>
+              <td>${formatDate(d.donationDate)}</td>
+              <td><span class="badge badge-warning">待確認</span></td>
+              <td>
+                <button class="btn btn-success btn-sm" onclick="confirmSingleDonation('${d.donationId}')">確認入帳</button>
+              </td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        table.innerHTML = html;
+      } catch (error) {
+        table.innerHTML = '<div class="empty-state">載入失敗：' + error.message + '</div>';
+      }
     }
     
     function toggleAllDonations(checkbox) {
       document.querySelectorAll('.donation-checkbox').forEach(cb => {
         cb.checked = checkbox.checked;
       });
+    }
+    
+    async function confirmSingleDonation(donationId) {
+      try {
+        await apiCall('confirmDonationIncome', {
+          donationId: donationId,
+          bankDate: new Date().toISOString().split('T')[0],
+          bankAccount: '主要帳戶'
+        });
+        showAlert('捐款已確認');
+        loadPendingDonations();
+      } catch (error) {
+        showAlert('確認失敗：' + error.message, 'error');
+      }
     }
     
     async function batchConfirmSelected() {
@@ -779,13 +821,12 @@
         bankAccount: '主要帳戶'
       }));
       
-      const result = await apiCall('batchConfirmDonations', { donations });
-      
-      if (result.success) {
+      try {
+        const result = await apiCall('batchConfirmDonations', { donations });
         showAlert(`已確認 ${result.data.confirmed} 筆捐款`);
         loadPendingDonations();
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('批次確認失敗：' + error.message, 'error');
       }
     }
     
@@ -798,14 +839,13 @@
       
       const donationIds = Array.from(checkboxes).map(cb => cb.value);
       
-      const result = await apiCall('batchIssueReceipts', { donationIds });
-      
-      if (result.success) {
+      try {
+        const result = await apiCall('batchIssueReceipts', { donationIds });
         const successCount = result.data.results.filter(r => r.success).length;
         showAlert(`已開立 ${successCount} 張收據`);
         loadPendingDonations();
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('批次開立失敗：' + error.message, 'error');
       }
     }
     
@@ -815,53 +855,52 @@
       const table = document.getElementById('expensesTable');
       table.innerHTML = '<div class="loading">載入中...</div>';
       
-      const result = await apiCall('getPendingExpenses');
-      
-      if (!result.success) {
-        table.innerHTML = '<div class="empty-state">載入失敗</div>';
-        return;
-      }
-      
-      const expenses = result.data || [];
-      document.getElementById('pendingExpensesCount').textContent = expenses.length;
-      
-      if (expenses.length === 0) {
-        table.innerHTML = '<div class="empty-state">無待審核支出</div>';
-        return;
-      }
-      
-      let html = `
-        <table>
-          <thead>
-            <tr>
-              <th><input type="checkbox" onchange="toggleAllExpenses(this)"></th>
-              <th>申請人</th>
-              <th>類別</th>
-              <th>金額</th>
-              <th>說明</th>
-              <th>申請日期</th>
-              <th>狀態</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-      
-      expenses.forEach(e => {
-        html += `
-          <tr>
-            <td><input type="checkbox" class="expense-checkbox" value="${e.expenseId}"></td>
-            <td>${e.applicantName || e.lineId}</td>
-            <td>${e.category || '-'}</td>
-            <td>${formatCurrency(e.amount)}</td>
-            <td>${e.description || '-'}</td>
-            <td>${formatDate(e.requestDate)}</td>
-            <td><span class="badge badge-warning">${e.status}</span></td>
-          </tr>
+      try {
+        const result = await apiCall('getPendingExpenses');
+        const expenses = result.data || [];
+        
+        document.getElementById('pendingExpensesCount').textContent = expenses.length;
+        
+        if (expenses.length === 0) {
+          table.innerHTML = '<div class="empty-state">無待審核支出</div>';
+          return;
+        }
+        
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th><input type="checkbox" onchange="toggleAllExpenses(this)"></th>
+                <th>申請人</th>
+                <th>類別</th>
+                <th>金額</th>
+                <th>說明</th>
+                <th>申請日期</th>
+                <th>狀態</th>
+              </tr>
+            </thead>
+            <tbody>
         `;
-      });
-      
-      html += '</tbody></table>';
-      table.innerHTML = html;
+        
+        expenses.forEach(e => {
+          html += `
+            <tr>
+              <td><input type="checkbox" class="expense-checkbox" value="${e.expenseId}"></td>
+              <td>${e.applicantName || e.lineId}</td>
+              <td>${e.category || '-'}</td>
+              <td>${formatCurrency(e.amount)}</td>
+              <td>${e.description || '-'}</td>
+              <td>${formatDate(e.requestDate)}</td>
+              <td><span class="badge badge-warning">審核中</span></td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        table.innerHTML = html;
+      } catch (error) {
+        table.innerHTML = '<div class="empty-state">載入失敗：' + error.message + '</div>';
+      }
     }
     
     function toggleAllExpenses(checkbox) {
@@ -882,18 +921,18 @@
         decision: 'approve',
         paymentInfo: {
           paymentDate: new Date().toISOString().split('T')[0],
-          paymentMethod: '轉帳'
+          paymentMethod: '轉帳',
+          paymentAccount: '主要帳戶'
         }
       }));
       
-      const result = await apiCall('batchApproveExpenses', { expenses });
-      
-      if (result.success) {
+      try {
+        const result = await apiCall('batchApproveExpenses', { expenses });
         const successCount = result.data.results.filter(r => r.success).length;
         showAlert(`已核准 ${successCount} 筆支出`);
         loadPendingExpenses();
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('批次核准失敗：' + error.message, 'error');
       }
     }
     
@@ -911,14 +950,13 @@
         decision: 'reject'
       }));
       
-      const result = await apiCall('batchApproveExpenses', { expenses });
-      
-      if (result.success) {
+      try {
+        const result = await apiCall('batchApproveExpenses', { expenses });
         const successCount = result.data.results.filter(r => r.success).length;
         showAlert(`已拒絕 ${successCount} 筆支出`);
         loadPendingExpenses();
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('批次拒絕失敗：' + error.message, 'error');
       }
     }
     
@@ -932,56 +970,54 @@
       const endDate = document.getElementById('journalEndDate')?.value;
       const type = document.getElementById('journalTypeFilter')?.value;
       
-      const result = await apiCall('getJournal', { startDate, endDate, type });
-      
-      if (!result.success) {
-        table.innerHTML = '<div class="empty-state">載入失敗</div>';
-        return;
-      }
-      
-      const { entries, summary } = result.data;
-      
-      // 更新統計
-      document.getElementById('totalIncome').textContent = formatCurrency(summary.totalIncome);
-      document.getElementById('totalExpense').textContent = formatCurrency(summary.totalExpense);
-      document.getElementById('balance').textContent = formatCurrency(summary.balance);
-      
-      if (entries.length === 0) {
-        table.innerHTML = '<div class="empty-state">無日記帳資料</div>';
-        return;
-      }
-      
-      let html = `
-        <table>
-          <thead>
-            <tr>
-              <th>日期</th>
-              <th>類型</th>
-              <th>類別</th>
-              <th>金額</th>
-              <th>說明</th>
-              <th>建立者</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-      
-      entries.forEach(e => {
-        const typeClass = e.type === '收入' ? 'badge-success' : 'badge-danger';
-        html += `
-          <tr>
-            <td>${formatDate(e.date)}</td>
-            <td><span class="badge ${typeClass}">${e.type}</span></td>
-            <td>${e.category || '-'}</td>
-            <td>${formatCurrency(e.amount)}</td>
-            <td>${e.description || '-'}</td>
-            <td>${e.createdBy || '-'}</td>
-          </tr>
+      try {
+        const result = await apiCall('getJournal', { startDate, endDate, type });
+        const { entries, summary } = result.data;
+        
+        // 更新統計
+        document.getElementById('totalIncome').textContent = formatCurrency(summary.totalIncome);
+        document.getElementById('totalExpense').textContent = formatCurrency(summary.totalExpense);
+        document.getElementById('balance').textContent = formatCurrency(summary.balance);
+        
+        if (entries.length === 0) {
+          table.innerHTML = '<div class="empty-state">無日記帳資料</div>';
+          return;
+        }
+        
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>類型</th>
+                <th>類別</th>
+                <th>金額</th>
+                <th>說明</th>
+                <th>建立者</th>
+              </tr>
+            </thead>
+            <tbody>
         `;
-      });
-      
-      html += '</tbody></table>';
-      table.innerHTML = html;
+        
+        entries.forEach(e => {
+          const typeClass = e.type === '收入' ? 'badge-success' : 'badge-danger';
+          html += `
+            <tr>
+              <td>${formatDate(e.date)}</td>
+              <td><span class="badge ${typeClass}">${e.type}</span></td>
+              <td>${e.category || '-'}</td>
+              <td>${formatCurrency(e.amount)}</td>
+              <td>${e.description || '-'}</td>
+              <td>${e.createdBy || '-'}</td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        table.innerHTML = html;
+      } catch (error) {
+        table.innerHTML = '<div class="empty-state">載入失敗：' + error.message + '</div>';
+      }
     }
     
     async function addJournalEntry() {
@@ -996,29 +1032,27 @@
         return;
       }
       
-      const result = await apiCall('addManualJournalEntry', {
-        date, type, category, amount, description
-      });
-      
-      if (result.success) {
+      try {
+        await apiCall('addManualJournalEntry', {
+          date, type, category, amount, description
+        });
         showAlert('日記帳分錄已新增');
         document.getElementById('journalCategory').value = '';
         document.getElementById('journalAmount').value = '';
         document.getElementById('journalDescription').value = '';
         loadJournal();
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('新增失敗：' + error.message, 'error');
       }
     }
     
     async function exportJournal() {
-      const result = await apiCall('exportJournal');
-      
-      if (result.success) {
+      try {
+        const result = await apiCall('exportJournal');
         window.open(result.data.fileUrl, '_blank');
         showAlert('匯出完成');
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('匯出失敗：' + error.message, 'error');
       }
     }
     
@@ -1028,50 +1062,46 @@
       const table = document.getElementById('volunteersTable');
       table.innerHTML = '<div class="loading">載入中...</div>';
       
-      const result = await apiCall('getPendingVolunteerApplications');
-      
-      if (!result.success) {
-        table.innerHTML = '<div class="empty-state">載入失敗</div>';
-        return;
-      }
-      
-      const volunteers = result.data || [];
-      
-      if (volunteers.length === 0) {
-        table.innerHTML = '<div class="empty-state">無待審核申請</div>';
-        return;
-      }
-      
-      let html = `
-        <table>
-          <thead>
-            <tr>
-              <th><input type="checkbox" onchange="toggleAllVolunteers(this)"></th>
-              <th>申請人</th>
-              <th>志工需求</th>
-              <th>申請日期</th>
-              <th>備註</th>
-              <th>狀態</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-      
-      volunteers.forEach(v => {
-        html += `
-          <tr>
-            <td><input type="checkbox" class="volunteer-checkbox" value="${v.recordId}"></td>
-            <td>${v.applicantName || v.lineId}</td>
-            <td>${v.needId || '-'}</td>
-            <td>${formatDate(v.applyDate)}</td>
-            <td>${v.notes || '-'}</td>
-            <td><span class="badge badge-warning">${v.status}</span></td>
-          </tr>
+      try {
+        const result = await apiCall('getPendingVolunteerApplications');
+        const volunteers = result.data || [];
+        
+        if (volunteers.length === 0) {
+          table.innerHTML = '<div class="empty-state">無待審核申請</div>';
+          return;
+        }
+        
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th><input type="checkbox" onchange="toggleAllVolunteers(this)"></th>
+                <th>申請人</th>
+                <th>志工需求</th>
+                <th>申請日期</th>
+                <th>狀態</th>
+              </tr>
+            </thead>
+            <tbody>
         `;
-      });
-      
-      html += '</tbody></table>';
-      table.innerHTML = html;
+        
+        volunteers.forEach(v => {
+          html += `
+            <tr>
+              <td><input type="checkbox" class="volunteer-checkbox" value="${v.recordId}"></td>
+              <td>${v.applicantName || v.lineId}</td>
+              <td>${v.title || v.needId || '-'}</td>
+              <td>${formatDate(v.applyDate)}</td>
+              <td><span class="badge badge-warning">待審核</span></td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        table.innerHTML = html;
+      } catch (error) {
+        table.innerHTML = '<div class="empty-state">載入失敗：' + error.message + '</div>';
+      }
     }
     
     function toggleAllVolunteers(checkbox) {
@@ -1092,14 +1122,13 @@
         decision: 'approve'
       }));
       
-      const result = await apiCall('batchApproveVolunteerApplications', { applications });
-      
-      if (result.success) {
+      try {
+        const result = await apiCall('batchApproveVolunteerApplications', { applications });
         const successCount = result.data.results.filter(r => r.success).length;
         showAlert(`已核准 ${successCount} 筆申請`);
         loadPendingVolunteers();
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('批次核准失敗：' + error.message, 'error');
       }
     }
     
@@ -1117,14 +1146,13 @@
         decision: 'reject'
       }));
       
-      const result = await apiCall('batchApproveVolunteerApplications', { applications });
-      
-      if (result.success) {
+      try {
+        const result = await apiCall('batchApproveVolunteerApplications', { applications });
         const successCount = result.data.results.filter(r => r.success).length;
         showAlert(`已拒絕 ${successCount} 筆申請`);
         loadPendingVolunteers();
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('批次拒絕失敗：' + error.message, 'error');
       }
     }
     
@@ -1134,73 +1162,76 @@
       const table = document.getElementById('activitiesTable');
       table.innerHTML = '<div class="loading">載入中...</div>';
       
-      const result = await apiCall('getActivities');
-      
-      if (!result.success) {
-        table.innerHTML = '<div class="empty-state">載入失敗</div>';
-        return;
-      }
-      
-      const activities = result.data || [];
-      
-      if (activities.length === 0) {
-        table.innerHTML = '<div class="empty-state">無活動資料</div>';
-        return;
-      }
-      
-      let html = `
-        <table>
-          <thead>
-            <tr>
-              <th>活動名稱</th>
-              <th>類別</th>
-              <th>開始時間</th>
-              <th>地點</th>
-              <th>報名人數</th>
-              <th>狀態</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-      
-      activities.forEach(a => {
-        const statusClass = a.status === '報名中' ? 'badge-success' : 
-                           a.status === '已結束' ? 'badge-secondary' : 'badge-warning';
-        html += `
-          <tr>
-            <td>${a.title || '-'}</td>
-            <td>${a.category || '-'}</td>
-            <td>${formatDateTime(a.startTime)}</td>
-            <td>${a.location || '-'}</td>
-            <td>${a.currentParticipants || 0} / ${a.maxParticipants || '∞'}</td>
-            <td><span class="badge ${statusClass}">${a.status}</span></td>
-            <td>
-              <button class="btn btn-primary btn-sm" onclick="viewActivityDetail('${a.activityId}')">詳情</button>
-              <button class="btn btn-danger btn-sm" onclick="cancelActivity('${a.activityId}')">取消</button>
-            </td>
-          </tr>
+      try {
+        const result = await apiCall('getActivities');
+        const activities = result.data || [];
+        
+        if (activities.length === 0) {
+          table.innerHTML = '<div class="empty-state">無活動資料</div>';
+          return;
+        }
+        
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th>活動名稱</th>
+                <th>日期</th>
+                <th>地點</th>
+                <th>報名人數</th>
+                <th>狀態</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
         `;
-      });
-      
-      html += '</tbody></table>';
-      table.innerHTML = html;
+        
+        activities.forEach(a => {
+          const statusClass = a.status === '開放報名' ? 'badge-success' : 
+                             a.status === '已結束' ? 'badge-secondary' : 'badge-warning';
+          html += `
+            <tr>
+              <td>${a.title || '-'}</td>
+              <td>${formatDate(a.date)}</td>
+              <td>${a.location || '-'}</td>
+              <td>${a.currentCount || 0} / ${a.maxParticipants || '∞'}</td>
+              <td><span class="badge ${statusClass}">${a.status}</span></td>
+              <td>
+                <button class="btn btn-primary btn-sm" onclick="viewActivityDetail('${a.id}')">詳情</button>
+              </td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        table.innerHTML = html;
+      } catch (error) {
+        table.innerHTML = '<div class="empty-state">載入失敗：' + error.message + '</div>';
+      }
     }
     
     async function loadActivitiesForSelect() {
-      const result = await apiCall('getActivities');
-      
-      if (!result.success) return;
-      
-      const select = document.getElementById('activitySelect');
-      select.innerHTML = '<option value="">請選擇活動...</option>';
-      
-      (result.data || []).forEach(a => {
-        const option = document.createElement('option');
-        option.value = a.activityId;
-        option.textContent = `${a.title} (${formatDate(a.startTime)})`;
-        select.appendChild(option);
-      });
+      try {
+        const result = await apiCall('getActivities');
+        const select = document.getElementById('activitySelect');
+        select.innerHTML = '<option value="">請選擇活動...</option>';
+        
+        (result.data || []).forEach(a => {
+          const option = document.createElement('option');
+          option.value = a.id;
+          option.textContent = `${a.title} (${formatDate(a.date)})`;
+          select.appendChild(option);
+        });
+      } catch (error) {
+        console.error('載入活動選單失敗:', error);
+      }
+    }
+    
+    function viewActivityDetail(activityId) {
+      // 切換到報名管理頁籤
+      document.getElementById('activitySelect').value = activityId;
+      switchTab('registrations');
+      loadRegistrations();
     }
     
     // ========== 報名管理 ==========
@@ -1218,58 +1249,56 @@
       const table = document.getElementById('registrationsTable');
       table.innerHTML = '<div class="loading">載入中...</div>';
       
-      const result = await apiCall('getActivityDetail', { activityId });
-      
-      if (!result.success) {
-        table.innerHTML = '<div class="empty-state">載入失敗</div>';
-        return;
-      }
-      
-      const registrations = result.data.registrations || [];
-      
-      if (registrations.length === 0) {
-        table.innerHTML = '<div class="empty-state">無報名資料</div>';
-        return;
-      }
-      
-      let html = `
-        <table>
-          <thead>
-            <tr>
-              <th><input type="checkbox" onchange="toggleAllRegistrations(this)"></th>
-              <th>姓名</th>
-              <th>電話</th>
-              <th>Email</th>
-              <th>報名時間</th>
-              <th>出席</th>
-              <th>狀態</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-      
-      registrations.forEach(r => {
-        const statusClass = r.status === '已確認' ? 'badge-success' : 'badge-warning';
-        const attendedChecked = r.attended ? 'checked' : '';
-        html += `
-          <tr>
-            <td><input type="checkbox" class="registration-checkbox" value="${r.registrationId}"></td>
-            <td>${r.userName || '-'}</td>
-            <td>${r.userPhone || '-'}</td>
-            <td>${r.userEmail || '-'}</td>
-            <td>${formatDateTime(r.registerTime)}</td>
-            <td><input type="checkbox" ${attendedChecked} onchange="updateAttendance('${r.registrationId}', this.checked)"></td>
-            <td><span class="badge ${statusClass}">${r.status}</span></td>
-            <td>
-              <button class="btn btn-danger btn-sm" onclick="cancelRegistration('${r.registrationId}')">取消</button>
-            </td>
-          </tr>
+      try {
+        const result = await apiCall('getActivityDetail', { activityId });
+        const registrations = result.data.registrations || [];
+        
+        if (registrations.length === 0) {
+          table.innerHTML = '<div class="empty-state">無報名資料</div>';
+          return;
+        }
+        
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th><input type="checkbox" onchange="toggleAllRegistrations(this)"></th>
+                <th>姓名</th>
+                <th>電話</th>
+                <th>Email</th>
+                <th>報名時間</th>
+                <th>出席</th>
+                <th>狀態</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
         `;
-      });
-      
-      html += '</tbody></table>';
-      table.innerHTML = html;
+        
+        registrations.forEach(r => {
+          const statusClass = r.status === '已確認' ? 'badge-success' : 'badge-warning';
+          const attendedChecked = r.attended ? 'checked' : '';
+          html += `
+            <tr>
+              <td><input type="checkbox" class="registration-checkbox" value="${r.registrationId}"></td>
+              <td>${r.userName || '-'}</td>
+              <td>${r.userPhone || '-'}</td>
+              <td>${r.userEmail || '-'}</td>
+              <td>${formatDateTime(r.registerTime)}</td>
+              <td><input type="checkbox" ${attendedChecked} onchange="updateAttendance('${r.registrationId}', this.checked)"></td>
+              <td><span class="badge ${statusClass}">${r.status}</span></td>
+              <td>
+                <button class="btn btn-danger btn-sm" onclick="cancelSingleRegistration('${r.registrationId}')">取消</button>
+              </td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        table.innerHTML = html;
+      } catch (error) {
+        table.innerHTML = '<div class="empty-state">載入失敗：' + error.message + '</div>';
+      }
     }
     
     function toggleAllRegistrations(checkbox) {
@@ -1284,33 +1313,81 @@
         return;
       }
       
-      const result = await apiCall('exportRegistrations', { activityId: currentActivityId });
-      
-      if (result.success) {
+      try {
+        const result = await apiCall('exportRegistrations', { activityId: currentActivityId });
         window.open(result.data.fileUrl, '_blank');
         showAlert('匯出完成');
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('匯出失敗：' + error.message, 'error');
       }
     }
     
     async function updateAttendance(registrationId, attended) {
-      const result = await apiCall('batchUpdateRegistrations', {
-        registrations: [{ registrationId, attended }]
-      });
-      
-      if (result.success) {
+      try {
+        await apiCall('batchUpdateRegistrations', {
+          registrations: [{ registrationId, attended }]
+        });
         showAlert('出席狀態已更新');
-      } else {
-        showAlert(result.message, 'error');
+      } catch (error) {
+        showAlert('更新失敗：' + error.message, 'error');
       }
     }
     
-    // 初始載入
+    async function cancelSingleRegistration(registrationId) {
+      if (!confirm('確定要取消此報名嗎？')) return;
+      
+      try {
+        await apiCall('cancelRegistration', { registrationId });
+        showAlert('報名已取消');
+        loadRegistrations();
+      } catch (error) {
+        showAlert('取消失敗：' + error.message, 'error');
+      }
+    }
+    
+    async function markAttendance() {
+      const checkboxes = document.querySelectorAll('.registration-checkbox:checked');
+      if (checkboxes.length === 0) {
+        showAlert('請選擇要標記的報名', 'error');
+        return;
+      }
+      
+      const registrations = Array.from(checkboxes).map(cb => ({
+        registrationId: cb.value,
+        attended: true
+      }));
+      
+      try {
+        await apiCall('batchUpdateRegistrations', { registrations });
+        showAlert(`已標記 ${registrations.length} 人出席`);
+        loadRegistrations();
+      } catch (error) {
+        showAlert('標記失敗：' + error.message, 'error');
+      }
+    }
+    
+    // ========== 初始化 ==========
+    
     document.addEventListener('DOMContentLoaded', () => {
-      loadMembers();
+      // 檢查配置
+      if (API_URL === 'https://script.google.com/macros/s/AKfycbyeckYETUsrXaZCYMUoNjtDNy0CrEPEreUJh_n4XlQGs3VdP6247ExTROVIPkTVMM815w/exec') {
+        alert('⚠️ 請先設定 API_URL！');
+        return;
+      }
+      
+      if (ADMIN_LINE_ID === 'U09b4c2535730fbb5643274ba1526ec9c') {
+        alert('⚠️ 請先設定 ADMIN_LINE_ID！');
+        return;
+      }
+      
       // 設定今天為預設日期
-      document.getElementById('journalDate').valueAsDate = new Date();
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('journalDate').value = today;
+      
+      // 載入初始資料
+      loadMembers();
+      
+      console.log('✅ 管理後台已載入');
     });
   </script>
 </body>
