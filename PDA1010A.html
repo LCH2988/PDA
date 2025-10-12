@@ -935,7 +935,7 @@
     // ========== 全域變數 ==========
     const CONFIG = {
       LIFF_ID: '1656516134-X9oq92g9', // ⚠️ 請替換為您的 LIFF ID
-      API_URL: 'https://script.google.com/macros/s/AKfycbzgWX10UKj7PqokWRMANjLRYm1XustRR00pYSMS8bqMzdV1455ei-y3N_4q-N34n_HJng/exec', // ⚠️ 請替換為您的 GAS URL
+      API_URL: 'https://script.google.com/macros/s/AKfycbxG_sN3o21jsWXmntyctgNc-Ua3HWkOW6UzWkiByTl-4CSzVtS2VYYucwT2xuqj57jHuw/exec', // ⚠️ 請替換為您的 GAS URL
       API_KEY: 'AAbb8520258185202581'
     };
 
@@ -970,35 +970,357 @@
     }
 
     // ========== API 呼叫函數 ==========
-    async function callAPI(action, data = {}) {
-      showLoading(true);
-      try {
-        const response = await fetch(CONFIG.API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action,
-            apiKey: CONFIG.API_KEY,
-            lineId: currentUser?.lineId || '',
-            ...data
-          })
-        });
+    // async function callAPI(action, data = {}) {
+    //   showLoading(true);
+    //   try {
+    //     const response = await fetch(CONFIG.API_URL, {
+    //       method: 'POST',
+    //       headers: { 'Content-Type': 'application/json' },
+    //       body: JSON.stringify({
+    //         action,
+    //         apiKey: CONFIG.API_KEY,
+    //         lineId: currentUser?.lineId || '',
+    //         ...data
+    //       })
+    //     });
 
-        const result = await response.json();
+    //     const result = await response.json();
         
-        if (!result.success) {
-          throw new Error(result.message || '操作失敗');
-        }
+    //     if (!result.success) {
+    //       throw new Error(result.message || '操作失敗');
+    //     }
 
-        return result.data;
-      } catch (error) {
-        console.error('API 呼叫失敗:', error);
-        showAlert(error.message || 'API 呼叫失敗', 'danger');
+    //     return result.data;
+    //   } catch (error) {
+    //     console.error('API 呼叫失敗:', error);
+    //     showAlert(error.message || 'API 呼叫失敗', 'danger');
+    //     throw error;
+    //   } finally {
+    //     showLoading(false);
+    //   }
+    // }
+
+
+    // ========================================
+// API 呼叫函數（修正 CORS 問題）
+// ========================================
+
+async function callAPI(action, data = {}) {
+  showLoading(true);
+  
+  try {
+    const requestBody = {
+      action,
+      apiKey: CONFIG.API_KEY,
+      lineId: currentUser?.lineId || '',
+      ...data
+    };
+
+    console.log('API 請求:', action, requestBody);
+
+    const response = await fetch(CONFIG.API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+      redirect: 'follow'
+    });
+
+    // 檢查 HTTP 狀態
+    if (!response.ok) {
+      throw new Error(`HTTP 錯誤: ${response.status}`);
+    }
+
+    // 解析回應
+    const text = await response.text();
+    console.log('API 原始回應:', text);
+    
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch (parseError) {
+      console.error('JSON 解析失敗:', text);
+      throw new Error('伺服器回應格式錯誤');
+    }
+
+    console.log('API 解析結果:', result);
+
+    // 檢查業務邏輯成功狀態
+    if (!result.success) {
+      throw new Error(result.message || '操作失敗');
+    }
+
+    return result.data;
+
+  } catch (error) {
+    console.error('API 呼叫失敗:', error);
+    
+    // 更友善的錯誤訊息
+    let errorMessage = 'API 呼叫失敗';
+    
+    if (error.message.includes('Failed to fetch')) {
+      errorMessage = '網路連線失敗，請檢查網路狀態';
+    } else if (error.message.includes('CORS')) {
+      errorMessage = 'API 存取權限錯誤，請聯絡管理員';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    showAlert(errorMessage, 'danger');
+    throw error;
+
+  } finally {
+    showLoading(false);
+  }
+}
+
+// ========================================
+// 重試機制版本（可選用）
+// ========================================
+
+async function callAPIWithRetry(action, data = {}, maxRetries = 3) {
+  let lastError;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await callAPI(action, data);
+    } catch (error) {
+      lastError = error;
+      console.log(`API 呼叫失敗，重試 ${i + 1}/${maxRetries}`);
+      
+      // 如果不是網路錯誤，不要重試
+      if (!error.message.includes('Failed to fetch') && 
+          !error.message.includes('網路')) {
         throw error;
-      } finally {
-        showLoading(false);
+      }
+      
+      // 等待後重試
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
       }
     }
+  }
+  
+  throw lastError;
+}
+
+// ========================================
+// 測試 API 連線
+// ========================================
+
+async function testAPIConnection() {
+  try {
+    console.log('測試 API 連線...');
+    console.log('API URL:', CONFIG.API_URL);
+    
+    const response = await fetch(CONFIG.API_URL, {
+      method: 'GET',
+      redirect: 'follow'
+    });
+    
+    const text = await response.text();
+    console.log('API GET 測試回應:', text);
+    
+    const result = JSON.parse(text);
+    
+    if (result.success) {
+      console.log('✅ API 連線成功');
+      return true;
+        } else {
+          console.log('❌ API 回應異常');
+          return false;
+        }
+      } catch (error) {
+        console.error('❌ API 連線失敗:', error);
+        return false;
+      }
+    }
+
+    // ========================================
+    // 批次 API 呼叫
+    // ========================================
+
+    async function callAPIBatch(requests) {
+      try {
+        const promises = requests.map(req => 
+          callAPI(req.action, req.data).catch(error => ({
+            error: true,
+            message: error.message
+          }))
+        );
+        
+        return await Promise.all(promises);
+      } catch (error) {
+        console.error('批次 API 呼叫失敗:', error);
+        throw error;
+      }
+    }
+
+    // ========================================
+    // 具體 API 呼叫函數
+    // ========================================
+
+    // 會員相關
+    async function apiRegister(userData) {
+      return await callAPI('register', userData);
+    }
+
+    async function apiGetUserInfo(lineId) {
+      return await callAPI('getUserInfo', { lineId });
+    }
+
+    async function apiUpdateProfile(profileData) {
+      return await callAPI('updateProfile', profileData);
+    }
+
+    async function apiGetAllMembers() {
+      return await callAPI('getAllMembers');
+    }
+
+    async function apiUpdateMember(targetLineId, memberData) {
+      return await callAPI('updateMember', { 
+        targetLineId, 
+        ...memberData 
+      });
+    }
+
+    // 活動相關
+    async function apiGetActivities() {
+      return await callAPI('getActivities');
+    }
+
+    async function apiGetActivityDetails(activityId) {
+      return await callAPI('getActivityDetails', { activityId });
+    }
+
+    async function apiCreateActivity(activityData) {
+      return await callAPI('createActivity', activityData);
+    }
+
+    async function apiUpdateActivity(activityId, activityData) {
+      return await callAPI('updateActivity', { 
+        activityId, 
+        ...activityData 
+      });
+    }
+
+    async function apiDeleteActivity(activityId) {
+      return await callAPI('deleteActivity', { activityId });
+    }
+
+    async function apiRegisterActivity(activityId) {
+      return await callAPI('registerActivity', { activityId });
+    }
+
+    async function apiCancelActivityRegistration(activityId) {
+      return await callAPI('cancelActivityRegistration', { activityId });
+    }
+
+    async function apiGetMyActivities() {
+      return await callAPI('getMyActivities');
+    }
+
+    // 志工相關
+    async function apiGetVolunteerNeeds() {
+      return await callAPI('getVolunteerNeeds');
+    }
+
+    async function apiCreateVolunteerNeed(needData) {
+      return await callAPI('createVolunteerNeed', needData);
+    }
+
+    async function apiDeleteVolunteerNeed(needId) {
+      return await callAPI('deleteVolunteerNeed', { needId });
+    }
+
+    async function apiApplyVolunteer(needId) {
+      return await callAPI('applyVolunteer', { needId });
+    }
+
+    async function apiGetMyVolunteerRecords() {
+      return await callAPI('getMyVolunteerRecords');
+    }
+
+    async function apiGetAllVolunteerRecords() {
+      return await callAPI('getAllVolunteerRecords');
+    }
+
+    // 捐款相關
+    async function apiCreateDonation(donationData) {
+      return await callAPI('createDonation', donationData);
+    }
+
+    async function apiGetMyDonations() {
+      return await callAPI('getMyDonations');
+    }
+
+    async function apiGetAllDonations() {
+      return await callAPI('getAllDonations');
+    }
+
+    async function apiCreateDonationByAdmin(donationData) {
+      return await callAPI('createDonationByAdmin', donationData);
+    }
+
+    // 支出相關
+    async function apiCreateExpense(expenseData) {
+      return await callAPI('createExpense', expenseData);
+    }
+
+    async function apiGetAllExpenses() {
+      return await callAPI('getAllExpenses');
+    }
+
+    // 公告相關
+    async function apiGetAnnouncements() {
+      return await callAPI('getAnnouncements');
+    }
+
+    async function apiCreateAnnouncement(announcementData) {
+      return await callAPI('createAnnouncement', announcementData);
+    }
+
+    // 統計相關
+    async function apiGetAdminStats() {
+      return await callAPI('getAdminStats');
+    }
+
+    async function apiGetMyStats() {
+      return await callAPI('getMyStats');
+    }
+
+    // 訊息相關
+    async function apiSendMessage(to, messages) {
+      return await callAPI('sendMessage', { to, messages });
+    }
+
+    async function apiBroadcastMessage(messages) {
+      return await callAPI('broadcastMessage', { messages });
+    }
+
+    // ========================================
+    // 使用範例
+    // ========================================
+
+    /*
+    // 基本使用
+    const activities = await apiGetActivities();
+
+    // 使用重試機制
+    const userInfo = await callAPIWithRetry('getUserInfo', { lineId: 'U123' });
+
+    // 批次呼叫
+    const results = await callAPIBatch([
+      { action: 'getActivities', data: {} },
+      { action: 'getAnnouncements', data: {} },
+      { action: 'getMyStats', data: {} }
+    ]);
+
+    // 測試連線
+    const isConnected = await testAPIConnection();
+    */
+
 
     // ========== 使用者註冊檢查 ==========
     async function checkUserRegistration() {
