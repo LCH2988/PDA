@@ -89,35 +89,6 @@
       border: 3px solid var(--primary-color);
     }
 
-    /* Navigation Tabs */
-    .nav-tabs {
-      border: none;
-      background: white;
-      padding: 10px 15px 0;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
-
-    .nav-tabs .nav-link {
-      border: none;
-      color: #666;
-      font-weight: 500;
-      padding: 10px 15px;
-      border-radius: 10px 10px 0 0;
-      transition: all 0.3s;
-    }
-
-    .nav-tabs .nav-link.active {
-      background: var(--primary-color);
-      color: white;
-    }
-
-    .nav-tabs .nav-link:hover {
-      background: rgba(0, 185, 0, 0.1);
-    }
-
     /* Content Area */
     .content-area {
       padding: 20px 15px;
@@ -365,14 +336,19 @@
     }
 
     /* Rating Stars */
-    #ratingStars i {
+    .rating-stars i {
       cursor: pointer;
       transition: all 0.2s;
+      font-size: 2rem;
+      color: #ddd;
     }
 
-    #ratingStars i:hover {
-      transform: scale(1.2);
+    .rating-stars i.active {
       color: #ffc107;
+    }
+
+    .rating-stars i:hover {
+      transform: scale(1.2);
     }
 
     /* Responsive */
@@ -383,11 +359,6 @@
       
       .stat-card .number {
         font-size: 1.5rem;
-      }
-      
-      .nav-tabs .nav-link {
-        padding: 8px 10px;
-        font-size: 0.9rem;
       }
     }
 
@@ -588,7 +559,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="expensesCard" style="display: none;">
           <div class="card-header d-flex justify-content-between align-items-center">
             <span>支出記錄</span>
             <button class="btn btn-sm btn-light" id="btnAddExpense">
@@ -865,6 +836,7 @@
                 <option value="">請選擇</option>
                 <option value="一般捐款">一般捐款</option>
                 <option value="活動贊助">活動贊助</option>
+                <option value="設備捐贈">設備捐贈</option>
               </select>
             </div>
             <div class="mb-3">
@@ -907,6 +879,7 @@
                 <option value="活動費用">活動費用</option>
                 <option value="行政支出">行政支出</option>
                 <option value="設備支出">設備支出</option>
+                <option value="其他">其他</option>
               </select>
             </div>
             <div class="mb-3">
@@ -937,12 +910,12 @@
             <input type="hidden" id="feedbackActivityId">
             <div class="mb-3">
               <label class="form-label">評分 *</label>
-              <div class="d-flex justify-content-center gap-2" id="ratingStars">
-                <i class="bi bi-star fs-2" data-rating="1" style="color: #ffc107;"></i>
-                <i class="bi bi-star fs-2" data-rating="2" style="color: #ffc107;"></i>
-                <i class="bi bi-star fs-2" data-rating="3" style="color: #ffc107;"></i>
-                <i class="bi bi-star fs-2" data-rating="4" style="color: #ffc107;"></i>
-                <i class="bi bi-star fs-2" data-rating="5" style="color: #ffc107;"></i>
+              <div class="d-flex justify-content-center gap-2 rating-stars" id="ratingStars">
+                <i class="bi bi-star" data-rating="1"></i>
+                <i class="bi bi-star" data-rating="2"></i>
+                <i class="bi bi-star" data-rating="3"></i>
+                <i class="bi bi-star" data-rating="4"></i>
+                <i class="bi bi-star" data-rating="5"></i>
               </div>
               <input type="hidden" id="feedbackRating" required>
             </div>
@@ -962,13 +935,12 @@
     // ========== 全域變數 ==========
     const CONFIG = {
       LIFF_ID: '1656516134-X9oq92g9', // ⚠️ 請替換為您的 LIFF ID
-      API_URL: 'https://script.google.com/macros/s/AKfycbzN1R9KjJ48ixgLX8cjHkX6bQ01b5QMJF9N57ujgO0lREbZzToyhl0cAEeAzJ1Qe5Esug/exec', // ⚠️ 請替換為您的 GAS URL
+      API_URL: 'https://script.google.com/macros/s/AKfycbzgWX10UKj7PqokWRMANjLRYm1XustRR00pYSMS8bqMzdV1455ei-y3N_4q-N34n_HJng/exec', // ⚠️ 請替換為您的 GAS URL
       API_KEY: 'AAbb8520258185202581'
     };
 
     let currentUser = null;
     let isAdmin = false;
-    let currentActivityId = null;
 
     // ========== LIFF 初始化 ==========
     async function initializeLiff() {
@@ -1007,7 +979,7 @@
           body: JSON.stringify({
             action,
             apiKey: CONFIG.API_KEY,
-            lineId: currentUser.lineId,
+            lineId: currentUser?.lineId || '',
             ...data
           })
         });
@@ -1047,6 +1019,7 @@
             document.getElementById('btnCreateVolunteer').style.display = 'block';
             document.getElementById('adminSection').style.display = 'block';
             document.getElementById('financialSummaryCard').style.display = 'block';
+            document.getElementById('expensesCard').style.display = 'block';
           }
           
           await loadDashboardData();
@@ -1100,10 +1073,12 @@
         
         try {
           await callAPI('registerUser', {
+            lineId: currentUser.lineId,
             realName: document.getElementById('regRealName').value,
             memberType: document.getElementById('regMemberType').value,
             phone: document.getElementById('regPhone').value,
-            lineName: currentUser.lineName
+            lineName: currentUser.lineName,
+            pictureUrl: currentUser.pictureUrl
           });
           
           showAlert('註冊成功！', 'success');
@@ -1285,7 +1260,7 @@
               ${reg.attended ? '<span class="badge bg-info ms-2">已簽到</span>' : ''}
             </div>
             <div class="mb-2">
-              <i class="bi bi-calendar3"></i> 報名時間：${new Date(reg.registrationTime).toLocaleString('zh-TW')}
+              <i class="bi bi-calendar3"></i> 報名時間：${new Date(reg.createdAt).toLocaleString('zh-TW')}
             </div>
             <div class="d-flex gap-2">
               ${reg.status === '已報名' ? 
@@ -1326,7 +1301,7 @@
       
       // 重置星星
       document.querySelectorAll('#ratingStars i').forEach(star => {
-        star.classList.remove('bi-star-fill');
+        star.classList.remove('bi-star-fill', 'active');
         star.classList.add('bi-star');
       });
       
@@ -1400,18 +1375,14 @@
         
         container.innerHTML = records.map(rec => `
           <div class="activity-item">
-            <h6 class="mb-2">${rec.title}</h6>
+            <h6 class="mb-2">${rec.title || '志工服務'}</h6>
             <div class="mb-2">
               <span class="badge bg-${rec.status === '已完成' ? 'success' : 'primary'}">${rec.status}</span>
             </div>
             <div class="mb-2">
-              <i class="bi bi-calendar3"></i> ${rec.date}
+              <i class="bi bi-calendar3"></i> ${rec.createdAt ? new Date(rec.createdAt).toLocaleDateString('zh-TW') : ''}
               | <i class="bi bi-clock"></i> ${rec.hours} 小時
             </div>
-            ${rec.feedback ? 
-              `<div class="alert alert-info p-2 mb-0">
-                <small><strong>回饋：</strong>${rec.feedback}</small>
-              </div>` : ''}
           </div>
         `).join('');
       } catch (error) {
@@ -1422,7 +1393,7 @@
     // ========== 載入捐款記錄 ==========
     async function loadDonations() {
       try {
-        const donations = await callAPI('getMyDonations');
+        const donations = await callAPI('getDonations');
         const container = document.getElementById('donationsContainer');
         
         if (!donations || donations.length === 0) {
@@ -1632,10 +1603,13 @@
       });
 
       // 新增支出按鈕
-      document.getElementById('btnAddExpense').addEventListener('click', () => {
-        const modal = new bootstrap.Modal(document.getElementById('addExpenseModal'));
-        modal.show();
-      });
+      const btnAddExpense = document.getElementById('btnAddExpense');
+      if (btnAddExpense) {
+        btnAddExpense.addEventListener('click', () => {
+          const modal = new bootstrap.Modal(document.getElementById('addExpenseModal'));
+          modal.show();
+        });
+      }
 
       // 新增支出表單
       document.getElementById('addExpenseForm').addEventListener('submit', async (e) => {
@@ -1666,9 +1640,9 @@
           document.querySelectorAll('#ratingStars i').forEach((s, idx) => {
             if (idx < rating) {
               s.classList.remove('bi-star');
-              s.classList.add('bi-star-fill');
+              s.classList.add('bi-star-fill', 'active');
             } else {
-              s.classList.remove('bi-star-fill');
+              s.classList.remove('bi-star-fill', 'active');
               s.classList.add('bi-star');
             }
           });
@@ -1704,21 +1678,25 @@
       const btnManageMembers = document.getElementById('btnManageMembers');
       if (btnManageMembers) {
         btnManageMembers.addEventListener('click', () => {
-          window.open('admin.html', '_blank');
+          // 開啟管理後台 LIFF
+          liff.openWindow({
+            url: 'https://liff.line.me/2006559832-k8rMQwnQ', // ⚠️ 請替換為管理後台 LIFF URL
+            external: false
+          });
         });
       }
 
       const btnSystemSettings = document.getElementById('btnSystemSettings');
       if (btnSystemSettings) {
         btnSystemSettings.addEventListener('click', () => {
-          showAlert('系統設定功能請使用管理後台', 'info');
+          showAlert('請使用管理後台進行系統設定', 'info');
         });
       }
 
       const btnViewLogs = document.getElementById('btnViewLogs');
       if (btnViewLogs) {
         btnViewLogs.addEventListener('click', () => {
-          showAlert('系統日誌功能請使用管理後台', 'info');
+          showAlert('請使用管理後台查看系統日誌', 'info');
         });
       }
     }
@@ -1764,8 +1742,10 @@
             break;
           case 'finance':
             loadDonations();
-            loadExpenses();
-            if (isAdmin) loadFinancialSummary();
+            if (isAdmin) {
+              loadExpenses();
+              loadFinancialSummary();
+            }
             break;
         }
       }
