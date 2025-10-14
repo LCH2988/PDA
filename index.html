@@ -638,7 +638,7 @@
     // ==================== 配置 ====================
     const CONFIG = {
       LIFF_ID: '1656516134-X9oq92g9', // 請替換為您的 LIFF ID
-      API_URL: 'https://script.google.com/macros/s/AKfycby5f7LinXNkYd7NM7o3Cr9HVEYfmpL-NT-utI-jjdUcaozR2ZePq9PvMg6tSA8FSl0uXw/exec', // 請替換為您的 GAS Web App URL
+      API_URL: 'https://script.google.com/macros/s/AKfycbzYkRHEG-f2s_70huSye0mfeUbhFqm0CqkPfzO67PA06e89e2vnJ1BmLkPcgTVZqbqlNA/exec', // 請替換為您的 GAS Web App URL
       API_KEY: 'AAbb520258185202581' // 請替換為您的 API Key
     };
 
@@ -647,7 +647,6 @@
     let currentActivityId = null;
     let allActivities = [];
 
-    // ==================== LIFF 初始化 ====================
     window.onload = function() {
       initializeLiff();
     };
@@ -655,35 +654,27 @@
     async function initializeLiff() {
       try {
         await liff.init({ liffId: CONFIG.LIFF_ID });
-        
         if (!liff.isLoggedIn()) {
           liff.login();
           return;
         }
-
         const profile = await liff.getProfile();
         await loadUserData(profile);
-        
       } catch (error) {
         console.error('LIFF 初始化失敗:', error);
         showAlert('系統初始化失敗，請重新整理頁面', 'danger');
       }
     }
 
-    // ==================== 載入使用者資料 ====================
     async function loadUserData(profile) {
       try {
-        const response = await apiCall('getMemberByLineId', {
-          lineId: profile.userId
-        });
-
-        if (response && response.id) {
-          currentUser = response;
-          document.getElementById('userNameDisplay').textContent = currentUser.realName || currentUser.lineName;
+        const member = await apiCall('getMemberByLineId', { lineId: profile.userId });
+        if (member && member.id) {
+          currentUser = member;
+          document.getElementById('userNameDisplay')?.textContent = currentUser.realName || currentUser.lineName || '會員';
           document.getElementById('loadingScreen').style.display = 'none';
           showPage('dashboard');
         } else {
-          // 需要註冊
           showRegisterModal(profile);
         }
       } catch (error) {
@@ -692,51 +683,37 @@
       }
     }
 
-    // ==================== API 呼叫 ====================
     async function apiCall(action, data = {}) {
-      try {
-        const profile = await liff.getProfile();
-        const requestData = {
-          action: action,
-          apiKey: CONFIG.API_KEY,
-          lineId: profile.userId,
-          ...data
-        };
-
-        const response = await fetch(CONFIG.API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestData)
-        });
-
-        const result = await response.json();
-        
-        if (result.success) {
-          return result.data;
-        } else {
-          throw new Error(result.data.message || '操作失敗');
-        }
-      } catch (error) {
-        console.error('API 呼叫失敗:', error);
-        throw error;
+      const body = {
+        action,
+        apiKey: CONFIG.API_KEY,
+        ...data
+      };
+      // 自動補 lineId（會員端）
+      if (!body.lineId) {
+        try {
+          const profile = await liff.getProfile();
+          body.lineId = profile.userId;
+        } catch {}
       }
+
+      const resp = await fetch(CONFIG.API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const result = await resp.json();
+      if (!result.success) {
+        const msg = result.message || (result.data && result.data.message) || '操作失敗';
+        throw new Error(msg);
+      }
+      return result.data;
     }
 
-    // ==================== 頁面切換 ====================
     function showPage(pageName) {
-      // 隱藏所有頁面
-      document.querySelectorAll('[id$="Page"]').forEach(page => {
-        page.style.display = 'none';
-      });
+      document.querySelectorAll('[id$="Page"]').forEach(page => page.style.display = 'none');
+      document.querySelectorAll('.bottom-nav-item').forEach(item => item.classList.remove('active'));
 
-      // 更新底部導航
-      document.querySelectorAll('.bottom-nav-item').forEach(item => {
-        item.classList.remove('active');
-      });
-
-      // 顯示指定頁面
       const pageMap = {
         'dashboard': 'dashboardPage',
         'activities': 'activitiesPage',
@@ -744,129 +721,96 @@
         'volunteer': 'volunteerPage',
         'profile': 'profilePage'
       };
-
       const pageId = pageMap[pageName];
       if (pageId) {
         document.getElementById(pageId).style.display = 'block';
-        event.target.closest('.bottom-nav-item')?.classList.add('active');
         currentPage = pageName;
-
-        // 載入頁面資料
         loadPageData(pageName);
       }
     }
 
-    // ==================== 載入頁面資料 ====================
     async function loadPageData(pageName) {
-      switch(pageName) {
-        case 'dashboard':
-          await loadDashboard();
-          break;
-        case 'activities':
-          await loadActivities();
-          break;
-        case 'myRegistrations':
-          await loadMyRegistrations();
-          break;
-        case 'volunteer':
-          await loadVolunteerRecords();
-          break;
-        case 'profile':
-          await loadProfile();
-          break;
+      try {
+        if (pageName === 'dashboard') await loadDashboard();
+        if (pageName === 'activities') await loadActivities();
+        if (pageName === 'myRegistrations') await loadMyRegistrations();
+        if (pageName === 'volunteer') await loadVolunteerRecords();
+        if (pageName === 'profile') await loadProfile();
+      } catch (e) {
+        console.error('載入頁面失敗:', e);
+        showAlert('載入資料失敗', 'danger');
       }
     }
 
-    // ==================== 載入儀表板 ====================
     async function loadDashboard() {
-      try {
-        const data = await apiCall('getDashboardData');
-        
-        // 更新統計卡片
-        document.getElementById('myRegistrationsCount').textContent = data.myRegistrations.length;
-        document.getElementById('myVolunteerHours').textContent = data.myVolunteerHours;
-        document.getElementById('memberLevel').textContent = data.member.memberType;
+      const data = await apiCall('getDashboardData');
+      document.getElementById('myRegistrationsCount').textContent = data.myRegistrations.length;
+      document.getElementById('myVolunteerHours').textContent = data.myVolunteerHours || 0;
+      document.getElementById('memberLevel').textContent = data.member.memberType || '一般會員';
 
-        // 顯示即將到來的活動
-        const activitiesList = document.getElementById('upcomingActivitiesList');
-        if (data.upcomingActivities.length === 0) {
-          activitiesList.innerHTML = '<p class="text-muted">目前沒有即將到來的活動</p>';
-        } else {
-          activitiesList.innerHTML = data.upcomingActivities.map(activity => `
-            <div class="activity-item" onclick="showActivityDetail('${activity.id}')">
-              <div class="d-flex justify-content-between align-items-start">
-                <div>
-                  <h6 class="mb-1">${activity.title}</h6>
-                  <small class="text-muted">
-                    <i class="bi bi-calendar"></i> ${formatDate(activity.date)}
-                    <i class="bi bi-clock ms-2"></i> ${activity.time}
-                  </small><br>
-                  <small class="text-muted">
-                    <i class="bi bi-geo-alt"></i> ${activity.location}
-                  </small>
-                </div>
-                <span class="badge bg-success badge-status">${activity.status}</span>
+      const activitiesList = document.getElementById('upcomingActivitiesList');
+      if (!data.upcomingActivities || data.upcomingActivities.length === 0) {
+        activitiesList.innerHTML = '<p class="text-muted">目前沒有即將到來的活動</p>';
+      } else {
+        activitiesList.innerHTML = data.upcomingActivities.map(activity => `
+          <div class="activity-item" onclick="showActivityDetail('${activity.id}')">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 class="mb-1">${activity.title}</h6>
+                <small class="text-muted">
+                  <i class="bi bi-calendar"></i> ${formatDate(activity.date)}
+                  <i class="bi bi-clock ms-2"></i> ${activity.time || ''}
+                </small><br>
+                <small class="text-muted">
+                  <i class="bi bi-geo-alt"></i> ${activity.location || ''}
+                </small>
               </div>
+              <span class="badge bg-success badge-status">${activity.status}</span>
             </div>
-          `).join('');
-        }
+          </div>
+        `).join('');
+      }
 
-        // 顯示我的最近報名
-        const registrationsList = document.getElementById('myRecentRegistrations');
-        if (data.myRegistrations.length === 0) {
-          registrationsList.innerHTML = '<p class="text-muted">您還沒有報名任何活動</p>';
-        } else {
-          registrationsList.innerHTML = data.myRegistrations.slice(0, 5).map(reg => `
-            <div class="activity-item">
-              <div class="d-flex justify-content-between align-items-start">
-                <div>
-                  <h6 class="mb-1">${reg.activityTitle}</h6>
-                  <small class="text-muted">
-                    <i class="bi bi-calendar"></i> 報名時間：${formatDateTime(reg.registeredAt)}
-                  </small>
-                </div>
-                <span class="badge bg-primary badge-status">${reg.status}</span>
+      const registrationsList = document.getElementById('myRecentRegistrations');
+      if (!data.myRegistrations || data.myRegistrations.length === 0) {
+        registrationsList.innerHTML = '<p class="text-muted">您還沒有報名任何活動</p>';
+      } else {
+        registrationsList.innerHTML = data.myRegistrations.slice(0, 5).map(reg => `
+          <div class="activity-item">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 class="mb-1">${reg.activityTitle}</h6>
+                <small class="text-muted">
+                  <i class="bi bi-calendar"></i> 報名時間：${formatDateTime(reg.registeredAt)}
+                </small>
               </div>
+              <span class="badge bg-primary badge-status">${reg.status}</span>
             </div>
-          `).join('');
-        }
-
-      } catch (error) {
-        console.error('載入儀表板失敗:', error);
-        showAlert('載入儀表板失敗', 'danger');
+          </div>
+        `).join('');
       }
     }
 
-    // ==================== 載入活動列表 ====================
     async function loadActivities() {
-      try {
-        const data = await apiCall('getActivities', {});
-        allActivities = data.data;
-        displayActivities(allActivities);
-      } catch (error) {
-        console.error('載入活動失敗:', error);
-        showAlert('載入活動失敗', 'danger');
-      }
+      const result = await apiCall('getActivities', {});
+      allActivities = result.data || result; // 後端已回 data
+      displayActivities(allActivities);
     }
 
     function displayActivities(activities) {
-      const activitiesList = document.getElementById('activitiesList');
-      
-      if (activities.length === 0) {
-        activitiesList.innerHTML = '<p class="text-muted">目前沒有活動</p>';
+      const listEl = document.getElementById('activitiesList');
+      if (!activities || activities.length === 0) {
+        listEl.innerHTML = '<p class="text-muted">目前沒有活動</p>';
         return;
       }
-
-      activitiesList.innerHTML = activities.map(activity => {
+      listEl.innerHTML = activities.map(activity => {
         const statusColor = {
           '報名中': 'success',
           '即將開始': 'warning',
           '進行中': 'info',
           '已結束': 'secondary'
         }[activity.status] || 'secondary';
-
         const isFull = activity.maxParticipants > 0 && activity.currentParticipants >= activity.maxParticipants;
-
         return `
           <div class="card mb-3">
             <div class="card-body">
@@ -878,8 +822,8 @@
               <div class="row text-muted small">
                 <div class="col-md-6">
                   <i class="bi bi-calendar"></i> ${formatDate(activity.date)}<br>
-                  <i class="bi bi-clock"></i> ${activity.time}<br>
-                  <i class="bi bi-geo-alt"></i> ${activity.location}
+                  <i class="bi bi-clock"></i> ${activity.time || ''}<br>
+                  <i class="bi bi-geo-alt"></i> ${activity.location || ''}
                 </div>
                 <div class="col-md-6">
                   <i class="bi bi-people"></i> ${activity.currentParticipants}/${activity.maxParticipants || '不限'} 人<br>
@@ -905,85 +849,67 @@
     }
 
     function searchActivities() {
-      const searchText = document.getElementById('activitySearch').value.toLowerCase();
+      const searchText = (document.getElementById('activitySearch').value || '').toLowerCase();
       const statusFilter = document.getElementById('activityStatusFilter').value;
-
-      const filtered = allActivities.filter(activity => {
-        const matchSearch = !searchText || 
-          activity.title.toLowerCase().includes(searchText) ||
-          activity.description.toLowerCase().includes(searchText) ||
-          activity.location.toLowerCase().includes(searchText);
-        
-        const matchStatus = !statusFilter || activity.status === statusFilter;
-
+      const filtered = (allActivities || []).filter(a => {
+        const matchSearch = !searchText ||
+          (a.title || '').toLowerCase().includes(searchText) ||
+          (a.description || '').toLowerCase().includes(searchText) ||
+          (a.location || '').toLowerCase().includes(searchText);
+        const matchStatus = !statusFilter || a.status === statusFilter;
         return matchSearch && matchStatus;
       });
-
       displayActivities(filtered);
     }
 
-    // ==================== 活動詳情 ====================
     async function showActivityDetail(activityId) {
-      try {
-        currentActivityId = activityId;
-        const activity = await apiCall('getActivityById', { activityId });
-        
-        document.getElementById('activityDetailTitle').textContent = activity.title;
-        document.getElementById('activityDetailContent').innerHTML = `
-          <div class="row">
-            <div class="col-md-6">
-              <h6><i class="bi bi-calendar"></i> 活動日期</h6>
-              <p>${formatDate(activity.date)}</p>
-            </div>
-            <div class="col-md-6">
-              <h6><i class="bi bi-clock"></i> 活動時間</h6>
-              <p>${activity.time}</p>
-            </div>
+      const activity = await apiCall('getActivityById', { activityId });
+      currentActivityId = activity.id;
+      document.getElementById('activityDetailTitle').textContent = activity.title;
+      document.getElementById('activityDetailContent').innerHTML = `
+        <div class="row">
+          <div class="col-md-6">
+            <h6><i class="bi bi-calendar"></i> 活動日期</h6>
+            <p>${formatDate(activity.date)}</p>
           </div>
-          <div class="row">
-            <div class="col-md-6">
-              <h6><i class="bi bi-geo-alt"></i> 活動地點</h6>
-              <p>${activity.location}</p>
-            </div>
-            <div class="col-md-6">
-              <h6><i class="bi bi-tag"></i> 活動類型</h6>
-              <p>${activity.type}</p>
-            </div>
+          <div class="col-md-6">
+            <h6><i class="bi bi-clock"></i> 活動時間</h6>
+            <p>${activity.time || ''}</p>
           </div>
-          <div class="row">
-            <div class="col-md-6">
-              <h6><i class="bi bi-people"></i> 人數限制</h6>
-              <p>${activity.currentParticipants}/${activity.maxParticipants || '不限'} 人</p>
-            </div>
-            <div class="col-md-6">
-              <h6><i class="bi bi-cash"></i> 活動費用</h6>
-              <p>${activity.fee > 0 ? 'NT$ ' + activity.fee : '免費'}</p>
-            </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            <h6><i class="bi bi-geo-alt"></i> 活動地點</h6>
+            <p>${activity.location || ''}</p>
           </div>
+          <div class="col-md-6">
+            <h6><i class="bi bi-tag"></i> 活動類型</h6>
+            <p>${activity.type}</p>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            <h6><i class="bi bi-people"></i> 人數限制</h6>
+            <p>${activity.currentParticipants}/${activity.maxParticipants || '不限'} 人</p>
+          </div>
+          <div class="col-md-6">
+            <h6><i class="bi bi-cash"></i> 活動費用</h6>
+            <p>${activity.fee > 0 ? 'NT$ ' + activity.fee : '免費'}</p>
+          </div>
+        </div>
+        <hr>
+        <h6><i class="bi bi-file-text"></i> 活動說明</h6>
+        <p>${activity.description || '暫無說明'}</p>
+        ${activity.note ? `
           <hr>
-          <h6><i class="bi bi-file-text"></i> 活動說明</h6>
-          <p>${activity.description || '暫無說明'}</p>
-          ${activity.note ? `
-            <hr>
-            <h6><i class="bi bi-info-circle"></i> 注意事項</h6>
-            <p>${activity.note}</p>
-          ` : ''}
-        `;
-
-        const isFull = activity.maxParticipants > 0 && activity.currentParticipants >= activity.maxParticipants;
-        const registerBtn = document.getElementById('registerActivityBtn');
-        
-        if (activity.status === '報名中' && !isFull) {
-          registerBtn.style.display = 'inline-block';
-        } else {
-          registerBtn.style.display = 'none';
-        }
-
-        new bootstrap.Modal(document.getElementById('activityDetailModal')).show();
-      } catch (error) {
-        console.error('載入活動詳情失敗:', error);
-        showAlert('載入活動詳情失敗', 'danger');
-      }
+          <h6><i class="bi bi-info-circle"></i> 注意事項</h6>
+          <p>${activity.note}</p>
+        ` : ''}
+      `;
+      const isFull = activity.maxParticipants > 0 && activity.currentParticipants >= activity.maxParticipants;
+      const btn = document.getElementById('registerActivityBtn');
+      btn.style.display = (activity.status === '報名中' && !isFull) ? 'inline-block' : 'none';
+      new bootstrap.Modal(document.getElementById('activityDetailModal')).show();
     }
 
     async function quickRegisterActivity(activityId) {
@@ -993,137 +919,101 @@
 
     async function registerForActivity() {
       if (!currentActivityId) return;
-
       if (!confirm('確定要報名此活動嗎？')) return;
-
       try {
-        await apiCall('registerActivity', {
-          activityId: currentActivityId
-        });
-
+        await apiCall('registerActivity', { activityId: currentActivityId });
         showAlert('報名成功！', 'success');
         bootstrap.Modal.getInstance(document.getElementById('activityDetailModal'))?.hide();
-        loadActivities();
-        loadDashboard();
-      } catch (error) {
-        console.error('報名失敗:', error);
-        showAlert(error.message || '報名失敗', 'danger');
+        await loadActivities();
+        await loadDashboard();
+      } catch (e) {
+        showAlert(e.message || '報名失敗', 'danger');
       }
     }
 
-    // ==================== 我的報名 ====================
     async function loadMyRegistrations() {
-      try {
-        const data = await apiCall('getMyRegistrations');
-        const registrationsList = document.getElementById('myRegistrationsList');
-
-        if (data.data.length === 0) {
-          registrationsList.innerHTML = '<p class="text-muted">您還沒有報名任何活動</p>';
-          return;
-        }
-
-        registrationsList.innerHTML = data.data.map(reg => {
-          const statusColor = {
-            '已報名': 'primary',
-            '已簽到': 'success',
-            '已取消': 'secondary'
-          }[reg.status] || 'secondary';
-
-          return `
-            <div class="card mb-3">
-              <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                  <h5 class="card-title mb-0">${reg.activityTitle}</h5>
-                  <span class="badge bg-${statusColor} badge-status">${reg.status}</span>
-                </div>
-                <p class="text-muted small mb-2">
-                  <i class="bi bi-calendar"></i> 報名時間：${formatDateTime(reg.registeredAt)}
-                </p>
-                ${reg.checkInAt ? `
-                  <p class="text-muted small mb-2">
-                    <i class="bi bi-check-circle"></i> 簽到時間：${formatDateTime(reg.checkInAt)}
-                  </p>
-                ` : ''}
-                ${reg.status === '已報名' ? `
-                  <button class="btn btn-sm btn-danger" onclick="cancelRegistration('${reg.id}')">
-                    <i class="bi bi-x-circle"></i> 取消報名
-                  </button>
-                ` : ''}
-                <button class="btn btn-sm btn-outline-primary" onclick="showActivityDetail('${reg.activityId}')">
-                  <i class="bi bi-info-circle"></i> 活動詳情
-                </button>
-              </div>
-            </div>
-          `;
-        }).join('');
-      } catch (error) {
-        console.error('載入報名記錄失敗:', error);
-        showAlert('載入報名記錄失敗', 'danger');
+      const data = await apiCall('getMyRegistrations');
+      const list = data.data || data;
+      const el = document.getElementById('myRegistrationsList');
+      if (!list || list.length === 0) {
+        el.innerHTML = '<p class="text-muted">您還沒有報名任何活動</p>';
+        return;
       }
+      el.innerHTML = list.map(reg => {
+        const statusColor = {
+          '已報名': 'primary',
+          '已簽到': 'success',
+          '已取消': 'secondary'
+        }[reg.status] || 'secondary';
+        return `
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <h5 class="card-title mb-0">${reg.activityTitle}</h5>
+                <span class="badge bg-${statusColor} badge-status">${reg.status}</span>
+              </div>
+              <p class="text-muted small mb-2">
+                <i class="bi bi-calendar"></i> 報名時間：${formatDateTime(reg.registeredAt)}
+              </p>
+              ${reg.checkInAt ? `<p class="text-muted small mb-2"><i class="bi bi-check-circle"></i> 簽到時間：${formatDateTime(reg.checkInAt)}</p>` : ''}
+              ${reg.status === '已報名' ? `
+                <button class="btn btn-sm btn-danger" onclick="cancelRegistration('${reg.id}')">
+                  <i class="bi bi-x-circle"></i> 取消報名
+                </button>` : ''}
+              <button class="btn btn-sm btn-outline-primary" onclick="showActivityDetail('${reg.activityId}')">
+                <i class="bi bi-info-circle"></i> 活動詳情
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
     }
 
     async function cancelRegistration(registrationId) {
       if (!confirm('確定要取消報名嗎？')) return;
-
       try {
         await apiCall('cancelRegistration', { registrationId });
         showAlert('已取消報名', 'success');
-        loadMyRegistrations();
-        loadDashboard();
-      } catch (error) {
-        console.error('取消報名失敗:', error);
-        showAlert(error.message || '取消報名失敗', 'danger');
+        await loadMyRegistrations();
+        await loadDashboard();
+      } catch (e) {
+        showAlert(e.message || '取消報名失敗', 'danger');
       }
     }
 
-    // ==================== 志工記錄 ====================
     async function loadVolunteerRecords() {
-      try {
-        const data = await apiCall('getVolunteerRecords');
-        
-        document.getElementById('totalVolunteerHours').textContent = data.totalHours;
-        document.getElementById('totalVolunteerRecords').textContent = data.data.length;
-
-        const recordsList = document.getElementById('volunteerRecordsList');
-
-        if (data.data.length === 0) {
-          recordsList.innerHTML = '<p class="text-muted">您還沒有服務記錄</p>';
-          return;
-        }
-
-        recordsList.innerHTML = data.data.map(record => {
-          const statusColor = {
-            '待審核': 'warning',
-            '已審核': 'success',
-            '已拒絕': 'danger'
-          }[record.status] || 'secondary';
-
-          return `
-            <div class="card mb-3">
-              <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                  <h5 class="card-title mb-0">${record.activity}</h5>
-                  <span class="badge bg-${statusColor} badge-status">${record.status}</span>
-                </div>
-                <p class="text-muted small mb-2">
-                  <i class="bi bi-calendar"></i> ${formatDate(record.date)}
-                  <i class="bi bi-clock ms-3"></i> ${record.hours} 小時
-                </p>
-                ${record.description ? `<p class="mb-2">${record.description}</p>` : ''}
-                ${record.approver ? `
-                  <p class="text-muted small mb-0">
-                    <i class="bi bi-person-check"></i> 審核者：${record.approver}
-                    (${formatDateTime(record.approvedAt)})
-                  </p>
-                ` : ''}
-              </div>
-            </div>
-          `;
-        }).join('');
-      } catch (error) {
-        console.error('載入志工記錄失敗:', error);
-        showAlert('載入志工記錄失敗', 'danger');
+      const data = await apiCall('getVolunteerRecords');
+      document.getElementById('totalVolunteerHours').textContent = data.totalHours || 0;
+      document.getElementById('totalVolunteerRecords').textContent = (data.data || []).length;
+      const el = document.getElementById('volunteerRecordsList');
+      const list = data.data || [];
+      if (list.length === 0) {
+        el.innerHTML = '<p class="text-muted">您還沒有服務記錄</p>';
+        return;
       }
+      el.innerHTML = list.map(record => {
+        const statusColor = {
+          '待審核': 'warning',
+          '已審核': 'success',
+          '已拒絕': 'danger'
+        }[record.status] || 'secondary';
+        return `
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <h5 class="card-title mb-0">${record.activity}</h5>
+                <span class="badge bg-${statusColor} badge-status">${record.status}</span>
+              </div>
+              <p class="text-muted small mb-2">
+                <i class="bi bi-calendar"></i> ${formatDate(record.date)}
+                <i class="bi bi-clock ms-3"></i> ${record.hours} 小時
+              </p>
+              ${record.description ? `<p class="mb-2">${record.description}</p>` : ''}
+              ${record.approver ? `<p class="text-muted small mb-0"><i class="bi bi-person-check"></i> 審核者：${record.approver} (${formatDateTime(record.approvedAt)})</p>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
     }
 
     function showAddVolunteerModal() {
@@ -1138,7 +1028,6 @@
         form.reportValidity();
         return;
       }
-
       try {
         await apiCall('addVolunteerRecord', {
           recordData: {
@@ -1149,88 +1038,46 @@
             note: document.getElementById('volNote').value
           }
         });
-
         showAlert('服務記錄已提交，等待審核', 'success');
         bootstrap.Modal.getInstance(document.getElementById('addVolunteerModal')).hide();
         loadVolunteerRecords();
-      } catch (error) {
-        console.error('提交志工記錄失敗:', error);
-        showAlert(error.message || '提交失敗', 'danger');
+      } catch (e) {
+        showAlert(e.message || '提交失敗', 'danger');
       }
     }
 
-    // ==================== 個人資料 ====================
     async function loadProfile() {
-      try {
-        const profile = await liff.getProfile();
-        document.getElementById('profileAvatar').src = profile.pictureUrl || 'https://via.placeholder.com/80';
-
-        const infoHtml = `
-          <div class="info-row">
-            <span class="info-label">LINE 名稱：</span>
-            <span class="info-value">${currentUser.lineName}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">真實姓名：</span>
-            <span class="info-value">${currentUser.realName || '未設定'}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">性別：</span>
-            <span class="info-value">${currentUser.gender || '未設定'}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">生日：</span>
-            <span class="info-value">${currentUser.birthday ? formatDate(currentUser.birthday) : '未設定'}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">電話：</span>
-            <span class="info-value">${currentUser.phone || '未設定'}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Email：</span>
-            <span class="info-value">${currentUser.email || '未設定'}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">地址：</span>
-            <span class="info-value">${currentUser.address || '未設定'}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">會員類型：</span>
-            <span class="info-value">${currentUser.memberType}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">緊急聯絡人：</span>
-            <span class="info-value">${currentUser.emergencyContact || '未設定'}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">緊急聯絡電話：</span>
-            <span class="info-value">${currentUser.emergencyPhone || '未設定'}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">註冊時間：</span>
-            <span class="info-value">${formatDateTime(currentUser.createdAt)}</span>
-          </div>
-        `;
-
-        document.getElementById('profileInfo').innerHTML = infoHtml;
-      } catch (error) {
-        console.error('載入個人資料失敗:', error);
-        showAlert('載入個人資料失敗', 'danger');
-      }
+      const profile = await liff.getProfile();
+      document.getElementById('profileAvatar').src = profile.pictureUrl || 'https://via.placeholder.com/80';
+      const m = currentUser;
+      const infoHtml = `
+        <div class="info-row"><span class="info-label">LINE 名稱：</span><span class="info-value">${m.lineName || '-'}</span></div>
+        <div class="info-row"><span class="info-label">真實姓名：</span><span class="info-value">${m.realName || '未設定'}</span></div>
+        <div class="info-row"><span class="info-label">性別：</span><span class="info-value">${m.gender || '未設定'}</span></div>
+        <div class="info-row"><span class="info-label">生日：</span><span class="info-value">${m.birthday ? formatDate(m.birthday) : '未設定'}</span></div>
+        <div class="info-row"><span class="info-label">電話：</span><span class="info-value">${m.phone || '未設定'}</span></div>
+        <div class="info-row"><span class="info-label">Email：</span><span class="info-value">${m.email || '未設定'}</span></div>
+        <div class="info-row"><span class="info-label">地址：</span><span class="info-value">${m.address || '未設定'}</span></div>
+        <div class="info-row"><span class="info-label">會員類型：</span><span class="info-value">${m.memberType || '一般會員'}</span></div>
+        <div class="info-row"><span class="info-label">緊急聯絡人：</span><span class="info-value">${m.emergencyContact || '未設定'}</span></div>
+        <div class="info-row"><span class="info-label">緊急聯絡電話：</span><span class="info-value">${m.emergencyPhone || '未設定'}</span></div>
+        <div class="info-row"><span class="info-label">註冊時間：</span><span class="info-value">${formatDateTime(m.createdAt)}</span></div>
+      `;
+      document.getElementById('profileInfo').innerHTML = infoHtml;
     }
 
     function showEditProfileModal() {
-      document.getElementById('editMemberId').value = currentUser.id;
-      document.getElementById('editRealName').value = currentUser.realName || '';
-      document.getElementById('editGender').value = currentUser.gender || '';
-      document.getElementById('editBirthday').value = currentUser.birthday || '';
-      document.getElementById('editPhone').value = currentUser.phone || '';
-      document.getElementById('editEmail').value = currentUser.email || '';
-      document.getElementById('editAddress').value = currentUser.address || '';
-      document.getElementById('editDiseaseStatus').value = currentUser.diseaseStatus || '';
-      document.getElementById('editEmergencyContact').value = currentUser.emergencyContact || '';
-      document.getElementById('editEmergencyPhone').value = currentUser.emergencyPhone || '';
-
+      const m = currentUser;
+      document.getElementById('editMemberId').value = m.id;
+      document.getElementById('editRealName').value = m.realName || '';
+      document.getElementById('editGender').value = m.gender || '';
+      document.getElementById('editBirthday').value = m.birthday || '';
+      document.getElementById('editPhone').value = m.phone || '';
+      document.getElementById('editEmail').value = m.email || '';
+      document.getElementById('editAddress').value = m.address || '';
+      document.getElementById('editDiseaseStatus').value = m.diseaseStatus || '';
+      document.getElementById('editEmergencyContact').value = m.emergencyContact || '';
+      document.getElementById('editEmergencyPhone').value = m.emergencyPhone || '';
       new bootstrap.Modal(document.getElementById('editProfileModal')).show();
     }
 
@@ -1250,39 +1097,26 @@
             emergencyPhone: document.getElementById('editEmergencyPhone').value
           }
         });
-
         showAlert('資料更新成功', 'success');
         bootstrap.Modal.getInstance(document.getElementById('editProfileModal')).hide();
-        
-        // 重新載入使用者資料
         const profile = await liff.getProfile();
         await loadUserData(profile);
         loadProfile();
-      } catch (error) {
-        console.error('更新資料失敗:', error);
-        showAlert(error.message || '更新失敗', 'danger');
+      } catch (e) {
+        showAlert(e.message || '更新失敗', 'danger');
       }
     }
 
-    // ==================== 會員註冊 ====================
-    function showRegisterModal(profile) {
+    function showRegisterModal() {
       document.getElementById('loadingScreen').style.display = 'none';
-      new bootstrap.Modal(document.getElementById('registerModal'), {
-        backdrop: 'static',
-        keyboard: false
-      }).show();
+      new bootstrap.Modal(document.getElementById('registerModal'), { backdrop: 'static', keyboard: false }).show();
     }
 
     async function submitRegister() {
       const form = document.getElementById('registerForm');
-      if (!form.checkValidity()) {
-        form.reportValidity();
-        return;
-      }
-
+      if (!form.checkValidity()) { form.reportValidity(); return; }
       try {
         const profile = await liff.getProfile();
-        
         await apiCall('registerMember', {
           memberData: {
             lineId: profile.userId,
@@ -1299,50 +1133,32 @@
             emergencyPhone: document.getElementById('regEmergencyPhone').value
           }
         });
-
         showAlert('註冊成功！歡迎加入帕金森病友會', 'success');
         bootstrap.Modal.getInstance(document.getElementById('registerModal')).hide();
         await loadUserData(profile);
-      } catch (error) {
-        console.error('註冊失敗:', error);
-        showAlert(error.message || '註冊失敗', 'danger');
+      } catch (e) {
+        showAlert(e.message || '註冊失敗', 'danger');
       }
     }
 
-    // ==================== 工具函數 ====================
-    function formatDate(dateString) {
-      if (!dateString) return '';
-      const date = new Date(dateString);
-      return date.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    function formatDate(s) {
+      if (!s) return '';
+      const d = new Date(s);
+      return d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
     }
-
-    function formatDateTime(dateString) {
-      if (!dateString) return '';
-      const date = new Date(dateString);
-      return date.toLocaleString('zh-TW', { 
-        year: 'numeric', 
-        month: '2-digit', 
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+    function formatDateTime(s) {
+      if (!s) return '';
+      const d = new Date(s);
+      return d.toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
     }
-
-    function showAlert(message, type = 'info') {
-      const alertDiv = document.createElement('div');
-      alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
-      alertDiv.style.zIndex = '9999';
-      alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-      `;
-      document.body.appendChild(alertDiv);
-
-      setTimeout(() => {
-        alertDiv.remove();
-      }, 5000);
+    function showAlert(message, type='info') {
+      const el = document.createElement('div');
+      el.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
+      el.style.zIndex = '9999';
+      el.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+      document.body.appendChild(el);
+      setTimeout(()=>el.remove(), 5000);
     }
   </script>
 </body>
 </html>
-
