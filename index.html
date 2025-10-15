@@ -577,7 +577,7 @@
               </div>
               <div class="mb-3">
                 <label class="form-label">電話 *</label>
-                <input type="tel" class="form-control" id="profilePhone" required>
+                <input type="tel" class="form-control" id="profilePhone" required pattern="^09\\d{8}$|^\\d{6,15}$" placeholder="手機請輸入 09xxxxxxxx">
               </div>
               <div class="mb-3">
                 <label class="form-label">Email</label>
@@ -611,7 +611,7 @@
               </div>
               <div class="mb-3">
                 <label class="form-label">緊急聯絡電話</label>
-                <input type="tel" class="form-control" id="profileEmergencyPhone">
+                <input type="tel" class="form-control" id="profileEmergencyPhone" pattern="^09\\d{8}$|^\\d{6,15}$">
               </div>
               <button type="submit" class="btn btn-primary w-100">
                 <i class="bi bi-save"></i> 儲存資料
@@ -624,23 +624,23 @@
 
     <!-- 底部導航 -->
     <div class="bottom-nav">
-      <a class="bottom-nav-item active" onclick="switchPage('dashboard')">
+      <a class="bottom-nav-item active" onclick="switchPage('dashboard', this)">
         <i class="bi bi-house-door-fill"></i>
         <span>首頁</span>
       </a>
-      <a class="bottom-nav-item" onclick="switchPage('activities')">
+      <a class="bottom-nav-item" onclick="switchPage('activities', this)">
         <i class="bi bi-calendar-event"></i>
         <span>活動</span>
       </a>
-      <a class="bottom-nav-item" onclick="switchPage('myRegistrations')">
+      <a class="bottom-nav-item" onclick="switchPage('myRegistrations', this)">
         <i class="bi bi-list-check"></i>
         <span>我的報名</span>
       </a>
-      <a class="bottom-nav-item" onclick="switchPage('volunteer')">
+      <a class="bottom-nav-item" onclick="switchPage('volunteer', this)">
         <i class="bi bi-heart"></i>
         <span>志工</span>
       </a>
-      <a class="bottom-nav-item" onclick="switchPage('profile')">
+      <a class="bottom-nav-item" onclick="switchPage('profile', this)">
         <i class="bi bi-person-circle"></i>
         <span>我的</span>
       </a>
@@ -678,7 +678,7 @@
             </div>
             <div class="mb-3">
               <label class="form-label">電話 *</label>
-              <input type="tel" class="form-control" id="regPhone" required>
+              <input type="tel" class="form-control" id="regPhone" required pattern="^09\\d{8}$|^\\d{6,15}$" placeholder="手機請輸入 09xxxxxxxx">
             </div>
             <div class="mb-3">
               <label class="form-label">Email</label>
@@ -713,7 +713,7 @@
             </div>
             <div class="mb-3">
               <label class="form-label">緊急聯絡電話</label>
-              <input type="tel" class="form-control" id="regEmergencyPhone">
+              <input type="tel" class="form-control" id="regEmergencyPhone" pattern="^09\\d{8}$|^\\d{6,15}$">
             </div>
             <button type="submit" class="btn btn-primary w-100">
               <i class="bi bi-check-circle"></i> 完成註冊
@@ -792,7 +792,8 @@
     // ==================== 配置 ====================
     const CONFIG = {
       LIFF_ID: '1656516134-X9oq92g9', // 請替換為您的 LIFF ID
-      API_URL: 'https://script.google.com/macros/s/AKfycbyoPqVDW-1CJcV9G_73V4QCV5mPYYHtnxI1YZvIioTg9u6F-_rcDx7T0acKxlNf5aeokw/exec', // 請替換為您的 GAS Web  App URL
+      API_URL: 'https://script.google.com/macros/s/AKfycbzOcMX7FbV2DwUqlZ6ElK7KRSYMjTfflBO6J1xcKbO-28OxUj9iuPR3qsh0hkXdplcKwQ/exec', // 請替換為您的 GAS Web App URL
+      API_TIMEOUT_MS: 8000
     };
 
     // ==================== 全域變數 ====================
@@ -800,6 +801,17 @@
     let currentProfile = null;
     let allActivities = [];
     let selectedActivityId = null;
+
+    // 狀態樣式對應
+    const STATUS_MAP = {
+      open: 'status-open',
+      full: 'status-full',
+      closed: 'status-closed',
+      registered: 'status-registered',
+      cancelled: 'status-cancelled',
+      pending: 'status-pending',
+      approved: 'status-approved'
+    };
 
     // ==================== LIFF 初始化 ====================
     async function initializeLiff() {
@@ -813,14 +825,14 @@
 
         // 取得使用者資訊
         currentUser = await liff.getProfile();
-        console.log('User:', currentUser);
-
         // 載入會員資料
         await loadMemberProfile();
 
       } catch (error) {
         console.error('LIFF 初始化失敗:', error);
         showAlert('系統初始化失敗，請重新整理頁面', 'danger');
+        // 仍顯示主容器以避免卡在 loading
+        hideLoading();
       }
     }
 
@@ -831,13 +843,12 @@
           lineUserId: currentUser.userId
         });
 
-        if (response.success) {
-          currentProfile = response.data;
+        if (response && response.success) {
+          currentProfile = response.data || {};
           displayUserInfo();
           loadDashboard();
           hideLoading();
         } else {
-          // 未註冊，顯示註冊表單
           hideLoading();
           showRegisterModal();
         }
@@ -849,9 +860,10 @@
     }
 
     function displayUserInfo() {
-      document.getElementById('userAvatar').src = currentUser.pictureUrl || 'https://via.placeholder.com/70';
-      document.getElementById('userName').textContent = currentProfile.realName || currentUser.displayName;
-      document.getElementById('userType').textContent = currentProfile.memberType || '會員';
+      const avatar = currentUser.pictureUrl || 'https://via.placeholder.com/70';
+      document.getElementById('userAvatar').src = avatar;
+      document.getElementById('userName').textContent = (currentProfile && currentProfile.realName) || currentUser.displayName || '會員';
+      document.getElementById('userType').textContent = (currentProfile && currentProfile.memberType) || '會員';
     }
 
     function showRegisterModal() {
@@ -862,6 +874,11 @@
     // 註冊表單提交
     document.getElementById('registerForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const form = e.currentTarget;
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
       
       const memberData = {
         lineUserId: currentUser.userId,
@@ -883,12 +900,12 @@
       try {
         const response = await apiCall('registerMember', { memberData });
         
-        if (response.success) {
+        if (response && response.success) {
           showAlert('註冊成功！歡迎加入病友會', 'success');
           bootstrap.Modal.getInstance(document.getElementById('registerModal')).hide();
           await loadMemberProfile();
         } else {
-          showAlert('註冊失敗：' + response.message, 'danger');
+          showAlert('註冊失敗：' + (response && response.message ? response.message : '請稍後再試'), 'danger');
         }
       } catch (error) {
         console.error('註冊失敗:', error);
@@ -899,6 +916,11 @@
     // 更新個人資料
     document.getElementById('profileForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const form = e.currentTarget;
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
       
       const memberData = {
         realName: document.getElementById('profileRealName').value,
@@ -920,11 +942,11 @@
           memberData
         });
         
-        if (response.success) {
+        if (response && response.success) {
           showAlert('資料更新成功', 'success');
           await loadMemberProfile();
         } else {
-          showAlert('更新失敗：' + response.message, 'danger');
+          showAlert('更新失敗：' + (response && response.message ? response.message : '請稍後再試'), 'danger');
         }
       } catch (error) {
         console.error('更新失敗:', error);
@@ -939,15 +961,14 @@
           lineUserId: currentUser.userId
         });
 
-        if (response.success) {
-          const data = response.data;
-          
-          // 更新統計
-          document.getElementById('statMyRegistrations').textContent = data.myRegistrations.length;
-          document.getElementById('statVolunteerHours').textContent = data.myVolunteerHours;
-          
-          // 顯示即將到來的活動
-          displayUpcomingActivities(data.upcomingActivities);
+        if (response && response.success) {
+          const data = response.data || {};
+          const regs = Array.isArray(data.myRegistrations) ? data.myRegistrations : [];
+          const hours = typeof data.myVolunteerHours === 'number' ? data.myVolunteerHours : (data.myVolunteerHours || 0);
+
+          document.getElementById('statMyRegistrations').textContent = regs.length;
+          document.getElementById('statVolunteerHours').textContent = hours;
+          displayUpcomingActivities(Array.isArray(data.upcomingActivities) ? data.upcomingActivities : []);
         }
       } catch (error) {
         console.error('載入儀表板失敗:', error);
@@ -967,21 +988,26 @@
         return;
       }
 
-      container.innerHTML = activities.slice(0, 3).map(activity => `
-        <div class="activity-item" onclick="showActivityDetail('${activity.id}')">
-          <div class="activity-title">${activity.title}</div>
-          <div class="activity-info">
-            <i class="bi bi-calendar"></i> ${formatDate(activity.date)} ${activity.time || ''}
+      container.innerHTML = activities.slice(0, 3).map(activity => {
+        const isFull = (activity.maxParticipants > 0) && (activity.currentParticipants >= activity.maxParticipants);
+        const badgeClass = isFull ? 'status-full' : 'status-open';
+        const statusText = isFull ? '已額滿' : (activity.status || '報名中');
+        return `
+          <div class="activity-item" onclick="showActivityDetail('${activity.id}')">
+            <div class="activity-title">${escapeHtml(activity.title)}</div>
+            <div class="activity-info">
+              <i class="bi bi-calendar"></i> ${formatDate(activity.date)} ${activity.time ? escapeHtml(activity.time) : ''}
+            </div>
+            <div class="activity-info">
+              <i class="bi bi-geo-alt"></i> ${activity.location ? escapeHtml(activity.location) : '待公布'}
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+              <span class="status-badge ${badgeClass}">${escapeHtml(statusText)}</span>
+              <small class="text-muted">${Number(activity.currentParticipants) || 0}/${activity.maxParticipants || '不限'} 人</small>
+            </div>
           </div>
-          <div class="activity-info">
-            <i class="bi bi-geo-alt"></i> ${activity.location || '待公布'}
-          </div>
-          <div class="d-flex justify-content-between align-items-center mt-2">
-            <span class="status-badge status-open">${activity.status}</span>
-            <small class="text-muted">${activity.currentParticipants}/${activity.maxParticipants || '不限'} 人</small>
-          </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     // ==================== 活動管理 ====================
@@ -989,9 +1015,11 @@
       try {
         const response = await apiCall('getAllActivities', {});
         
-        if (response.success) {
-          allActivities = response.data;
+        if (response && response.success) {
+          allActivities = Array.isArray(response.data) ? response.data : [];
           displayActivities(allActivities);
+        } else {
+          throw new Error(response && response.message ? response.message : 'unknown');
         }
       } catch (error) {
         console.error('載入活動失敗:', error);
@@ -1019,23 +1047,27 @@
 
       container.innerHTML = activities.map(activity => {
         const isFull = activity.maxParticipants > 0 && activity.currentParticipants >= activity.maxParticipants;
-        const statusClass = activity.status === '報名中' ? (isFull ? 'status-full' : 'status-open') : 'status-closed';
+        const baseStatus = (activity.status || '').trim();
+        const statusClass = baseStatus === '報名中'
+          ? (isFull ? 'status-full' : 'status-open')
+          : 'status-closed';
+        const statusText = isFull ? '已額滿' : (baseStatus || '報名中');
         
         return `
           <div class="activity-item" onclick="showActivityDetail('${activity.id}')">
-            <div class="activity-title">${activity.title}</div>
+            <div class="activity-title">${escapeHtml(activity.title)}</div>
             <div class="activity-info">
-              <i class="bi bi-tag"></i> ${activity.type}
+              <i class="bi bi-tag"></i> ${activity.type ? escapeHtml(activity.type) : '一般活動'}
             </div>
             <div class="activity-info">
-              <i class="bi bi-calendar"></i> ${formatDate(activity.date)} ${activity.time || ''}
+              <i class="bi bi-calendar"></i> ${formatDate(activity.date)} ${activity.time ? escapeHtml(activity.time) : ''}
             </div>
             <div class="activity-info">
-              <i class="bi bi-geo-alt"></i> ${activity.location || '待公布'}
+              <i class="bi bi-geo-alt"></i> ${activity.location ? escapeHtml(activity.location) : '待公布'}
             </div>
             <div class="d-flex justify-content-between align-items-center mt-2">
-              <span class="status-badge ${statusClass}">${isFull ? '已額滿' : activity.status}</span>
-              <small class="text-muted">${activity.currentParticipants}/${activity.maxParticipants || '不限'} 人</small>
+              <span class="status-badge ${statusClass}">${escapeHtml(statusText)}</span>
+              <small class="text-muted">${Number(activity.currentParticipants) || 0}/${activity.maxParticipants || '不限'} 人</small>
             </div>
           </div>
         `;
@@ -1045,11 +1077,12 @@
     // 搜尋活動
     document.getElementById('activitySearch').addEventListener('input', (e) => {
       const keyword = e.target.value.toLowerCase();
-      const filtered = allActivities.filter(activity => 
-        activity.title.toLowerCase().includes(keyword) ||
-        activity.type.toLowerCase().includes(keyword) ||
-        (activity.location && activity.location.toLowerCase().includes(keyword))
-      );
+      const filtered = allActivities.filter(activity => {
+        const title = (activity.title || '').toLowerCase();
+        const type = (activity.type || '').toLowerCase();
+        const loc = (activity.location || '').toLowerCase();
+        return title.includes(keyword) || type.includes(keyword) || loc.includes(keyword);
+      });
       displayActivities(filtered);
     });
 
@@ -1057,46 +1090,46 @@
       selectedActivityId = activityId;
       
       try {
-        const response = await apiCall('getActivityById', activityId);
+        const response = await apiCall('getActivityById', { activityId });
         
-        if (response.success) {
-          const activity = response.data;
+        if (response && response.success) {
+          const activity = response.data || {};
           const modal = new bootstrap.Modal(document.getElementById('activityDetailModal'));
           
-          document.getElementById('activityDetailTitle').textContent = activity.title;
+          document.getElementById('activityDetailTitle').textContent = activity.title || '活動詳情';
           document.getElementById('activityDetailContent').innerHTML = `
             <div class="mb-3">
-              <strong><i class="bi bi-tag"></i> 活動類型：</strong> ${activity.type}
+              <strong><i class="bi bi-tag"></i> 活動類型：</strong> ${activity.type ? escapeHtml(activity.type) : '一般活動'}
             </div>
             <div class="mb-3">
-              <strong><i class="bi bi-calendar"></i> 活動日期：</strong> ${formatDate(activity.date)} ${activity.time || ''}
+              <strong><i class="bi bi-calendar"></i> 活動日期：</strong> ${formatDate(activity.date)} ${activity.time ? escapeHtml(activity.time) : ''}
             </div>
             <div class="mb-3">
-              <strong><i class="bi bi-geo-alt"></i> 活動地點：</strong> ${activity.location || '待公布'}
+              <strong><i class="bi bi-geo-alt"></i> 活動地點：</strong> ${activity.location ? escapeHtml(activity.location) : '待公布'}
             </div>
             <div class="mb-3">
-              <strong><i class="bi bi-people"></i> 報名人數：</strong> ${activity.currentParticipants}/${activity.maxParticipants || '不限'}
+              <strong><i class="bi bi-people"></i> 報名人數：</strong> ${(Number(activity.currentParticipants) || 0)}/${activity.maxParticipants || '不限'}
             </div>
             <div class="mb-3">
-              <strong><i class="bi bi-cash"></i> 活動費用：</strong> ${activity.fee > 0 ? 'NT$ ' + activity.fee : '免費'}
+              <strong><i class="bi bi-cash"></i> 活動費用：</strong> ${activity.fee > 0 ? 'NT$ ' + Number(activity.fee) : '免費'}
             </div>
             <div class="mb-3">
               <strong><i class="bi bi-clock"></i> 報名截止：</strong> ${activity.registrationDeadline ? formatDate(activity.registrationDeadline) : '活動當天'}
             </div>
             <div class="mb-3">
               <strong><i class="bi bi-info-circle"></i> 活動說明：</strong>
-              <p class="mt-2">${activity.description || '無'}</p>
+              <p class="mt-2">${activity.description ? escapeHtml(activity.description) : '無'}</p>
             </div>
             ${activity.note ? `
               <div class="alert alert-info">
-                <i class="bi bi-exclamation-circle"></i> ${activity.note}
+                <i class="bi bi-exclamation-circle"></i> ${escapeHtml(activity.note)}
               </div>
             ` : ''}
           `;
           
           // 檢查是否可以報名
           const isFull = activity.maxParticipants > 0 && activity.currentParticipants >= activity.maxParticipants;
-          const canRegister = activity.status === '報名中' && !isFull;
+          const canRegister = (activity.status === '報名中') && !isFull;
           
           const btnRegister = document.getElementById('btnRegisterActivity');
           if (canRegister) {
@@ -1107,6 +1140,8 @@
           }
           
           modal.show();
+        } else {
+          showAlert('載入活動詳情失敗', 'danger');
         }
       } catch (error) {
         console.error('載入活動詳情失敗:', error);
@@ -1116,7 +1151,6 @@
 
     async function registerForActivity() {
       if (!selectedActivityId) return;
-      
       if (!confirm('確定要報名此活動嗎？')) return;
       
       try {
@@ -1125,13 +1159,15 @@
           activityId: selectedActivityId
         });
         
-        if (response.success) {
+        if (response && response.success) {
           showAlert('報名成功！', 'success');
-          bootstrap.Modal.getInstance(document.getElementById('activityDetailModal')).hide();
+          const modalEl = document.getElementById('activityDetailModal');
+          const instance = bootstrap.Modal.getInstance(modalEl);
+          if (instance) instance.hide();
           loadDashboard();
           loadActivities();
         } else {
-          showAlert('報名失敗：' + response.message, 'danger');
+          showAlert('報名失敗：' + (response && response.message ? response.message : '請稍後再試'), 'danger');
         }
       } catch (error) {
         console.error('報名失敗:', error);
@@ -1142,10 +1178,13 @@
     // ==================== 我的報名 ====================
     async function loadMyRegistrations() {
       try {
-        const response = await apiCall('getMyRegistrations', currentUser.userId);
+        const response = await apiCall('getMyRegistrations', { lineUserId: currentUser.userId });
         
-        if (response.success) {
-          displayMyRegistrations(response.data);
+        if (response && response.success) {
+          const list = Array.isArray(response.data) ? response.data : (response.data && response.data.list) || [];
+          displayMyRegistrations(list);
+        } else {
+          throw new Error(response && response.message ? response.message : 'unknown');
         }
       } catch (error) {
         console.error('載入報名記錄失敗:', error);
@@ -1172,17 +1211,17 @@
       }
 
       container.innerHTML = registrations.map(reg => {
-        const statusClass = reg.status === '已報名' ? 'status-registered' : 'status-cancelled';
-        
+        const isActive = reg.status === '已報名';
+        const statusClass = isActive ? 'status-registered' : 'status-cancelled';
         return `
           <div class="activity-item">
-            <div class="activity-title">${reg.activityTitle}</div>
+            <div class="activity-title">${escapeHtml(reg.activityTitle || '未命名活動')}</div>
             <div class="activity-info">
               <i class="bi bi-calendar"></i> 報名時間：${formatDateTime(reg.registeredAt)}
             </div>
             <div class="d-flex justify-content-between align-items-center mt-2">
-              <span class="status-badge ${statusClass}">${reg.status}</span>
-              ${reg.status === '已報名' ? `
+              <span class="status-badge ${statusClass}">${escapeHtml(reg.status || '狀態')}</span>
+              ${isActive ? `
                 <button class="btn btn-danger btn-sm" onclick="cancelRegistration('${reg.id}')">
                   <i class="bi bi-x-circle"></i> 取消報名
                 </button>
@@ -1202,12 +1241,12 @@
           registrationId: registrationId
         });
         
-        if (response.success) {
+        if (response && response.success) {
           showAlert('已取消報名', 'success');
           loadMyRegistrations();
           loadDashboard();
         } else {
-          showAlert('取消失敗：' + response.message, 'danger');
+          showAlert('取消失敗：' + (response && response.message ? response.message : '請稍後再試'), 'danger');
         }
       } catch (error) {
         console.error('取消報名失敗:', error);
@@ -1218,11 +1257,20 @@
     // ==================== 志工服務 ====================
     async function loadVolunteerRecords() {
       try {
-        const response = await apiCall('getMyVolunteerRecords', currentUser.userId);
+        const response = await apiCall('getMyVolunteerRecords', { lineUserId: currentUser.userId });
         
-        if (response.success) {
-          document.getElementById('totalVolunteerHours').textContent = response.totalHours || 0;
-          displayVolunteerRecords(response.data);
+        if (response && response.success) {
+          // 支援兩種常見結構：data.totalHours 或 totalHours
+          const totalHours = (response.data && response.data.totalHours != null)
+            ? response.data.totalHours
+            : (response.totalHours != null ? response.totalHours : 0);
+          document.getElementById('totalVolunteerHours').textContent = totalHours || 0;
+
+          const list = Array.isArray(response.data) ? response.data
+            : (response.data && Array.isArray(response.data.records) ? response.data.records : []);
+          displayVolunteerRecords(list);
+        } else {
+          throw new Error(response && response.message ? response.message : 'unknown');
         }
       } catch (error) {
         console.error('載入志工記錄失敗:', error);
@@ -1255,20 +1303,20 @@
         
         return `
           <div class="activity-item">
-            <div class="activity-title">${record.activity}</div>
+            <div class="activity-title">${escapeHtml(record.activity || '志工服務')}</div>
             <div class="activity-info">
               <i class="bi bi-calendar"></i> ${formatDate(record.date)}
             </div>
             <div class="activity-info">
-              <i class="bi bi-clock"></i> ${record.hours} 小時
+              <i class="bi bi-clock"></i> ${Number(record.hours) || 0} 小時
             </div>
             ${record.description ? `
               <div class="activity-info">
-                <i class="bi bi-file-text"></i> ${record.description}
+                <i class="bi bi-file-text"></i> ${escapeHtml(record.description)}
               </div>
             ` : ''}
             <div class="d-flex justify-content-between align-items-center mt-2">
-              <span class="status-badge ${statusClass}">${record.status}</span>
+              <span class="status-badge ${statusClass}">${escapeHtml(record.status || '待審核')}</span>
               <small class="text-muted">${formatDateTime(record.createdAt)}</small>
             </div>
           </div>
@@ -1303,12 +1351,12 @@
           recordData
         });
         
-        if (response.success) {
+        if (response && response.success) {
           showAlert('服務記錄已提交，等待審核', 'success');
           bootstrap.Modal.getInstance(document.getElementById('addVolunteerModal')).hide();
           loadVolunteerRecords();
         } else {
-          showAlert('提交失敗：' + response.message, 'danger');
+          showAlert('提交失敗：' + (response && response.message ? response.message : '請稍後再試'), 'danger');
         }
       } catch (error) {
         console.error('提交失敗:', error);
@@ -1334,7 +1382,7 @@
     }
 
     // ==================== 頁面切換 ====================
-    function switchPage(page) {
+    function switchPage(page, el) {
       // 隱藏所有頁面
       document.querySelectorAll('.page-section').forEach(section => {
         section.classList.remove('active');
@@ -1357,9 +1405,7 @@
       const pageId = pageMap[page];
       if (pageId) {
         document.getElementById(pageId).classList.add('active');
-        
-        // 設置導航項目為 active
-        event.currentTarget.classList.add('active');
+        if (el) el.classList.add('active');
         
         // 載入對應頁面的資料
         switch(page) {
@@ -1383,25 +1429,47 @@
     }
 
     // ==================== API 呼叫 ====================
-    async function apiCall(action, data) {
-      const response = await fetch(CONFIG.API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          action: action,
-          ...data
-        })
-      });
-      
-      return await response.json();
+    async function apiCall(action, data = {}) {
+      const payload = (data && typeof data === 'object') ? data : { data };
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), CONFIG.API_TIMEOUT_MS);
+
+      try {
+        const response = await fetch(CONFIG.API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            action: action,
+            ...payload
+          }),
+          signal: controller.signal
+        });
+        const json = await response.json();
+        return json;
+      } catch (err) {
+        console.error('API error:', err);
+        showAlert('網路或伺服器異常，請稍後再試', 'warning');
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
     // ==================== 工具函數 ====================
+    function parseDateSafe(s) {
+      if (!s) return null;
+      // 將 YYYY-MM-DD 轉為 YYYY/MM/DD 提升 Safari 相容性；若已有時間戳則保留
+      const isOnlyDate = /^\d{4}-\d{2}-\d{2}$/.test(s);
+      const normalized = isOnlyDate ? s.replace(/-/g, '/') : s;
+      const d = new Date(normalized);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
     function formatDate(dateString) {
-      if (!dateString) return '';
-      const date = new Date(dateString);
+      const date = parseDateSafe(dateString);
+      if (!date) return '';
       return date.toLocaleDateString('zh-TW', {
         year: 'numeric',
         month: '2-digit',
@@ -1410,8 +1478,8 @@
     }
 
     function formatDateTime(dateString) {
-      if (!dateString) return '';
-      const date = new Date(dateString);
+      const date = parseDateSafe(dateString);
+      if (!date) return '';
       return date.toLocaleString('zh-TW', {
         year: 'numeric',
         month: '2-digit',
@@ -1427,20 +1495,32 @@
       alertDiv.style.zIndex = '9999';
       alertDiv.style.minWidth = '300px';
       alertDiv.innerHTML = `
-        ${message}
+        ${escapeHtml(message)}
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
       `;
       
       document.body.appendChild(alertDiv);
       
       setTimeout(() => {
-        alertDiv.remove();
+        if (alertDiv && alertDiv.parentNode) alertDiv.remove();
       }, 3000);
     }
 
     function hideLoading() {
-      document.getElementById('loadingScreen').style.display = 'none';
-      document.getElementById('appContainer').style.display = 'block';
+      const loading = document.getElementById('loadingScreen');
+      if (loading) loading.style.display = 'none';
+      const app = document.getElementById('appContainer');
+      if (app) app.style.display = 'block';
+    }
+
+    function escapeHtml(str) {
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     // ==================== 初始化 ====================
@@ -1450,4 +1530,3 @@
   </script>
 </body>
 </html>
-
