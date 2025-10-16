@@ -308,194 +308,199 @@
   
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    const API_URL = 'https://script.google.com/macros/s/AKfycbxhFjbgh2Qfa74DmDP_f3wlZNq6YrECeJy69Hahm3v67ECrkkbYwybDRbmDr3jOVH88VQ/exec'; // 請替換為您的 Web App URL
-    const LIFF_ID = '1656516134-X9oq92g9'; // 請替換為您的 LIFF ID
-    
-    // 初始化 LIFF
-    liff.init({ liffId: LIFF_ID }).then(() => {
-      console.log('LIFF initialized');
-    }).catch((err) => {
-      console.error('LIFF initialization failed', err);
-    });
-    
-    // 切換標籤
-    function switchTab(tab) {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  const API_URL = 'https://script.google.com/macros/s/AKfycbyEzIpgCDKkwlcWf1DUQ7d4HcwayUkELPmOOvmC_2i-7SIy67gJrjtvVZcAbk2q8c1bMg/exec';
+  const LIFF_ID = '1656516134-X9oq92g9';
+  
+  // ==================== API 呼叫函數 (JSONP 方式) ====================
+  
+  function callAPI(action, data) {
+    return new Promise((resolve, reject) => {
+      const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
       
-      event.target.classList.add('active');
-      document.getElementById(tab + '-form').classList.add('active');
-      
-      hideAlert();
-    }
-    
-    // 顯示提示
-    function showAlert(message, type = 'success') {
-      const alert = document.getElementById('alert');
-      alert.className = `alert ${type}`;
-      alert.textContent = message;
-      alert.style.display = 'block';
-      
-      setTimeout(() => hideAlert(), 5000);
-    }
-    
-    function hideAlert() {
-      document.getElementById('alert').style.display = 'none';
-    }
-    
-    // 顯示/隱藏載入中
-    function showLoading() {
-      document.getElementById('loading').style.display = 'block';
-      document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
-    }
-    
-    function hideLoading() {
-      document.getElementById('loading').style.display = 'none';
-      document.querySelectorAll('.tab-content.active').forEach(c => c.style.display = 'block');
-    }
-    
-    // 處理登入
-    async function handleLogin(event) {
-      event.preventDefault();
-      
-      const email = document.getElementById('login-email').value;
-      const password = document.getElementById('login-password').value;
-      
-      showLoading();
-      
-      try {
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'login',
-            email: email,
-            password: password
-          })
-        });
-        
-        const result = await response.json();
-        
-        hideLoading();
-        
-        if (result.success) {
-          // 儲存登入資訊
-          localStorage.setItem('memberInfo', JSON.stringify(result.data));
-          showAlert('登入成功！即將跳轉...', 'success');
-          
-          setTimeout(() => {
-            window.location.href = '?page=member';
-          }, 1500);
-        } else {
-          showAlert(result.message, 'error');
-        }
-      } catch (error) {
-        hideLoading();
-        showAlert('系統錯誤，請稍後再試', 'error');
-        console.error(error);
-      }
-    }
-    
-    // 處理 LINE 登入
-    async function handleLineLogin() {
-      if (!liff.isLoggedIn()) {
-        liff.login();
-        return;
-      }
-      
-      showLoading();
-      
-      try {
-        const profile = await liff.getProfile();
-        
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'lineLogin',
-            lineUserId: profile.userId,
-            displayName: profile.displayName,
-            pictureUrl: profile.pictureUrl
-          })
-        });
-        
-        const result = await response.json();
-        
-        hideLoading();
-        
-        if (result.success) {
-          localStorage.setItem('memberInfo', JSON.stringify(result.data));
-          showAlert('登入成功！即將跳轉...', 'success');
-          
-          setTimeout(() => {
-            window.location.href = '?page=member';
-          }, 1500);
-        } else {
-          if (result.data && result.data.needRegister) {
-            showAlert('請先完成註冊', 'error');
-            // 可以自動填入 LINE 資料到註冊表單
-          } else {
-            showAlert(result.message, 'error');
-          }
-        }
-      } catch (error) {
-        hideLoading();
-        showAlert('LINE 登入失敗', 'error');
-        console.error(error);
-      }
-    }
-    
-    // 處理註冊
-    async function handleRegister(event) {
-      event.preventDefault();
-      
-      const password = document.getElementById('reg-password').value;
-      const passwordConfirm = document.getElementById('reg-password-confirm').value;
-      
-      if (password !== passwordConfirm) {
-        showAlert('兩次密碼輸入不一致', 'error');
-        return;
-      }
-      
-      const data = {
-        action: 'register',
-        name: document.getElementById('reg-name').value,
-        gender: document.getElementById('reg-gender').value,
-        birthday: document.getElementById('reg-birthday').value,
-        phone: document.getElementById('reg-phone').value,
-        email: document.getElementById('reg-email').value,
-        password: password
+      // 建立 callback 函數
+      window[callbackName] = function(response) {
+        delete window[callbackName];
+        document.body.removeChild(script);
+        resolve(response);
       };
       
-      showLoading();
+      // 建立 script 標籤
+      const script = document.createElement('script');
+      const params = new URLSearchParams({
+        callback: callbackName,
+        action: action,
+        data: JSON.stringify(data)
+      });
       
-      try {
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        });
+      script.src = API_URL + '?' + params.toString();
+      script.onerror = function() {
+        delete window[callbackName];
+        document.body.removeChild(script);
+        reject(new Error('API 呼叫失敗'));
+      };
+      
+      document.body.appendChild(script);
+      
+      // 設定超時
+      setTimeout(() => {
+        if (window[callbackName]) {
+          delete window[callbackName];
+          if (document.body.contains(script)) {
+            document.body.removeChild(script);
+          }
+          reject(new Error('請求超時'));
+        }
+      }, 30000);
+    });
+  }
+  
+  // ==================== 修改登入函數 ====================
+  
+  // 管理員登入
+  async function handleAdminLogin(event) {
+    event.preventDefault();
+    
+    const username = document.getElementById('admin-username').value;
+    const password = document.getElementById('admin-password').value;
+    
+    try {
+      const result = await callAPI('adminLogin', {
+        username: username,
+        password: password
+      });
+      
+      if (result.success) {
+        localStorage.setItem('adminInfo', JSON.stringify(result.data));
+        location.reload();
+      } else {
+        alert('❌ ' + result.message);
+      }
+    } catch (error) {
+      console.error(error);
+      alert('❌ 系統錯誤');
+    }
+  }
+  
+  // 處理 LINE 登入
+  async function handleLineLogin() {
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+    
+    showLoading();
+    
+    try {
+      const profile = await liff.getProfile();
+      
+      const result = await callAPI('lineLogin', {
+        lineUserId: profile.userId,
+        displayName: profile.displayName,
+        pictureUrl: profile.pictureUrl
+      });
+      
+      hideLoading();
+      
+      if (result.success) {
+        localStorage.setItem('memberInfo', JSON.stringify(result.data));
+        showAlert('登入成功！即將跳轉...', 'success');
         
-        const result = await response.json();
-        
-        hideLoading();
-        
-        if (result.success) {
-          showAlert('註冊成功！請等待管理員審核', 'success');
-          
-          setTimeout(() => {
-            switchTab('login');
-            document.getElementById('register-form').reset();
-          }, 2000);
+        setTimeout(() => {
+          window.location.href = '?page=member';
+        }, 1500);
+      } else {
+        if (result.data && result.data.needRegister) {
+          showAlert('請先完成註冊', 'error');
         } else {
           showAlert(result.message, 'error');
         }
-      } catch (error) {
-        hideLoading();
-        showAlert('系統錯誤，請稍後再試', 'error');
-        console.error(error);
       }
+    } catch (error) {
+      hideLoading();
+      showAlert('LINE 登入失敗', 'error');
+      console.error(error);
     }
-  </script>
+  }
+  
+  // 處理登入
+  async function handleLogin(event) {
+    event.preventDefault();
+    
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    
+    showLoading();
+    
+    try {
+      const result = await callAPI('login', {
+        email: email,
+        password: password
+      });
+      
+      hideLoading();
+      
+      if (result.success) {
+        localStorage.setItem('memberInfo', JSON.stringify(result.data));
+        showAlert('登入成功！即將跳轉...', 'success');
+        
+        setTimeout(() => {
+          window.location.href = '?page=member';
+        }, 1500);
+      } else {
+        showAlert(result.message, 'error');
+      }
+    } catch (error) {
+      hideLoading();
+      showAlert('系統錯誤，請稍後再試', 'error');
+      console.error(error);
+    }
+  }
+  
+  // 處理註冊
+  async function handleRegister(event) {
+    event.preventDefault();
+    
+    const password = document.getElementById('reg-password').value;
+    const passwordConfirm = document.getElementById('reg-password-confirm').value;
+    
+    if (password !== passwordConfirm) {
+      showAlert('兩次密碼輸入不一致', 'error');
+      return;
+    }
+    
+    const data = {
+      name: document.getElementById('reg-name').value,
+      gender: document.getElementById('reg-gender').value,
+      birthday: document.getElementById('reg-birthday').value,
+      phone: document.getElementById('reg-phone').value,
+      email: document.getElementById('reg-email').value,
+      password: password
+    };
+    
+    showLoading();
+    
+    try {
+      const result = await callAPI('register', data);
+      
+      hideLoading();
+      
+      if (result.success) {
+        showAlert('註冊成功！請等待管理員審核', 'success');
+        
+        setTimeout(() => {
+          switchTab('login');
+          document.getElementById('register-form').reset();
+        }, 2000);
+      } else {
+        showAlert(result.message, 'error');
+      }
+    } catch (error) {
+      hideLoading();
+      showAlert('系統錯誤，請稍後再試', 'error');
+      console.error(error);
+    }
+  }
+</script>
+
 </body>
 </html>
