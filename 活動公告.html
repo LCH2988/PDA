@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LIFF 發送訊息到群組</title>
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: linear-gradient(135deg, #00B900 0%, #00D300 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 800px;
+      margin: 0 auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: #00B900;
+      margin-bottom: 10px;
+      font-size: 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .status.loading {
+      background: #fff3cd;
+      color: #856404;
+    }
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+    }
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    .tab {
+      padding: 12px 24px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      color: #666;
+      transition: all 0.3s;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+    }
+    .tab.active {
+      color: #00B900;
+      border-bottom-color: #00B900;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #555;
+      font-weight: 600;
+    }
+    input, textarea, select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 16px;
+      font-family: inherit;
+      transition: border-color 0.3s;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #00B900;
+    }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    button {
+      flex: 1;
+      padding: 14px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .btn-send {
+      background: linear-gradient(135deg, #00B900 0%, #00D300 100%);
+      color: white;
+    }
+    .btn-send:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 185, 0, 0.4);
+    }
+    .btn-preview {
+      background: #17a2b8;
+      color: white;
+    }
+    .btn-preview:hover:not(:disabled) {
+      background: #138496;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .info {
+      background: #e7f3ff;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+      font-size: 14px;
+      color: #004085;
+      line-height: 1.6;
+    }
+    .preview-box {
+      background: #f8f9fa;
+      border: 2px dashed #dee2e6;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 10px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .preview-box pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .flex-message-preview {
+      background: white;
+      border-radius: 12px;
+      padding: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .input-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+    .color-input-group {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .color-input-group input[type="color"] {
+      width: 60px;
+      height: 40px;
+      padding: 2px;
+      cursor: pointer;
+    }
+    .group-info {
+      background: #fff9e6;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #856404;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📱 LIFF 發送訊息到群組</h1>
+    
+    <div id="status" class="status loading">正在初始化 LIFF...</div>
+    
+    <div id="groupInfo" class="group-info" style="display:none;">
+      <strong>當前環境：</strong><span id="contextType">-</span><br>
+      <strong>群組/聊天室 ID：</strong><span id="groupId">-</span>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('text')">文字訊息</button>
+      <button class="tab" onclick="switchTab('flex')">牌卡訊息 (Flex Message)</button>
+    </div>
+
+    <!-- 文字訊息 Tab -->
+    <div id="textTab" class="tab-content active">
+      <div class="form-group">
+        <label for="textMessage">訊息內容：</label>
+        <textarea 
+          id="textMessage" 
+          rows="6" 
+          placeholder="請輸入要發送的文字訊息..."
+          disabled
+        ></textarea>
+      </div>
+      
+      <div class="button-group">
+        <button id="sendTextBtn" class="btn-send" disabled>發送文字訊息</button>
+      </div>
+    </div>
+
+    <!-- Flex Message Tab -->
+    <div id="flexTab" class="tab-content">
+      <div class="form-group">
+        <label>快速範本：</label>
+        <select id="flexTemplate" onchange="loadTemplate()" disabled>
+          <option value="">選擇範本...</option>
+          <option value="bubble">基本泡泡卡片</option>
+          <option value="notification">通知卡片</option>
+          <option value="product">產品展示卡片</option>
+          <option value="event">活動資訊卡片</option>
+          <option value="custom">自訂 JSON</option>
+        </select>
+      </div>
+
+      <div id="templateFields" style="display:none;">
+        <!-- 基本泡泡卡片欄位 -->
+        <div id="bubbleFields" class="template-fields" style="display:none;">
+          <div class="form-group">
+            <label for="bubbleTitle">標題：</label>
+            <input type="text" id="bubbleTitle" placeholder="輸入標題">
+          </div>
+          <div class="form-group">
+            <label for="bubbleText">內容：</label>
+            <textarea id="bubbleText" rows="3" placeholder="輸入內容"></textarea>
+          </div>
+          <div class="input-row">
+            <div class="form-group">
+              <label for="bubbleImage">圖片 URL：</label>
+              <input type="url" id="bubbleImage" placeholder="https://example.com/image.jpg">
+            </div>
+            <div class="form-group">
+              <label for="bubbleColor">主題色：</label>
+              <div class="color-input-group">
+                <input type="color" id="bubbleColor" value="#00B900">
+                <input type="text" id="bubbleColorText" value="#00B900" readonly>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 通知卡片欄位 -->
+        <div id="notificationFields" class="template-fields" style="display:none;">
+          <div class="form-group">
+            <label for="notifTitle">通知標題：</label>
+            <input type="text" id="notifTitle" placeholder="重要通知">
+          </div>
+          <div class="form-group">
+            <label for="notifMessage">通知內容：</label>
+            <textarea id="notifMessage" rows="4" placeholder="請輸入通知內容..."></textarea>
+          </div>
+          <div class="form-group">
+            <label for="notifTime">時間：</label>
+            <input type="text" id="notifTime" placeholder="2025-10-20 09:00">
+          </div>
+        </div>
+
+        <!-- 產品展示卡片欄位 -->
+        <div id="productFields" class="template-fields" style="display:none;">
+          <div class="form-group">
+            <label for="productName">產品名稱：</label>
+            <input type="text" id="productName" placeholder="產品名稱">
+          </div>
+          <div class="form-group">
+            <label for="productDesc">產品描述：</label>
+            <textarea id="productDesc" rows="2" placeholder="產品描述"></textarea>
+          </div>
+          <div class="input-row">
+            <div class="form-group">
+              <label for="productPrice">價格：</label>
+              <input type="text" id="productPrice" placeholder="NT$ 999">
+            </div>
+            <div class="form-group">
+              <label for="productImage">產品圖片 URL：</label>
+              <input type="url" id="productImage" placeholder="https://...">
+            </div>
+          </div>
+        </div>
+
+        <!-- 活動資訊卡片欄位 -->
+        <div id="eventFields" class="template-fields" style="display:none;">
+          <div class="form-group">
+            <label for="eventName">活動名稱：</label>
+            <input type="text" id="eventName" placeholder="活動名稱">
+          </div>
+          <div class="form-group">
+            <label for="eventDate">活動日期：</label>
+            <input type="text" id="eventDate" placeholder="2025/10/20 14:00">
+          </div>
+          <div class="form-group">
+            <label for="eventLocation">活動地點：</label>
+            <input type="text" id="eventLocation" placeholder="台北市信義區...">
+          </div>
+          <div class="form-group">
+            <label for="eventImage">活動圖片 URL：</label>
+            <input type="url" id="eventImage" placeholder="https://...">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="flexJson">Flex Message JSON：</label>
+        <textarea 
+          id="flexJson" 
+          rows="10" 
+          placeholder='{"type": "bubble", "body": {...}}'
+          disabled
+        ></textarea>
+      </div>
+
+      <div class="button-group">
+        <button id="previewFlexBtn" class="btn-preview" disabled>預覽</button>
+        <button id="sendFlexBtn" class="btn-send" disabled>發送牌卡訊息</button>
+      </div>
+
+      <div id="previewBox" class="preview-box" style="display:none;">
+        <strong>預覽：</strong>
+        <div id="previewContent"></div>
+      </div>
+    </div>
+
+    <div class="info">
+      <strong>📌 使用說明：</strong><br>
+      1. 此頁面需要在 LINE 群組中開啟 LIFF<br>
+      2. LIFF 必須設定為 <code>chat_message.write</code> 權限<br>
+      3. 請先在 LINE Developers Console 建立 LIFF 應用<br>
+      4. 將下方程式碼中的 LIFF_ID 替換為你的 LIFF ID<br>
+      5. Flex Message 可使用 <a href="https://developers.line.biz/flex-simulator/" target="_blank">Flex Message Simulator</a> 設計
+    </div>
+  </div>
+
+  <script>
+    const statusDiv = document.getElementById('status');
+    const groupInfo = document.getElementById('groupInfo');
+    const contextType = document.getElementById('contextType');
+    const groupId = document.getElementById('groupId');
+    
+    // 請將此處替換為你的 LIFF ID
+    const LIFF_ID = 'YOUR-LIFF-ID-HERE';
+
+    let currentContext = null;
+
+    // 初始化 LIFF
+    async function initializeLiff() {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+        
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return;
+        }
+        
+        // 獲取當前環境資訊
+        currentContext = liff.getContext();
+        console.log('Context:', currentContext);
+        
+        // 顯示環境資訊
+        if (currentContext) {
+          groupInfo.style.display = 'block';
+          
+          let typeText = '';
+          if (currentContext.type === 'group') {
+            typeText = '群組';
+            groupId.textContent = currentContext.groupId || '無法取得';
+          } else if (currentContext.type === 'room') {
+            typeText = '聊天室';
+            groupId.textContent = currentContext.roomId || '無法取得';
+          } else if (currentContext.type === 'utou') {
+            typeText = '一對一聊天';
+            groupId.textContent = '(一對一聊天)';
+          } else {
+            typeText = currentContext.type || '未知';
+            groupId.textContent = '無法取得';
+          }
+          contextType.textContent = typeText;
+        }
+        
+        // LIFF 初始化成功
+        statusDiv.className = 'status success';
+        statusDiv.textContent = '✓ LIFF 初始化成功！可以開始使用';
+        
+        // 啟用所有輸入
+        enableAllInputs();
+        
+      } catch (error) {
+        statusDiv.className = 'status error';
+        statusDiv.textContent = '✗ 初始化失敗: ' + error.message;
+        console.error('LIFF 初始化錯誤:', error);
+      }
+    }
+
+    function enableAllInputs() {
+      document.getElementById('textMessage').disabled = false;
+      document.getElementById('sendTextBtn').disabled = false;
+      document.getElementById('flexTemplate').disabled = false;
+      document.getElementById('flexJson').disabled = false;
+      document.getElementById('previewFlexBtn').disabled = false;
+      document.getElementById('sendFlexBtn').disabled = false;
+    }
+
+    // 切換 Tab
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      
+      event.target.classList.add('active');
+      document.getElementById(tabName + 'Tab').classList.add('active');
+    }
+
+    // 載入範本
+    function loadTemplate() {
+      const template = document.getElementById('flexTemplate').value;
+      const templateFields = document.getElementById('templateFields');
+      const flexJson = document.getElementById('flexJson');
+      
+      // 隱藏所有範本欄位
+      document.querySelectorAll('.template-fields').forEach(field => {
+        field.style.display = 'none';
+      });
+      
+      if (!template) {
+        templateFields.style.display = 'none';
+        flexJson.value = '';
+        return;
+      }
+      
+      if (template === 'custom') {
+        templateFields.style.display = 'none';
+        flexJson.value = '';
+        return;
+      }
+      
+      templateFields.style.display = 'block';
+      document.getElementById(template + 'Fields').style.display = 'block';
+      
+      // 根據範本生成初始 JSON
+      generateFlexJson(template);
+    }
+
+    // 生成 Flex Message JSON
+    function generateFlexJson(template) {
+      let json = {};
+      
+      switch(template) {
+        case 'bubble':
+          const title = document.getElementById('bubbleTitle').value || '標題';
+          const text = document.getElementById('bubbleText').value || '內容文字';
+          const image = document.getElementById('bubbleImage').value || 'https://via.placeholder.com/1024x768';
+          const color = document.getElementById('bubbleColor').value;
+          
+          json = {
+            type: "bubble",
+            hero: {
+              type: "image",
+              url: image,
+              size: "full",
+              aspectRatio: "20:13",
+              aspectMode: "cover"
+            },
+            body: {
+              type: "box",
+              layout: "vertical",
+              contents: [
+                {
+                  type: "text",
+                  text: title,
+                  weight: "bold",
+                  size: "xl",
+                  color: color
+                },
+                {
+                  type: "text",
+                  text: text,
+                  wrap: true,
+                  margin: "md"
+                }
+              ]
+            }
+          };
+          break;
+          
+        case 'notification':
+          json = {
+            type: "bubble",
+            body: {
+              type: "box",
+              layout: "vertical",
+              contents: [
+                {
+                  type: "text",
+                  text: document.getElementById('notifTitle').value || "通知",
+                  weight: "bold",
+                  size: "xl",
+                  color: "#FF6B6B"
+                },
+                {
+                  type: "box",
+                  layout: "vertical",
+                  margin: "lg",
+                  spacing: "sm",
+                  contents: [
+                    {
+                      type: "text",
+                      text: document.getElementById('notifMessage').value || "通知內容",
+                      wrap: true,
+                      size: "md"
+                    },
+                    {
+                      type: "text",
+                      text: document.getElementById('notifTime').value || new Date().toLocaleString('zh-TW'),
+                      size: "xs",
+                      color: "#999999",
+                      margin: "md"
+                    }
+                  ]
+                }
+              ]
+            }
+          };
+          break;
+          
+        case 'product':
+          json = {
+            type: "bubble",
+            hero: {
+              type: "image",
+              url: document.getElementById('productImage').value || "https://via.placeholder.com/1024x1024",
+              size: "full",
+              aspectRatio: "1:1",
+              aspectMode: "cover"
+            },
+            body: {
+              type: "box",
+              layout: "vertical",
+              contents: [
+                {
+                  type: "text",
+                  text: document.getElementById('productName').value || "產品名稱",
+                  weight: "bold",
+                  size: "xl"
+                },
+                {
+                  type: "text",
+                  text: document.getElementById('productDesc').value || "產品描述",
+                  wrap: true,
+                  size: "sm",
+                  margin: "md"
+                },
+                {
+                  type: "text",
+                  text: document.getElementById('productPrice').value || "NT$ 999",
+                  size: "xxl",
+                  weight: "bold",
+                  color: "#00B900",
+                  margin: "lg"
+                }
+              ]
+            }
+          };
+          break;
+          
+        case 'event':
+          json = {
+            type: "bubble",
+            hero: {
+              type: "image",
+              url: document.getElementById('eventImage').value || "https://via.placeholder.com/1024x768",
+              size: "full",
+              aspectRatio: "20:13",
+              aspectMode: "cover"
+            },
+            body: {
+              type: "box",
+              layout: "vertical",
+              contents: [
+                {
+                  type: "text",
+                  text: document.getElementById('eventName').value || "活動名稱",
+                  weight: "bold",
+                  size: "xl"
+                },
+                {
+                  type: "box",
+                  layout: "vertical",
+                  margin: "lg",
+                  spacing: "sm",
+                  contents: [
+                    {
+                      type: "box",
+                      layout: "baseline",
+                      spacing: "sm",
+                      contents: [
+                        {
+                          type: "text",
+                          text: "日期",
+                          color: "#aaaaaa",
+                          size: "sm",
+                          flex: 1
+                        },
+                        {
+                          type: "text",
+                          text: document.getElementById('eventDate').value || "2025/10/20",
+                          wrap: true,
+                          color: "#666666",
+                          size: "sm",
+                          flex: 4
+                        }
+                      ]
+                    },
+                    {
+                      type: "box",
+                      layout: "baseline",
+                      spacing: "sm",
+                      contents: [
+                        {
+                          type: "text",
+                          text: "地點",
+                          color: "#aaaaaa",
+                          size: "sm",
+                          flex: 1
+                        },
+                        {
+                          type: "text",
+                          text: document.getElementById('eventLocation').value || "活動地點",
+                          wrap: true,
+                          color: "#666666",
+                          size: "sm",
+                          flex: 4
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          };
+          break;
+      }
+      
+      document.getElementById('flexJson').value = JSON.stringify(json, null, 2);
+    }
+
+    // 監聽範本欄位變化
+    document.addEventListener('input', (e) => {
+      if (e.target.closest('.template-fields')) {
+        const template = document.getElementById('flexTemplate').value;
+        if (template && template !== 'custom') {
+          generateFlexJson(template);
+        }
+      }
+      
+      // 同步顏色選擇器
+      if (e.target.id === 'bubbleColor') {
+        document.getElementById('bubbleColorText').value = e.target.value;
+      }
+    });
+
+    // 發送文字訊息
+    async function sendTextMessage() {
+      const message = document.getElementById('textMessage').value.trim();
+      
+      if (!message) {
+        alert('請輸入訊息內容');
+        return;
+      }
+      
+      try {
+        await liff.sendMessages([
+          {
+            type: 'text',
+            text: message
+          }
+        ]);
+        
+        statusDiv.className = 'status success';
+        statusDiv.textContent = '✓ 文字訊息發送成功！';
+        document.getElementById('textMessage').value = '';
+        
+        setTimeout(() => {
+          liff.closeWindow();
+        }, 2000);
+        
+      } catch (error) {
+        statusDiv.className = 'status error';
+        statusDiv.textContent = '✗ 發送失敗: ' + error.message;
+        console.error('發送訊息錯誤:', error);
+      }
+    }
+
+    // 預覽 Flex Message
+    function previewFlexMessage() {
+      const flexJson = document.getElementById('flexJson').value.trim();
+      const previewBox = document.getElementById('previewBox');
+      const previewContent = document.getElementById('previewContent');
+      
+      if (!flexJson) {
+        alert('請輸入 Flex Message JSON');
+        return;
+      }
+      
+      try {
+        const json = JSON.parse(flexJson);
+        previewContent.innerHTML = '<pre>' + JSON.stringify(json, null, 2) + '</pre>';
+        previewBox.style.display = 'block';
+        
+        statusDiv.className = 'status success';
+        statusDiv.textContent = '✓ JSON 格式正確';
+      } catch (error) {
+        statusDiv.className = 'status error';
+        statusDiv.textContent = '✗ JSON 格式錯誤: ' + error.message;
+        previewBox.style.display = 'none';
+      }
+    }
+
+    // 發送 Flex Message
+    async function sendFlexMessage() {
+      const flexJson = document.getElementById('flexJson').value.trim();
+      
+      if (!flexJson) {
+        alert('請輸入 Flex Message JSON');
+        return;
+      }
+      
+      try {
+        const flexContent = JSON.parse(flexJson);
+        
+        await liff.sendMessages([
+          {
+            type: 'flex',
+            altText: 'Flex Message',
+            contents: flexContent
+          }
+        ]);
+        
+        statusDiv.className = 'status success';
+        statusDiv.textContent = '✓ Flex Message 發送成功！';
+        
+        setTimeout(() => {
+          liff.closeWindow();
+        }, 2000);
+        
+      } catch (error) {
+        statusDiv.className = 'status error';
+        statusDiv.textContent = '✗ 發送失敗: ' + error.message;
+        console.error('發送 Flex Message 錯誤:', error);
+      }
+    }
+
+    // 事件監聽
+    document.getElementById('sendTextBtn').addEventListener('click', sendTextMessage);
+    document.getElementById('previewFlexBtn').addEventListener('click', previewFlexMessage);
+    document.getElementById('sendFlexBtn').addEventListener('click', sendFlexMessage);
+
+    // 初始化
+    initializeLiff();
+  </script>
+</body>
+</html>
