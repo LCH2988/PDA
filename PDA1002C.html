@@ -224,6 +224,7 @@
           border-radius: 10px;
           margin-bottom: 15px;
           text-align: center;
+          animation: slideDown 0.3s ease;
       }
 
       .error-message {
@@ -233,6 +234,18 @@
           border-radius: 10px;
           margin-bottom: 15px;
           text-align: center;
+          animation: slideDown 0.3s ease;
+      }
+
+      @keyframes slideDown {
+          from {
+              opacity: 0;
+              transform: translateY(-10px);
+          }
+          to {
+              opacity: 1;
+              transform: translateY(0);
+          }
       }
 
       .loading {
@@ -280,6 +293,20 @@
       .back-btn:hover {
           background: #e0e0e0;
       }
+
+      .config-warning {
+          background: #fff3cd;
+          color: #856404;
+          padding: 15px;
+          border-radius: 10px;
+          margin-bottom: 20px;
+          border-left: 4px solid #ffc107;
+      }
+
+      .config-warning strong {
+          display: block;
+          margin-bottom: 5px;
+      }
   </style>
 </head>
 <body>
@@ -293,6 +320,11 @@
           <!-- 登入頁面 -->
           <div id="loginPage" class="page active">
               <h2 style="margin-bottom: 20px; color: #333;">歡迎登入</h2>
+              
+              <div id="configWarning" class="config-warning" style="display: none;">
+                  <strong>⚠️ 尚未設定 API</strong>
+                  請在程式碼中設定您的 Google Apps Script URL
+              </div>
               
               <button class="btn btn-line" onclick="lineLogin()" id="lineLoginBtn">
                   <span style="font-size: 20px;">📱</span> 使用 LINE 登入
@@ -309,7 +341,7 @@
 
               <div class="form-group">
                   <label>密碼</label>
-                  <input type="password" id="loginPassword" placeholder="請輸入密碼">
+                  <input type="password" id="loginPassword" placeholder="請輸入密碼" onkeypress="if(event.key==='Enter') normalLogin()">
               </div>
 
               <button class="btn btn-primary" onclick="normalLogin()" id="loginBtn">登入</button>
@@ -436,19 +468,35 @@
   </div>
 
   <script>
-      // ========== 配置區 ==========
-      const API_URL = 'https://script.google.com/macros/s/AKfycbwq6jB862JQ1uof1KeP4TIGt8uTktArB_lmLs0Z3HXur6Uthg051xCJutGaKtFd689g1g/exec'; // 替換為您的 Apps Script URL
-      const LIFF_ID = '1656516134-VaGgmaPm'; // 替換為您的 LIFF ID（如果使用 LINE 登入）
+      // ========== 🔧 配置區（請在此設定您的 API URL）==========
+      const API_URL = 'https://script.google.com/macros/s/AKfycbx19Qknr2V07NPULBRJrEMjKZlMc3wXYZXtaCzx5AsCnnN6YPcXBS2yY_MRiEr_kCrL/exec'; // ⚠️ 請替換為您的 Apps Script URL
+      const LIFF_ID = '1656516134-VaGgmaPm'; // 如果使用 LINE 登入，請填入 LIFF ID
       
       // ========== 全域變數 ==========
       let currentUser = JSON.parse(sessionStorage.getItem('currentUser') || 'null');
       let lineUserData = null;
 
+      // ========== 檢查 API 配置 ==========
+      window.onload = function() {
+          if (API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') {
+              document.getElementById('configWarning').style.display = 'block';
+          }
+          
+          if (currentUser) {
+              showDashboard();
+          }
+      };
+
       // ========== API 呼叫函數 ==========
       async function callAPI(action, data = {}) {
+          if (API_URL === 'https://script.google.com/macros/s/AKfycbxy6dh8yQUnA_eQ1a0NmIi_NPR7XbosVQ1DL0tjeBDUQRn79OE0lGLyqgJKQPjs63P4QA/exec') {
+              return { success: false, message: '請先設定 API URL' };
+          }
+
           try {
               const response = await fetch(API_URL, {
                   method: 'POST',
+                  mode: 'no-cors',
                   headers: {
                       'Content-Type': 'application/json',
                   },
@@ -458,11 +506,34 @@
                   })
               });
               
-              const result = await response.json();
+              // 因為 no-cors 模式，我們無法直接讀取回應
+              // 需要使用 redirect 模式或改用 JSONP
+              // 這裡我們改用不同的方法
+              const result = await fetchWithTimeout(API_URL, {
+                  method: 'POST',
+                  headers: {
+                      'Content-Type': 'text/plain',
+                  },
+                  body: JSON.stringify({
+                      action: action,
+                      data: data
+                  })
+              });
+              
               return result;
           } catch (error) {
               console.error('API 呼叫錯誤:', error);
               return { success: false, message: '網路連線錯誤，請稍後再試' };
+          }
+      }
+
+      async function fetchWithTimeout(url, options, timeout = 10000) {
+          try {
+              const response = await fetch(url, options);
+              const text = await response.text();
+              return JSON.parse(text);
+          } catch (error) {
+              throw error;
           }
       }
 
@@ -476,12 +547,17 @@
 
       // ========== 訊息顯示 ==========
       function showMessage(message, type = 'success') {
+          // 移除舊訊息
+          const oldMessages = document.querySelectorAll('.success-message, .error-message');
+          oldMessages.forEach(msg => msg.remove());
+
           const messageDiv = document.createElement('div');
           messageDiv.className = type === 'success' ? 'success-message' : 'error-message';
           messageDiv.textContent = message;
           
           const content = document.querySelector('.content');
-          content.insertBefore(messageDiv, content.firstChild);
+          const firstPage = content.querySelector('.page.active');
+          firstPage.insertBefore(messageDiv, firstPage.firstChild);
           
           setTimeout(() => messageDiv.remove(), 3000);
       }
@@ -489,11 +565,16 @@
       // ========== LINE 登入 ==========
       async function lineLogin() {
           const btn = document.getElementById('lineLoginBtn');
+          
+          if (!LIFF_ID) {
+              showMessage('LINE 登入功能尚未設定', 'error');
+              return;
+          }
+
           btn.disabled = true;
           btn.textContent = '處理中...';
           
           try {
-              // 初始化 LIFF
               await liff.init({ liffId: LIFF_ID });
               
               if (!liff.isLoggedIn()) {
@@ -501,24 +582,20 @@
                   return;
               }
               
-              // 獲取 LINE 用戶資料
               const profile = await liff.getProfile();
               lineUserData = {
                   lineId: profile.userId,
                   lineName: profile.displayName
               };
 
-              // 檢查是否已註冊
               const result = await callAPI('checkLineUser', { lineId: lineUserData.lineId });
               
               if (result.success && result.exists) {
-                  // 已註冊，直接登入
                   currentUser = result.user;
                   sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
                   showMessage('登入成功！');
                   showDashboard();
               } else {
-                  // 首次登入，需要實名制
                   document.getElementById('displayLineId').textContent = lineUserData.lineId;
                   document.getElementById('displayLineName').textContent = lineUserData.lineName;
                   showPage('lineRegisterPage');
@@ -558,10 +635,9 @@
               showDashboard();
           } else {
               showMessage(result.message, 'error');
+              btn.disabled = false;
+              btn.textContent = '完成註冊';
           }
-
-          btn.disabled = false;
-          btn.textContent = '完成註冊';
       }
 
       // ========== 一般註冊 ==========
@@ -599,6 +675,11 @@
           if (result.success) {
               showMessage('註冊成功！請登入');
               showPage('loginPage');
+              // 清空表單
+              document.getElementById('regName').value = '';
+              document.getElementById('regPhone').value = '';
+              document.getElementById('regPassword').value = '';
+              document.getElementById('regPasswordConfirm').value = '';
           } else {
               showMessage(result.message, 'error');
           }
@@ -650,8 +731,10 @@
       async function showActivities() {
           showPage('activitiesPage');
           
-          const result = await callAPI('getActivities');
           const listDiv = document.getElementById('activitiesList');
+          listDiv.innerHTML = '<div class="loading">載入中...</div>';
+          
+          const result = await callAPI('getActivities');
           
           if (result.success) {
               if (result.activities.length === 0) {
@@ -666,7 +749,7 @@
                   `).join('');
               }
           } else {
-              listDiv.innerHTML = '<p style="text-align: center; color: #f00;">載入失敗</p>';
+              listDiv.innerHTML = '<p style="text-align: center; color: #f00;">載入失敗，請稍後再試</p>';
           }
       }
 
@@ -720,18 +803,13 @@
 
       // ========== 登出 ==========
       function logout() {
-          currentUser = null;
-          sessionStorage.removeItem('currentUser');
-          showMessage('已登出');
-          showPage('loginPage');
-      }
-
-      // ========== 初始化 ==========
-      window.onload = function() {
-          if (currentUser) {
-              showDashboard();
+          if (confirm('確定要登出嗎？')) {
+              currentUser = null;
+              sessionStorage.removeItem('currentUser');
+              showMessage('已登出');
+              showPage('loginPage');
           }
-      };
+      }
   </script>
 </body>
 </html>
