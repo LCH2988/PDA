@@ -654,8 +654,720 @@
           url: 'https://script.google.com/macros/s/AKfycbzZq9qGN2A2ZqgBlKpxF4XGpbfhvl5WfBYOIyVLZHAf0IWHNrEP8W0mrkP0CUIfMlqblA/exec',
           timeout: 30000,
           retries: 3,
-          offlineMode: true
+          offlineMode: false
       };
+
+      // ==================== API 配置與調用 ====================
+
+const API_CONFIG = {
+  url: 'https://script.google.com/macros/s/AKfycbxPJsRXZmE6PL-RcXO3NGFnB78E3-GBWwQUTaGP687jrl9ux1ME-G_fc0vD30M8AYdAZw/exec',
+  timeout: 30000,
+  retries: 3,
+  offlineMode: false
+};
+
+// 修改為 GET 方法的 API 調用函數
+async function apiCall(action, data = {}) {
+  if (API_CONFIG.offlineMode) {
+      return getOfflineData(action);
+  }
+  
+  let lastError;
+  
+  for (let attempt = 1; attempt <= API_CONFIG.retries; attempt++) {
+      try {
+          console.log(`API 調用 ${action} (嘗試 ${attempt}/${API_CONFIG.retries})`);
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+          
+          // 建立 URL 參數
+          const params = new URLSearchParams({
+              action: action,
+              timestamp: Date.now().toString()
+          });
+          
+          // 將 data 物件的屬性加入參數
+          if (data && typeof data === 'object') {
+              Object.keys(data).forEach(key => {
+                  if (data[key] !== null && data[key] !== undefined) {
+                      if (typeof data[key] === 'object') {
+                          params.append(key, JSON.stringify(data[key]));
+                      } else {
+                          params.append(key, data[key].toString());
+                      }
+                  }
+              });
+          }
+          
+          const url = `${API_CONFIG.url}?${params.toString()}`;
+          console.log('請求 URL:', url);
+          
+          const response = await fetch(url, {
+              method: 'GET',
+              signal: controller.signal,
+              headers: {
+                  'Accept': 'application/json',
+                  'Cache-Control': 'no-cache'
+              }
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          const result = await response.json();
+          console.log(`API 調用 ${action} 成功:`, result);
+          
+          return result;
+          
+      } catch (error) {
+          lastError = error;
+          console.error(`API 調用 ${action} 失敗 (嘗試 ${attempt}):`, error);
+          
+          if (attempt < API_CONFIG.retries) {
+              const delay = 1000 * attempt;
+              console.log(`等待 ${delay}ms 後重試...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+          }
+      }
+  }
+  
+  // 所有重試都失敗，切換到離線模式
+  console.warn('API 調用失敗，切換到離線模式');
+  API_CONFIG.offlineMode = true;
+  updateConnectionStatus(false);
+  
+  showAlert('網路連接異常，已切換到離線模式', 'warning', 10000);
+  
+  return getOfflineData(action);
+}
+
+// 修改連接檢查函數
+async function checkApiConnection() {
+  try {
+      console.log('檢查 API 連接...');
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const params = new URLSearchParams({
+          action: 'test',
+          timestamp: Date.now().toString()
+      });
+      
+      const url = `${API_CONFIG.url}?${params.toString()}`;
+      
+      const response = await fetch(url, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+              'Accept': 'application/json',
+              'Cache-Control': 'no-cache'
+          }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('API 連接測試結果:', result);
+      
+      return result.success === true;
+      
+  } catch (error) {
+      console.error('API 連接測試失敗:', error);
+      return false;
+  }
+}
+
+// 修改新增會員函數
+async function submitAddMember() {
+  try {
+      const form = document.getElementById('addMemberForm');
+      const formData = new FormData(form);
+      const memberData = Object.fromEntries(formData.entries());
+      
+      if (!memberData.name) {
+          showAlert('請輸入會員姓名', 'warning');
+          return;
+      }
+      
+      showLoading();
+      
+      const result = await apiCall('addMember', { memberData: memberData });
+      
+      hideLoading();
+      
+      if (result.success) {
+          hideModal();
+          showAlert('會員新增成功', 'success');
+          loadPage('membership');
+      } else {
+          showAlert('新增會員失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('新增會員失敗:', error);
+      showAlert('新增會員失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改新增會費函數
+async function submitAddFee() {
+  try {
+      const form = document.getElementById('addFeeForm');
+      const formData = new FormData(form);
+      const feeData = Object.fromEntries(formData.entries());
+      
+      if (!feeData.memberId || !feeData.year || !feeData.amount || !feeData.paymentDate || !feeData.paymentMethod) {
+          showAlert('請填寫所有必填欄位', 'warning');
+          return;
+      }
+      
+      showLoading();
+      
+      const result = await apiCall('addMembershipFee', { feeData: feeData });
+      
+      hideLoading();
+      
+      if (result.success) {
+          hideModal();
+          showAlert('會費記錄新增成功', 'success');
+          loadPage('membership-fee');
+      } else {
+          showAlert('新增會費記錄失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('新增會費記錄失敗:', error);
+      showAlert('新增會費記錄失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改新增捐款函數
+async function submitAddDonation() {
+  try {
+      const form = document.getElementById('addDonationForm');
+      const formData = new FormData(form);
+      const donationData = Object.fromEntries(formData.entries());
+      
+      if (!donationData.donorName || !donationData.amount || !donationData.donationDate || !donationData.purpose || !donationData.method) {
+          showAlert('請填寫所有必填欄位', 'warning');
+          return;
+      }
+      
+      showLoading();
+      
+      const result = await apiCall('addDonation', { donationData: donationData });
+      
+      hideLoading();
+      
+      if (result.success) {
+          hideModal();
+          showAlert('捐款記錄新增成功', 'success');
+          loadPage('donation');
+      } else {
+          showAlert('新增捐款記錄失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('新增捐款記錄失敗:', error);
+      showAlert('新增捐款記錄失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改新增支出函數
+async function submitAddExpense() {
+  try {
+      const form = document.getElementById('addExpenseForm');
+      const formData = new FormData(form);
+      const expenseData = Object.fromEntries(formData.entries());
+      
+      const requiredFields = ['applicant', 'expenseDate', 'category', 'amount', 'item', 'payee', 'paymentMethod', 'priority', 'reason'];
+      for (const field of requiredFields) {
+          if (!expenseData[field]) {
+              showAlert('請填寫所有必填欄位', 'warning');
+              return;
+          }
+      }
+      
+      showLoading();
+      
+      const result = await apiCall('addExpense', { expenseData: expenseData });
+      
+      hideLoading();
+      
+      if (result.success) {
+          hideModal();
+          showAlert('支出申請提交成功', 'success');
+          loadPage('expense');
+      } else {
+          showAlert('提交支出申請失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('提交支出申請失敗:', error);
+      showAlert('提交支出申請失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改會費確認函數
+async function confirmFee(recordId) {
+  try {
+      showLoading();
+      
+      const result = await apiCall('updateMembershipFeeStatus', {
+          recordId: recordId,
+          status: '已確認',
+          note: '手動確認'
+      });
+      
+      hideLoading();
+      
+      if (result.success) {
+          showAlert('會費確認成功', 'success');
+          loadPage('membership-fee');
+      } else {
+          showAlert('會費確認失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('會費確認失敗:', error);
+      showAlert('會費確認失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改支出核准函數
+async function approveExpense(expenseId) {
+  try {
+      showLoading();
+      
+      const result = await apiCall('updateExpenseStatus', {
+          expenseId: expenseId,
+          status: '已核准',
+          approver: '管理員',
+          note: '手動核准'
+      });
+      
+      hideLoading();
+      
+      if (result.success) {
+          showAlert('支出核准成功', 'success');
+          loadPage('expense');
+      } else {
+          showAlert('支出核准失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('支出核准失敗:', error);
+      showAlert('支出核准失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改支出拒絕函數
+async function rejectExpense(expenseId) {
+  try {
+      showLoading();
+      
+      const result = await apiCall('updateExpenseStatus', {
+          expenseId: expenseId,
+          status: '已拒絕',
+          approver: '管理員',
+          note: '手動拒絕'
+      });
+      
+      hideLoading();
+      
+      if (result.success) {
+          showAlert('支出已拒絕', 'warning');
+          loadPage('expense');
+      } else {
+          showAlert('支出拒絕失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('支出拒絕失敗:', error);
+      showAlert('支出拒絕失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改核准流程處理函數
+async function processApprovalAction(processId, action) {
+  try {
+      showLoading();
+      
+      const result = await apiCall('processApproval', {
+          processId: processId,
+          action: action,
+          approver: '管理員',
+          note: action === 'approve' ? '核准通過' : '核准拒絕'
+      });
+      
+      hideLoading();
+      
+      if (result.success) {
+          showAlert(action === 'approve' ? '核准成功' : '已拒絕申請', action === 'approve' ? 'success' : 'warning');
+          loadPage('approval');
+      } else {
+          showAlert('處理核准失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('處理核准失敗:', error);
+      showAlert('處理核准失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改收據作廢函數
+async function voidReceiptExecute(receiptId) {
+  try {
+      const reason = document.getElementById('voidReason').value;
+      
+      if (!reason) {
+          showAlert('請填寫作廢原因', 'warning');
+          return;
+      }
+      
+      showLoading();
+      
+      const result = await apiCall('voidReceipt', {
+          receiptId: receiptId,
+          reason: reason
+      });
+      
+      hideLoading();
+      
+      if (result.success) {
+          hideModal();
+          showAlert('收據作廢成功', 'success');
+          loadPage('receipt');
+      } else {
+          showAlert('收據作廢失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('收據作廢失敗:', error);
+      showAlert('收據作廢失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改設定更新函數
+async function updateSettingValue(settingName) {
+  try {
+      const inputElement = document.getElementById(`setting_${settingName}`);
+      const newValue = inputElement.value;
+      
+      showLoading();
+      
+      const result = await apiCall('updateSetting', {
+          settingName: settingName,
+          settingValue: newValue
+      });
+      
+      hideLoading();
+      
+      if (result.success) {
+          showAlert('設定更新成功', 'success');
+      } else {
+          showAlert('設定更新失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('設定更新失敗:', error);
+      showAlert('設定更新失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改系統備份函數
+async function backupSystem() {
+  try {
+      showAlert('正在備份系統資料...', 'info');
+      showLoading();
+      
+      const result = await apiCall('backupData');
+      
+      hideLoading();
+      
+      if (result.success) {
+          showAlert('系統備份完成', 'success');
+      } else {
+          showAlert('系統備份失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('系統備份失敗:', error);
+      showAlert('系統備份失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改系統健康檢查函數
+async function systemHealthCheck() {
+  try {
+      showAlert('正在執行系統健康檢查...', 'info');
+      showLoading();
+      
+      const result = await apiCall('systemHealthCheck');
+      
+      hideLoading();
+      
+      if (result.success) {
+          const healthData = result.data;
+          let statusClass = 'success';
+          let statusText = '系統狀態良好';
+          
+          if (healthData.overallStatus === 'WARNING') {
+              statusClass = 'warning';
+              statusText = '系統有警告';
+          } else if (healthData.overallStatus === 'ERROR') {
+              statusClass = 'danger';
+              statusText = '系統有錯誤';
+          }
+          
+          showAlert(statusText, statusClass);
+          
+          const checksHtml = healthData.checks.map(check => `
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span>${check.name}</span>
+                  <span class="badge bg-${check.status === 'OK' ? 'success' : check.status === 'WARNING' ? 'warning' : 'danger'}">
+                      ${check.status}
+                  </span>
+              </div>
+          `).join('');
+          
+          showModal('系統健康檢查結果', `
+              <div class="alert alert-${statusClass}">
+                  <strong>整體狀態：${healthData.overallStatus}</strong>
+              </div>
+              ${checksHtml}
+              <small class="text-muted">檢查時間：${new Date(healthData.timestamp).toLocaleString()}</small>
+          `, '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>');
+          
+      } else {
+          showAlert('系統健康檢查失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('系統健康檢查失敗:', error);
+      showAlert('系統健康檢查失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改系統初始化函數
+async function initializeSystemData() {
+  try {
+      if (!confirm('確定要初始化系統嗎？這將建立所有必要的工作表結構。')) {
+          return;
+      }
+      
+      showAlert('正在初始化系統...', 'info');
+      showLoading();
+      
+      const result = await apiCall('initializeSystem');
+      
+      hideLoading();
+      
+      if (result.success) {
+          showAlert('系統初始化完成', 'success');
+      } else {
+          showAlert('系統初始化失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('系統初始化失敗:', error);
+      showAlert('系統初始化失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改功能測試函數
+async function testAllFunctions() {
+  try {
+      showAlert('正在測試所有功能...', 'info');
+      showLoading();
+      
+      const result = await apiCall('testAllApiFunctions');
+      
+      hideLoading();
+      
+      if (result.success) {
+          const testResults = result.data;
+          const passedTests = testResults.filter(test => test.success).length;
+          const totalTests = testResults.length;
+          
+          showAlert(`功能測試完成：${passedTests}/${totalTests} 項通過`, passedTests === totalTests ? 'success' : 'warning');
+          
+          const resultsHtml = testResults.map(test => `
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                  <span>${test.name}</span>
+                  <span class="badge bg-${test.success ? 'success' : 'danger'}">
+                      ${test.success ? '通過' : '失敗'}
+                  </span>
+              </div>
+          `).join('');
+          
+          showModal('功能測試結果', resultsHtml, '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>');
+          
+      } else {
+          showAlert('功能測試失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('功能測試失敗:', error);
+      showAlert('功能測試失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改列印收據函數
+async function printReceipt(receiptId) {
+  try {
+      showAlert('正在產生收據...', 'info');
+      showLoading();
+      
+      const result = await apiCall('generateReceipt', { receiptId: receiptId });
+      
+      hideLoading();
+      
+      if (result.success) {
+          const printWindow = window.open('', '_blank');
+          printWindow.document.write(result.data.html);
+          printWindow.document.close();
+          printWindow.print();
+          
+          showAlert('收據產生成功', 'success');
+      } else {
+          showAlert('產生收據失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('產生收據失敗:', error);
+      showAlert('產生收據失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改匯出報表函數
+async function exportFinancialReport() {
+  try {
+      showAlert('正在產生財務報表...', 'info');
+      showLoading();
+      
+      const result = await apiCall('exportFinancialReport', {
+          format: 'excel',
+          startDate: '2024-01-01',
+          endDate: '2024-12-31'
+      });
+      
+      hideLoading();
+      
+      if (result.success) {
+          const link = document.createElement('a');
+          link.href = result.data.downloadUrl;
+          link.download = result.data.filename;
+          link.click();
+          
+          showAlert('財務報表匯出成功', 'success');
+      } else {
+          showAlert('匯出財務報表失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('匯出財務報表失敗:', error);
+      showAlert('匯出財務報表失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改日期範圍查詢函數
+async function applyDateRange() {
+  try {
+      const form = document.getElementById('dateRangeForm');
+      const formData = new FormData(form);
+      const dateRange = Object.fromEntries(formData.entries());
+      
+      hideModal();
+      showLoading();
+      
+      const result = await apiCall('getFinancialReport', dateRange);
+      
+      hideLoading();
+      
+      if (result.success) {
+          currentData.financialReport = result.data;
+          loadPage('financial-report');
+      } else {
+          showAlert('查詢財務報表失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('查詢財務報表失敗:', error);
+      showAlert('查詢財務報表失敗：' + error.message, 'danger');
+  }
+}
+
+// 修改會員編輯函數
+async function submitEditMember() {
+  try {
+      const form = document.getElementById('editMemberForm');
+      const formData = new FormData(form);
+      const memberData = Object.fromEntries(formData.entries());
+      
+      showLoading();
+      
+      const result = await apiCall('updateMember', { memberData: memberData });
+      
+      hideLoading();
+      
+      if (result.success) {
+          hideModal();
+          showAlert('會員資料更新成功', 'success');
+          loadPage('membership');
+      } else {
+          showAlert('更新會員資料失敗：' + result.message, 'danger');
+      }
+      
+  } catch (error) {
+      hideLoading();
+      console.error('更新會員資料失敗:', error);
+      showAlert('更新會員資料失敗：' + error.message, 'danger');
+  }
+}
+
+// 新增 Loading 顯示/隱藏函數
+function showLoading() {
+  const loadingElement = document.getElementById('loadingIndicator');
+  if (loadingElement) {
+      loadingElement.style.display = 'block';
+  }
+}
+
+function hideLoading() {
+  const loadingElement = document.getElementById('loadingIndicator');
+  if (loadingElement) {
+      loadingElement.style.display = 'none';
+  }
+}
+
+console.log('GET API 調用函數已更新完成');
       
       let currentPage = 'dashboard';
       let currentData = {};
