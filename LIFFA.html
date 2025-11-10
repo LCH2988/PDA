@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>會員大會海報</title>
+  <title>會員大會報名系統</title>
   <style>
       * {
           margin: 0;
@@ -411,6 +411,12 @@
           transform: translateY(0);
       }
       
+      .submit-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+      }
+      
       /* 報名狀態顯示 */
       .registration-status {
           background: white;
@@ -499,6 +505,30 @@
           margin-bottom: 20px;
           text-align: center;
           display: none;
+      }
+      
+      .error-message {
+          background: #f44336;
+          color: white;
+          padding: 15px;
+          border-radius: 8px;
+          margin-bottom: 20px;
+          text-align: center;
+          display: none;
+      }
+      
+      .loading {
+          display: inline-block;
+          width: 20px;
+          height: 20px;
+          border: 3px solid rgba(255,255,255,.3);
+          border-radius: 50%;
+          border-top-color: #fff;
+          animation: spin 1s ease-in-out infinite;
+      }
+      
+      @keyframes spin {
+          to { transform: rotate(360deg); }
       }
       
       @media (max-width: 1200px) {
@@ -616,6 +646,10 @@
                   ✅ 報名成功！感謝您的參與
               </div>
               
+              <div class="error-message" id="errorMessage">
+                  ❌ 報名失敗，請稍後再試
+              </div>
+              
               <form id="registrationForm">
                   <div class="form-group">
                       <label for="name">姓名 *</label>
@@ -673,7 +707,7 @@
                       <div class="amount" id="totalFee">NT$ 0</div>
                   </div>
                   
-                  <button type="submit" class="submit-btn">確認報名</button>
+                  <button type="submit" class="submit-btn" id="submitBtn">確認報名</button>
               </form>
           </div>
           
@@ -699,166 +733,68 @@
   </div>
   
   <script>
-      // 儲存報名資料
-      let registrations = JSON.parse(localStorage.getItem('registrations')) || [];
-
-      <script>
-// ==================== GAS API 設定 ====================
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbx5_mwOx0MvSC78iJ_LHtYibBcIDTZ8k09HU9_5D0dcRGCYRwSAL8_6iCAO013dr78VTQ/exec'; // 替換成您的 GAS Web App URL
-
-// ==================== API 呼叫函數 ====================
-
-/**
- * 新增報名到 Google Sheets
- */
-async function saveToGoogleSheets(registration) {
-try {
-  const response = await fetch(GAS_API_URL, {
-    method: 'POST',
-    mode: 'no-cors', // GAS 需要使用 no-cors 模式
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      action: 'add',
-      ...registration
-    })
-  });
-  
-  return { success: true };
-} catch (error) {
-  console.error('儲存到 Google Sheets 失敗:', error);
-  return { success: false, error: error.message };
-}
-}
-
-/**
- * 從 Google Sheets 載入報名資料
- */
-async function loadFromGoogleSheets() {
-try {
-  const response = await fetch(`${GAS_API_URL}?action=getAll`);
-  const result = await response.json();
-  
-  if (result.success) {
-    return result.data;
-  } else {
-    console.error('載入資料失敗:', result.message);
-    return [];
-  }
-} catch (error) {
-  console.error('從 Google Sheets 載入失敗:', error);
-  return [];
-}
-}
-
-/**
- * 載入統計資料
- */
-async function loadStatistics() {
-try {
-  const response = await fetch(`${GAS_API_URL}?action=getStats`);
-  const result = await response.json();
-  
-  if (result.success) {
-    return result.data;
-  } else {
-    console.error('載入統計失敗:', result.message);
-    return null;
-  }
-} catch (error) {
-  console.error('載入統計失敗:', error);
-  return null;
-}
-}
-
-// ==================== 修改原有的表單提交函數 ====================
-
-// 找到原本的表單提交事件監聽器，並修改為以下內容：
-document.getElementById('registrationForm').addEventListener('submit', async function(e) {
-e.preventDefault();
-
-const formData = new FormData(e.target);
-const typeRadio = document.querySelector('input[name="type"]:checked');
-const companions = parseInt(formData.get('companions')) || 0;
-const baseFee = parseInt(typeRadio.dataset.fee);
-const totalFee = baseFee + (companions * 700);
-
-const registration = {
-  id: Date.now(),
-  name: formData.get('name'),
-  phone: formData.get('phone'),
-  email: formData.get('email'),
-  type: typeRadio.value,
-  typeLabel: typeRadio.nextElementSibling.textContent,
-  companions: companions,
-  totalFee: totalFee,
-  notes: formData.get('notes'),
-  timestamp: new Date().toLocaleString('zh-TW')
-};
-
-// 儲存到 localStorage（本地備份）
-registrations.push(registration);
-localStorage.setItem('registrations', JSON.stringify(registrations));
-
-// 儲存到 Google Sheets
-const result = await saveToGoogleSheets(registration);
-
-// 顯示成功訊息
-const successMessage = document.getElementById('successMessage');
-if (result.success) {
-  successMessage.textContent = '✅ 報名成功！資料已儲存';
-} else {
-  successMessage.textContent = '✅ 報名成功！（已儲存到本地）';
-}
-successMessage.style.display = 'block';
-setTimeout(() => {
-  successMessage.style.display = 'none';
-}, 3000);
-
-// 重置表單
-e.target.reset();
-updateFee();
-
-// 更新報名列表
-updateRegistrationList();
-});
-
-// ==================== 頁面載入時同步資料 ====================
-
-// 頁面載入時，嘗試從 Google Sheets 載入資料
-window.addEventListener('DOMContentLoaded', async function() {
-try {
-  const cloudData = await loadFromGoogleSheets();
-  
-  if (cloudData && cloudData.length > 0) {
-    // 合併本地和雲端資料（去重）
-    const localData = JSON.parse(localStorage.getItem('registrations')) || [];
-    const mergedData = [...cloudData];
-    
-    // 將本地資料中不在雲端的資料加入
-    localData.forEach(local => {
-      const exists = cloudData.some(cloud => 
-        cloud.name === local.name && 
-        cloud.phone === local.phone && 
-        cloud.timestamp === local.timestamp
-      );
-      if (!exists) {
-        mergedData.push(local);
-      }
-    });
-    
-    registrations = mergedData;
-    localStorage.setItem('registrations', JSON.stringify(registrations));
-    updateRegistrationList();
-  }
-} catch (error) {
-  console.error('同步資料失敗:', error);
-}
-});
-
+      // ==================== 設定區 ====================
+      // ⚠️ 請將下方 URL 替換成您的 GAS Web App URL
+      const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbx6_4vRtyvxEPa5etEewqXww9-ZVc0S1ufJ58dOoGdXHGj2vkPMNwwX0srYmJ3CDfc82A/exec';
       
-      // 更新費用顯示
+      // ==================== 全域變數 ====================
+      let registrations = [];
+      let isSubmitting = false;
+      
+      // ==================== API 函數 ====================
+      
+      /**
+       * 新增報名到 Google Sheets
+       */
+      async function saveToGoogleSheets(registration) {
+          try {
+              const response = await fetch(GAS_API_URL, {
+                  method: 'POST',
+                  headers: {
+                      'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                      action: 'add',
+                      ...registration
+                  })
+              });
+              
+              const result = await response.json();
+              console.log('GAS 回應:', result);
+              
+              return result;
+          } catch (error) {
+              console.error('儲存到 Google Sheets 失敗:', error);
+              return { success: false, message: error.message };
+          }
+      }
+      
+      /**
+       * 從 Google Sheets 載入報名資料
+       */
+      async function loadFromGoogleSheets() {
+          try {
+              const response = await fetch(`${GAS_API_URL}?action=getAll`);
+              const result = await response.json();
+              
+              if (result.success) {
+                  console.log('載入資料成功:', result.data.length, '筆');
+                  return result.data;
+              } else {
+                  console.error('載入資料失敗:', result.message);
+                  return [];
+              }
+          } catch (error) {
+              console.error('從 Google Sheets 載入失敗:', error);
+              return [];
+          }
+      }
+      
+      // ==================== UI 更新函數 ====================
+      
+      /**
+       * 更新費用顯示
+       */
       function updateFee() {
           const typeRadios = document.querySelectorAll('input[name="type"]');
           const companions = parseInt(document.getElementById('companions').value) || 0;
@@ -877,56 +813,9 @@ try {
           document.getElementById('totalFee').textContent = `NT$ ${totalFee.toLocaleString()}`;
       }
       
-      // 監聽類型選擇變化
-      document.querySelectorAll('input[name="type"]').forEach(radio => {
-          radio.addEventListener('change', updateFee);
-      });
-      
-      // 監聽同行人數變化
-      document.getElementById('companions').addEventListener('input', updateFee);
-      
-      // 表單提交
-      document.getElementById('registrationForm').addEventListener('submit', function(e) {
-          e.preventDefault();
-          
-          const formData = new FormData(e.target);
-          const typeRadio = document.querySelector('input[name="type"]:checked');
-          const companions = parseInt(formData.get('companions')) || 0;
-          const baseFee = parseInt(typeRadio.dataset.fee);
-          const totalFee = baseFee + (companions * 700);
-          
-          const registration = {
-              id: Date.now(),
-              name: formData.get('name'),
-              phone: formData.get('phone'),
-              email: formData.get('email'),
-              type: typeRadio.value,
-              typeLabel: typeRadio.nextElementSibling.textContent,
-              companions: companions,
-              totalFee: totalFee,
-              notes: formData.get('notes'),
-              timestamp: new Date().toLocaleString('zh-TW')
-          };
-          
-          registrations.push(registration);
-          localStorage.setItem('registrations', JSON.stringify(registrations));
-          
-          // 顯示成功訊息
-          const successMessage = document.getElementById('successMessage');
-          successMessage.style.display = 'block';
-          setTimeout(() => {
-              successMessage.style.display = 'none';
-          }, 3000);
-          
-          // 重置表單
-          e.target.reset();
-          updateFee();
-          
-          // 更新報名列表
-          updateRegistrationList();
-      });
-      
-      // 更新報名列表顯示
+      /**
+       * 更新報名列表顯示
+       */
       function updateRegistrationList() {
           const listContainer = document.getElementById('registrationList');
           
@@ -942,17 +831,19 @@ try {
           let mealCount = 0;
           
           registrations.forEach(reg => {
-              totalPeople += 1 + reg.companions;
-              if (reg.type === 'member-meal' || reg.type === 'caregiver' || reg.type === 'companion') {
-                  mealCount += 1 + reg.companions;
+              totalPeople += 1 + (parseInt(reg.companions) || 0);
+              const typeLabel = reg.typeLabel || '';
+              if (typeLabel.includes('用餐') || typeLabel.includes('陪伴') || typeLabel.includes('攜伴')) {
+                  mealCount += 1 + (parseInt(reg.companions) || 0);
               }
           });
           
           document.getElementById('totalCount').textContent = totalPeople;
           document.getElementById('mealCount').textContent = mealCount;
           
-          // 顯示報名列表
-          listContainer.innerHTML = registrations.map(reg => `
+          // 顯示報名列表（最新的在前面）
+          const sortedRegs = [...registrations].reverse();
+          listContainer.innerHTML = sortedRegs.slice(0, 10).map(reg => `
               <div class="registration-item">
                   <div class="name">${reg.name}</div>
                   <div class="details">
@@ -961,13 +852,131 @@ try {
                       ${reg.companions > 0 ? `<br>👥 同行 ${reg.companions} 人` : ''}
                       ${reg.notes ? `<br>📝 ${reg.notes}` : ''}
                   </div>
-                  <div class="fee">應繳: NT$ ${reg.totalFee.toLocaleString()}</div>
+                  <div class="fee">應繳: NT$ ${parseInt(reg.totalFee).toLocaleString()}</div>
               </div>
-          `).reverse().join('');
+          `).join('');
       }
       
-      // 頁面載入時更新列表
-      updateRegistrationList();
+      /**
+       * 顯示訊息
+       */
+      function showMessage(type, message) {
+          const successMsg = document.getElementById('successMessage');
+          const errorMsg = document.getElementById('errorMessage');
+          
+          if (type === 'success') {
+              successMsg.textContent = message;
+              successMsg.style.display = 'block';
+              errorMsg.style.display = 'none';
+              setTimeout(() => {
+                  successMsg.style.display = 'none';
+              }, 5000);
+          } else {
+              errorMsg.textContent = message;
+              errorMsg.style.display = 'block';
+              successMsg.style.display = 'none';
+              setTimeout(() => {
+                  errorMsg.style.display = 'none';
+              }, 5000);
+          }
+      }
+      
+      // ==================== 事件監聽 ====================
+      
+      // 監聽類型選擇變化
+      document.querySelectorAll('input[name="type"]').forEach(radio => {
+          radio.addEventListener('change', updateFee);
+      });
+      
+      // 監聽同行人數變化
+      document.getElementById('companions').addEventListener('input', updateFee);
+      
+      // 表單提交
+      document.getElementById('registrationForm').addEventListener('submit', async function(e) {
+          e.preventDefault();
+          
+          if (isSubmitting) {
+              return;
+          }
+          
+          // 檢查 API URL 是否已設定
+          if (GAS_API_URL === 'YOUR_GAS_WEB_APP_URL_HERE') {
+              showMessage('error', '❌ 請先設定 GAS API URL');
+              return;
+          }
+          
+          isSubmitting = true;
+          const submitBtn = document.getElementById('submitBtn');
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = '<span class="loading"></span> 送出中...';
+          
+          const formData = new FormData(e.target);
+          const typeRadio = document.querySelector('input[name="type"]:checked');
+          const companions = parseInt(formData.get('companions')) || 0;
+          const baseFee = parseInt(typeRadio.dataset.fee);
+          const totalFee = baseFee + (companions * 700);
+          
+          const registration = {
+              name: formData.get('name'),
+              phone: formData.get('phone'),
+              email: formData.get('email') || '',
+              type: typeRadio.value,
+              typeLabel: typeRadio.nextElementSibling.textContent,
+              companions: companions,
+              totalFee: totalFee,
+              notes: formData.get('notes') || ''
+          };
+          
+          // 儲存到 Google Sheets
+          const result = await saveToGoogleSheets(registration);
+          
+          if (result.success) {
+              showMessage('success', '✅ 報名成功！資料已儲存，感謝您的參與');
+              
+              // 重置表單
+              e.target.reset();
+              updateFee();
+              
+              // 重新載入資料
+              await loadRegistrations();
+          } else {
+              showMessage('error', '❌ 報名失敗：' + (result.message || '請稍後再試'));
+          }
+          
+          isSubmitting = false;
+          submitBtn.disabled = false;
+          submitBtn.textContent = '確認報名';
+      });
+      
+      // ==================== 初始化 ====================
+      
+      /**
+       * 載入報名資料
+       */
+      async function loadRegistrations() {
+          try {
+              // 檢查 API URL 是否已設定
+              if (GAS_API_URL === 'YOUR_GAS_WEB_APP_URL_HERE') {
+                  console.warn('尚未設定 GAS API URL');
+                  return;
+              }
+              
+              const data = await loadFromGoogleSheets();
+              registrations = data;
+              updateRegistrationList();
+          } catch (error) {
+              console.error('載入報名資料失敗:', error);
+          }
+      }
+      
+      // 頁面載入時初始化
+      window.addEventListener('DOMContentLoaded', function() {
+          updateFee();
+          loadRegistrations();
+          
+          // 每30秒自動更新一次資料
+          setInterval(loadRegistrations, 30000);
+      });
   </script>
 </body>
 </html>
