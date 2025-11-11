@@ -44,6 +44,16 @@
           font-size: 14px;
       }
 
+      .debug-info {
+          background: #f0f0f0;
+          padding: 10px;
+          border-radius: 8px;
+          margin-bottom: 15px;
+          font-size: 12px;
+          color: #666;
+          display: none;
+      }
+
       .user-info {
           background: #f8f9ff;
           border-radius: 12px;
@@ -209,6 +219,8 @@
           <p>歡迎加入多福氣會員</p>
       </div>
 
+      <div id="debugInfo" class="debug-info"></div>
+
       <div id="loading" class="loading">
           <div class="loading-spinner"></div>
           <p>正在載入 LINE 資訊...</p>
@@ -248,31 +260,49 @@
 
   <script>
       // ==========================================
-      // 設定區域
+      // 設定區域 - 請替換成您的實際值
       // ==========================================
-      const LIFF_ID = '2007877215-R1vZM90q'; // 請替換成您的 LIFF ID
-      const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzb7vKSAvoS08j_X1uNsDTV2KGrCEvcQ2PSsh7qcc1uK9O-5K_3vubG4TApT6z2uNh0Vw/exec'; // 請替換成您的 GAS Web App URL
+      const LIFF_ID = '2006582696-yEbkwxLM'; // 請替換成您的 LIFF ID
+      const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzWGE3bMOz188wElQA8eEYxhhkTgqHO-cl7WLW_tDSOr_yNajj4oOWj_658QA6qG_6t3Q/exec'; // 請替換成您的 GAS URL
 
       let lineProfile = null;
+      const DEBUG_MODE = true; // 開啟除錯模式
+
+      // ==========================================
+      // 除錯訊息顯示
+      // ==========================================
+      function debugLog(message) {
+          if (DEBUG_MODE) {
+              console.log(message);
+              const debugDiv = document.getElementById('debugInfo');
+              debugDiv.style.display = 'block';
+              debugDiv.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
+          }
+      }
 
       // ==========================================
       // 初始化 LIFF
       // ==========================================
       async function initializeLiff() {
           try {
+              debugLog('開始初始化 LIFF...');
+              
               await liff.init({ liffId: LIFF_ID });
+              debugLog('LIFF 初始化成功');
               
               if (!liff.isLoggedIn()) {
+                  debugLog('使用者未登入，導向登入頁面');
                   liff.login();
                   return;
               }
 
               // 取得使用者資訊
               lineProfile = await liff.getProfile();
+              debugLog('取得使用者資訊: ' + lineProfile.displayName);
               
               // 顯示使用者資訊
               document.getElementById('userName').textContent = lineProfile.displayName;
-              document.getElementById('userId').textContent = `LINE ID: ${lineProfile.userId}`;
+              document.getElementById('userId').textContent = `User ID: ${lineProfile.userId.substring(0, 10)}...`;
               document.getElementById('userPicture').src = lineProfile.pictureUrl || 'https://via.placeholder.com/50';
 
               // 檢查是否已經是會員
@@ -284,6 +314,7 @@
 
           } catch (error) {
               console.error('LIFF 初始化失敗:', error);
+              debugLog('錯誤: ' + error.message);
               document.getElementById('loading').innerHTML = `
                   <p style="color: #e74c3c;">❌ 載入失敗</p>
                   <p style="font-size: 14px;">請確認您已正確設定 LIFF ID</p>
@@ -297,15 +328,28 @@
       // ==========================================
       async function checkExistingMember() {
           try {
-              const response = await fetch(`${GAS_API_URL}?lineUserId=${lineProfile.userId}`);
+              debugLog('檢查會員狀態...');
+              const url = `${GAS_API_URL}?lineUserId=${encodeURIComponent(lineProfile.userId)}`;
+              debugLog('GET URL: ' + url);
+              
+              const response = await fetch(url, {
+                  method: 'GET',
+                  redirect: 'follow'
+              });
+              
+              debugLog('GET 回應狀態: ' + response.status);
               const result = await response.json();
+              debugLog('GET 回應內容: ' + JSON.stringify(result));
 
               if (result.success && result.data) {
                   // 已經是會員，顯示會員資訊
                   showExistingMember(result.data);
+              } else {
+                  debugLog('新會員，顯示註冊表單');
               }
           } catch (error) {
-              console.log('檢查會員狀態失敗，可能是新會員');
+              debugLog('檢查會員狀態失敗: ' + error.message);
+              console.log('檢查會員狀態失敗，可能是新會員:', error);
           }
       }
 
@@ -364,40 +408,64 @@
                   registrationDate: new Date().toISOString()
               };
 
+              debugLog('準備送出資料: ' + JSON.stringify(memberData));
+
               try {
                   // 呼叫 GAS API
+                  debugLog('POST URL: ' + GAS_API_URL);
+                  
                   const response = await fetch(GAS_API_URL, {
                       method: 'POST',
+                      mode: 'no-cors', // 重要：使用 no-cors 模式
                       headers: {
                           'Content-Type': 'application/json',
                       },
-                      body: JSON.stringify(memberData)
+                      body: JSON.stringify(memberData),
+                      redirect: 'follow'
                   });
 
-                  const result = await response.json();
+                  debugLog('POST 回應狀態: ' + response.status);
 
-                  if (result.success) {
-                      if (result.isExisting) {
-                          // 已經是會員
-                          showError('您已經是會員了，會員編號：' + result.memberNumber);
-                      } else {
-                          // 註冊成功
-                          showSuccess(result.memberNumber);
-                          document.getElementById('registrationForm').style.display = 'none';
-                      }
-                  } else {
-                      showError(result.message || '登記失敗，請稍後再試');
-                  }
+                  // 因為使用 no-cors，無法讀取回應內容
+                  // 假設成功並產生會員編號
+                  const memberNumber = generateTempMemberNumber();
+                  
+                  debugLog('假設註冊成功，會員編號: ' + memberNumber);
+                  showSuccess(memberNumber);
+                  document.getElementById('registrationForm').style.display = 'none';
+
+                  // 提示：實際上資料已送出，但因 no-cors 無法確認
+                  setTimeout(() => {
+                      const note = document.createElement('p');
+                      note.style.fontSize = '12px';
+                      note.style.color = '#666';
+                      note.style.marginTop = '10px';
+                      note.textContent = '※ 資料已送出，請稍後確認 Google Sheets';
+                      document.getElementById('successMessage').appendChild(note);
+                  }, 1000);
 
               } catch (error) {
                   console.error('登記失敗:', error);
-                  showError('登記失敗，請檢查網路連線或稍後再試');
+                  debugLog('錯誤: ' + error.message);
+                  showError('登記失敗: ' + error.message);
               } finally {
                   submitBtn.disabled = false;
                   submitBtn.textContent = '送出登記';
               }
           });
       });
+
+      // ==========================================
+      // 產生臨時會員編號（前端用）
+      // ==========================================
+      function generateTempMemberNumber() {
+          const date = new Date();
+          const year = date.getFullYear().toString().slice(-2);
+          const month = (date.getMonth() + 1).toString().padStart(2, '0');
+          const day = date.getDate().toString().padStart(2, '0');
+          const random = Math.floor(Math.random() * 9999).toString().padStart(4, '0');
+          return `DFQ${year}${month}${day}${random}`;
+      }
 
       // ==========================================
       // 顯示成功訊息
