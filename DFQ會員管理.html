@@ -49,9 +49,21 @@
           padding: 10px;
           border-radius: 8px;
           margin-bottom: 15px;
-          font-size: 12px;
+          font-size: 11px;
           color: #666;
+          max-height: 200px;
+          overflow-y: auto;
           display: none;
+      }
+
+      .debug-toggle {
+          background: #e0e0e0;
+          border: none;
+          padding: 5px 10px;
+          border-radius: 5px;
+          font-size: 11px;
+          cursor: pointer;
+          margin-bottom: 10px;
       }
 
       .user-info {
@@ -190,6 +202,7 @@
           font-weight: bold;
           color: #667eea;
           margin: 15px 0;
+          letter-spacing: 2px;
       }
 
       .error-message {
@@ -210,6 +223,16 @@
           border-radius: 10px;
           text-align: center;
       }
+
+      .info-box {
+          background: #e3f2fd;
+          border-left: 4px solid #2196f3;
+          padding: 15px;
+          border-radius: 8px;
+          margin-top: 15px;
+          font-size: 13px;
+          color: #1565c0;
+      }
   </style>
 </head>
 <body>
@@ -219,6 +242,7 @@
           <p>歡迎加入多福氣會員</p>
       </div>
 
+      <button class="debug-toggle" onclick="toggleDebug()">🔧 顯示/隱藏除錯訊息</button>
       <div id="debugInfo" class="debug-info"></div>
 
       <div id="loading" class="loading">
@@ -275,9 +299,15 @@
           if (DEBUG_MODE) {
               console.log(message);
               const debugDiv = document.getElementById('debugInfo');
-              debugDiv.style.display = 'block';
-              debugDiv.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
+              const time = new Date().toLocaleTimeString();
+              debugDiv.innerHTML += `<div><strong>${time}:</strong> ${message}</div>`;
+              debugDiv.scrollTop = debugDiv.scrollHeight;
           }
+      }
+
+      function toggleDebug() {
+          const debugDiv = document.getElementById('debugInfo');
+          debugDiv.style.display = debugDiv.style.display === 'none' ? 'block' : 'none';
       }
 
       // ==========================================
@@ -285,24 +315,26 @@
       // ==========================================
       async function initializeLiff() {
           try {
-              debugLog('開始初始化 LIFF...');
+              debugLog('🚀 開始初始化 LIFF...');
+              debugLog('LIFF ID: ' + LIFF_ID);
               
               await liff.init({ liffId: LIFF_ID });
-              debugLog('LIFF 初始化成功');
+              debugLog('✅ LIFF 初始化成功');
               
               if (!liff.isLoggedIn()) {
-                  debugLog('使用者未登入，導向登入頁面');
+                  debugLog('⚠️ 使用者未登入，導向登入頁面');
                   liff.login();
                   return;
               }
 
               // 取得使用者資訊
               lineProfile = await liff.getProfile();
-              debugLog('取得使用者資訊: ' + lineProfile.displayName);
+              debugLog('✅ 取得使用者資訊: ' + lineProfile.displayName);
+              debugLog('User ID: ' + lineProfile.userId);
               
               // 顯示使用者資訊
               document.getElementById('userName').textContent = lineProfile.displayName;
-              document.getElementById('userId').textContent = `User ID: ${lineProfile.userId.substring(0, 10)}...`;
+              document.getElementById('userId').textContent = `User ID: ${lineProfile.userId.substring(0, 15)}...`;
               document.getElementById('userPicture').src = lineProfile.pictureUrl || 'https://via.placeholder.com/50';
 
               // 檢查是否已經是會員
@@ -314,7 +346,7 @@
 
           } catch (error) {
               console.error('LIFF 初始化失敗:', error);
-              debugLog('錯誤: ' + error.message);
+              debugLog('❌ 錯誤: ' + error.message);
               document.getElementById('loading').innerHTML = `
                   <p style="color: #e74c3c;">❌ 載入失敗</p>
                   <p style="font-size: 14px;">請確認您已正確設定 LIFF ID</p>
@@ -328,7 +360,7 @@
       // ==========================================
       async function checkExistingMember() {
           try {
-              debugLog('檢查會員狀態...');
+              debugLog('🔍 檢查會員狀態...');
               const url = `${GAS_API_URL}?lineUserId=${encodeURIComponent(lineProfile.userId)}`;
               debugLog('GET URL: ' + url);
               
@@ -338,17 +370,21 @@
               });
               
               debugLog('GET 回應狀態: ' + response.status);
-              const result = await response.json();
-              debugLog('GET 回應內容: ' + JSON.stringify(result));
+              
+              const responseText = await response.text();
+              debugLog('GET 回應內容: ' + responseText);
+              
+              const result = JSON.parse(responseText);
 
               if (result.success && result.data) {
+                  debugLog('✅ 找到現有會員資料');
                   // 已經是會員，顯示會員資訊
                   showExistingMember(result.data);
               } else {
-                  debugLog('新會員，顯示註冊表單');
+                  debugLog('ℹ️ 新會員，顯示註冊表單');
               }
           } catch (error) {
-              debugLog('檢查會員狀態失敗: ' + error.message);
+              debugLog('⚠️ 檢查會員狀態失敗: ' + error.message);
               console.log('檢查會員狀態失敗，可能是新會員:', error);
           }
       }
@@ -357,6 +393,7 @@
       // 顯示現有會員資訊
       // ==========================================
       function showExistingMember(memberData) {
+          debugLog('📋 顯示現有會員資訊');
           document.getElementById('registrationForm').style.display = 'none';
           const successDiv = document.getElementById('successMessage');
           successDiv.innerHTML = `
@@ -397,6 +434,7 @@
               // 停用按鈕
               submitBtn.disabled = true;
               submitBtn.textContent = '送出中...';
+              debugLog('📤 準備送出會員資料...');
 
               // 準備會員資料
               const memberData = {
@@ -408,7 +446,7 @@
                   registrationDate: new Date().toISOString()
               };
 
-              debugLog('準備送出資料: ' + JSON.stringify(memberData));
+              debugLog('資料內容: ' + JSON.stringify(memberData, null, 2));
 
               try {
                   // 呼叫 GAS API
@@ -416,7 +454,6 @@
                   
                   const response = await fetch(GAS_API_URL, {
                       method: 'POST',
-                      mode: 'no-cors', // 重要：使用 no-cors 模式
                       headers: {
                           'Content-Type': 'application/json',
                       },
@@ -425,47 +462,44 @@
                   });
 
                   debugLog('POST 回應狀態: ' + response.status);
-
-                  // 因為使用 no-cors，無法讀取回應內容
-                  // 假設成功並產生會員編號
-                  const memberNumber = generateTempMemberNumber();
                   
-                  debugLog('假設註冊成功，會員編號: ' + memberNumber);
-                  showSuccess(memberNumber);
-                  document.getElementById('registrationForm').style.display = 'none';
+                  const responseText = await response.text();
+                  debugLog('POST 回應內容: ' + responseText);
 
-                  // 提示：實際上資料已送出，但因 no-cors 無法確認
-                  setTimeout(() => {
-                      const note = document.createElement('p');
-                      note.style.fontSize = '12px';
-                      note.style.color = '#666';
-                      note.style.marginTop = '10px';
-                      note.textContent = '※ 資料已送出，請稍後確認 Google Sheets';
-                      document.getElementById('successMessage').appendChild(note);
-                  }, 1000);
+                  let result;
+                  try {
+                      result = JSON.parse(responseText);
+                  } catch (parseError) {
+                      debugLog('❌ JSON 解析失敗: ' + parseError.message);
+                      throw new Error('伺服器回應格式錯誤');
+                  }
+
+                  if (result.success) {
+                      if (result.isExisting) {
+                          // 已經是會員
+                          debugLog('⚠️ 使用者已經是會員');
+                          showError('您已經是會員了，會員編號：' + result.memberNumber);
+                      } else {
+                          // 註冊成功
+                          debugLog('✅ 註冊成功！會員編號: ' + result.memberNumber);
+                          showSuccess(result.memberNumber);
+                          document.getElementById('registrationForm').style.display = 'none';
+                      }
+                  } else {
+                      debugLog('❌ 註冊失敗: ' + result.message);
+                      showError(result.message || '登記失敗，請稍後再試');
+                  }
 
               } catch (error) {
                   console.error('登記失敗:', error);
-                  debugLog('錯誤: ' + error.message);
-                  showError('登記失敗: ' + error.message);
+                  debugLog('❌ 發生錯誤: ' + error.message);
+                  showError('登記失敗: ' + error.message + '\n\n請檢查網路連線或稍後再試');
               } finally {
                   submitBtn.disabled = false;
                   submitBtn.textContent = '送出登記';
               }
           });
       });
-
-      // ==========================================
-      // 產生臨時會員編號（前端用）
-      // ==========================================
-      function generateTempMemberNumber() {
-          const date = new Date();
-          const year = date.getFullYear().toString().slice(-2);
-          const month = (date.getMonth() + 1).toString().padStart(2, '0');
-          const day = date.getDate().toString().padStart(2, '0');
-          const random = Math.floor(Math.random() * 9999).toString().padStart(4, '0');
-          return `DFQ${year}${month}${day}${random}`;
-      }
 
       // ==========================================
       // 顯示成功訊息
@@ -478,12 +512,18 @@
                   <p>您的多福氣編號為：</p>
                   <div class="member-number">${memberNumber}</div>
                   <p style="font-size: 14px; margin-top: 10px;">請妥善保管您的會員編號</p>
+                  <div class="info-box">
+                      💡 您可以隨時透過此頁面查詢您的會員編號
+                  </div>
               </div>
           `;
           successDiv.style.display = 'block';
 
-          // 3 秒後關閉 LIFF 視窗（可選）
-          // setTimeout(() => liff.closeWindow(), 3000);
+          // 5 秒後關閉 LIFF 視窗（可選）
+          // setTimeout(() => {
+          //     debugLog('關閉 LIFF 視窗');
+          //     liff.closeWindow();
+          // }, 5000);
       }
 
       // ==========================================
@@ -493,9 +533,13 @@
           const errorDiv = document.getElementById('errorMessage');
           errorDiv.innerHTML = `<div class="error-message">❌ ${message}</div>`;
           errorDiv.style.display = 'block';
+          
+          // 捲動到錯誤訊息
+          errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          
           setTimeout(() => {
               errorDiv.style.display = 'none';
-          }, 5000);
+          }, 8000);
       }
   </script>
 </body>
