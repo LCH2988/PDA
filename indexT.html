@@ -1,0 +1,2320 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>帕金森病友會整合系統</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet"/>
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <style>
+    /* 保留原有的所有 CSS 樣式 */
+    :root {
+      --primary: #06c755;
+      --primary-dark: #05b04b;
+      --secondary: #00b900;
+      --danger: #dc3545;
+      --warning: #ffc107;
+      --info: #17a2b8;
+      --light: #f8f9fa;
+      --dark: #343a40;
+      --border-radius: 12px;
+      --purple-1: #667eea;
+      --purple-2: #764ba2;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { 
+      font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans TC',sans-serif; 
+      background: linear-gradient(135deg, var(--purple-1) 0%, var(--purple-2) 100%); 
+      min-height:100vh; 
+    }
+    .hidden { display:none !important; }
+    .root-container { max-width: 1200px; margin: 0 auto; }
+    .view { display:none; }
+    .view.active { display:block; }
+
+    /* 其他所有原有的 CSS 保持不變 */
+  </style>
+</head>
+<body>
+
+  <div class="root-container">
+    <!-- 保留原有的所有 HTML 結構 -->
+    <!-- view-auth, view-member, view-admin 等 -->
+  </div>
+
+  <!-- Toast/Modal/Loading 容器 -->
+  <div id="toastContainer" class="toast-container"></div>
+  <div id="modalContainer"></div>
+  <div id="globalLoading" class="loading-overlay"><div class="loading-spinner"></div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+  // ========== 修正後的完整 JavaScript ==========
+  
+  const APP = {
+    State: {
+      LIFF_IDS: {
+        // app: '1656516134-VaGgmaPm',
+        // auth: '1656516134-X9oq92g9',
+        // member: '1656516134-k8rMQwnQ'
+        app: '1656516134-VaGgmaPm',
+        auth: '1656516134-VaGgmaPm',
+        member: '1656516134-VaGgmaPm'
+      },
+      API: {
+        primary: localStorage.getItem('API_URL') || 'https://script.google.com/macros/s/AKfycbwSJ8FDB_iEbjv-M65px35UUfrHXel8Z4Kom67iV_lWH9-NLWPr4M_aPfcQBUarKoz-_w/exec',
+        alt: localStorage.getItem('admin_API_URL') || 'https://script.google.com/macros/s/AKfycbwSJ8FDB_iEbjv-M65px35UUfrHXel8Z4Kom67iV_lWH9-NLWPr4M_aPfcQBUarKoz-_w/exec'
+      },
+      API_KEY: 'AAbb8520258185202581',
+      userProfile: null,
+      memberInfo: null,
+      isAdmin: true,
+      routerView: 'auth',
+      appUser: { lineId: '', name: '', picture: '' },
+      pageSize: 20
+    },
+
+    // ========== 工具函數 ==========
+    Util: {
+      showLoading(show) {
+        document.getElementById('globalLoading').classList.toggle('show', !!show);
+      },
+      
+      toast(message, type='info') {
+        const container = document.getElementById('toastContainer');
+        const colors = { success: '#28a745', error: '#dc3545', warning: '#ffc107', info: '#17a2b8' };
+        const icons = { success: 'check-circle-fill', error: 'x-circle-fill', warning: 'exclamation-triangle-fill', info: 'info-circle-fill' };
+        const toast = document.createElement('div');
+        toast.className = 'toast show';
+        toast.style.cssText = `min-width:250px;margin-bottom:10px;background:white;border-left:4px solid ${colors[type]};box-shadow:0 4px 12px rgba(0,0,0,0.15);`;
+        toast.innerHTML = `
+          <div class="toast-body d-flex align-items-center">
+            <i class="bi bi-${icons[type]} me-2" style="color:${colors[type]};font-size:18px;"></i>
+            <div class="flex-grow-1" style="font-size:14px;">${message}</div>
+            <button type="button" class="btn-close ms-2" aria-label="Close"></button>
+          </div>`;
+        toast.querySelector('.btn-close').onclick = () => toast.remove();
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+      },
+      
+      modal(html, onSubmit) {
+        const container = document.getElementById('modalContainer');
+        container.innerHTML = html;
+        const modalEl = container.querySelector('.modal');
+        const formEl = container.querySelector('form');
+        const bsModal = new bootstrap.Modal(modalEl);
+        
+        if (formEl && typeof onSubmit === 'function') {
+          formEl.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = formEl.querySelector('button[type="submit"]');
+            APP.Util.setBtnLoading(btn, true);
+            try {
+              const fd = new FormData(formEl);
+              await onSubmit(fd);
+              bsModal.hide();
+            } catch (err) {
+              APP.Util.toast(err.message || '操作失敗', 'error');
+            } finally {
+              APP.Util.setBtnLoading(btn, false);
+            }
+          });
+        }
+        
+        modalEl.addEventListener('hidden.bs.modal', () => container.innerHTML = '', { once: true });
+        bsModal.show();
+      },
+      
+      setBtnLoading(button, loading) {
+        if (!button) return;
+        if (loading) {
+          button.disabled = true;
+          button.dataset.originalText = button.innerHTML;
+          button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>處理中...';
+        } else {
+          button.disabled = false;
+          if (button.dataset.originalText) button.innerHTML = button.dataset.originalText;
+        }
+      },
+      
+      formatDate(dateInput) {
+        if (!dateInput) return '-';
+        try {
+          let d;
+          if (dateInput instanceof Date) d = dateInput;
+          else if (typeof dateInput === 'number') d = new Date(dateInput);
+          else if (typeof dateInput === 'string') {
+            const p = Date.parse(dateInput);
+            d = isNaN(p) ? new Date(dateInput) : new Date(p);
+          } else return '-';
+          if (isNaN(d.getTime())) return '-';
+          return d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        } catch { return '-'; }
+      },
+      
+      formatDateInput(dateString) {
+        if (!dateString) return '';
+        try {
+          const d = (dateString instanceof Date) ? dateString : new Date(dateString);
+          if (isNaN(d.getTime())) return '';
+          return d.toISOString().split('T')[0];
+        } catch { return ''; }
+      },
+      
+      currency(n) { 
+        return new Intl.NumberFormat('zh-TW').format(Number(n || 0)); 
+      },
+      
+      getStatusClass(status) {
+        const map = {
+          '已審核': 'success', '待審核': 'warning', '已停用': 'danger', 
+          '報名中': 'info', '已額滿': 'warning', '已結束': 'secondary', 
+          '已取消': 'danger', '已完成': 'success', '處理中': 'warning', 
+          '已啟用': 'success', '已捐款': 'success'
+        };
+        return map[status] || 'secondary';
+      }
+    },
+
+    // ========== 配置 ==========
+    Config: {
+      updateAPIUrl() {
+        const v = document.getElementById('global-api-url').value.trim();
+        if (!v) { 
+          APP.Util.toast('請輸入有效 URL', 'error'); 
+          return; 
+        }
+        APP.State.API.primary = v;
+        APP.State.API.alt = v;
+        localStorage.setItem('API_URL', v);
+        localStorage.setItem('admin_API_URL', v);
+        document.getElementById('current-api-url').textContent = v;
+        APP.Util.toast('API 網址已更新', 'success');
+      }
+    },
+
+    // ========== 路由 ==========
+    Router: {
+      go(view) {
+        APP.State.routerView = view;
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('view-' + view).classList.add('active');
+        
+        if (view === 'member') {
+          APP.AppView.initApp();
+          APP.Member.initMember();
+        } else if (view === 'admin') {
+          APP.Admin.initAdmin();
+        }
+      },
+      
+      goAdmin() {
+        if (!APP.State.isAdmin) { 
+          APP.Util.toast('您沒有管理員權限', 'error'); 
+          return; 
+        }
+        APP.Router.go('admin');
+      }
+    },
+
+    // ========== LIFF ==========
+    LIFF: {
+      inited: false,
+      
+      async initAny() {
+        if (APP.LIFF.inited) return;
+        try {
+          const anyId = APP.State.LIFF_IDS.app || APP.State.LIFF_IDS.auth || APP.State.LIFF_IDS.member;
+          if (anyId && typeof liff !== 'undefined') {
+            await liff.init({ liffId: anyId });
+            APP.LIFF.inited = true;
+          }
+        } catch (e) { 
+          console.log('LIFF init error:', e); 
+        }
+      },
+      
+      async ensureLogged() {
+        try {
+          await APP.LIFF.initAny();
+          if (typeof liff !== 'undefined' && !liff.isLoggedIn()) {
+            liff.login();
+          }
+        } catch (e) { 
+          console.log('LIFF login error:', e); 
+        }
+      },
+      
+      async profile() {
+        try {
+          await APP.LIFF.initAny();
+          if (typeof liff !== 'undefined' && liff.isLoggedIn()) {
+            return await liff.getProfile();
+          }
+        } catch (e) { 
+          console.log('LIFF profile error:', e); 
+        }
+        return null;
+      }
+    },
+
+    // ========== API（統一使用 POST JSON） ==========
+    API: {
+      async call(action, data = {}) {
+        try {
+          const payload = {
+            apiKey: APP.State.API_KEY,
+            action,
+            ...data
+          };
+          
+          // 如果有 memberInfo，自動帶入 memberId
+          if (APP.State.memberInfo && !data.memberId && !data.lineId) {
+            payload.memberId = APP.State.memberInfo.memberId;
+          }
+          
+          // 如果有 userProfile，自動帶入 lineId
+          if (APP.State.userProfile && !data.lineId) {
+            payload.lineId = APP.State.userProfile.userId;
+          }
+          
+          const response = await fetch(APP.State.API.primary, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          
+          const result = await response.json();
+          
+          if (!result.success && result.message) {
+            throw new Error(result.message);
+          }
+          
+          return result;
+        } catch (error) {
+          console.error('API Error:', error);
+          throw error;
+        }
+      }
+    },
+
+    // ========== 認證 ==========
+    Auth: {
+      debug(message) {
+        const el = document.getElementById('auth-debug');
+        if (!el) return;
+        const ts = new Date().toLocaleTimeString();
+        el.innerHTML += '[' + ts + '] ' + message + '<br/>';
+        el.scrollTop = 999999;
+      },
+      
+      setAlert(msg, type = 'info') {
+        const el = document.getElementById('auth-alert');
+        if (!el) return;
+        el.className = 'alert alert-' + (type === 'error' ? 'danger' : type);
+        el.textContent = msg;
+        el.classList.remove('d-none');
+        setTimeout(() => el.classList.add('d-none'), 5000);
+      },
+      
+      setLoading(on) {
+        const el = document.getElementById('auth-loading');
+        if (el) el.classList.toggle('d-none', !on);
+      },
+      
+      async init() {
+        // Tab 切換
+        document.querySelectorAll('.auth-tab').forEach(tab => {
+          tab.addEventListener('click', () => {
+            document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            document.querySelectorAll('.auth-pane').forEach(p => p.classList.remove('active'));
+            document.getElementById(tab.dataset.pane).classList.add('active');
+          });
+        });
+        
+        const urlEl = document.getElementById('current-api-url');
+        if (urlEl) urlEl.textContent = APP.State.API.primary;
+        
+        // 檢查已登入
+        const stored = localStorage.getItem('memberInfo');
+        if (stored) {
+          APP.State.memberInfo = JSON.parse(stored);
+          APP.State.isAdmin = !!APP.State.memberInfo?.isAdmin;
+          APP.Router.go('member');
+          return;
+        }
+        
+        // 初始化 LIFF
+        try {
+          await APP.LIFF.initAny();
+          if (typeof liff !== 'undefined' && liff.isLoggedIn()) {
+            const profile = await liff.getProfile();
+            APP.Auth.debug('已登入 LINE: ' + profile.displayName);
+          }
+        } catch (err) {
+          APP.Auth.debug('LIFF 初始化失敗: ' + err.message);
+        }
+      },
+      
+      async testAPIConnection() {
+        APP.Auth.setLoading(true);
+        try {
+          APP.Auth.debug('開始測試 API...');
+          const result = await APP.API.call('test');
+          APP.Auth.setLoading(false);
+          if (result?.success) {
+            APP.Auth.setAlert('API 連線成功！', 'success');
+            APP.Auth.debug('測試成功: ' + JSON.stringify(result));
+          } else {
+            APP.Auth.setAlert('API 回應異常', 'warning');
+          }
+        } catch (e) {
+          APP.Auth.setLoading(false);
+          APP.Auth.setAlert('API 連線失敗：' + e.message, 'error');
+          APP.Auth.debug('錯誤: ' + e.message);
+        }
+      },
+      
+      clearDebug() {
+        const el = document.getElementById('auth-debug');
+        if (el) {
+          el.innerHTML = '';
+          APP.Auth.debug('已清除除錯記錄');
+        }
+      },
+      
+      async handleEmailLogin(e) {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        
+        APP.Auth.setLoading(true);
+        try {
+          const result = await APP.API.call('login', { email, password });
+          APP.Auth.setLoading(false);
+          
+          if (result?.success) {
+            APP.State.memberInfo = result.data;
+            APP.State.isAdmin = !!result.data?.isAdmin;
+            localStorage.setItem('memberInfo', JSON.stringify(result.data));
+            APP.Auth.setAlert('登入成功！', 'success');
+            setTimeout(() => APP.Router.go('member'), 800);
+          } else {
+            APP.Auth.setAlert(result?.message || '登入失敗', 'error');
+          }
+        } catch (e2) {
+          APP.Auth.setLoading(false);
+          APP.Auth.setAlert('系統錯誤：' + e2.message, 'error');
+        }
+      },
+      
+      async handleLineLogin() {
+        APP.Auth.debug('開始 LINE 登入');
+        try {
+          await APP.LIFF.ensureLogged();
+          
+          if (typeof liff === 'undefined' || !liff.isLoggedIn()) {
+            APP.Auth.setAlert('LINE 登入失敗', 'error');
+            return;
+          }
+          
+          const profile = await liff.getProfile();
+          APP.Auth.debug('LINE 使用者：' + profile.displayName);
+          APP.Auth.setLoading(true);
+          
+          const result = await APP.API.call('lineLogin', {
+            lineUserId: profile.userId,
+            displayName: profile.displayName,
+            pictureUrl: profile.pictureUrl || ''
+          });
+          
+          APP.Auth.setLoading(false);
+          
+          if (result?.success) {
+            APP.State.memberInfo = result.data;
+            APP.State.isAdmin = !!result.data?.isAdmin;
+            localStorage.setItem('memberInfo', JSON.stringify(result.data));
+            APP.Auth.setAlert('登入成功！', 'success');
+            setTimeout(() => APP.Router.go('member'), 800);
+          } else {
+            APP.Auth.setAlert(result?.message || 'LINE 登入失敗', 'error');
+          }
+        } catch (e) {
+          APP.Auth.setLoading(false);
+          APP.Auth.setAlert('LINE 登入失敗：' + e.message, 'error');
+          APP.Auth.debug('錯誤: ' + e.message);
+        }
+      },
+      
+      async handleRegister(e) {
+        e.preventDefault();
+        const pwd = document.getElementById('reg-password').value;
+        const pwd2 = document.getElementById('reg-password-confirm').value;
+        
+        if (pwd !== pwd2) { 
+          APP.Auth.setAlert('兩次密碼不一致', 'error'); 
+          return; 
+        }
+        
+        APP.Auth.setLoading(true);
+        try {
+          let lineUserId = '';
+          try {
+            await APP.LIFF.initAny();
+            if (typeof liff !== 'undefined' && liff.isLoggedIn()) {
+              const p = await liff.getProfile();
+              lineUserId = p.userId;
+            }
+          } catch {}
+          
+          const result = await APP.API.call('register', {
+            name: document.getElementById('reg-name').value,
+            gender: document.getElementById('reg-gender').value,
+            birthday: document.getElementById('reg-birthday').value,
+            phone: document.getElementById('reg-phone').value,
+            email: document.getElementById('reg-email').value,
+            password: pwd,
+            lineUserId
+          });
+          
+          APP.Auth.setLoading(false);
+          
+          if (result?.success) {
+            APP.Auth.setAlert('註冊成功！請等待管理員審核', 'success');
+            document.querySelector('.auth-tab[data-pane="pane-login"]').click();
+          } else {
+            APP.Auth.setAlert(result?.message || '註冊失敗', 'error');
+          }
+        } catch (e2) {
+          APP.Auth.setLoading(false);
+          APP.Auth.setAlert('系統錯誤：' + e2.message, 'error');
+        }
+      },
+      
+      logout() {
+        localStorage.removeItem('memberInfo');
+        try { 
+          if (typeof liff !== 'undefined' && liff.isLoggedIn()) {
+            liff.logout(); 
+          }
+        } catch (e) {}
+        APP.State.memberInfo = null;
+        APP.State.isAdmin = false;
+        APP.Router.go('auth');
+      }
+    },
+
+    // ========== 行動端 App 視圖（保持原有邏輯，只修正 API 呼叫） ==========
+    AppView: {
+      async initApp() {
+        // 初始化 LIFF Profile
+        try {
+          const prof = await APP.LIFF.profile();
+          if (prof) {
+            APP.State.userProfile = prof;
+            const avatarEl = document.getElementById('appUserAvatar');
+            const nameEl = document.getElementById('appUserName');
+            const lineIdEl = document.getElementById('appUserLineId');
+            
+            if (avatarEl) avatarEl.src = prof.pictureUrl || 'https://via.placeholder.com/36';
+            if (nameEl) nameEl.textContent = prof.displayName || '已登入';
+            if (lineIdEl) lineIdEl.textContent = prof.userId || '-';
+          }
+        } catch (e) {
+          console.log('Profile load error:', e);
+        }
+        
+        // 權限設定
+        const isAdmin = !!APP.State.memberInfo?.isAdmin;
+        APP.State.isAdmin = isAdmin;
+        document.querySelectorAll('.admin-only').forEach(el => {
+          el.style.display = isAdmin ? 'block' : 'none';
+        });
+        
+        // 綁定底部導航
+        document.querySelectorAll('.bottom-nav .nav-item').forEach(btn => {
+          btn.onclick = () => {
+            document.querySelectorAll('.bottom-nav .nav-item').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const page = btn.getAttribute('data-app-page');
+            APP.AppView.switchPage(page);
+          };
+        });
+        
+        // 綁定個人資料表單
+        const pf = document.getElementById('profileForm');
+        if (pf && !pf.dataset.bind) {
+          pf.addEventListener('submit', APP.AppView.submitProfile);
+          pf.dataset.bind = '1';
+        }
+        
+        // 載入資料
+        APP.AppView.loadAll();
+      },
+      
+      switchPage(page) {
+        document.querySelectorAll('.page-content').forEach(p => p.classList.remove('active'));
+        const el = document.getElementById('app-page-' + page);
+        if (el) { 
+          el.classList.add('active'); 
+          window.scrollTo({ top: 0, behavior: 'smooth' }); 
+        }
+      },
+      
+      async loadAll() {
+        APP.Util.showLoading(true);
+        try {
+          await Promise.all([
+            APP.AppView.loadHomeData(),
+            APP.AppView.loadActivities(),
+            APP.AppView.loadVolunteer(),
+            APP.AppView.loadFinance(),
+            APP.AppView.loadProfile()
+          ]);
+        } catch (e) { 
+          APP.Util.toast('資料載入失敗：' + e.message, 'error'); 
+        } finally { 
+          APP.Util.showLoading(false); 
+        }
+      },
+      
+      async loadHomeData() {
+        try {
+          const result = await APP.API.call('getDashboardData');
+          const d = result.data || {};
+          
+          const el1 = document.getElementById('statActivities');
+          const el2 = document.getElementById('statRegistrations');
+          const el3 = document.getElementById('statVolunteerHours');
+          const el4 = document.getElementById('statDonations');
+          
+          if (el1) el1.textContent = d.totalActivities || 0;
+          if (el2) el2.textContent = d.myRegistrations || 0;
+          if (el3) el3.textContent = d.myVolunteerHours || 0;
+          if (el4) el4.textContent = '$' + APP.Util.currency(d.myDonationAmount || 0);
+          
+          APP.AppView.renderRecentActivities(d.recentActivity || []);
+        } catch (e) {
+          console.error('loadHomeData error:', e);
+        }
+      },
+      
+      renderRecentActivities(list) {
+        const c = document.getElementById('recentActivities');
+        if (!c) return;
+        
+        if (!list.length) {
+          c.innerHTML = '<div class="empty-state"><i class="bi bi-calendar-x"></i><p>目前沒有活動</p></div>';
+          return;
+        }
+        
+        c.innerHTML = list.slice(0, 3).map(a => `
+          <div class="activity-item">
+            <div class="activity-title">${a.title}</div>
+            <div class="activity-info">${a.description || ''}</div>
+            <div class="activity-meta">
+              <span><i class="bi bi-calendar"></i>${APP.Util.formatDate(a.date)}</span>
+              <span class="status-badge status-${a.status}">${a.status}</span>
+            </div>
+          </div>`).join('');
+      },
+      
+      async loadActivities() {
+        try {
+          const result = await APP.API.call('getActivities');
+          const list = result.data || [];
+          const open = list.filter(a => a.status === '開放報名' || a.status === '報名中');
+          APP.AppView.renderActivities(open);
+          
+          const regResult = await APP.API.call('getMyRegistrations');
+          APP.AppView.renderMyRegistrations(regResult.data || []);
+        } catch (e) {
+          console.error('loadActivities error:', e);
+        }
+      },
+      
+      renderActivities(activities) {
+        const c = document.getElementById('activitiesList');
+        if (!c) return;
+        
+        if (!activities.length) {
+          c.innerHTML = '<div class="empty-state"><i class="bi bi-calendar-x"></i><p>目前沒有開放報名的活動</p></div>';
+          return;
+        }
+        
+        c.innerHTML = activities.map(a => `
+          <div class="activity-item">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div class="activity-title">${a.title}</div>
+              <span class="status-badge status-${a.status}">${a.status}</span>
+            </div>
+            <div class="activity-info">${a.description || ''}</div>
+            <div class="activity-meta">
+              <span><i class="bi bi-calendar"></i>${APP.Util.formatDate(a.date)} ${a.time || ''}</span>
+              <span><i class="bi bi-geo-alt"></i>${a.location || '未指定'}</span>
+              <span><i class="bi bi-people"></i>${a.currentCount || 0}/${a.maxParticipants}</span>
+              ${a.fee ? `<span><i class="bi bi-cash"></i>$${APP.Util.currency(a.fee)}</span>` : ''}
+            </div>
+            <button class="btn btn-sm btn-gradient mt-2" onclick="APP.AppView.registerActivity('${a.id}')">
+              <i class="bi bi-check-circle me-1"></i>我要報名
+            </button>
+          </div>`).join('');
+      },
+      
+      renderMyRegistrations(regs) {
+        const c = document.getElementById('myRegistrationsList');
+        if (!c) return;
+        
+        if (!regs.length) {
+          c.innerHTML = '<div class="empty-state"><i class="bi bi-calendar-x"></i><p>您還沒有報名任何活動</p></div>';
+          return;
+        }
+        
+        c.innerHTML = regs.map(r => `
+          <div class="activity-item">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div class="activity-title">${r.activityTitle}</div>
+              <span class="status-badge status-${r.status}">${r.status}</span>
+            </div>
+            <div class="activity-meta">
+              <span><i class="bi bi-calendar"></i>${APP.Util.formatDate(r.registrationTime)}</span>
+            </div>
+            ${r.status === '已報名' ? `
+              <button class="btn btn-sm btn-outline-danger mt-2" onclick="APP.AppView.cancelRegistration('${r.id}')">
+                <i class="bi bi-x-circle me-1"></i>取消報名
+              </button>` : ''}
+          </div>`).join('');
+      },
+      
+      async registerActivity(activityId) {
+        if (!confirm('確定要報名此活動嗎？')) return;
+        
+        try {
+          APP.Util.showLoading(true);
+          await APP.API.call('registerActivity', { activityId });
+          APP.Util.toast('報名成功！', 'success');
+          await APP.AppView.loadActivities();
+          await APP.AppView.loadHomeData();
+        } catch (e) { 
+          APP.Util.toast('報名失敗：' + e.message, 'error'); 
+        } finally { 
+          APP.Util.showLoading(false); 
+        }
+      },
+      
+      async cancelRegistration(regId) {
+        if (!confirm('確定要取消報名嗎？')) return;
+        
+        try {
+          APP.Util.showLoading(true);
+          await APP.API.call('cancelRegistration', { registrationId: regId });
+          APP.Util.toast('已取消報名', 'success');
+          await APP.AppView.loadActivities();
+          await APP.AppView.loadHomeData();
+        } catch (e) { 
+          APP.Util.toast('取消失敗：' + e.message, 'error'); 
+        } finally { 
+          APP.Util.showLoading(false); 
+        }
+      },
+      
+      async loadVolunteer() {
+        try {
+          const result = await APP.API.call('getVolunteerData');
+          const d = result.data || {};
+          
+          const el1 = document.getElementById('volTotalHours');
+          const el2 = document.getElementById('volTotalActivities');
+          
+          if (el1) el1.textContent = d.stats?.totalHours || 0;
+          if (el2) el2.textContent = d.stats?.totalActivities || 0;
+          
+          APP.AppView.renderVolunteerNeeds(d.needs || []);
+          APP.AppView.renderVolunteerRecords(d.records || []);
+        } catch (e) {
+          console.error('loadVolunteer error:', e);
+        }
+      },
+      
+      renderVolunteerNeeds(needs) {
+        const c = document.getElementById('volunteerNeedsList');
+        if (!c) return;
+        
+        if (!needs.length) { 
+          c.innerHTML = '<div class="empty-state"><i class="bi bi-people"></i><p>目前沒有志工需求</p></div>'; 
+          return; 
+        }
+        
+        c.innerHTML = needs.map(n => `
+          <div class="activity-item">
+            <div class="activity-title">${n.title}</div>
+            <div class="activity-info">${n.description || ''}</div>
+            <div class="activity-meta">
+              <span><i class="bi bi-calendar"></i>${APP.Util.formatDate(n.date)} ${n.time || ''}</span>
+              <span><i class="bi bi-people"></i>需求：${n.needCount}人</span>
+              <span><i class="bi bi-clock"></i>時數：${n.hours}小時</span>
+              <span><i class="bi bi-check-circle"></i>已報名：${n.currentCount || 0}人</span>
+            </div>
+            <button class="btn btn-sm btn-gradient mt-2" onclick="APP.AppView.applyVolunteer('${n.id}')">
+              <i class="bi bi-hand-thumbs-up me-1"></i>我要報名
+            </button>
+          </div>`).join('');
+      },
+      
+      renderVolunteerRecords(records) {
+        const c = document.getElementById('myVolunteerRecords');
+        if (!c) return;
+        
+        if (!records.length) { 
+          c.innerHTML = '<div class="empty-state"><i class="bi bi-journal-x"></i><p>您還沒有志工服務記錄</p></div>'; 
+          return; 
+        }
+        
+        c.innerHTML = records.map(r => `
+          <div class="activity-item">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div class="activity-title">${r.title}</div>
+              <span class="status-badge status-${r.status}">${r.status}</span>
+            </div>
+            <div class="activity-meta">
+              <span><i class="bi bi-calendar"></i>${APP.Util.formatDate(r.date)}</span>
+              <span><i class="bi bi-clock"></i>${r.hours}小時</span>
+            </div>
+          </div>`).join('');
+      },
+      
+      async applyVolunteer(needId) {
+        if (!confirm('確定要報名此志工服務嗎？')) return;
+        
+        try {
+          APP.Util.showLoading(true);
+          await APP.API.call('applyVolunteer', { needId });
+          APP.Util.toast('報名成功！', 'success');
+          await APP.AppView.loadVolunteer();
+        } catch (e) { 
+          APP.Util.toast('報名失敗：' + e.message, 'error'); 
+        } finally { 
+          APP.Util.showLoading(false); 
+        }
+      },
+      
+      async loadFinance() {
+        try {
+          const result = await APP.API.call('getFinanceData');
+          const d = result.data || {};
+          
+          const el1 = document.getElementById('finTotalDonation');
+          const el2 = document.getElementById('finPendingExpenses');
+          
+          if (el1) el1.textContent = '$' + APP.Util.currency(d.stats?.totalDonation || 0);
+          if (el2) el2.textContent = d.stats?.pendingExpenses || 0;
+          
+          APP.AppView.renderMyDonations(d.donations || []);
+          APP.AppView.renderMyExpenses(d.expenses || []);
+        } catch (e) {
+          console.error('loadFinance error:', e);
+        }
+      },
+      
+      renderMyDonations(ds) {
+        const c = document.getElementById('myDonationsList');
+        if (!c) return;
+        
+        if (!ds.length) { 
+          c.innerHTML = '<div class="empty-state"><i class="bi bi-heart"></i><p>您還沒有捐款記錄</p></div>'; 
+          return; 
+        }
+        
+        c.innerHTML = ds.map(d => `
+          <div class="activity-item">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <div class="activity-title">$${APP.Util.currency(d.amount)}</div>
+                <div class="activity-info">${d.category || '一般捐款'}</div>
+                <div class="activity-meta">
+                  <span><i class="bi bi-calendar"></i>${APP.Util.formatDate(d.createdAt)}</span>
+                  <span class="status-badge status-${d.status}">${d.status}</span>
+                </div>
+              </div>
+            </div>
+          </div>`).join('');
+      },
+      
+      renderMyExpenses(xs) {
+        const c = document.getElementById('myExpensesList');
+        if (!c) return;
+        
+        if (!xs.length) { 
+          c.innerHTML = '<div class="empty-state"><i class="bi bi-receipt"></i><p>您還沒有支出申請</p></div>'; 
+          return; 
+        }
+        
+        c.innerHTML = xs.map(x => `
+          <div class="activity-item">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div class="activity-title">$${APP.Util.currency(x.amount)}</div>
+              <span class="status-badge status-${x.status}">${x.status}</span>
+            </div>
+            <div class="activity-info">${x.description || ''}</div>
+            <div class="activity-meta">
+              <span><i class="bi bi-calendar"></i>${APP.Util.formatDate(x.createdAt)}</span>
+              <span><i class="bi bi-tag"></i>${x.category}</span>
+            </div>
+          </div>`).join('');
+      },
+      
+      async loadProfile() {
+        try {
+          const result = await APP.API.call('getUserInfo');
+          const p = result.data || {};
+          const form = document.getElementById('profileForm');
+          
+          if (form) {
+            if (form.elements.realName) form.elements.realName.value = p.realName || '';
+            if (form.elements.memberType) form.elements.memberType.value = p.memberType || '';
+            if (form.elements.phone) form.elements.phone.value = p.phone || '';
+            if (form.elements.email) form.elements.email.value = p.email || '';
+            if (form.elements.birthday) form.elements.birthday.value = APP.Util.formatDateInput(p.birthday);
+            if (form.elements.diagnosisDate) form.elements.diagnosisDate.value = APP.Util.formatDateInput(p.diagnosisDate);
+            if (form.elements.address) form.elements.address.value = p.address || '';
+          }
+          
+          const typeEl = document.getElementById('appUserMemberType');
+          if (typeEl) typeEl.textContent = p.memberType || '-';
+          
+          const recResult = await APP.API.call('getMyReceipts');
+          APP.AppView.renderMyReceipts(recResult.data || []);
+        } catch (e) {
+          console.error('loadProfile error:', e);
+        }
+      },
+      
+      renderMyReceipts(list) {
+        const c = document.getElementById('myReceiptsList');
+        if (!c) return;
+        
+        if (!list.length) { 
+          c.innerHTML = '<div class="empty-state"><i class="bi bi-file-earmark-text"></i><p>您還沒有收據</p></div>'; 
+          return; 
+        }
+        
+        c.innerHTML = list.map(r => `
+          <div class="activity-item">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <div class="activity-title">${r.receiptNumber}</div>
+                <div class="activity-meta">
+                  <span><i class="bi bi-cash"></i>金額：$${APP.Util.currency(r.amount)}</span>
+                  <span><i class="bi bi-calendar"></i>${APP.Util.formatDate(r.issueDate)}</span>
+                </div>
+              </div>
+              ${r.pdfUrl ? `<button class="btn btn-sm btn-gradient" onclick="window.open('${r.pdfUrl}','_blank')">
+                <i class="bi bi-download"></i>下載
+              </button>` : ''}
+            </div>
+          </div>`).join('');
+      },
+      
+      async submitProfile(e) {
+        e.preventDefault();
+        const f = e.target;
+        const data = {
+          realName: f.realName.value,
+          memberType: f.memberType.value,
+          phone: f.phone.value,
+          email: f.email.value,
+          birthday: f.birthday.value,
+          diagnosisDate: f.diagnosisDate.value,
+          address: f.address.value
+        };
+        
+        const btn = f.querySelector('button[type="submit"]');
+        APP.Util.setBtnLoading(btn, true);
+        
+        try {
+          await APP.API.call('updateProfile', data);
+          APP.Util.toast('資料已更新', 'success');
+          await APP.AppView.loadProfile();
+        } catch (e2) { 
+          APP.Util.toast('更新失敗：' + e2.message, 'error'); 
+        } finally { 
+          APP.Util.setBtnLoading(btn, false); 
+        }
+      },
+      
+      showDonationModal() {
+        const html = `
+          <div class="modal fade" id="donationModal" tabindex="-1">
+            <div class="modal-dialog">
+              <form class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title"><i class="bi bi-heart-fill me-2"></i>我要捐款</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="form-floating mb-3">
+                    <input type="number" class="form-control" name="amount" required min="1" />
+                    <label>捐款金額 *</label>
+                  </div>
+                  <div class="form-floating mb-3">
+                    <select class="form-select" name="category">
+                      <option>一般捐款</option>
+                      <option>活動贊助</option>
+                    </select>
+                    <label>捐款類別</label>
+                  </div>
+                  <div class="form-floating mb-3">
+                    <textarea class="form-control" name="description" style="height:80px;"></textarea>
+                    <label>說明</label>
+                  </div>
+                  <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" name="needReceipt" id="needReceipt">
+                    <label class="form-check-label" for="needReceipt">需要收據</label>
+                  </div>
+                  <div class="alert alert-info small">若您的電子郵件未填寫，收據將僅產生 PDF 供下載，不會寄送 Email。</div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                  <button type="submit" class="btn btn-gradient">確認捐款</button>
+                </div>
+              </form>
+            </div>
+          </div>`;
+        
+        APP.Util.modal(html, async (fd) => {
+          const data = {
+            amount: fd.get('amount'),
+            category: fd.get('category'),
+            description: fd.get('description'),
+            needReceipt: fd.get('needReceipt') === 'on'
+          };
+          
+          const result = await APP.API.call('createDonation', data);
+          APP.Util.toast('捐款記錄已新增，感謝您的支持！', 'success');
+          
+          if (result?.data?.pdfUrl) {
+            APP.Util.toast('已產生收據 PDF，請至「我的收據」下載', 'info');
+          }
+          
+          await APP.AppView.loadFinance();
+          await APP.AppView.loadHomeData();
+        });
+      },
+      
+      showNewExpenseModal() {
+        const html = `
+          <div class="modal fade" id="expenseModal" tabindex="-1">
+            <div class="modal-dialog">
+              <form class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title"><i class="bi bi-receipt me-2"></i>支出申請</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="form-floating mb-3">
+                    <input type="number" class="form-control" name="amount" required min="1"/>
+                    <label>金額 *</label>
+                  </div>
+                  <div class="form-floating mb-3">
+                    <select class="form-select" name="category" required>
+                      <option value="">請選擇</option>
+                      <option>活動費用</option>
+                      <option>行政支出</option>
+                      <option>設備支出</option>
+                    </select>
+                    <label>類別 *</label>
+                  </div>
+                  <div class="form-floating mb-3">
+                    <textarea class="form-control" name="description" required style="height:100px;"></textarea>
+                    <label>說明 *</label>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                  <button type="submit" class="btn btn-gradient">送出申請</button>
+                </div>
+              </form>
+            </div>
+          </div>`;
+        
+        APP.Util.modal(html, async (fd) => {
+          const data = {
+            amount: fd.get('amount'),
+            category: fd.get('category'),
+            description: fd.get('description')
+          };
+          
+          await APP.API.call('createExpense', data);
+          APP.Util.toast('支出申請已送出', 'success');
+          await APP.AppView.loadFinance();
+        });
+      }
+    },
+
+    // ========== 會員中心（保持原有邏輯，修正 API 呼叫） ==========
+    Member: {
+      selectedMood: 5,
+      selectedTags: [],
+      
+      async initMember() {
+        const info = APP.State.memberInfo;
+        if (info) {
+          const nameEl = document.getElementById('mc-name');
+          const noEl = document.getElementById('mc-no');
+          const avatarEl = document.getElementById('mc-avatar');
+          
+          if (nameEl) nameEl.textContent = info.name || '-';
+          if (noEl) noEl.textContent = '會員編號：' + (info.memberNo || '---');
+          if (avatarEl) avatarEl.textContent = (info.name || 'A').charAt(0);
+        }
+        
+        APP.Member.loadTodayReminders();
+        APP.Member.loadUpcomingEvents();
+      },
+      
+      show(section) {
+        document.querySelectorAll('.member-section').forEach(s => s.classList.remove('active'));
+        
+        switch (section) {
+          case 'home':
+            document.getElementById('mc-home').classList.add('active');
+            APP.Member.loadTodayReminders();
+            APP.Member.loadUpcomingEvents();
+            break;
+          case 'symptom':
+            document.getElementById('mc-symptom').classList.add('active');
+            APP.Member.loadSymptomHistory();
+            break;
+          case 'medication':
+            document.getElementById('mc-medication').classList.add('active');
+            APP.Member.loadMedications();
+            break;
+          case 'exercise':
+            document.getElementById('mc-exercise').classList.add('active');
+            break;
+          case 'sleep':
+            document.getElementById('mc-sleep').classList.add('active');
+            break;
+          case 'mood':
+            document.getElementById('mc-mood').classList.add('active');
+            break;
+          case 'events':
+            document.getElementById('mc-events').classList.add('active');
+            APP.Member.loadEvents();
+            APP.Member.loadMyEvents();
+            break;
+          case 'profile':
+            document.getElementById('mc-profile').classList.add('active');
+            APP.Member.loadProfile();
+            APP.Member.loadDonationHistory();
+            break;
+          default:
+            document.getElementById('mc-home').classList.add('active');
+        }
+      },
+      
+      async loadTodayReminders() {
+        const c = document.getElementById('mc-today-reminders');
+        if (!c) return;
+        
+        try {
+          const result = await APP.API.call('getMedications', { 
+            memberId: APP.State.memberInfo?.memberId 
+          });
+          const arr = result.data || [];
+          
+          if (!arr.length) { 
+            c.innerHTML = '<div class="text-center text-muted py-4">今天沒有提醒事項</div>'; 
+            return; 
+          }
+          
+          let html = '';
+          arr.forEach(m => {
+            let times = [];
+            try { 
+              times = JSON.parse(m.frequency || '[]'); 
+            } catch {}
+            
+            times.forEach(t => {
+              html += `
+                <div class="d-flex justify-content-between align-items-center border rounded p-2 mb-2">
+                  <div>
+                    <div class="fw-bold">💊 ${m.medicineName}</div>
+                    <div class="small text-muted">${t} - ${m.dosage || ''}</div>
+                  </div>
+                  <button class="btn btn-sm btn-primary" onclick="APP.Member.logMedication('${m.medicationId}','${t}')">已服用</button>
+                </div>
+              `;
+            });
+          });
+          
+          c.innerHTML = html;
+        } catch (e) {
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>';
+        }
+      },
+      
+      async loadUpcomingEvents() {
+        const c = document.getElementById('mc-upcoming-events');
+        if (!c) return;
+        
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          const result = await APP.API.call('getEvents', { 
+            status: '報名中', 
+            startDate: today,
+            page: 1,
+            pageSize: 3
+          });
+          const arr = result.data || [];
+          
+          if (!arr.length) { 
+            c.innerHTML = '<div class="text-center text-muted py-4">目前沒有活動</div>'; 
+            return; 
+          }
+          
+          c.innerHTML = arr.slice(0, 3).map(ev => `
+            <div class="d-flex justify-content-between align-items-center border rounded p-2 mb-2">
+              <div>
+                <div class="fw-bold">${ev.eventName}</div>
+                <div class="small text-muted">📅 ${ev.eventDate} ${ev.startTime}　📍 ${ev.location}</div>
+              </div>
+              <span class="badge bg-info">${ev.registrationCount}/${ev.maxParticipants}</span>
+            </div>
+          `).join('');
+        } catch (e) { 
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>'; 
+        }
+      },
+      
+      async addSymptom(e) {
+        e.preventDefault();
+        
+        try {
+          const result = await APP.API.call('addDailySymptom', {
+            memberId: APP.State.memberInfo?.memberId,
+            recordDate: new Date().toISOString().split('T')[0],
+            tremorLevel: document.getElementById('mc-tremor').value,
+            rigidityLevel: document.getElementById('mc-rigidity').value,
+            bradykinesiaLevel: document.getElementById('mc-brady').value,
+            balanceLevel: document.getElementById('mc-balance').value,
+            notes: document.getElementById('mc-symptom-notes').value
+          });
+          
+          if (result?.success) {
+            APP.Util.toast('記錄成功', 'success');
+            e.target.reset();
+            APP.Member.loadSymptomHistory();
+          } else { 
+            APP.Util.toast(result?.message || '新增失敗', 'error'); 
+          }
+        } catch (e2) { 
+          APP.Util.toast('系統錯誤：' + e2.message, 'error'); 
+        }
+      },
+      
+      async loadSymptomHistory() {
+        const c = document.getElementById('mc-symptom-history');
+        if (!c) return;
+        
+        try {
+          const end = new Date().toISOString().split('T')[0];
+          const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          
+          const result = await APP.API.call('getDailySymptoms', { 
+            memberId: APP.State.memberInfo?.memberId, 
+            startDate: start, 
+            endDate: end 
+          });
+          const arr = result.data || [];
+          
+          if (!arr.length) { 
+            c.innerHTML = '<div class="text-center text-muted py-4">尚無記錄</div>'; 
+            return; 
+          }
+          
+          c.innerHTML = arr.map(s => `
+            <div class="border rounded p-2 mb-2">
+              <div class="fw-bold">${s.recordDate}</div>
+              <div class="small text-muted">
+                顫抖:${s.tremorLevel} | 僵硬:${s.rigidityLevel} | 
+                遲緩:${s.bradykinesiaLevel} | 平衡:${s.balanceLevel}
+              </div>
+            </div>
+          `).join('');
+        } catch (e) { 
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>'; 
+        }
+      },
+      
+      openAddMedication() {
+        const html = `
+          <div class="modal fade" tabindex="-1">
+            <div class="modal-dialog">
+              <form class="modal-content">
+                <div class="modal-header">
+                  <div class="modal-title">新增用藥</div>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="mb-3">
+                    <label class="form-label">藥物名稱 *</label>
+                    <input class="form-control" name="name" required/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">劑量</label>
+                    <input class="form-control" name="dosage"/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label mb-2">服用時間（至少一個）</label><br/>
+                    ${['08:00', '12:00', '18:00', '22:00'].map(t => `
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="times" value="${t}" id="t-${t}">
+                        <label class="form-check-label" for="t-${t}">${t}</label>
+                      </div>`).join('')}
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">開始日期</label>
+                    <input type="date" class="form-control" name="startdate" value="${new Date().toISOString().split('T')[0]}"/>
+                  </div>
+                  <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" name="reminder" id="reminder" checked/>
+                    <label class="form-check-label" for="reminder">啟用提醒</label>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">提前提醒（分鐘）</label>
+                    <input type="number" class="form-control" name="advance" value="10" min="0"/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">備註</label>
+                    <textarea class="form-control" name="notes" rows="3"></textarea>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">取消</button>
+                  <button class="btn btn-primary" type="submit">新增用藥</button>
+                </div>
+              </form>
+            </div>
+          </div>`;
+        
+        APP.Util.modal(html, async (fd) => {
+          const times = fd.getAll('times');
+          if (!times.length) throw new Error('請至少選擇一個服藥時間');
+          
+          const result = await APP.API.call('addMedication', {
+            memberId: APP.State.memberInfo?.memberId,
+            medicineName: fd.get('name'),
+            dosage: fd.get('dosage'),
+            frequency: JSON.stringify(times),
+            startDate: fd.get('startdate') || new Date().toISOString().split('T')[0],
+            reminderEnabled: fd.get('reminder') === 'on',
+            reminderMinutes: fd.get('advance') || 10,
+            notes: fd.get('notes') || ''
+          });
+          
+          if (result?.success) {
+            APP.Util.toast('用藥新增成功', 'success');
+            APP.Member.loadMedications();
+            APP.Member.loadTodayReminders();
+          }
+        });
+      },
+      
+      async loadMedications() {
+        const c = document.getElementById('mc-medications-list');
+        if (!c) return;
+        
+        try {
+          const result = await APP.API.call('getMedications', { 
+            memberId: APP.State.memberInfo?.memberId 
+          });
+          const arr = result.data || [];
+          
+          if (!arr.length) { 
+            c.innerHTML = '<div class="text-center text-muted py-4">尚無用藥資料</div>'; 
+            return; 
+          }
+          
+          c.innerHTML = arr.map(m => {
+            let times = [];
+            try { times = JSON.parse(m.frequency || '[]'); } catch {}
+            
+            return `
+              <div class="border rounded p-3 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <div class="fw-bold">${m.medicineName}</div>
+                    <div class="small text-muted">劑量：${m.dosage || '-'}</div>
+                    <div class="small text-muted">時間：${times.join(', ')}</div>
+                    <div class="small text-muted">開始日期：${m.startDate}</div>
+                    ${m.notes ? `<div class="small text-muted">備註：${m.notes}</div>` : ''}
+                  </div>
+                  <span class="badge ${m.reminderEnabled ? 'bg-success' : 'bg-secondary'}">
+                    ${m.reminderEnabled ? '提醒開啟' : '提醒關閉'}
+                  </span>
+                </div>
+              </div>
+            `;
+          }).join('');
+        } catch (e) { 
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>'; 
+        }
+      },
+      
+      async logMedication(medicationId, scheduledTime) {
+        try {
+          const result = await APP.API.call('logMedication', {
+            medicationId,
+            memberId: APP.State.memberInfo?.memberId,
+            scheduledTime,
+            status: '已服用'
+          });
+          
+          if (result?.success) {
+            APP.Util.toast('已記錄服藥', 'success');
+            APP.Member.loadTodayReminders();
+          }
+        } catch (e) { 
+          APP.Util.toast('記錄失敗：' + e.message, 'error'); 
+        }
+      },
+      
+      async addExercise(e) {
+        e.preventDefault();
+        
+        try {
+          const result = await APP.API.call('addExerciseLog', {
+            memberId: APP.State.memberInfo?.memberId,
+            exerciseDate: document.getElementById('mc-ex-date').value,
+            exerciseType: document.getElementById('mc-ex-type').value,
+            duration: document.getElementById('mc-ex-duration').value,
+            intensity: document.getElementById('mc-ex-intensity').value,
+            bodyCondition: document.getElementById('mc-ex-condition').value,
+            notes: document.getElementById('mc-ex-notes').value
+          });
+          
+          if (result?.success) {
+            APP.Util.toast('運動記錄成功', 'success');
+            e.target.reset();
+          }
+        } catch (e2) { 
+          APP.Util.toast('記錄失敗：' + e2.message, 'error'); 
+        }
+      },
+      
+      async addSleep(e) {
+        e.preventDefault();
+        
+        try {
+          const bedtime = document.getElementById('mc-sleep-bedtime').value;
+          const waketime = document.getElementById('mc-sleep-wake').value;
+          
+          // 計算睡眠時數
+          const bed = new Date('2000-01-01 ' + bedtime);
+          let wake = new Date('2000-01-01 ' + waketime);
+          if (wake < bed) wake = new Date('2000-01-02 ' + waketime);
+          const duration = ((wake - bed) / (1000 * 60 * 60)).toFixed(1);
+          
+          const result = await APP.API.call('addSleepLog', {
+            memberId: APP.State.memberInfo?.memberId,
+            sleepDate: document.getElementById('mc-sleep-date').value,
+            bedtime,
+            wakeTime: waketime,
+            duration,
+            quality: document.getElementById('mc-sleep-quality').value,
+            wakeCount: document.getElementById('mc-sleep-wake-count').value,
+            hasDream: document.getElementById('mc-sleep-dream').checked,
+            hasNightmare: document.getElementById('mc-sleep-nightmare').checked,
+            notes: document.getElementById('mc-sleep-notes').value
+          });
+          
+          if (result?.success) {
+            APP.Util.toast('睡眠記錄成功', 'success');
+            e.target.reset();
+          }
+        } catch (e2) { 
+          APP.Util.toast('記錄失敗：' + e2.message, 'error'); 
+        }
+      },
+      
+      selectMood(score) {
+        APP.Member.selectedMood = score;
+        document.querySelectorAll('.mood-option').forEach(opt => {
+          opt.classList.toggle('active', parseInt(opt.dataset.score) === score);
+        });
+      },
+      
+      toggleMoodTag(tag) {
+        const idx = APP.Member.selectedTags.indexOf(tag);
+        if (idx > -1) {
+          APP.Member.selectedTags.splice(idx, 1);
+        } else {
+          APP.Member.selectedTags.push(tag);
+        }
+        
+        document.querySelectorAll('.mood-tag').forEach(t => {
+          t.classList.toggle('active', APP.Member.selectedTags.includes(t.dataset.tag));
+        });
+      },
+      
+      async addMood(e) {
+        e.preventDefault();
+        
+        try {
+          const result = await APP.API.call('addMoodDiary', {
+            memberId: APP.State.memberInfo?.memberId,
+            diaryDate: document.getElementById('mc-mood-date').value,
+            moodScore: APP.Member.selectedMood,
+            moodTags: APP.Member.selectedTags.join(','),
+            content: document.getElementById('mc-mood-content').value
+          });
+          
+          if (result?.success) {
+            APP.Util.toast('心情日記記錄成功', 'success');
+            e.target.reset();
+            APP.Member.selectedMood = 5;
+            APP.Member.selectedTags = [];
+            document.querySelectorAll('.mood-option').forEach(o => o.classList.remove('active'));
+            document.querySelectorAll('.mood-tag').forEach(t => t.classList.remove('active'));
+          }
+        } catch (e2) { 
+          APP.Util.toast('記錄失敗：' + e2.message, 'error'); 
+        }
+      },
+      
+      async loadEvents() {
+        const c = document.getElementById('mc-events-list');
+        if (!c) return;
+        
+        try {
+          const result = await APP.API.call('getAllEvents');
+          const arr = result.data || [];
+          
+          if (!arr.length) { 
+            c.innerHTML = '<div class="text-center text-muted py-4">目前沒有活動</div>'; 
+            return; 
+          }
+          
+          c.innerHTML = arr.map(ev => `
+            <div class="border rounded p-3 mb-2">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="fw-bold">${ev.eventName}</div>
+                <span class="badge bg-${APP.Util.getStatusClass(ev.status)}">${ev.status}</span>
+              </div>
+              <div class="small text-muted mb-2">${ev.description || ''}</div>
+              <div class="small text-muted">
+                📅 ${ev.eventDate} ${ev.startTime}-${ev.endTime}<br/>
+                📍 ${ev.location}<br/>
+                👥 ${ev.registrationCount}/${ev.maxParticipants}
+                ${ev.fee ? `<br/>💰 $${APP.Util.currency(ev.fee)}` : ''}
+              </div>
+              ${ev.status === '報名中' ? `
+                <button class="btn btn-sm btn-primary mt-2" onclick="APP.Member.registerEvent('${ev.id}')">
+                  立即報名
+                </button>` : ''}
+            </div>
+          `).join('');
+        } catch (e) { 
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>'; 
+        }
+      },
+      
+      async loadMyEvents() {
+        const c = document.getElementById('mc-my-events-list');
+        if (!c) return;
+        
+        try {
+          const result = await APP.API.call('getMyEvents', { 
+            memberId: APP.State.memberInfo?.memberId 
+          });
+          const arr = result.data || [];
+          
+          if (!arr.length) { 
+            c.innerHTML = '<div class="text-center text-muted py-4">您還沒有報名任何活動</div>'; 
+            return; 
+          }
+          
+          c.innerHTML = arr.map(ev => `
+            <div class="border rounded p-3 mb-2">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <div class="fw-bold">${ev.eventName}</div>
+                  <div class="small text-muted">
+                    📅 ${ev.eventDate} ${ev.startTime}<br/>
+                    📍 ${ev.location}
+                  </div>
+                </div>
+                <span class="badge bg-${APP.Util.getStatusClass(ev.registrationStatus)}">
+                  ${ev.registrationStatus}
+                </span>
+              </div>
+            </div>
+          `).join('');
+        } catch (e) { 
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>'; 
+        }
+      },
+      
+      async registerEvent(eventId) {
+        if (!confirm('確定要報名此活動嗎？')) return;
+        
+        try {
+          const result = await APP.API.call('registerActivity', { 
+            activityId: eventId,
+            memberId: APP.State.memberInfo?.memberId
+          });
+          
+          if (result?.success) {
+            APP.Util.toast('報名成功！', 'success');
+            APP.Member.loadEvents();
+            APP.Member.loadMyEvents();
+          }
+        } catch (e) { 
+          APP.Util.toast('報名失敗：' + e.message, 'error'); 
+        }
+      },
+      
+      async loadProfile() {
+        try {
+          const result = await APP.API.call('getMemberInfo', { 
+            memberId: APP.State.memberInfo?.memberId 
+          });
+          const info = result.data || {};
+          
+          document.getElementById('mc-profile-name').textContent = info.name || '-';
+          document.getElementById('mc-profile-no').textContent = info.memberNo || '-';
+          document.getElementById('mc-profile-email').textContent = info.email || '-';
+          document.getElementById('mc-profile-phone').textContent = info.phone || '-';
+          document.getElementById('mc-profile-address').textContent = info.address || '-';
+        } catch (e) {
+          console.error('loadProfile error:', e);
+        }
+      },
+      
+      async loadDonationHistory() {
+        const c = document.getElementById('mc-donation-history');
+        if (!c) return;
+        
+        try {
+          const result = await APP.API.call('getFinanceData', { 
+            memberId: APP.State.memberInfo?.memberId 
+          });
+          const arr = result.data?.donations || [];
+          
+          if (!arr.length) { 
+            c.innerHTML = '<div class="text-center text-muted py-4">尚無捐款記錄</div>'; 
+            return; 
+          }
+          
+          c.innerHTML = arr.map(d => `
+            <div class="border rounded p-2 mb-2">
+              <div class="d-flex justify-content-between">
+                <div>
+                  <div class="fw-bold">$${APP.Util.currency(d.amount)}</div>
+                  <div class="small text-muted">${d.category} - ${APP.Util.formatDate(d.createdAt)}</div>
+                </div>
+                <span class="badge bg-${APP.Util.getStatusClass(d.status)}">${d.status}</span>
+              </div>
+            </div>
+          `).join('');
+        } catch (e) { 
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>'; 
+        }
+      }
+    },
+
+    // ========== 管理後台 ==========
+    Admin: {
+      currentPage: 1,
+      
+      async initAdmin() {
+        APP.Admin.show('dashboard');
+      },
+      
+      show(section) {
+        document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+        const el = document.getElementById('admin-' + section);
+        if (el) el.classList.add('active');
+        
+        switch (section) {
+          case 'dashboard':
+            APP.Admin.loadDashboard();
+            break;
+          case 'members':
+            APP.Admin.loadMembers();
+            break;
+          case 'events':
+            APP.Admin.loadEvents();
+            break;
+          case 'health':
+            APP.Admin.loadHealthRecords();
+            break;
+          case 'donations':
+            APP.Admin.loadDonations();
+            break;
+          case 'volunteers':
+            APP.Admin.loadVolunteers();
+            break;
+          case 'finance':
+            APP.Admin.loadFinance();
+            break;
+        }
+      },
+      
+      async loadDashboard() {
+        try {
+          const result = await APP.API.call('getDashboardStats');
+          const stats = result.data || {};
+          
+          document.getElementById('admin-stat-members').textContent = stats.totalMembers || 0;
+          document.getElementById('admin-stat-events').textContent = stats.monthlyEvents || 0;
+          document.getElementById('admin-stat-volunteers').textContent = stats.totalVolunteers || 0;
+          document.getElementById('admin-stat-donations').textContent = '$' + APP.Util.currency(stats.monthlyDonations || 0);
+          
+          const actResult = await APP.API.call('getRecentActivities');
+          APP.Admin.renderRecentActivities(actResult.data || []);
+          
+          const taskResult = await APP.API.call('getPendingTasks');
+          APP.Admin.renderPendingTasks(taskResult.data || []);
+        } catch (e) {
+          console.error('loadDashboard error:', e);
+        }
+      },
+      
+      renderRecentActivities(arr) {
+        const c = document.getElementById('admin-recent-activities');
+        if (!c) return;
+        
+        if (!arr.length) {
+          c.innerHTML = '<div class="text-center text-muted py-3">暫無動態</div>';
+          return;
+        }
+        
+        c.innerHTML = arr.map(a => `
+          <div class="d-flex align-items-start mb-2 pb-2 border-bottom">
+            <i class="bi bi-circle-fill text-primary me-2" style="font-size:8px;margin-top:6px;"></i>
+            <div class="flex-grow-1">
+              <div class="small">${a.description}</div>
+              <div class="text-muted" style="font-size:11px;">${a.timestamp}</div>
+            </div>
+          </div>
+        `).join('');
+      },
+      
+      renderPendingTasks(arr) {
+        const c = document.getElementById('admin-pending-tasks');
+        if (!c) return;
+        
+        if (!arr.length) {
+          c.innerHTML = '<div class="text-center text-muted py-3">沒有待處理事項</div>';
+          return;
+        }
+        
+        c.innerHTML = arr.map(t => `
+          <div class="border rounded p-2 mb-2">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <div class="fw-bold">${t.title}</div>
+                <div class="small text-muted">${t.description}</div>
+              </div>
+              <span class="badge bg-${t.priority === '高' ? 'danger' : 'warning'}">${t.priority}</span>
+            </div>
+          </div>
+        `).join('');
+      },
+      
+      async loadMembers(page = 1, search = '', status = '') {
+        APP.Admin.currentPage = page;
+        const c = document.getElementById('admin-members-list');
+        if (!c) return;
+        
+        try {
+          APP.Util.showLoading(true);
+          const result = await APP.API.call('getMembers', { 
+            page, 
+            pageSize: APP.State.pageSize, 
+            search, 
+            status 
+          });
+          const arr = result.data || [];
+          const totalPages = result.totalPages || 1;
+          
+          if (!arr.length) {
+            c.innerHTML = '<div class="text-center text-muted py-4">查無資料</div>';
+            return;
+          }
+          
+          c.innerHTML = `
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>會員編號</th>
+                  <th>姓名</th>
+                  <th>電子郵件</th>
+                  <th>手機</th>
+                  <th>註冊日期</th>
+                  <th>狀態</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${arr.map(m => `
+                  <tr>
+                    <td>${m.memberNo}</td>
+                    <td>${m.name}</td>
+                    <td>${m.email}</td>
+                    <td>${m.phone}</td>
+                    <td>${APP.Util.formatDate(m.registerDate)}</td>
+                    <td><span class="badge bg-${APP.Util.getStatusClass(m.status)}">${m.status}</span></td>
+                    <td>
+                      ${m.status === '待審核' ? `
+                        <button class="btn btn-sm btn-success" onclick="APP.Admin.approveMember('${m.memberId}')">
+                          <i class="bi bi-check"></i>
+                        </button>` : ''}
+                      <button class="btn btn-sm btn-danger" onclick="APP.Admin.deleteMember('${m.memberId}')">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            ${APP.Admin.renderPagination(page, totalPages, 'loadMembers')}
+          `;
+        } catch (e) {
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>';
+        } finally {
+          APP.Util.showLoading(false);
+        }
+      },
+      
+      renderPagination(current, total, funcName) {
+        if (total <= 1) return '';
+        
+        let html = '<nav class="mt-3"><ul class="pagination justify-content-center">';
+        
+        if (current > 1) {
+          html += `<li class="page-item"><a class="page-link" href="#" onclick="APP.Admin.${funcName}(${current - 1});return false;">上一頁</a></li>`;
+        }
+        
+        for (let i = 1; i <= total; i++) {
+          if (i === current) {
+            html += `<li class="page-item active"><span class="page-link">${i}</span></li>`;
+          } else if (i === 1 || i === total || Math.abs(i - current) <= 2) {
+            html += `<li class="page-item"><a class="page-link" href="#" onclick="APP.Admin.${funcName}(${i});return false;">${i}</a></li>`;
+          } else if (Math.abs(i - current) === 3) {
+            html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+          }
+        }
+        
+        if (current < total) {
+          html += `<li class="page-item"><a class="page-link" href="#" onclick="APP.Admin.${funcName}(${current + 1});return false;">下一頁</a></li>`;
+        }
+        
+        html += '</ul></nav>';
+        return html;
+      },
+      
+      async approveMember(memberId) {
+        if (!confirm('確定要核准此會員嗎？')) return;
+        
+        try {
+          await APP.API.call('approveMember', { memberId });
+          APP.Util.toast('已核准', 'success');
+          APP.Admin.loadMembers(APP.Admin.currentPage);
+        } catch (e) {
+          APP.Util.toast('操作失敗：' + e.message, 'error');
+        }
+      },
+      
+      async deleteMember(memberId) {
+        if (!confirm('確定要刪除此會員嗎？')) return;
+        
+        try {
+          await APP.API.call('deleteMember', { memberId });
+          APP.Util.toast('已刪除', 'success');
+          APP.Admin.loadMembers(APP.Admin.currentPage);
+        } catch (e) {
+          APP.Util.toast('操作失敗：' + e.message, 'error');
+        }
+      },
+      
+      openAddMember() {
+        const html = `
+          <div class="modal fade" tabindex="-1">
+            <div class="modal-dialog">
+              <form class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title">新增會員</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="mb-3">
+                    <label class="form-label">姓名 *</label>
+                    <input class="form-control" name="name" required/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">電子郵件 *</label>
+                    <input type="email" class="form-control" name="email" required/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">手機</label>
+                    <input class="form-control" name="phone"/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">地址</label>
+                    <input class="form-control" name="address"/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">備註</label>
+                    <textarea class="form-control" name="notes" rows="3"></textarea>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                  <button type="submit" class="btn btn-primary">新增</button>
+                </div>
+              </form>
+            </div>
+          </div>`;
+        
+        APP.Util.modal(html, async (fd) => {
+          await APP.API.call('addMember', {
+            name: fd.get('name'),
+            email: fd.get('email'),
+            phone: fd.get('phone'),
+            address: fd.get('address'),
+            notes: fd.get('notes')
+          });
+          APP.Util.toast('會員新增成功', 'success');
+          APP.Admin.loadMembers();
+        });
+      },
+      
+      async loadEvents(page = 1) {
+        APP.Admin.currentPage = page;
+        const c = document.getElementById('admin-events-list');
+        if (!c) return;
+        
+        try {
+          APP.Util.showLoading(true);
+          const result = await APP.API.call('getEvents', { 
+            page, 
+            pageSize: APP.State.pageSize 
+          });
+          const arr = result.data || [];
+          const totalPages = result.totalPages || 1;
+          
+          if (!arr.length) {
+            c.innerHTML = '<div class="text-center text-muted py-4">查無資料</div>';
+            return;
+          }
+          
+          c.innerHTML = `
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>活動名稱</th>
+                  <th>類型</th>
+                  <th>日期</th>
+                  <th>地點</th>
+                  <th>人數</th>
+                  <th>狀態</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${arr.map(e => `
+                  <tr>
+                    <td>${e.eventName}</td>
+                    <td>${e.eventType}</td>
+                    <td>${APP.Util.formatDate(e.eventDate)}</td>
+                    <td>${e.location}</td>
+                    <td>${e.registrationCount}/${e.maxParticipants}</td>
+                    <td><span class="badge bg-${APP.Util.getStatusClass(e.status)}">${e.status}</span></td>
+                    <td>
+                      <button class="btn btn-sm btn-danger" onclick="APP.Admin.deleteEvent('${e.eventId}')">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            ${APP.Admin.renderPagination(page, totalPages, 'loadEvents')}
+          `;
+        } catch (e) {
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>';
+        } finally {
+          APP.Util.showLoading(false);
+        }
+      },
+      
+      async deleteEvent(eventId) {
+        if (!confirm('確定要刪除此活動嗎？')) return;
+        
+        try {
+          await APP.API.call('deleteEvent', { eventId });
+          APP.Util.toast('已刪除', 'success');
+          APP.Admin.loadEvents(APP.Admin.currentPage);
+        } catch (e) {
+          APP.Util.toast('操作失敗：' + e.message, 'error');
+        }
+      },
+      
+      openAddEvent() {
+        const html = `
+          <div class="modal fade" tabindex="-1">
+            <div class="modal-dialog">
+              <form class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title">新增活動</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="mb-3">
+                    <label class="form-label">活動名稱 *</label>
+                    <input class="form-control" name="eventName" required/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">活動類型</label>
+                    <select class="form-select" name="eventType">
+                      <option>講座</option>
+                      <option>運動課程</option>
+                      <option>聯誼活動</option>
+                      <option>其他</option>
+                    </select>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">活動日期 *</label>
+                    <input type="date" class="form-control" name="eventDate" required/>
+                  </div>
+                  <div class="row mb-3">
+                    <div class="col-6">
+                      <label class="form-label">開始時間</label>
+                      <input type="time" class="form-control" name="startTime" value="09:00"/>
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">結束時間</label>
+                      <input type="time" class="form-control" name="endTime" value="12:00"/>
+                    </div>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">地點 *</label>
+                    <input class="form-control" name="location" required/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">人數上限 *</label>
+                    <input type="number" class="form-control" name="maxParticipants" value="30" required/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">費用</label>
+                    <input type="number" class="form-control" name="fee" value="0"/>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">活動說明</label>
+                    <textarea class="form-control" name="description" rows="3"></textarea>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                  <button type="submit" class="btn btn-primary">新增</button>
+                </div>
+              </form>
+            </div>
+          </div>`;
+        
+        APP.Util.modal(html, async (fd) => {
+          await APP.API.call('createEvent', {
+            eventName: fd.get('eventName'),
+            eventType: fd.get('eventType'),
+            eventDate: fd.get('eventDate'),
+            startTime: fd.get('startTime'),
+            endTime: fd.get('endTime'),
+            location: fd.get('location'),
+            maxParticipants: fd.get('maxParticipants'),
+            fee: fd.get('fee'),
+            description: fd.get('description')
+          });
+          APP.Util.toast('活動新增成功', 'success');
+          APP.Admin.loadEvents();
+        });
+      },
+      
+      async loadHealthRecords(page = 1) {
+        APP.Admin.currentPage = page;
+        const c = document.getElementById('admin-health-list');
+        if (!c) return;
+        
+        try {
+          APP.Util.showLoading(true);
+          const result = await APP.API.call('getAllHealthRecords', { 
+            page, 
+            pageSize: APP.State.pageSize 
+          });
+          const arr = result.data || [];
+          const totalPages = result.totalPages || 1;
+          
+          if (!arr.length) {
+            c.innerHTML = '<div class="text-center text-muted py-4">查無資料</div>';
+            return;
+          }
+          
+          c.innerHTML = `
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>會員姓名</th>
+                  <th>記錄日期</th>
+                  <th>顫抖</th>
+                  <th>僵硬</th>
+                  <th>遲緩</th>
+                  <th>平衡</th>
+                  <th>備註</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${arr.map(r => `
+                  <tr>
+                    <td>${r.memberName}</td>
+                    <td>${APP.Util.formatDate(r.recordDate)}</td>
+                    <td>${r.tremorLevel}</td>
+                    <td>${r.rigidityLevel}</td>
+                    <td>${r.bradykinesiaLevel}</td>
+                    <td>${r.balanceLevel}</td>
+                    <td>${r.notes || '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            ${APP.Admin.renderPagination(page, totalPages, 'loadHealthRecords')}
+          `;
+        } catch (e) {
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>';
+        } finally {
+          APP.Util.showLoading(false);
+        }
+      },
+      
+      async loadDonations(page = 1) {
+        APP.Admin.currentPage = page;
+        const c = document.getElementById('admin-donations-list');
+        if (!c) return;
+        
+        try {
+          APP.Util.showLoading(true);
+          const result = await APP.API.call('getDonations', { 
+            page, 
+            pageSize: APP.State.pageSize 
+          });
+          const arr = result.data || [];
+          const totalPages = result.totalPages || 1;
+          
+          if (!arr.length) {
+            c.innerHTML = '<div class="text-center text-muted py-4">查無資料</div>';
+            return;
+          }
+          
+          c.innerHTML = `
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>捐款人</th>
+                  <th>金額</th>
+                  <th>類型</th>
+                  <th>日期</th>
+                  <th>付款方式</th>
+                  <th>狀態</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${arr.map(d => `
+                  <tr>
+                    <td>${d.donorName}</td>
+                    <td>$${APP.Util.currency(d.amount)}</td>
+                    <td>${d.donationType}</td>
+                    <td>${APP.Util.formatDate(d.donationDate)}</td>
+                    <td>${d.paymentMethod}</td>
+                    <td><span class="badge bg-${APP.Util.getStatusClass(d.status)}">${d.status}</span></td>
+                    <td>
+                      <button class="btn btn-sm btn-danger" onclick="APP.Admin.deleteDonation('${d.donationId}')">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            ${APP.Admin.renderPagination(page, totalPages, 'loadDonations')}
+          `;
+        } catch (e) {
+          c.innerHTML = '<div class="text-center text-danger py-4'>載入失敗</div>';
+        } finally {
+          APP.Util.showLoading(false);
+        }
+      },
+      
+      async deleteDonation(donationId) {
+        if (!confirm('確定要刪除此捐款記錄嗎？')) return;
+        
+        try {
+          await APP.API.call('deleteDonation', { donationId });
+          APP.Util.toast('已刪除', 'success');
+          APP.Admin.loadDonations(APP.Admin.currentPage);
+        } catch (e) {
+          APP.Util.toast('操作失敗：' + e.message, 'error');
+        }
+      },
+      
+      async loadVolunteers() {
+        const c = document.getElementById('admin-volunteers-list');
+        if (!c) return;
+        
+        try {
+          APP.Util.showLoading(true);
+          const result = await APP.API.call('getVolunteers');
+          const arr = result.data || [];
+          
+          if (!arr.length) {
+            c.innerHTML = '<div class="text-center text-muted py-4">查無資料</div>';
+            return;
+          }
+          
+          c.innerHTML = `
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>志工編號</th>
+                  <th>姓名</th>
+                  <th>手機</th>
+                  <th>加入日期</th>
+                  <th>總時數</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${arr.map(v => `
+                  <tr>
+                    <td>${v.volunteerNo}</td>
+                    <td>${v.name}</td>
+                    <td>${v.phone}</td>
+                    <td>${APP.Util.formatDate(v.joinDate)}</td>
+                    <td>${v.totalHours}小時</td>
+                    <td><span class="badge bg-${APP.Util.getStatusClass(v.status)}">${v.status}</span></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        } catch (e) {
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>';
+        } finally {
+          APP.Util.showLoading(false);
+        }
+      },
+      
+      async loadFinance() {
+        const c = document.getElementById('admin-finance-list');
+        if (!c) return;
+        
+        try {
+          APP.Util.showLoading(true);
+          const result = await APP.API.call('getFinanceRecords', {});
+          const data = result.data || {};
+          
+          document.getElementById('admin-total-income').textContent = '$' + APP.Util.currency(data.totalIncome || 0);
+          document.getElementById('admin-total-expense').textContent = '$' + APP.Util.currency(data.totalExpense || 0);
+          document.getElementById('admin-net-balance').textContent = '$' + APP.Util.currency((data.totalIncome || 0) - (data.totalExpense || 0));
+          
+          const arr = data.records || [];
+          
+          if (!arr.length) {
+            c.innerHTML = '<div class="text-center text-muted py-4">查無資料</div>';
+            return;
+          }
+          
+          c.innerHTML = `
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>類型</th>
+                  <th>類別</th>
+                  <th>金額</th>
+                  <th>廠商/捐款人</th>
+                  <th>說明</th>
+                  <th>狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${arr.map(r => `
+                  <tr>
+                    <td>${APP.Util.formatDate(r.transactionDate)}</td>
+                    <td><span class="badge bg-${r.type === '收入' ? 'success' : 'danger'}">${r.type}</span></td>
+                    <td>${r.category}</td>
+                    <td class="${r.type === '收入' ? 'text-success' : 'text-danger'}">
+                      ${r.type === '收入' ? '+' : '-'}$${APP.Util.currency(r.amount)}
+                    </td>
+                    <td>${r.vendor || '-'}</td>
+                    <td>${r.description || '-'}</td>
+                    <td><span class="badge bg-${APP.Util.getStatusClass(r.status)}">${r.status}</span></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        } catch (e) {
+          c.innerHTML = '<div class="text-center text-danger py-4">載入失敗</div>';
+        } finally {
+          APP.Util.showLoading(false);
+        }
+      }
+    }
+  };
+
+  // ========== 初始化 ==========
+  document.addEventListener('DOMContentLoaded', async () => {
+    await APP.Auth.init();
+    
+    // 綁定全域事件
+    const loginForm = document.getElementById('emailLoginForm');
+    if (loginForm) loginForm.addEventListener('submit', APP.Auth.handleEmailLogin);
+    
+    const regForm = document.getElementById('registerForm');
+    if (regForm) regForm.addEventListener('submit', APP.Auth.handleRegister);
+    
+    const symptomForm = document.getElementById('mc-symptom-form');
+    if (symptomForm) symptomForm.addEventListener('submit', APP.Member.addSymptom);
+    
+    const exerciseForm = document.getElementById('mc-exercise-form');
+    if (exerciseForm) exerciseForm.addEventListener('submit', APP.Member.addExercise);
+    
+    const sleepForm = document.getElementById('mc-sleep-form');
+    if (sleepForm) sleepForm.addEventListener('submit', APP.Member.addSleep);
+    
+    const moodForm = document.getElementById('mc-mood-form');
+    if (moodForm) moodForm.addEventListener('submit', APP.Member.addMood);
+    
+    // 設定當前 API URL
+    document.getElementById('current-api-url').textContent = APP.State.API.primary;
+    document.getElementById('global-api-url').value = APP.State.API.primary;
+  });
+
+  // 暴露全域函數供 HTML onclick 使用
+  window.APP = APP;
+  </script>
+</body>
+</html>
+
+
