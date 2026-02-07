@@ -906,7 +906,7 @@ tbody tr:hover {
 // 配置設定
 // ============================================
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbytai0T7Qjw2yGmNRL-OrE5QQS4xAidj39eh2CzgOC3UHEKasD_BDu0c7KGwwSdGqmc/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbzebIcrHDvrlQZOSGbIY06gZ5XsLcfscenlWrFLMtjtepOjTeiHW-EY6fcvtYl220Kx/exec',
   API_KEY: '', // 可選的安全金鑰
   CACHE_DURATION: 300000, // 5分鐘快取
   RETRY_ATTEMPTS: 3,
@@ -994,11 +994,11 @@ function updateLastUpdateTime() {
 
 async function callAPI(action, params = {}, retryCount = 0) {
   try {
-    // 使用 JSONP 方式呼叫
+    console.log(`🔄 正在呼叫 API: ${action}`, params);
+    
     return await new Promise((resolve, reject) => {
       const callbackName = 'jsonpCallback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
       
-      // 建立 URL
       const url = new URL(CONFIG.API_URL);
       url.searchParams.append('action', action);
       url.searchParams.append('callback', callbackName);
@@ -1013,34 +1013,36 @@ async function callAPI(action, params = {}, retryCount = 0) {
         }
       });
       
-      // 建立 script 標籤
+      console.log('📡 請求 URL:', url.toString());
+      
       const script = document.createElement('script');
       script.src = url.toString();
       
-      // 設定超時
+      // 改為 10 秒超時
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new Error('請求超時'));
-      }, 30000);
+        console.error('❌ API 請求超時');
+        reject(new Error('請求超時 - 請檢查網路連線或 Apps Script 部署狀態'));
+      }, 10000);
       
-      // 定義回調函數
       window[callbackName] = function(data) {
         cleanup();
+        console.log('✅ API 回應:', data);
         if (data.success) {
           updateConnectionStatus(true);
           resolve(data);
         } else {
+          console.error('❌ API 錯誤:', data.error);
           reject(new Error(data.error || '未知錯誤'));
         }
       };
       
-      // 錯誤處理
-      script.onerror = function() {
+      script.onerror = function(e) {
         cleanup();
-        reject(new Error('載入腳本失敗'));
+        console.error('❌ 載入腳本失敗:', e);
+        reject(new Error('無法載入 API 腳本 - 請檢查 Apps Script URL 是否正確'));
       };
       
-      // 清理函數
       function cleanup() {
         clearTimeout(timeout);
         delete window[callbackName];
@@ -1049,15 +1051,14 @@ async function callAPI(action, params = {}, retryCount = 0) {
         }
       }
       
-      // 加入 script 到頁面
       document.head.appendChild(script);
     });
     
   } catch (error) {
-    console.error('API 呼叫錯誤:', error);
+    console.error('❌ API 呼叫錯誤:', error);
     
     if (retryCount < CONFIG.RETRY_ATTEMPTS) {
-      console.log(`重試第 ${retryCount + 1} 次...`);
+      console.log(`🔄 重試第 ${retryCount + 1} 次...`);
       await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
       return callAPI(action, params, retryCount + 1);
     }
@@ -1066,6 +1067,7 @@ async function callAPI(action, params = {}, retryCount = 0) {
     throw error;
   }
 }
+
 
 async function callAPIPost(action, postData = {}, retryCount = 0) {
   try {
