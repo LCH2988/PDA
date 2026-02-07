@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BOGO搶購活動管理系統 v2.0</title>
+<title>BOGO搶購活動管理系統 v2.1</title>
 <style>
 * {
   margin: 0;
@@ -435,7 +435,7 @@ tbody tr:hover {
 
 <div class="container">
 <div class="header">
-<h1>🛒 BOGO搶購活動管理系統 <span class="version-info">v2.0</span></h1>
+<h1>🛒 BOGO搶購活動管理系統 <span class="version-info">v2.1 修正版</span></h1>
 <p>Buy One Get One - 組織團隊搶購管理平台（雲端版）| 最後更新: <span id="lastUpdateTime">-</span></p>
 </div>
 
@@ -906,7 +906,8 @@ tbody tr:hover {
 // 配置設定
 // ============================================
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbzebIcrHDvrlQZOSGbIY06gZ5XsLcfscenlWrFLMtjtepOjTeiHW-EY6fcvtYl220Kx/exec',
+  // ⚠️ 部署後請將此 URL 替換為您的 Google Apps Script Web App URL
+  API_URL: window.location.href.split('?')[0], // 自動使用當前 URL
   API_KEY: '', // 可選的安全金鑰
   CACHE_DURATION: 300000, // 5分鐘快取
   RETRY_ATTEMPTS: 3,
@@ -986,10 +987,7 @@ function updateLastUpdateTime() {
 }
 
 // ============================================
-// API 呼叫函數（含重試機制）
-// ============================================
-// ============================================
-// API 呼叫函數（使用 JSONP 避免 CORS）
+// API 呼叫函數（完整修正版 - 使用 JSONP）
 // ============================================
 
 async function callAPI(action, params = {}, retryCount = 0) {
@@ -1018,12 +1016,11 @@ async function callAPI(action, params = {}, retryCount = 0) {
       const script = document.createElement('script');
       script.src = url.toString();
       
-      // 改為 10 秒超時
       const timeout = setTimeout(() => {
         cleanup();
         console.error('❌ API 請求超時');
-        reject(new Error('請求超時 - 請檢查網路連線或 Apps Script 部署狀態'));
-      }, 10000);
+        reject(new Error('請求超時 - 請檢查網路連線'));
+      }, 30000); // 30秒超時
       
       window[callbackName] = function(data) {
         cleanup();
@@ -1033,6 +1030,7 @@ async function callAPI(action, params = {}, retryCount = 0) {
           resolve(data);
         } else {
           console.error('❌ API 錯誤:', data.error);
+          updateConnectionStatus(false, 'API 錯誤');
           reject(new Error(data.error || '未知錯誤'));
         }
       };
@@ -1040,7 +1038,8 @@ async function callAPI(action, params = {}, retryCount = 0) {
       script.onerror = function(e) {
         cleanup();
         console.error('❌ 載入腳本失敗:', e);
-        reject(new Error('無法載入 API 腳本 - 請檢查 Apps Script URL 是否正確'));
+        updateConnectionStatus(false, '載入失敗');
+        reject(new Error('無法載入 API 腳本'));
       };
       
       function cleanup() {
@@ -1059,7 +1058,7 @@ async function callAPI(action, params = {}, retryCount = 0) {
     
     if (retryCount < CONFIG.RETRY_ATTEMPTS) {
       console.log(`🔄 重試第 ${retryCount + 1} 次...`);
-      await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
+      await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY * (retryCount + 1)));
       return callAPI(action, params, retryCount + 1);
     }
     
@@ -1068,9 +1067,10 @@ async function callAPI(action, params = {}, retryCount = 0) {
   }
 }
 
-
 async function callAPIPost(action, postData = {}, retryCount = 0) {
   try {
+    console.log(`🔄 正在執行 POST: ${action}`, postData);
+    
     const payload = {
       action: action,
       ...postData
@@ -1080,31 +1080,31 @@ async function callAPIPost(action, postData = {}, retryCount = 0) {
       payload.apiKey = CONFIG.API_KEY;
     }
     
-    // POST 請求仍使用 fetch，但改用 no-cors 模式
     const response = await fetch(CONFIG.API_URL, {
       method: 'POST',
-      mode: 'no-cors', // 關鍵修改
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      redirect: 'follow'
     });
     
-    // no-cors 模式下無法讀取回應，所以我們假設成功
-    // 然後重新載入資料來確認
-    updateConnectionStatus(true);
+    const result = await response.json();
+    console.log('✅ POST 回應:', result);
     
-    // 等待一下讓後端處理完成
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    return { success: true, message: '操作已提交' };
+    if (result.success) {
+      updateConnectionStatus(true);
+      return result;
+    } else {
+      throw new Error(result.error || '操作失敗');
+    }
     
   } catch (error) {
-    console.error('API POST 呼叫錯誤:', error);
+    console.error('❌ POST 呼叫錯誤:', error);
     
     if (retryCount < CONFIG.RETRY_ATTEMPTS) {
-      console.log(`重試第 ${retryCount + 1} 次...`);
-      await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
+      console.log(`🔄 重試第 ${retryCount + 1} 次...`);
+      await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY * (retryCount + 1)));
       return callAPIPost(action, postData, retryCount + 1);
     }
     
@@ -1113,7 +1113,6 @@ async function callAPIPost(action, postData = {}, retryCount = 0) {
   }
 }
 
-
 // ============================================
 // 初始化
 // ============================================
@@ -1121,12 +1120,8 @@ async function callAPIPost(action, postData = {}, retryCount = 0) {
 async function init() {
   showLoading();
   try {
-    // 檢查 API URL 是否已設定
-    if (CONFIG.API_URL === 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE') {
-      hideLoading();
-      alert('⚠️ 請先設定 Google Apps Script Web App URL\n\n請在程式碼第 XXX 行修改 CONFIG.API_URL');
-      return;
-    }
+    console.log('🚀 系統初始化中...');
+    console.log('📍 API URL:', CONFIG.API_URL);
     
     await loadAllData();
     renderAll();
@@ -1139,7 +1134,7 @@ async function init() {
   } catch (error) {
     console.error('❌ 初始化失敗:', error);
     updateConnectionStatus(false, '初始化失敗');
-    alert('系統初始化失敗: ' + error.message + '\n\n請檢查：\n1. API URL 是否正確\n2. Google Apps Script 是否已部署\n3. 網路連線是否正常');
+    alert('系統初始化失敗: ' + error.message + '\n\n請檢查：\n1. Google Apps Script 是否已正確部署\n2. 部署時「具有存取權的使用者」是否選擇「任何人」\n3. 網路連線是否正常\n\n請查看瀏覽器控制台以獲取更多資訊。');
   } finally {
     hideLoading();
   }
@@ -1147,14 +1142,15 @@ async function init() {
 
 async function loadAllData() {
   try {
+    console.log('📦 載入所有資料...');
     const result = await callAPI('getAllData');
     appData = {
       ...result.data,
       lastUpdate: new Date()
     };
-    console.log('📦 資料載入完成:', appData);
+    console.log('✅ 資料載入完成:', appData);
   } catch (error) {
-    console.error('載入資料失敗:', error);
+    console.error('❌ 載入資料失敗:', error);
     throw error;
   }
 }
@@ -1190,6 +1186,9 @@ function switchTab(tabName) {
   if (tabName === 'report') renderReportPage();
   if (tabName === 'manage') renderManagePage();
 }
+
+// 由於代碼太長，我將在下一個回覆繼續提供剩餘的 JavaScript 代碼...
+// 請繼續等待下一部分
 
 // ============================================
 // 搶購設定頁面
@@ -1350,10 +1349,8 @@ async function saveSetup() {
     await callAPIPost('saveSetup', { setup });
     await callAPIPost('saveTasks', { tasks });
     
-    appData.setups.push(setup);
-    appData.tasks.push(...tasks);
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    // 重新載入資料以確保同步
+    await loadAllData();
     
     showAlert('setupAlert', 'success', '✅ 搶購設定已儲存！');
     renderSetupList();
@@ -1419,11 +1416,7 @@ async function deleteSetup(setupId) {
   showLoading();
   try {
     await callAPIPost('deleteSetup', { id: setupId });
-    
-    appData.setups = appData.setups.filter(s => s.id !== setupId);
-    appData.tasks = appData.tasks.filter(t => t.setupId !== setupId);
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     
     renderSetupList();
     renderExecutePage();
@@ -1471,6 +1464,7 @@ function previewSetup() {
 
   alert(preview);
 }
+
 
 // ============================================
 // 執行搶購頁面
@@ -1525,16 +1519,9 @@ async function startTask(taskId) {
   showLoading();
   try {
     await callAPIPost('updateTaskStatus', { taskId, status: 'executing' });
-    
-    const task = appData.tasks.find(t => t.id === taskId);
-    if (task) {
-      task.status = 'executing';
-      task.startedAt = new Date().toISOString();
-    }
-    
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     renderExecutePage();
+    updateLastUpdateTime();
   } catch (error) {
     alert('更新失敗: ' + error.message);
   } finally {
@@ -1546,16 +1533,9 @@ async function completeTask(taskId) {
   showLoading();
   try {
     await callAPIPost('updateTaskStatus', { taskId, status: 'completed' });
-    
-    const task = appData.tasks.find(t => t.id === taskId);
-    if (task) {
-      task.status = 'completed';
-      task.completedAt = new Date().toISOString();
-    }
-    
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     renderExecutePage();
+    updateLastUpdateTime();
   } catch (error) {
     alert('更新失敗: ' + error.message);
   } finally {
@@ -1604,7 +1584,7 @@ function loadTaskDetails() {
       <div><strong>搶購帳號:</strong><br>${account?.name} (${task.accountId})</div>
       <div><strong>搶購員:</strong><br>${buyer?.name}</div>
       <div><strong>預定數量:</strong><br>${task.quantity}</div>
-      <div><strong>狀態:</strong><br>${task.status === 'executing' ? '⏳執行中' : '✅ 已完成'}</div>
+      <div><strong>狀態:</strong><br>${task.status === 'executing' ? '⏳ 執行中' : '✅ 已完成'}</div>
     </div>
   `;
   detailsDiv.classList.remove('hidden');
@@ -1638,18 +1618,7 @@ async function submitReport() {
   showLoading();
   try {
     await callAPIPost('submitReport', { report });
-    
-    appData.reports.push(report);
-    
-    const task = appData.tasks.find(t => t.id === taskId);
-    if (task) {
-      task.actualQuantity = quantity;
-      task.reportStatus = status;
-      task.status = 'completed';
-    }
-    
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     
     showAlert('reportAlert', 'success', '✅ 回報已提交！');
     
@@ -1661,6 +1630,7 @@ async function submitReport() {
     
     renderReportList();
     renderExecutePage();
+    updateLastUpdateTime();
   } catch (error) {
     showAlert('reportAlert', 'error', '❌ 提交失敗: ' + error.message);
   } finally {
@@ -1942,7 +1912,10 @@ function renderManagePage() {
   renderBuyerList();
 }
 
+// ============================================
 // 產品管理
+// ============================================
+
 async function addProduct() {
   const code = document.getElementById('productCode').value.trim();
   const name = document.getElementById('productName').value.trim();
@@ -1969,10 +1942,7 @@ async function addProduct() {
   showLoading();
   try {
     await callAPIPost('addProduct', { product });
-    
-    appData.products.push(product);
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     
     document.getElementById('productCode').value = '';
     document.getElementById('productName').value = '';
@@ -1981,6 +1951,7 @@ async function addProduct() {
     
     renderProductList();
     renderSetupPage();
+    updateLastUpdateTime();
     alert('✅ 產品已新增');
   } catch (error) {
     alert('❌ 新增失敗: ' + error.message);
@@ -2019,13 +1990,11 @@ async function deleteProduct(code) {
   showLoading();
   try {
     await callAPIPost('deleteProduct', { code });
-    
-    appData.products = appData.products.filter(p => p.code !== code);
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     
     renderProductList();
     renderSetupPage();
+    updateLastUpdateTime();
   } catch (error) {
     alert('❌ 刪除失敗: ' + error.message);
   } finally {
@@ -2033,7 +2002,10 @@ async function deleteProduct(code) {
   }
 }
 
+// ============================================
 // 組織成員管理
+// ============================================
+
 async function addMember() {
   const id = document.getElementById('memberId').value.trim();
   const name = document.getElementById('memberName').value.trim();
@@ -2070,10 +2042,7 @@ async function addMember() {
   showLoading();
   try {
     await callAPIPost('addMember', { member });
-    
-    appData.members.push(member);
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     
     document.getElementById('memberId').value = '';
     document.getElementById('memberName').value = '';
@@ -2082,6 +2051,7 @@ async function addMember() {
     
     renderMemberList();
     renderSetupPage();
+    updateLastUpdateTime();
     alert('✅ 成員已新增');
   } catch (error) {
     alert('❌ 新增失敗: ' + error.message);
@@ -2128,13 +2098,11 @@ async function deleteMember(id) {
   showLoading();
   try {
     await callAPIPost('deleteMember', { id });
-    
-    appData.members = appData.members.filter(m => m.id !== id);
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     
     renderMemberList();
     renderSetupPage();
+    updateLastUpdateTime();
   } catch (error) {
     alert('❌ 刪除失敗: ' + error.message);
   } finally {
@@ -2142,7 +2110,10 @@ async function deleteMember(id) {
   }
 }
 
+// ============================================
 // 搶購員管理
+// ============================================
+
 async function addBuyer() {
   const id = document.getElementById('buyerId').value.trim();
   const name = document.getElementById('buyerName').value.trim();
@@ -2163,10 +2134,7 @@ async function addBuyer() {
   showLoading();
   try {
     await callAPIPost('addBuyer', { buyer });
-    
-    appData.buyers.push(buyer);
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     
     document.getElementById('buyerId').value = '';
     document.getElementById('buyerName').value = '';
@@ -2174,6 +2142,7 @@ async function addBuyer() {
     
     renderBuyerList();
     renderSetupPage();
+    updateLastUpdateTime();
     alert('✅ 搶購員已新增');
   } catch (error) {
     alert('❌ 新增失敗: ' + error.message);
@@ -2211,13 +2180,11 @@ async function deleteBuyer(id) {
   showLoading();
   try {
     await callAPIPost('deleteBuyer', { id });
-    
-    appData.buyers = appData.buyers.filter(b => b.id !== id);
-    appData.lastUpdate = new Date();
-    updateLastUpdateTime();
+    await loadAllData();
     
     renderBuyerList();
     renderSetupPage();
+    updateLastUpdateTime();
   } catch (error) {
     alert('❌ 刪除失敗: ' + error.message);
   } finally {
@@ -2230,6 +2197,63 @@ async function deleteBuyer(id) {
 // ============================================
 
 window.addEventListener('DOMContentLoaded', init);
+
+// ============================================
+// 錯誤處理
+// ============================================
+
+window.addEventListener('error', function(e) {
+  console.error('全域錯誤:', e.error);
+  updateConnectionStatus(false, '發生錯誤');
+});
+
+window.addEventListener('unhandledrejection', function(e) {
+  console.error('未處理的 Promise 拒絕:', e.reason);
+  updateConnectionStatus(false, 'Promise 錯誤');
+});
+
+// ============================================
+// 定期重新載入資料（可選）
+// ============================================
+
+// 每5分鐘自動重新載入資料
+setInterval(async () => {
+  try {
+    console.log('🔄 自動重新載入資料...');
+    await loadAllData();
+    renderAll();
+    updateLastUpdateTime();
+    console.log('✅ 資料已更新');
+  } catch (error) {
+    console.error('❌ 自動重新載入失敗:', error);
+  }
+}, 300000); // 5分鐘
+
+// ============================================
+// 快捷鍵支援（可選）
+// ============================================
+
+document.addEventListener('keydown', function(e) {
+  // Ctrl/Cmd + R: 重新載入資料
+  if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+    e.preventDefault();
+    loadAllData().then(() => {
+      renderAll();
+      updateLastUpdateTime();
+      alert('✅ 資料已重新載入');
+    }).catch(error => {
+      alert('❌ 重新載入失敗: ' + error.message);
+    });
+  }
+});
+
+console.log('✅ BOGO 搶購活動管理系統 v2.1 已載入');
+console.log('📚 使用說明：');
+console.log('1. 請確保已在 Google Apps Script 中正確部署');
+console.log('2. 部署時選擇「具有存取權的使用者」為「任何人」');
+console.log('3. 如遇到問題，請查看瀏覽器控制台的錯誤訊息');
+console.log('4. 快捷鍵：Ctrl/Cmd + R 重新載入資料');
 </script>
 </body>
 </html>
+
