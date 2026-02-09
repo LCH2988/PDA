@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BOGO 團隊分析系統</title>
+  <title>【多福氣】BOGO 團隊分析系統</title>
   <style>
     * {
       margin: 0;
@@ -99,6 +99,11 @@
     /* 搶購標題 - 橙色 */
     .section-title.report-title {
       background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+    }
+    
+    /* 產品銷售標題 - 綠色 */
+    .section-title.product-title {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     }
     
     .data-table {
@@ -403,6 +408,62 @@
       color: #9a3412;
     }
     
+    /* 產品銷售表格 */
+    .product-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      border-radius: 8px;
+      overflow-x: auto;
+      display: block;
+      font-size: clamp(0.75em, 2vw, 0.9em);
+    }
+    
+    .product-table table {
+      width: 100%;
+      min-width: 800px;
+    }
+    
+    .product-table thead {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+    }
+    
+    .product-table th {
+      padding: 12px 8px;
+      text-align: center;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    
+    .product-table tbody tr {
+      border-bottom: 1px solid #f3f4f6;
+    }
+    
+    .product-table tbody tr:hover {
+      background: #f0fdf4;
+    }
+    
+    .product-table td {
+      padding: 10px 8px;
+      text-align: center;
+      color: #374151;
+    }
+    
+    .product-table td:nth-child(2) {
+      text-align: left;
+      max-width: 300px;
+    }
+    
+    .product-table .total-row {
+      background: #fef3c7 !important;
+      font-weight: bold;
+      color: #92400e;
+      border-top: 3px solid #f59e0b;
+    }
+    
     @media print {
       body {
         background: white;
@@ -450,7 +511,7 @@
   
   <div class="container">
     <div class="header">
-      <h1>🎯 BOGO 團隊分析系統</h1>
+      <h1>🎯 【多福氣】BOGO 團隊分析系統</h1>
       <p>以團隊為主軸的完整訂購與搶購分析
         <span class="sync-status synced" id="syncStatus">● 已同步</span>
       </p>
@@ -474,9 +535,17 @@
       <button class="btn" onclick="window.print()">🖨️ 列印</button>
     </div>
     
-    <!-- 團隊比較表格 -->
+    <!-- 產品銷售狀態 -->
+    <div class="comparison-section" id="productSection" style="display: none;">
+      <h3 class="comparison-title">📦 產品銷售狀態</h3>
+      <div class="product-table">
+        <table id="productTable"></table>
+      </div>
+    </div>
+    
+    <!-- 團隊組數統計 -->
     <div class="comparison-section" id="comparisonSection" style="display: none;">
-      <h3 class="comparison-title">📊 團隊績效比較總表</h3>
+      <h3 class="comparison-title">📊 團隊組數統計</h3>
       <div class="summary-table">
         <table id="comparisonTable"></table>
       </div>
@@ -494,7 +563,9 @@
     let allReports = [];
     let maintenanceData = [];
     let teamAnalysisData = {};
+    let productSalesData = {};
     let autoSyncInterval = null;
+    let lastDataHash = '';
     
     // 組別排序函數
     function sortGroupCode(a, b) {
@@ -508,6 +579,14 @@
       if (indexA !== -1) return -1;
       if (indexB !== -1) return 1;
       return a.localeCompare(b);
+    }
+    
+    // 計算資料雜湊值（用於檢測變更）
+    function calculateDataHash(data) {
+      return JSON.stringify(data).length + '_' + JSON.stringify(data).split('').reduce((a, b) => {
+        a = ((a << 5) - a) + b.charCodeAt(0);
+        return a & a;
+      }, 0);
     }
     
     // 顯示載入動畫
@@ -525,7 +604,7 @@
       } else {
         syncStatus.className = 'sync-status synced';
         const now = new Date();
-        syncStatus.textContent = `● 已同步 ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+        syncStatus.textContent = `● 已同步 ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
       }
     }
     
@@ -556,26 +635,40 @@
       
       try {
         // 載入訂單資料
-        const ordersResponse = await fetch(WEB_APP_URL + '?action=getOrders');
+        const ordersResponse = await fetch(WEB_APP_URL + '?action=getOrders&t=' + Date.now());
         const ordersResult = await ordersResponse.json();
         
         if (!ordersResult.success) {
           throw new Error('載入訂單失敗');
         }
-        allOrders = ordersResult.data;
         
         // 載入搶購回報
-        const reportsResponse = await fetch(WEB_APP_URL + '?action=getReports');
+        const reportsResponse = await fetch(WEB_APP_URL + '?action=getReports&t=' + Date.now());
         const reportsResult = await reportsResponse.json();
         
         if (!reportsResult.success) {
           throw new Error('載入搶購回報失敗');
         }
-        allReports = reportsResult.data;
         
         // 載入上線維護資料
-        const maintenanceResponse = await fetch(WEB_APP_URL + '?action=getMaintenance');
+        const maintenanceResponse = await fetch(WEB_APP_URL + '?action=getMaintenance&t=' + Date.now());
         const maintenanceResult = await maintenanceResponse.json();
+        
+        // 檢查資料是否有變更
+        const newDataHash = calculateDataHash({
+          orders: ordersResult.data,
+          reports: reportsResult.data,
+          maintenance: maintenanceResult.data
+        });
+        
+        if (silent && newDataHash === lastDataHash) {
+          updateSyncStatus('synced');
+          return; // 資料沒有變更，不需要重新分析
+        }
+        
+        lastDataHash = newDataHash;
+        allOrders = ordersResult.data;
+        allReports = reportsResult.data;
         
         if (maintenanceResult.success) {
           maintenanceData = maintenanceResult.data;
@@ -583,14 +676,18 @@
         
         // 開始分析
         analyzeByTeam();
+        analyzeProductSales();
         
         if (!silent) {
           showAlert(`✅ 分析完成！訂單：${allOrders.length} 筆，搶購：${allReports.length} 筆`);
+        } else {
+          console.log('🔄 資料已更新並重新分析');
         }
         
         updateSyncStatus('synced');
         
         document.getElementById('filterBar').style.display = 'flex';
+        document.getElementById('productSection').style.display = 'block';
         document.getElementById('comparisonSection').style.display = 'block';
         
       } catch (error) {
@@ -603,6 +700,118 @@
           showLoading(false);
         }
       }
+    }
+    
+    // 分析產品銷售狀態
+    function analyzeProductSales() {
+      productSalesData = {};
+      
+      // 處理訂單數據
+      allOrders.forEach(order => {
+        const groupCode = order.組別代號 || order.組別 || '未分組';
+        const productName = order['產品名稱( BOGO專用 )'] || order.組別代號;
+        const price = parseInt(order.單價) || 0;
+        const pv = parseInt(order.PV) || 0;
+        const qty = parseInt(order.訂購數量) || 0;
+        
+        const key = `${groupCode}_${productName}`;
+        
+        if (!productSalesData[key]) {
+          productSalesData[key] = {
+            groupCode: groupCode,
+            productName: productName,
+            price: price,
+            pv: pv,
+            orderQty: 0,
+            reportQty: 0
+          };
+        }
+        
+        productSalesData[key].orderQty += qty;
+      });
+      
+      // 處理搶購數據
+      allReports.forEach(report => {
+        const groupCode = report.組別代號 || '未分組';
+        const productName = groupCode; // 搶購通常只有組別代號
+        const qty = parseInt(report.搶購組數) || 0;
+        
+        const key = `${groupCode}_${productName}`;
+        
+        if (!productSalesData[key]) {
+          const price = parseInt(report.單價) || 0;
+          const pv = parseInt(report.PV數) || 0;
+          
+          productSalesData[key] = {
+            groupCode: groupCode,
+            productName: productName,
+            price: price,
+            pv: pv,
+            orderQty: 0,
+            reportQty: 0
+          };
+        }
+        
+        productSalesData[key].reportQty += qty;
+      });
+      
+      displayProductSales();
+    }
+    
+    // 顯示產品銷售狀態
+    function displayProductSales() {
+      const table = document.getElementById('productTable');
+      
+      // 按組別排序
+      const sortedProducts = Object.values(productSalesData).sort((a, b) => {
+        return sortGroupCode(a.groupCode, b.groupCode);
+      });
+      
+      let html = `
+        <thead>
+          <tr>
+            <th>組別</th>
+            <th>產品名稱</th>
+            <th>單價</th>
+            <th>PV</th>
+            <th>接龍組數<br>(訂購)</th>
+            <th>搶購組數</th>
+          </tr>
+        </thead>
+        <tbody>
+      `;
+      
+      let totalOrder = 0;
+      let totalReport = 0;
+      
+      sortedProducts.forEach(product => {
+        html += `
+          <tr>
+            <td><strong>${product.groupCode}</strong></td>
+            <td>${product.productName}</td>
+            <td>$${product.price.toLocaleString()}</td>
+            <td>${product.pv}</td>
+            <td>${product.orderQty}</td>
+            <td>${product.reportQty}</td>
+          </tr>
+        `;
+        
+        totalOrder += product.orderQty;
+        totalReport += product.reportQty;
+      });
+      
+      // 合計行
+      html += `
+        <tr class="total-row">
+          <td colspan="4"><strong>合計</strong></td>
+          <td><strong>${totalOrder}</strong></td>
+          <td><strong>${totalReport}</strong></td>
+        </tr>
+      `;
+      
+      html += '</tbody>';
+      
+      table.innerHTML = html;
     }
     
     // 以團隊為主軸分析
@@ -782,7 +991,7 @@
       displayTeamAnalysis();
     }
     
-    // 顯示團隊比較表格（新格式：左側組別，上方團隊，增加合計）
+    // 顯示團隊組數統計（新格式）
     function displayComparisonTable() {
       const table = document.getElementById('comparisonTable');
       const teams = Object.keys(teamAnalysisData).sort();
@@ -801,42 +1010,72 @@
       
       const sortedGroups = Array.from(allGroups).sort(sortGroupCode);
       
-      let html = '<thead><tr><th style="color: #000;">組別</th>';
+      // 表頭
+      let html = '<thead><tr><th rowspan="2" style="color: #000;">組別</th>';
       
-      // 團隊標題
+      // 總計欄
+      if (typeFilter === 'all') {
+        html += '<th colspan="2" style="color: #000; background: #e5e7eb;">總計</th>';
+      } else {
+        html += '<th rowspan="2" style="color: #000; background: #e5e7eb;">總計</th>';
+      }
+      
+      // 各團隊欄
       teams.forEach((team, index) => {
         const colorClass = `team-color-${(index % 6) + 1}`;
         if (typeFilter === 'all') {
           html += `<th class="${colorClass}" colspan="2" style="color: #000;">${team}</th>`;
         } else {
-          html += `<th class="${colorClass}" style="color: #000;">${team}</th>`;
+          html += `<th class="${colorClass}" rowspan="2" style="color: #000;">${team}</th>`;
         }
       });
       
       html += '</tr>';
       
-      // 子標題（訂購/搶購）
+      // 子標題行
+      html += '<tr>';
+      
+      // 總計子標題
       if (typeFilter === 'all') {
-        html += '<tr><th></th>';
-        teams.forEach((team, index) => {
-          const colorClass = `team-color-${(index % 6) + 1}`;
-          html += `<th class="${colorClass}" style="color: #000;">訂購</th><th class="${colorClass}" style="color: #000;">搶購</th>`;
-        });
-        html += '</tr>';
+        html += '<th style="color: #000; background: #e5e7eb;">接龍數量</th>';
+        html += '<th style="color: #000; background: #e5e7eb;">搶購數量</th>';
       }
       
-      html += '</thead><tbody>';
+      // 各團隊子標題
+      if (typeFilter === 'all') {
+        teams.forEach((team, index) => {
+          const colorClass = `team-color-${(index % 6) + 1}`;
+          html += `<th class="${colorClass}" style="color: #000;">接龍數量</th>`;
+          html += `<th class="${colorClass}" style="color: #000;">搶購數量</th>`;
+        });
+      }
       
-      // 計算各組別合計
-      const groupTotals = {};
+      html += '</tr></thead><tbody>';
       
       // 組別數據
       sortedGroups.forEach(group => {
         html += `<tr><td style="color: #000;"><strong>${group}</strong></td>`;
         
-        let orderTotal = 0;
-        let reportTotal = 0;
+        // 總計欄
+        let totalOrder = 0;
+        let totalReport = 0;
         
+        teams.forEach(team => {
+          const data = teamAnalysisData[team];
+          totalOrder += data.groupSummary[group]?.qty || 0;
+          totalReport += data.reportGroupSummary[group]?.qty || 0;
+        });
+        
+        if (typeFilter === 'all') {
+          html += `<td style="background: #f3f4f6;"><strong>${totalOrder > 0 ? totalOrder : '-'}</strong></td>`;
+          html += `<td style="background: #f3f4f6;"><strong>${totalReport > 0 ? totalReport : '-'}</strong></td>`;
+        } else if (typeFilter === 'order') {
+          html += `<td style="background: #f3f4f6;"><strong>${totalOrder > 0 ? totalOrder : '-'}</strong></td>`;
+        } else {
+          html += `<td style="background: #f3f4f6;"><strong>${totalReport > 0 ? totalReport : '-'}</strong></td>`;
+        }
+        
+        // 各團隊數據
         teams.forEach((team, index) => {
           const data = teamAnalysisData[team];
           const colorClass = `team-color-${(index % 6) + 1}`;
@@ -846,66 +1085,17 @@
             const reportQty = data.reportGroupSummary[group]?.qty || 0;
             html += `<td class="${colorClass}" style="color: #000;">${orderQty > 0 ? orderQty : '-'}</td>`;
             html += `<td class="${colorClass}" style="color: #000;">${reportQty > 0 ? reportQty : '-'}</td>`;
-            orderTotal += orderQty;
-            reportTotal += reportQty;
           } else if (typeFilter === 'order') {
             const orderQty = data.groupSummary[group]?.qty || 0;
             html += `<td class="${colorClass}" style="color: #000;">${orderQty > 0 ? orderQty : '-'}</td>`;
-            orderTotal += orderQty;
           } else {
             const reportQty = data.reportGroupSummary[group]?.qty || 0;
             html += `<td class="${colorClass}" style="color: #000;">${reportQty > 0 ? reportQty : '-'}</td>`;
-            reportTotal += reportQty;
           }
         });
         
-        groupTotals[group] = { order: orderTotal, report: reportTotal };
-        
         html += '</tr>';
       });
-      
-      // 合計行
-      html += '<tr class="total-row"><td><strong>合計</strong></td>';
-      
-      if (typeFilter === 'all') {
-        teams.forEach((team, index) => {
-          const data = teamAnalysisData[team];
-          let teamOrderTotal = 0;
-          let teamReportTotal = 0;
-          
-          sortedGroups.forEach(group => {
-            teamOrderTotal += data.groupSummary[group]?.qty || 0;
-            teamReportTotal += data.reportGroupSummary[group]?.qty || 0;
-          });
-          
-          html += `<td><strong>${teamOrderTotal}</strong></td>`;
-          html += `<td><strong>${teamReportTotal}</strong></td>`;
-        });
-      } else if (typeFilter === 'order') {
-        teams.forEach((team, index) => {
-          const data = teamAnalysisData[team];
-          let teamOrderTotal = 0;
-          
-          sortedGroups.forEach(group => {
-            teamOrderTotal += data.groupSummary[group]?.qty || 0;
-          });
-          
-          html += `<td><strong>${teamOrderTotal}</strong></td>`;
-        });
-      } else {
-        teams.forEach((team, index) => {
-          const data = teamAnalysisData[team];
-          let teamReportTotal = 0;
-          
-          sortedGroups.forEach(group => {
-            teamReportTotal += data.reportGroupSummary[group]?.qty || 0;
-          });
-          
-          html += `<td><strong>${teamReportTotal}</strong></td>`;
-        });
-      }
-      
-      html += '</tr>';
       
       html += '</tbody>';
       
@@ -1183,6 +1373,20 @@
       let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
       csvContent += "BOGO 團隊分析報告\n\n";
       
+      // 產品銷售狀態
+      csvContent += "產品銷售狀態\n";
+      csvContent += "組別,產品名稱,單價,PV,接龍組數,搶購組數\n";
+      
+      const sortedProducts = Object.values(productSalesData).sort((a, b) => {
+        return sortGroupCode(a.groupCode, b.groupCode);
+      });
+      
+      sortedProducts.forEach(product => {
+        csvContent += `${product.groupCode},${product.productName},${product.price},${product.pv},${product.orderQty},${product.reportQty}\n`;
+      });
+      
+      csvContent += "\n\n團隊統計\n";
+      
       for (const [team, data] of Object.entries(teamAnalysisData)) {
         csvContent += `\n團隊：${team}\n`;
         csvContent += `訂購總數量,${data.totalOrderQty}\n`;
@@ -1204,12 +1408,11 @@
       showAlert('✅ 報告已匯出');
     }
     
-    // 啟動自動同步
+    // 啟動自動同步（每10秒檢查一次）
     function startAutoSync() {
-      // 每 30 秒自動同步一次
       autoSyncInterval = setInterval(() => {
         autoConnectAndAnalyze(true);
-      }, 30000);
+      }, 10000); // 10秒同步一次
     }
     
     // 頁面載入時自動執行分析
