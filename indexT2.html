@@ -234,7 +234,7 @@
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 20px;
-    font-size: 0.9em;
+    font-size: 0.85em;
   }
   
   .comparison-table thead {
@@ -243,7 +243,7 @@
   }
   
   .comparison-table th {
-    padding: 10px 8px;
+    padding: 10px 6px;
     text-align: center;
     font-weight: 600;
     border: 1px solid white;
@@ -251,7 +251,7 @@
   }
   
   .comparison-table td {
-    padding: 8px;
+    padding: 8px 6px;
     text-align: center;
     border: 1px solid #e5e7eb;
     color: #000 !important;
@@ -271,6 +271,11 @@
   .comparison-table .total-row td {
     color: #92400e !important;
     border-top: 2px solid #f59e0b;
+  }
+  
+  .comparison-table .subtotal-col {
+    background: #e0f2fe !important;
+    font-weight: 600;
   }
   
   .team-color-1 { background: #fef3c7 !important; }
@@ -378,7 +383,7 @@
     }
     
     @page {
-      size: A4;
+      size: A4 landscape;
       margin: 15mm;
       
       @bottom-right {
@@ -395,6 +400,10 @@
     
     .person-table {
       font-size: 0.85em;
+    }
+    
+    .comparison-table {
+      font-size: 0.75em;
     }
   }
 </style>
@@ -444,7 +453,9 @@
         📊 團隊產品組數統計
         <span class="maintenance-warning" id="maintenanceWarning" style="display: none;">⚠️ 需維護團隊名單</span>
       </h3>
-      <table class="comparison-table" id="comparisonTable"></table>
+      <div style="overflow-x: auto;">
+        <table class="comparison-table" id="comparisonTable"></table>
+      </div>
     </div>
   </div>
   
@@ -461,6 +472,27 @@
   let productNameMap = {}; // 組別代號 -> 產品名稱映射
   let productSalesData = {}; // 產品銷售統計
   let needsMaintenance = false; // 是否需要維護
+  
+  // 團隊排序順序
+  const TEAM_ORDER = ['華萱', '怡文', '小顏', '家嘉', '苔珍'];
+  
+  function sortTeams(teams) {
+    return teams.sort((a, b) => {
+      const indexA = TEAM_ORDER.indexOf(a);
+      const indexB = TEAM_ORDER.indexOf(b);
+      
+      // 如果兩個都在排序列表中，按照列表順序
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB;
+      }
+      // 如果只有 a 在列表中，a 排前面
+      if (indexA !== -1) return -1;
+      // 如果只有 b 在列表中，b 排前面
+      if (indexB !== -1) return 1;
+      // 都不在列表中，按字母順序
+      return a.localeCompare(b);
+    });
+  }
   
   function sortGroupCode(a, b) {
     const order = ['1A', '1B', '2A', '2B', '3A', '3B', '4A', '4B', '5A', '5B'];
@@ -702,7 +734,11 @@
     // 處理訂單
     allOrders.forEach(order => {
       const name = order.LINE名稱.split('(代)')[0].trim();
-      const team = order.團隊 || nameToTeamMap[name] || nameToTeamMap[order.LINE名稱] || '未分配';
+      let team = order.團隊 || nameToTeamMap[name] || nameToTeamMap[order.LINE名稱] || '未分配';
+      
+      // 移除「請維護」文字，但保留團隊名稱
+      team = team.replace(/請維護\s*-*>\s*/g, '').trim();
+      
       const groupCode = order.組別代號 || order.組別 || '未分組';
       const productName = order['產品名稱( BOGO專用 )'] || groupCode;
       
@@ -752,7 +788,11 @@
     
     // 處理搶購
     allReports.forEach(report => {
-      const team = report.團隊 || '未分配';
+      let team = report.團隊 || '未分配';
+      
+      // 移除「請維護」文字
+      team = team.replace(/請維護\s*-*>\s*/g, '').trim();
+      
       const buyer = report.搶購者;
       const groupCode = report.組別代號 || '未分組';
       
@@ -802,7 +842,8 @@
     
     const teamFilter = document.getElementById('teamFilter');
     teamFilter.innerHTML = '<option value="all">全部團隊</option>';
-    Object.keys(teamAnalysisData).sort().forEach(team => {
+    const sortedTeams = sortTeams(Object.keys(teamAnalysisData));
+    sortedTeams.forEach(team => {
       teamFilter.innerHTML += `<option value="${team}">${team}</option>`;
     });
     
@@ -812,7 +853,7 @@
   
   function displayComparisonTable() {
     const table = document.getElementById('comparisonTable');
-    const teams = Object.keys(teamAnalysisData).sort();
+    const teams = sortTeams(Object.keys(teamAnalysisData));
     const typeFilter = document.getElementById('typeFilter').value;
     
     const allGroups = new Set();
@@ -829,6 +870,17 @@
     
     let html = '<thead><tr><th style="color: #000;">組別</th>';
     
+    // 合計欄
+    if (typeFilter === 'all') {
+      html += '<th style="color: #000; background: #e0f2fe;">訂購合計</th>';
+      html += '<th style="color: #000; background: #e0f2fe;">搶購合計</th>';
+    } else if (typeFilter === 'order') {
+      html += '<th style="color: #000; background: #e0f2fe;">訂購合計</th>';
+    } else {
+      html += '<th style="color: #000; background: #e0f2fe;">搶購合計</th>';
+    }
+    
+    // 團隊標題
     teams.forEach((team, index) => {
       const colorClass = `team-color-${(index % 6) + 1}`;
       if (typeFilter === 'all') {
@@ -842,6 +894,8 @@
     
     if (typeFilter === 'all') {
       html += '<tr><th style="color: #000;"></th>';
+      html += '<th style="color: #000; background: #e0f2fe;"></th>';
+      html += '<th style="color: #000; background: #e0f2fe;"></th>';
       teams.forEach((team, index) => {
         const colorClass = `team-color-${(index % 6) + 1}`;
         html += `<th class="${colorClass}" style="color: #000;">訂購</th><th class="${colorClass}" style="color: #000;">搶購</th>`;
@@ -855,6 +909,27 @@
     sortedGroups.forEach(group => {
       html += `<tr><td style="color: #000;"><strong>${group}</strong></td>`;
       
+      // 計算該組別的合計
+      let groupOrderTotal = 0;
+      let groupReportTotal = 0;
+      
+      teams.forEach(team => {
+        const data = teamAnalysisData[team];
+        groupOrderTotal += data.groupSummary[group]?.qty || 0;
+        groupReportTotal += data.reportGroupSummary[group]?.qty || 0;
+      });
+      
+      // 顯示合計欄
+      if (typeFilter === 'all') {
+        html += `<td class="subtotal-col" style="color: #000;"><strong>${groupOrderTotal}</strong></td>`;
+        html += `<td class="subtotal-col" style="color: #000;"><strong>${groupReportTotal}</strong></td>`;
+      } else if (typeFilter === 'order') {
+        html += `<td class="subtotal-col" style="color: #000;"><strong>${groupOrderTotal}</strong></td>`;
+      } else {
+        html += `<td class="subtotal-col" style="color: #000;"><strong>${groupReportTotal}</strong></td>`;
+      }
+      
+      // 各團隊數據
       teams.forEach((team, index) => {
         const data = teamAnalysisData[team];
         const colorClass = `team-color-${(index % 6) + 1}`;
@@ -879,6 +954,25 @@
     // 合計組數列
     html += '<tr class="total-row"><td style="color: #92400e;"><strong>合計組數</strong></td>';
     
+    // 總合計
+    let grandOrderTotal = 0;
+    let grandReportTotal = 0;
+    teams.forEach(team => {
+      const data = teamAnalysisData[team];
+      grandOrderTotal += data.totalOrderQty;
+      grandReportTotal += data.totalReportQty;
+    });
+    
+    if (typeFilter === 'all') {
+      html += `<td class="subtotal-col" style="color: #92400e;"><strong>${grandOrderTotal}</strong></td>`;
+      html += `<td class="subtotal-col" style="color: #92400e;"><strong>${grandReportTotal}</strong></td>`;
+    } else if (typeFilter === 'order') {
+      html += `<td class="subtotal-col" style="color: #92400e;"><strong>${grandOrderTotal}</strong></td>`;
+    } else {
+      html += `<td class="subtotal-col" style="color: #92400e;"><strong>${grandReportTotal}</strong></td>`;
+    }
+    
+    // 各團隊合計
     teams.forEach((team, index) => {
       const data = teamAnalysisData[team];
       const colorClass = `team-color-${(index % 6) + 1}`;
@@ -904,7 +998,7 @@
     let html = '';
     
     const teamsToShow = selectedTeam === 'all' 
-      ? Object.keys(teamAnalysisData).sort() 
+      ? sortTeams(Object.keys(teamAnalysisData))
       : [selectedTeam];
     
     teamsToShow.forEach(team => {
