@@ -465,6 +465,7 @@
       <div class="registration-list">
         <h2>📋 報名清單</h2>
         <button class="btn btn-success" onclick="shareRegistrationList()">分享報名清單到 LINE</button>
+        <button class="btn btn-secondary" onclick="downloadCSV()">下載 CSV 檔案</button>
         <div class="table-wrapper">
           <table id="registrationTable">
             <thead>
@@ -554,7 +555,7 @@
         
         <div class="event-card">
           <h3>📊 報名資料管理</h3>
-          <button class="btn btn-success" onclick="exportToCSV()">匯出 CSV</button>
+          <button class="btn btn-success" onclick="downloadCSV()">下載 CSV 檔案</button>
           <button class="btn btn-secondary" onclick="clearAllRegistrations()">清空所有報名</button>
           <button class="btn" onclick="shareAllRegistrations()">分享所有報名到 LINE</button>
         </div>
@@ -573,7 +574,7 @@
   
   <script>
     // ==================== 設定區 ====================
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycby1pPU1DP96ATo7RoSJQWjXauhppV0A-JQd4jgi2rLKUHYMRKpIz2MhhJyDXOstUDdfbA/exec'; // 請替換成您的 GAS URL
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbyhaPRT-TjAGd3huO_6yCHD_MzLJ_RDwkKg9N-qn0I9bB0aAUlQz2Pv1tSPhQcUsXPDwA/exec'; // 請替換成您的 GAS URL
     const LIFF_ID = '2007905012-NXJEXmda'; // 請替換成您的 LIFF ID
     const ADMIN_PASSWORD = 'admin123'; // 管理員密碼（建議改成更安全的密碼）
     
@@ -581,6 +582,32 @@
     let isAdmin = false;
     let liffProfile = null;
     let allRegistrations = [];
+    
+    // ==================== JSONP 請求函數 ====================
+    function jsonpRequest(url, params = {}) {
+      return new Promise((resolve, reject) => {
+        const callbackName = 'jsonpCallback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        
+        window[callbackName] = function(data) {
+          delete window[callbackName];
+          document.body.removeChild(script);
+          resolve(data);
+        };
+        
+        const script = document.createElement('script');
+        const queryParams = new URLSearchParams(params);
+        queryParams.append('callback', callbackName);
+        
+        script.src = `${url}?${queryParams.toString()}`;
+        script.onerror = function() {
+          delete window[callbackName];
+          document.body.removeChild(script);
+          reject(new Error('JSONP request failed'));
+        };
+        
+        document.body.appendChild(script);
+      });
+    }
     
     // ==================== LIFF 初始化 ====================
     window.onload = async function() {
@@ -591,11 +618,9 @@
           liffProfile = await liff.getProfile();
           console.log('LIFF 登入成功:', liffProfile);
           
-          // 顯示使用者資訊
           document.getElementById('userInfo').style.display = 'block';
           document.getElementById('userName').textContent = liffProfile.displayName;
           
-          // 更新 LIFF 狀態
           updateLiffStatus();
         } else {
           liff.login();
@@ -631,8 +656,7 @@
     // ==================== 載入活動資訊 ====================
     async function loadEventInfo() {
       try {
-        const response = await fetch(GAS_URL + '?action=getEvent');
-        const data = await response.json();
+        const data = await jsonpRequest(GAS_URL, { action: 'getEvent' });
         
         if (data.success && data.event) {
           currentEvent = data.event;
@@ -640,10 +664,8 @@
           document.getElementById('displayTime').textContent = `${data.event.startTime} - ${data.event.endTime}`;
           document.getElementById('displayLocation').textContent = data.event.location;
           
-          // 更新費用
           document.getElementById('karaokeFee').value = data.event.karaokeFee || 200;
           
-          // 更新用餐選項
           const mealFee = data.event.mealFee || 150;
           document.getElementById('mealType').innerHTML = `
             <option value="不用餐">不用餐 - $0</option>
@@ -718,23 +740,18 @@
       };
       
       try {
-        const response = await fetch(GAS_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'addRegistration', data: registration })
+        const result = await jsonpRequest(GAS_URL, {
+          action: 'addRegistration',
+          data: JSON.stringify(registration)
         });
-        
-        const result = await response.json();
         
         if (result.success) {
           showMessage('success', '報名成功！');
           
-          // 如果勾選分享到群組，則使用 LIFF 分享
           if (shareToGroup) {
             await shareRegistrationToLine(registration);
           }
           
-          // 重置表單
           this.reset();
           document.getElementById('performerTypeGroup').classList.add('hidden');
           document.getElementById('nameBGroup').classList.add('hidden');
@@ -801,7 +818,6 @@
         }
       } catch (error) {
         console.error('分享失敗:', error);
-        showMessage('error', '分享失敗：' + error.message);
       }
     }
     
@@ -826,7 +842,6 @@
       message += `💰 總費用：$${allRegistrations.reduce((sum, reg) => sum + reg.fee, 0)}\n\n`;
       message += `━━━━━━━━━━━━━━━━\n\n`;
       
-      // 分類顯示
       const singers = allRegistrations.filter(r => r.identity === '歌手');
       const fans = allRegistrations.filter(r => r.identity === '粉絲');
       
@@ -871,8 +886,7 @@
     // ==================== 載入報名清單 ====================
     async function loadRegistrations() {
       try {
-        const response = await fetch(GAS_URL + '?action=getRegistrations');
-        const data = await response.json();
+        const data = await jsonpRequest(GAS_URL, { action: 'getRegistrations' });
         
         if (data.success) {
           allRegistrations = data.registrations || [];
@@ -912,6 +926,39 @@
       totalCountSpan.textContent = registrations.length;
     }
     
+    // ==================== 下載 CSV ====================
+    function downloadCSV() {
+      if (allRegistrations.length === 0) {
+        alert('目前沒有報名資料');
+        return;
+      }
+      
+      // 建立 CSV 內容
+      let csv = '\uFEFF'; // UTF-8 BOM
+      csv += '時間戳記,姓名,身分,表演形式,歌曲,YouTube連結,用餐,費用,備註,LINE使用者名稱\n';
+      
+      allRegistrations.forEach(reg => {
+        csv += `"${reg.timestamp}","${reg.name}","${reg.identity}","${reg.performerType}","${reg.song}","${reg.youtube}","${reg.meal}","${reg.fee}","${reg.note}","${reg.lineUserName}"\n`;
+      });
+      
+      // 建立下載連結
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      const now = new Date();
+      const filename = `街頭K歌報名清單_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.csv`;
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showMessage('success', 'CSV 檔案已下載！');
+    }
+    
     // ==================== 管理員功能 ====================
     function adminLogin() {
       const password = document.getElementById('adminPassword').value;
@@ -935,8 +982,7 @@
     
     async function loadEventForEdit() {
       try {
-        const response = await fetch(GAS_URL + '?action=getEvent');
-        const data = await response.json();
+        const data = await jsonpRequest(GAS_URL, { action: 'getEvent' });
         
         if (data.success && data.event) {
           document.getElementById('eventDate').value = data.event.date;
@@ -966,13 +1012,10 @@
       };
       
       try {
-        const response = await fetch(GAS_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'saveEvent', data: eventData })
+        const result = await jsonpRequest(GAS_URL, {
+          action: 'saveEvent',
+          data: JSON.stringify(eventData)
         });
-        
-        const result = await response.json();
         
         if (result.success) {
           showAdminMessage('success', '活動資訊已儲存！');
@@ -996,13 +1039,7 @@
       }
       
       try {
-        const response = await fetch(GAS_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'clearRegistrations' })
-        });
-        
-        const result = await response.json();
+        const result = await jsonpRequest(GAS_URL, { action: 'clearRegistrations' });
         
         if (result.success) {
           showAdminMessage('success', '已清空所有報名資料！');
@@ -1012,10 +1049,6 @@
         console.error('清空失敗:', error);
         showAdminMessage('error', '系統錯誤，請稍後再試');
       }
-    }
-    
-    function exportToCSV() {
-      window.open(GAS_URL + '?action=exportCSV', '_blank');
     }
     
     async function shareAllRegistrations() {
