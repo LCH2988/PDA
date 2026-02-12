@@ -338,32 +338,12 @@
       font-size: 14px;
     }
     
-    .share-options {
-      background: #f8f9fa;
-      padding: 20px;
-      border-radius: 10px;
-      margin-top: 15px;
-    }
-    
-    .share-options label {
-      font-weight: normal;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-    
-    .share-mode-selector {
-      background: #fff;
-      border: 2px solid #667eea;
-      padding: 15px;
-      border-radius: 10px;
-      margin-bottom: 20px;
-    }
-    
-    .share-mode-selector h4 {
-      color: #667eea;
-      margin-bottom: 10px;
+    .context-info {
+      background: rgba(255,255,255,0.2);
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 10px;
+      font-size: 12px;
     }
   </style>
 </head>
@@ -379,6 +359,9 @@
       <div class="user-info" id="userInfo" style="display: none;">
         <p>👤 <span id="userName"></span></p>
       </div>
+      <div class="context-info" id="contextInfo" style="display: none;">
+        <p>📍 來源：<span id="contextType"></span></p>
+      </div>
     </div>
     
     <div class="tab-buttons">
@@ -392,21 +375,8 @@
       <div class="form-section">
         <div id="message"></div>
         
-        <div class="share-mode-selector">
-          <h4>📢 分享設定</h4>
-          <div class="radio-group">
-            <label>
-              <input type="radio" name="shareMode" value="auto" checked>
-              自動彈出分享（推薦）
-            </label>
-            <label>
-              <input type="radio" name="shareMode" value="manual">
-              稍後手動分享
-            </label>
-          </div>
-          <small style="color: #666; display: block; margin-top: 10px;">
-            ℹ️ 選擇「自動彈出分享」，報名成功後會立即彈出分享選擇器，讓您選擇要分享到哪個群組或好友
-          </small>
+        <div class="info">
+          ℹ️ 報名成功後，系統會自動發送確認訊息到您開啟此頁面的聊天室
         </div>
         
         <form id="registrationForm">
@@ -595,8 +565,9 @@
         <div class="event-card">
           <h3>📱 LIFF 資訊</h3>
           <p><strong>LIFF 狀態：</strong><span id="liffStatus">檢查中...</span></p>
-          <p><strong>ShareTargetPicker 可用：</strong><span id="sharePickerStatus">檢查中...</span></p>
           <p><strong>LIFF URL：</strong><span id="liffUrl">載入中...</span></p>
+          <p><strong>來源類型：</strong><span id="adminContextType">-</span></p>
+          <p><strong>來源 ID：</strong><span id="adminContextId">-</span></p>
         </div>
         
         <button class="btn btn-secondary" onclick="adminLogout()">登出</button>
@@ -613,6 +584,7 @@
     let currentEvent = null;
     let isAdmin = false;
     let liffProfile = null;
+    let liffContext = null;
     let allRegistrations = [];
     let liffUrl = '';
     
@@ -652,17 +624,40 @@
         
         if (liff.isLoggedIn()) {
           liffProfile = await liff.getProfile();
-          console.log('LIFF 登入成功:', liffProfile);
+          console.log('✅ LIFF 登入成功:', liffProfile);
           
+          // ⭐ 取得 LIFF Context（包含來源聊天室資訊）⭐
+          liffContext = liff.getContext();
+          console.log('✅ LIFF Context:', liffContext);
+          
+          // 顯示使用者資訊
           document.getElementById('userInfo').style.display = 'block';
           document.getElementById('userName').textContent = liffProfile.displayName;
           
+          // 顯示來源聊天室資訊
+          if (liffContext) {
+            document.getElementById('contextInfo').style.display = 'block';
+            const contextTypeText = getContextTypeText(liffContext.type);
+            document.getElementById('contextType').textContent = contextTypeText;
+            
+            // 更新管理介面的資訊
+            document.getElementById('adminContextType').textContent = liffContext.type || 'unknown';
+            document.getElementById('adminContextId').textContent = getContextId(liffContext) || 'unknown';
+          }
+          
           updateLiffStatus();
+          
+          // 檢查 URL 參數，決定顯示哪個頁籤
+          const urlParams = new URLSearchParams(window.location.search);
+          const tab = urlParams.get('tab');
+          if (tab === 'list') {
+            switchTab('list');
+          }
         } else {
           liff.login();
         }
       } catch (error) {
-        console.error('LIFF 初始化失敗:', error);
+        console.error('❌ LIFF 初始化失敗:', error);
         showMessage('error', 'LINE 登入失敗，請重新整理頁面');
       }
       
@@ -670,10 +665,40 @@
       loadRegistrations();
     };
     
+    // ==================== 取得來源聊天室類型文字 ====================
+    function getContextTypeText(type) {
+      switch(type) {
+        case 'utou':
+          return '個人聊天室';
+        case 'group':
+          return '群組';
+        case 'room':
+          return '聊天室';
+        case 'external':
+          return '外部瀏覽器';
+        default:
+          return '未知';
+      }
+    }
+    
+    // ==================== 取得來源聊天室 ID ====================
+    function getContextId(context) {
+      if (!context) return null;
+      
+      // 根據不同的類型取得對應的 ID
+      if (context.type === 'utou') {
+        return context.userId;
+      } else if (context.type === 'group') {
+        return context.groupId;
+      } else if (context.type === 'room') {
+        return context.roomId;
+      }
+      
+      return null;
+    }
+    
     function updateLiffStatus() {
       document.getElementById('liffStatus').textContent = liff.isLoggedIn() ? '✅ 已登入' : '❌ 未登入';
-      document.getElementById('sharePickerStatus').textContent = 
-        liff.isApiAvailable('shareTargetPicker') ? '✅ 可用' : '❌ 不可用';
     }
     
     // ==================== 頁籤切換 ====================
@@ -681,7 +706,18 @@
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
       
-      event.target.classList.add('active');
+      // 找到對應的按鈕並設為 active
+      const buttons = document.querySelectorAll('.tab-btn');
+      buttons.forEach(btn => {
+        if (btn.textContent.includes('報名表單') && tabName === 'registration') {
+          btn.classList.add('active');
+        } else if (btn.textContent.includes('報名清單') && tabName === 'list') {
+          btn.classList.add('active');
+        } else if (btn.textContent.includes('管理介面') && tabName === 'admin') {
+          btn.classList.add('active');
+        }
+      });
+      
       document.getElementById(tabName + 'Tab').classList.add('active');
       
       if (tabName === 'list') {
@@ -710,7 +746,7 @@
           `;
         }
       } catch (error) {
-        console.error('載入活動資訊失敗:', error);
+        console.error('❌ 載入活動資訊失敗:', error);
       }
     }
     
@@ -737,7 +773,7 @@
       });
     });
     
-    // ==================== 提交報名 ====================
+    // ==================== ⭐ 提交報名（包含來源聊天室資訊）⭐ ====================
     document.getElementById('registrationForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       
@@ -756,10 +792,16 @@
       const mealFee = mealType !== '不用餐' ? (currentEvent?.mealFee || 150) : 0;
       const donation = parseInt(document.getElementById('donation').value) || 0;
       const note = document.getElementById('note').value;
-      const shareMode = document.querySelector('input[name="shareMode"]:checked').value;
       
       const name = performerType === '雙人' && nameB ? `${nameA} & ${nameB}` : nameA;
       const totalFee = karaokeFee + mealFee + donation;
+      
+      // ⭐ 取得來源聊天室資訊 ⭐
+      const sourceType = liffContext ? liffContext.type : 'unknown';
+      const sourceId = liffContext ? getContextId(liffContext) : 'unknown';
+      
+      console.log('📍 來源聊天室類型:', sourceType);
+      console.log('📍 來源聊天室 ID:', sourceId);
       
       const registration = {
         name,
@@ -773,6 +815,8 @@
         timestamp: new Date().toISOString(),
         lineUserId: liffProfile?.userId || 'unknown',
         lineUserName: liffProfile?.displayName || 'unknown',
+        sourceType: sourceType,  // ⭐ 來源聊天室類型
+        sourceId: sourceId,      // ⭐ 來源聊天室 ID
         liffUrl: liffUrl
       };
       
@@ -783,243 +827,41 @@
         });
         
         if (result.success) {
-          showMessage('success', '✅ 報名成功！');
+          showMessage('success', '✅ 報名成功！確認訊息已發送到原聊天室');
           
-          // ⭐ 根據分享模式決定是否自動彈出分享
-          if (shareMode === 'auto') {
-            setTimeout(async () => {
-              await autoShareRegistration(registration);
-            }, 1000);
-          } else {
-            showMessage('info', 'ℹ️ 您可以稍後在報名清單頁面手動分享');
+          // 顯示通知結果
+          if (result.notification) {
+            if (result.notification.success) {
+              console.log('✅ 通知發送成功:', result.notification.message);
+            } else {
+              console.log('⚠️ 通知發送失敗:', result.notification.message);
+              showMessage('warning', '⚠️ 報名成功，但通知發送失敗：' + result.notification.message);
+            }
           }
           
+          // 清空表單
           this.reset();
           document.getElementById('performerTypeGroup').classList.add('hidden');
           document.getElementById('nameBGroup').classList.add('hidden');
           document.getElementById('songGroup').classList.add('hidden');
           document.getElementById('youtubeGroup').classList.add('hidden');
           document.getElementById('karaokeFeeGroup').classList.add('hidden');
-          document.querySelector('input[name="shareMode"][value="auto"]').checked = true;
+          
+          // 3秒後關閉 LIFF 視窗
+          setTimeout(() => {
+            liff.closeWindow();
+          }, 3000);
         } else {
-          showMessage('error', '報名失敗：' + result.message);
+          showMessage('error', '❌ 報名失敗：' + result.message);
         }
       } catch (error) {
-        console.error('提交失敗:', error);
-        showMessage('error', '系統錯誤，請稍後再試');
+        console.error('❌ 提交失敗:', error);
+        showMessage('error', '❌ 系統錯誤，請稍後再試');
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = '提交報名';
       }
     });
-    
-    // ==================== ⭐ 自動彈出分享功能 ⭐ ====================
-    async function autoShareRegistration(registration) {
-      if (!liff.isApiAvailable('shareTargetPicker')) {
-        showMessage('warning', '⚠️ 您的 LINE 版本不支援分享功能');
-        return;
-      }
-      
-      const eventInfo = currentEvent ? 
-        `${currentEvent.date} ${currentEvent.startTime}-${currentEvent.endTime}` : 
-        '活動資訊載入中';
-      
-      const eventLocation = currentEvent ? currentEvent.location : '地點待定';
-      
-      const bodyContents = [
-        {
-          type: 'box',
-          layout: 'vertical',
-          contents: [
-            {
-              type: 'text',
-              text: eventInfo,
-              size: 'sm',
-              color: '#666666'
-            },
-            {
-              type: 'text',
-              text: eventLocation,
-              size: 'sm',
-              color: '#666666',
-              margin: 'xs'
-            }
-          ],
-          margin: 'lg'
-        },
-        {
-          type: 'separator',
-          margin: 'xl'
-        },
-        {
-          type: 'box',
-          layout: 'vertical',
-          contents: [
-            {
-              type: 'box',
-              layout: 'baseline',
-              contents: [
-                {
-                  type: 'text',
-                  text: '👤',
-                  size: 'sm',
-                  flex: 0
-                },
-                {
-                  type: 'text',
-                  text: registration.name,
-                  size: 'md',
-                  weight: 'bold',
-                  margin: 'sm',
-                  flex: 0
-                }
-              ]
-            },
-            {
-              type: 'box',
-              layout: 'baseline',
-              contents: [
-                {
-                  type: 'text',
-                  text: '🎭',
-                  size: 'sm',
-                  flex: 0
-                },
-                {
-                  type: 'text',
-                  text: registration.identity,
-                  size: 'sm',
-                  color: '#666666',
-                  margin: 'sm',
-                  flex: 0
-                }
-              ],
-              margin: 'md'
-            }
-          ],
-          margin: 'xl'
-        }
-      ];
-      
-      if (registration.identity === '歌手' && registration.song !== '-') {
-        bodyContents[2].contents.push({
-          type: 'box',
-          layout: 'baseline',
-          contents: [
-            {
-              type: 'text',
-              text: '🎵',
-              size: 'sm',
-              flex: 0
-            },
-            {
-              type: 'text',
-              text: registration.song,
-              size: 'sm',
-              color: '#666666',
-              margin: 'sm',
-              wrap: true,
-              flex: 1
-            }
-          ],
-          margin: 'md'
-        });
-      }
-      
-      const footerContents = [
-        {
-          type: 'button',
-          action: {
-            type: 'uri',
-            label: '我也要報名 🎤',
-            uri: liffUrl
-          },
-          style: 'primary',
-          color: '#667eea'
-        }
-      ];
-      
-      if (registration.identity === '歌手' && registration.youtube !== '-') {
-        footerContents.push({
-          type: 'button',
-          action: {
-            type: 'uri',
-            label: '🎬 觀看歌曲',
-            uri: registration.youtube
-          },
-          style: 'link',
-          margin: 'sm'
-        });
-      }
-      
-      footerContents.push({
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: `🍽️ ${registration.meal} | 💰 $${registration.fee}`,
-            size: 'xs',
-            color: '#999999',
-            align: 'center'
-          }
-        ],
-        margin: 'sm'
-      });
-      
-      const flexMessage = {
-        type: 'flex',
-        altText: `🎤 ${registration.name} 已報名街頭K歌活動`,
-        contents: {
-          type: 'bubble',
-          hero: {
-            type: 'box',
-            layout: 'vertical',
-            contents: [
-              {
-                type: 'text',
-                text: '🎤 街頭K歌活動',
-                weight: 'bold',
-                size: 'xl',
-                color: '#ffffff'
-              },
-              {
-                type: 'text',
-                text: '新報名通知 ✨',
-                size: 'sm',
-                color: '#ffffff',
-                margin: 'md'
-              }
-            ],
-            backgroundColor: '#667eea',
-            paddingAll: '20px'
-          },
-          body: {
-            type: 'box',
-            layout: 'vertical',
-            contents: bodyContents
-          },
-          footer: {
-            type: 'box',
-            layout: 'vertical',
-            contents: footerContents
-          }
-        }
-      };
-      
-      try {
-        const result = await liff.shareTargetPicker([flexMessage]);
-        
-        if (result) {
-          showMessage('success', '✅ 已成功分享到 LINE！');
-        } else {
-          showMessage('info', 'ℹ️ 您取消了分享');
-        }
-      } catch (error) {
-        console.error('分享失敗:', error);
-        showMessage('warning', '⚠️ 分享失敗：' + error.message);
-      }
-    }
     
     // ==================== 分享報名清單 ====================
     async function shareRegistrationList() {
@@ -1187,10 +1029,10 @@
         const result = await liff.shareTargetPicker([flexMessage]);
         
         if (result) {
-          showMessage('success', '已分享報名清單到 LINE！');
+          showMessage('success', '✅ 已分享報名清單到 LINE！');
         }
       } catch (error) {
-        console.error('分享失敗:', error);
+        console.error('❌ 分享失敗:', error);
         alert('分享失敗：' + error.message);
       }
     }
@@ -1205,7 +1047,7 @@
           updateTable(allRegistrations);
         }
       } catch (error) {
-        console.error('載入報名清單失敗:', error);
+        console.error('❌ 載入報名清單失敗:', error);
       }
     }
     
@@ -1246,10 +1088,10 @@
       }
       
       let csv = '\uFEFF';
-      csv += '時間戳記,姓名,身分,表演形式,歌曲,YouTube連結,用餐,費用,備註,LINE使用者名稱\n';
+      csv += '時間戳記,姓名,身分,表演形式,歌曲,YouTube連結,用餐,費用,備註,LINE使用者名稱,來源類型,來源ID\n';
       
       allRegistrations.forEach(reg => {
-        csv += `"${reg.timestamp}","${reg.name}","${reg.identity}","${reg.performerType}","${reg.song}","${reg.youtube}","${reg.meal}","${reg.fee}","${reg.note}","${reg.lineUserName}"\n`;
+        csv += `"${reg.timestamp}","${reg.name}","${reg.identity}","${reg.performerType}","${reg.song}","${reg.youtube}","${reg.meal}","${reg.fee}","${reg.note}","${reg.lineUserName}","${reg.sourceType}","${reg.sourceId}"\n`;
       });
       
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1304,7 +1146,7 @@
           document.getElementById('eventStatus').value = data.event.status || 'active';
         }
       } catch (error) {
-        console.error('載入活動資訊失敗:', error);
+        console.error('❌ 載入活動資訊失敗:', error);
       }
     }
     
@@ -1328,14 +1170,14 @@
         });
         
         if (result.success) {
-          showAdminMessage('success', '活動資訊已儲存！');
+          showAdminMessage('success', '✅ 活動資訊已儲存！');
           loadEventInfo();
         } else {
-          showAdminMessage('error', '儲存失敗：' + result.message);
+          showAdminMessage('error', '❌ 儲存失敗：' + result.message);
         }
       } catch (error) {
-        console.error('儲存失敗:', error);
-        showAdminMessage('error', '系統錯誤，請稍後再試');
+        console.error('❌ 儲存失敗:', error);
+        showAdminMessage('error', '❌ 系統錯誤，請稍後再試');
       }
     });
     
@@ -1352,12 +1194,12 @@
         const result = await jsonpRequest(GAS_URL, { action: 'clearRegistrations' });
         
         if (result.success) {
-          showAdminMessage('success', '已清空所有報名資料！');
+          showAdminMessage('success', '✅ 已清空所有報名資料！');
           loadRegistrations();
         }
       } catch (error) {
-        console.error('清空失敗:', error);
-        showAdminMessage('error', '系統錯誤，請稍後再試');
+        console.error('❌ 清空失敗:', error);
+        showAdminMessage('error', '❌ 系統錯誤，請稍後再試');
       }
     }
     
