@@ -344,6 +344,15 @@
       gap: 10px;
       margin-bottom: 10px;
     }
+    
+    .config-note {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
@@ -448,11 +457,8 @@
             <textarea id="note" rows="4" placeholder="有任何特殊需求或想說的話，請在此填寫..."></textarea>
           </div>
           
-          <div class="share-options">
-            <label>
-              <input type="checkbox" id="shareToGroup" checked>
-              報名完成後，分享通知到 LINE 群組
-            </label>
+          <div class="info">
+            ℹ️ 報名完成後，系統會自動發送通知到 LINE 群組
           </div>
           
           <button type="submit" class="submit-btn" id="submitBtn">提交報名</button>
@@ -464,7 +470,7 @@
     <div id="listTab" class="tab-content">
       <div class="registration-list">
         <h2>📋 報名清單</h2>
-        <button class="btn btn-success" onclick="shareRegistrationList()">分享報名清單到 LINE</button>
+        <button class="btn btn-success" onclick="manualShareToGroup()">手動分享到群組</button>
         <button class="btn btn-secondary" onclick="downloadCSV()">下載 CSV 檔案</button>
         <div class="table-wrapper">
           <table id="registrationTable">
@@ -554,17 +560,43 @@
         </div>
         
         <div class="event-card">
+          <h3>🔔 LINE 通知設定</h3>
+          <div class="config-note">
+            <strong>⚠️ 重要設定說明：</strong><br>
+            請在 Google Apps Script 中設定以下資訊：<br>
+            1. LINE_CHANNEL_ACCESS_TOKEN（Messaging API 的 Channel Access Token）<br>
+            2. LINE_GROUP_ID（要發送通知的群組 ID）<br>
+            <br>
+            <strong>如何取得群組 ID：</strong><br>
+            1. 將 Bot 加入群組<br>
+            2. 在群組中發送任何訊息<br>
+            3. 查看 GAS 的執行記錄即可看到群組 ID
+          </div>
+          <div class="form-group">
+            <label>Channel Access Token</label>
+            <input type="text" id="lineAccessToken" placeholder="請在 GAS 中設定">
+            <small style="color: #666; display: block; margin-top: 5px;">此欄位僅供顯示，實際設定請在 GAS 中修改</small>
+          </div>
+          <div class="form-group">
+            <label>群組 ID</label>
+            <input type="text" id="lineGroupId" placeholder="請在 GAS 中設定">
+            <small style="color: #666; display: block; margin-top: 5px;">此欄位僅供顯示，實際設定請在 GAS 中修改</small>
+          </div>
+          <button class="btn" onclick="testLineNotification()">測試 LINE 通知</button>
+        </div>
+        
+        <div class="event-card">
           <h3>📊 報名資料管理</h3>
           <button class="btn btn-success" onclick="downloadCSV()">下載 CSV 檔案</button>
           <button class="btn btn-secondary" onclick="clearAllRegistrations()">清空所有報名</button>
-          <button class="btn" onclick="shareAllRegistrations()">分享所有報名到 LINE</button>
+          <button class="btn" onclick="manualShareToGroup()">手動分享到群組</button>
         </div>
         
         <div class="event-card">
           <h3>📱 LIFF 資訊</h3>
           <p><strong>LIFF 狀態：</strong><span id="liffStatus">檢查中...</span></p>
           <p><strong>ShareTargetPicker 可用：</strong><span id="sharePickerStatus">檢查中...</span></p>
-          <button class="btn" onclick="testSharePicker()">測試分享功能</button>
+          <p><strong>LIFF URL：</strong><span id="liffUrl">載入中...</span></p>
         </div>
         
         <button class="btn btn-secondary" onclick="adminLogout()">登出</button>
@@ -574,14 +606,15 @@
   
   <script>
     // ==================== 設定區 ====================
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbyhaPRT-TjAGd3huO_6yCHD_MzLJ_RDwkKg9N-qn0I9bB0aAUlQz2Pv1tSPhQcUsXPDwA/exec'; // 請替換成您的 GAS URL
-    const LIFF_ID = '2007905012-NXJEXmda'; // 請替換成您的 LIFF ID
-    const ADMIN_PASSWORD = 'admin123'; // 管理員密碼（建議改成更安全的密碼）
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbww43_u60XILVbr-QY6YRhULnDIaBjAzlVyAzMgPbqbwEOVEkGDBdJMKySRgLdo-OfJ2w/exec';
+    const LIFF_ID = '2001679903-r5VXNe5g'; // 請替換成您的 LIFF ID
+    const ADMIN_PASSWORD = 'admin123'; // 管理員密碼
     
     let currentEvent = null;
     let isAdmin = false;
     let liffProfile = null;
     let allRegistrations = [];
+    let liffUrl = '';
     
     // ==================== JSONP 請求函數 ====================
     function jsonpRequest(url, params = {}) {
@@ -613,6 +646,9 @@
     window.onload = async function() {
       try {
         await liff.init({ liffId: LIFF_ID });
+        
+        liffUrl = window.location.href.split('?')[0];
+        document.getElementById('liffUrl').textContent = liffUrl;
         
         if (liff.isLoggedIn()) {
           liffProfile = await liff.getProfile();
@@ -720,7 +756,6 @@
       const mealFee = mealType !== '不用餐' ? (currentEvent?.mealFee || 150) : 0;
       const donation = parseInt(document.getElementById('donation').value) || 0;
       const note = document.getElementById('note').value;
-      const shareToGroup = document.getElementById('shareToGroup').checked;
       
       const name = performerType === '雙人' && nameB ? `${nameA} & ${nameB}` : nameA;
       const totalFee = karaokeFee + mealFee + donation;
@@ -736,7 +771,8 @@
         note: note || '-',
         timestamp: new Date().toISOString(),
         lineUserId: liffProfile?.userId || 'unknown',
-        lineUserName: liffProfile?.displayName || 'unknown'
+        lineUserName: liffProfile?.displayName || 'unknown',
+        liffUrl: liffUrl
       };
       
       try {
@@ -746,11 +782,7 @@
         });
         
         if (result.success) {
-          showMessage('success', '報名成功！');
-          
-          if (shareToGroup) {
-            await shareRegistrationToLine(registration);
-          }
+          showMessage('success', '✅ 報名成功！通知已自動發送到 LINE 群組');
           
           this.reset();
           document.getElementById('performerTypeGroup').classList.add('hidden');
@@ -758,7 +790,6 @@
           document.getElementById('songGroup').classList.add('hidden');
           document.getElementById('youtubeGroup').classList.add('hidden');
           document.getElementById('karaokeFeeGroup').classList.add('hidden');
-          document.getElementById('shareToGroup').checked = true;
         } else {
           showMessage('error', '報名失敗：' + result.message);
         }
@@ -771,58 +802,8 @@
       }
     });
     
-    // ==================== LIFF 分享功能 ====================
-    async function shareRegistrationToLine(registration) {
-      if (!liff.isApiAvailable('shareTargetPicker')) {
-        console.log('ShareTargetPicker 不可用');
-        return;
-      }
-      
-      const eventInfo = currentEvent ? 
-        `📅 ${currentEvent.date} ${currentEvent.startTime}-${currentEvent.endTime}\n📍 ${currentEvent.location}` : 
-        '活動資訊載入中';
-      
-      let message = `🎤 街頭K歌活動 - 新報名通知\n\n${eventInfo}\n\n`;
-      message += `👤 姓名：${registration.name}\n`;
-      message += `🎭 身分：${registration.identity}\n`;
-      
-      if (registration.identity === '歌手') {
-        message += `🎵 歌曲：${registration.song}\n`;
-        if (registration.youtube !== '-') {
-          message += `🔗 連結：${registration.youtube}\n`;
-        }
-      }
-      
-      message += `🍽️ 用餐：${registration.meal}\n`;
-      message += `💰 費用：$${registration.fee}\n`;
-      
-      if (registration.note !== '-') {
-        message += `📝 備註：${registration.note}\n`;
-      }
-      
-      message += `\n⏰ 報名時間：${new Date().toLocaleString('zh-TW')}`;
-      
-      try {
-        const result = await liff.shareTargetPicker([
-          {
-            type: 'text',
-            text: message
-          }
-        ]);
-        
-        if (result) {
-          console.log('分享成功');
-          showMessage('info', '已分享到 LINE！');
-        } else {
-          console.log('使用者取消分享');
-        }
-      } catch (error) {
-        console.error('分享失敗:', error);
-      }
-    }
-    
-    // ==================== 分享報名清單 ====================
-    async function shareRegistrationList() {
+    // ==================== 手動分享到群組 ====================
+    async function manualShareToGroup() {
       if (!liff.isApiAvailable('shareTargetPicker')) {
         alert('此功能需要在 LINE 中開啟');
         return;
@@ -834,45 +815,157 @@
       }
       
       const eventInfo = currentEvent ? 
-        `📅 ${currentEvent.date} ${currentEvent.startTime}-${currentEvent.endTime}\n📍 ${currentEvent.location}` : 
+        `${currentEvent.date} ${currentEvent.startTime}-${currentEvent.endTime}` : 
         '活動資訊';
       
-      let message = `🎤 街頭K歌活動報名清單\n\n${eventInfo}\n\n`;
-      message += `📊 總報名人數：${allRegistrations.length} 人\n`;
-      message += `💰 總費用：$${allRegistrations.reduce((sum, reg) => sum + reg.fee, 0)}\n\n`;
-      message += `━━━━━━━━━━━━━━━━\n\n`;
+      const eventLocation = currentEvent ? currentEvent.location : '地點待定';
+      const totalFee = allRegistrations.reduce((sum, reg) => sum + reg.fee, 0);
       
       const singers = allRegistrations.filter(r => r.identity === '歌手');
-      const fans = allRegistrations.filter(r => r.identity === '粉絲');
       
-      if (singers.length > 0) {
-        message += `🎤 歌手（${singers.length}人）\n\n`;
-        singers.forEach((reg, index) => {
-          message += `${index + 1}. ${reg.name}\n`;
-          message += `   🎵 ${reg.song}\n`;
-          if (reg.youtube !== '-') {
-            message += `   🔗 ${reg.youtube}\n`;
-          }
-          message += `   🍽️ ${reg.meal} | 💰 $${reg.fee}\n\n`;
-        });
-      }
-      
-      if (fans.length > 0) {
-        message += `\n👥 粉絲（${fans.length}人）\n\n`;
-        fans.forEach((reg, index) => {
-          message += `${index + 1}. ${reg.name} - ${reg.meal} ($${reg.fee})\n`;
-        });
-      }
-      
-      message += `\n⏰ 更新時間：${new Date().toLocaleString('zh-TW')}`;
-      
-      try {
-        const result = await liff.shareTargetPicker([
+      const singerContents = singers.slice(0, 10).map((reg, index) => ({
+        type: 'box',
+        layout: 'baseline',
+        contents: [
           {
             type: 'text',
-            text: message
+            text: `${index + 1}.`,
+            size: 'xs',
+            color: '#666666',
+            flex: 0
+          },
+          {
+            type: 'text',
+            text: `${reg.name} - ${reg.song}`,
+            size: 'xs',
+            color: '#333333',
+            margin: 'sm',
+            wrap: true
           }
-        ]);
+        ],
+        margin: 'sm'
+      }));
+      
+      const flexMessage = {
+        type: 'flex',
+        altText: `🎤 街頭K歌活動報名清單（${allRegistrations.length}人）`,
+        contents: {
+          type: 'bubble',
+          hero: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: '🎤 街頭K歌活動',
+                weight: 'bold',
+                size: 'xl',
+                color: '#ffffff'
+              },
+              {
+                type: 'text',
+                text: '報名清單',
+                size: 'sm',
+                color: '#ffffff',
+                margin: 'md'
+              }
+            ],
+            backgroundColor: '#667eea',
+            paddingAll: '20px'
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                  {
+                    type: 'text',
+                    text: eventInfo,
+                    size: 'sm',
+                    color: '#666666'
+                  },
+                  {
+                    type: 'text',
+                    text: eventLocation,
+                    size: 'sm',
+                    color: '#666666',
+                    margin: 'xs'
+                  }
+                ]
+              },
+              {
+                type: 'box',
+                layout: 'baseline',
+                contents: [
+                  {
+                    type: 'text',
+                    text: `📊 總報名：${allRegistrations.length} 人`,
+                    size: 'sm',
+                    color: '#333333'
+                  },
+                  {
+                    type: 'text',
+                    text: `💰 $${totalFee}`,
+                    size: 'sm',
+                    color: '#333333',
+                    align: 'end'
+                  }
+                ],
+                margin: 'lg'
+              },
+              {
+                type: 'separator',
+                margin: 'lg'
+              },
+              {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                  {
+                    type: 'text',
+                    text: `🎤 歌手（${singers.length}人）`,
+                    weight: 'bold',
+                    size: 'sm',
+                    color: '#333333'
+                  },
+                  ...singerContents
+                ],
+                margin: 'lg'
+              }
+            ]
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'button',
+                action: {
+                  type: 'uri',
+                  label: '立即報名',
+                  uri: liffUrl
+                },
+                style: 'primary',
+                color: '#667eea'
+              },
+              {
+                type: 'text',
+                text: `⏰ ${new Date().toLocaleString('zh-TW')}`,
+                size: 'xs',
+                color: '#999999',
+                align: 'center',
+                margin: 'sm'
+              }
+            ]
+          }
+        }
+      };
+      
+      try {
+        const result = await liff.shareTargetPicker([flexMessage]);
         
         if (result) {
           showMessage('success', '已分享報名清單到 LINE！');
@@ -880,6 +973,24 @@
       } catch (error) {
         console.error('分享失敗:', error);
         alert('分享失敗：' + error.message);
+      }
+    }
+    
+    // ==================== 測試 LINE 通知 ====================
+    async function testLineNotification() {
+      try {
+        const result = await jsonpRequest(GAS_URL, {
+          action: 'testLineNotification'
+        });
+        
+        if (result.success) {
+          showAdminMessage('success', '✅ 測試訊息已發送到 LINE 群組！');
+        } else {
+          showAdminMessage('error', '❌ 發送失敗：' + result.message);
+        }
+      } catch (error) {
+        console.error('測試失敗:', error);
+        showAdminMessage('error', '系統錯誤：' + error.message);
       }
     }
     
@@ -933,15 +1044,13 @@
         return;
       }
       
-      // 建立 CSV 內容
-      let csv = '\uFEFF'; // UTF-8 BOM
+      let csv = '\uFEFF';
       csv += '時間戳記,姓名,身分,表演形式,歌曲,YouTube連結,用餐,費用,備註,LINE使用者名稱\n';
       
       allRegistrations.forEach(reg => {
         csv += `"${reg.timestamp}","${reg.name}","${reg.identity}","${reg.performerType}","${reg.song}","${reg.youtube}","${reg.meal}","${reg.fee}","${reg.note}","${reg.lineUserName}"\n`;
       });
       
-      // 建立下載連結
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
@@ -1048,35 +1157,6 @@
       } catch (error) {
         console.error('清空失敗:', error);
         showAdminMessage('error', '系統錯誤，請稍後再試');
-      }
-    }
-    
-    async function shareAllRegistrations() {
-      await shareRegistrationList();
-    }
-    
-    async function testSharePicker() {
-      if (!liff.isApiAvailable('shareTargetPicker')) {
-        alert('ShareTargetPicker 功能不可用\n請確認：\n1. 在 LINE 中開啟\n2. LIFF 設定正確');
-        return;
-      }
-      
-      try {
-        const result = await liff.shareTargetPicker([
-          {
-            type: 'text',
-            text: '🎤 街頭K歌活動報名系統\n\n測試訊息：分享功能正常運作！\n\n⏰ ' + new Date().toLocaleString('zh-TW')
-          }
-        ]);
-        
-        if (result) {
-          showAdminMessage('success', '測試成功！分享功能正常運作');
-        } else {
-          showAdminMessage('info', '使用者取消分享');
-        }
-      } catch (error) {
-        console.error('測試失敗:', error);
-        showAdminMessage('error', '測試失敗：' + error.message);
       }
     }
     
