@@ -288,6 +288,14 @@
       margin-bottom: 20px;
     }
     
+    .warning {
+      background: #fff3cd;
+      color: #856404;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    
     .action-btn {
       padding: 8px 15px;
       margin: 0 5px;
@@ -345,13 +353,17 @@
       margin-bottom: 10px;
     }
     
-    .config-note {
-      background: #fff3cd;
-      border: 1px solid #ffc107;
+    .share-mode-selector {
+      background: #fff;
+      border: 2px solid #667eea;
       padding: 15px;
-      border-radius: 8px;
+      border-radius: 10px;
       margin-bottom: 20px;
-      font-size: 14px;
+    }
+    
+    .share-mode-selector h4 {
+      color: #667eea;
+      margin-bottom: 10px;
     }
   </style>
 </head>
@@ -379,6 +391,24 @@
     <div id="registrationTab" class="tab-content active">
       <div class="form-section">
         <div id="message"></div>
+        
+        <div class="share-mode-selector">
+          <h4>📢 分享設定</h4>
+          <div class="radio-group">
+            <label>
+              <input type="radio" name="shareMode" value="auto" checked>
+              自動彈出分享（推薦）
+            </label>
+            <label>
+              <input type="radio" name="shareMode" value="manual">
+              稍後手動分享
+            </label>
+          </div>
+          <small style="color: #666; display: block; margin-top: 10px;">
+            ℹ️ 選擇「自動彈出分享」，報名成功後會立即彈出分享選擇器，讓您選擇要分享到哪個群組或好友
+          </small>
+        </div>
+        
         <form id="registrationForm">
           <div class="form-group">
             <label>1. 身分選擇 *</label>
@@ -457,10 +487,6 @@
             <textarea id="note" rows="4" placeholder="有任何特殊需求或想說的話，請在此填寫..."></textarea>
           </div>
           
-          <div class="info">
-            ℹ️ 報名完成後，系統會自動發送通知到 LINE 群組
-          </div>
-          
           <button type="submit" class="submit-btn" id="submitBtn">提交報名</button>
         </form>
       </div>
@@ -470,7 +496,7 @@
     <div id="listTab" class="tab-content">
       <div class="registration-list">
         <h2>📋 報名清單</h2>
-        <button class="btn btn-success" onclick="manualShareToGroup()">手動分享到群組</button>
+        <button class="btn btn-success" onclick="shareRegistrationList()">分享報名清單</button>
         <button class="btn btn-secondary" onclick="downloadCSV()">下載 CSV 檔案</button>
         <div class="table-wrapper">
           <table id="registrationTable">
@@ -560,36 +586,10 @@
         </div>
         
         <div class="event-card">
-          <h3>🔔 LINE 通知設定</h3>
-          <div class="config-note">
-            <strong>⚠️ 重要設定說明：</strong><br>
-            請在 Google Apps Script 中設定以下資訊：<br>
-            1. LINE_CHANNEL_ACCESS_TOKEN（Messaging API 的 Channel Access Token）<br>
-            2. LINE_GROUP_ID（要發送通知的群組 ID）<br>
-            <br>
-            <strong>如何取得群組 ID：</strong><br>
-            1. 將 Bot 加入群組<br>
-            2. 在群組中發送任何訊息<br>
-            3. 查看 GAS 的執行記錄即可看到群組 ID
-          </div>
-          <div class="form-group">
-            <label>Channel Access Token</label>
-            <input type="text" id="lineAccessToken" placeholder="請在 GAS 中設定">
-            <small style="color: #666; display: block; margin-top: 5px;">此欄位僅供顯示，實際設定請在 GAS 中修改</small>
-          </div>
-          <div class="form-group">
-            <label>群組 ID</label>
-            <input type="text" id="lineGroupId" placeholder="請在 GAS 中設定">
-            <small style="color: #666; display: block; margin-top: 5px;">此欄位僅供顯示，實際設定請在 GAS 中修改</small>
-          </div>
-          <button class="btn" onclick="testLineNotification()">測試 LINE 通知</button>
-        </div>
-        
-        <div class="event-card">
           <h3>📊 報名資料管理</h3>
           <button class="btn btn-success" onclick="downloadCSV()">下載 CSV 檔案</button>
           <button class="btn btn-secondary" onclick="clearAllRegistrations()">清空所有報名</button>
-          <button class="btn" onclick="manualShareToGroup()">手動分享到群組</button>
+          <button class="btn" onclick="shareRegistrationList()">分享報名清單</button>
         </div>
         
         <div class="event-card">
@@ -606,9 +606,9 @@
   
   <script>
     // ==================== 設定區 ====================
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbww43_u60XILVbr-QY6YRhULnDIaBjAzlVyAzMgPbqbwEOVEkGDBdJMKySRgLdo-OfJ2w/exec';
-    const LIFF_ID = '2001679903-r5VXNe5g'; // 請替換成您的 LIFF ID
-    const ADMIN_PASSWORD = 'admin123'; // 管理員密碼
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbw6_WptpmJU4btSRYBAbYb2PZN-w-PaOBNvPwYDW6ZJgl9bwOrLj7a8EV457kSsrqbf/exec';
+    const LIFF_ID = '2007905012-NJBdBVxw';
+    const ADMIN_PASSWORD = 'admin123';
     
     let currentEvent = null;
     let isAdmin = false;
@@ -756,6 +756,7 @@
       const mealFee = mealType !== '不用餐' ? (currentEvent?.mealFee || 150) : 0;
       const donation = parseInt(document.getElementById('donation').value) || 0;
       const note = document.getElementById('note').value;
+      const shareMode = document.querySelector('input[name="shareMode"]:checked').value;
       
       const name = performerType === '雙人' && nameB ? `${nameA} & ${nameB}` : nameA;
       const totalFee = karaokeFee + mealFee + donation;
@@ -782,7 +783,16 @@
         });
         
         if (result.success) {
-          showMessage('success', '✅ 報名成功！通知已自動發送到 LINE 群組');
+          showMessage('success', '✅ 報名成功！');
+          
+          // ⭐ 根據分享模式決定是否自動彈出分享
+          if (shareMode === 'auto') {
+            setTimeout(async () => {
+              await autoShareRegistration(registration);
+            }, 1000);
+          } else {
+            showMessage('info', 'ℹ️ 您可以稍後在報名清單頁面手動分享');
+          }
           
           this.reset();
           document.getElementById('performerTypeGroup').classList.add('hidden');
@@ -790,6 +800,7 @@
           document.getElementById('songGroup').classList.add('hidden');
           document.getElementById('youtubeGroup').classList.add('hidden');
           document.getElementById('karaokeFeeGroup').classList.add('hidden');
+          document.querySelector('input[name="shareMode"][value="auto"]').checked = true;
         } else {
           showMessage('error', '報名失敗：' + result.message);
         }
@@ -802,8 +813,216 @@
       }
     });
     
-    // ==================== 手動分享到群組 ====================
-    async function manualShareToGroup() {
+    // ==================== ⭐ 自動彈出分享功能 ⭐ ====================
+    async function autoShareRegistration(registration) {
+      if (!liff.isApiAvailable('shareTargetPicker')) {
+        showMessage('warning', '⚠️ 您的 LINE 版本不支援分享功能');
+        return;
+      }
+      
+      const eventInfo = currentEvent ? 
+        `${currentEvent.date} ${currentEvent.startTime}-${currentEvent.endTime}` : 
+        '活動資訊載入中';
+      
+      const eventLocation = currentEvent ? currentEvent.location : '地點待定';
+      
+      const bodyContents = [
+        {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: eventInfo,
+              size: 'sm',
+              color: '#666666'
+            },
+            {
+              type: 'text',
+              text: eventLocation,
+              size: 'sm',
+              color: '#666666',
+              margin: 'xs'
+            }
+          ],
+          margin: 'lg'
+        },
+        {
+          type: 'separator',
+          margin: 'xl'
+        },
+        {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'box',
+              layout: 'baseline',
+              contents: [
+                {
+                  type: 'text',
+                  text: '👤',
+                  size: 'sm',
+                  flex: 0
+                },
+                {
+                  type: 'text',
+                  text: registration.name,
+                  size: 'md',
+                  weight: 'bold',
+                  margin: 'sm',
+                  flex: 0
+                }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'baseline',
+              contents: [
+                {
+                  type: 'text',
+                  text: '🎭',
+                  size: 'sm',
+                  flex: 0
+                },
+                {
+                  type: 'text',
+                  text: registration.identity,
+                  size: 'sm',
+                  color: '#666666',
+                  margin: 'sm',
+                  flex: 0
+                }
+              ],
+              margin: 'md'
+            }
+          ],
+          margin: 'xl'
+        }
+      ];
+      
+      if (registration.identity === '歌手' && registration.song !== '-') {
+        bodyContents[2].contents.push({
+          type: 'box',
+          layout: 'baseline',
+          contents: [
+            {
+              type: 'text',
+              text: '🎵',
+              size: 'sm',
+              flex: 0
+            },
+            {
+              type: 'text',
+              text: registration.song,
+              size: 'sm',
+              color: '#666666',
+              margin: 'sm',
+              wrap: true,
+              flex: 1
+            }
+          ],
+          margin: 'md'
+        });
+      }
+      
+      const footerContents = [
+        {
+          type: 'button',
+          action: {
+            type: 'uri',
+            label: '我也要報名 🎤',
+            uri: liffUrl
+          },
+          style: 'primary',
+          color: '#667eea'
+        }
+      ];
+      
+      if (registration.identity === '歌手' && registration.youtube !== '-') {
+        footerContents.push({
+          type: 'button',
+          action: {
+            type: 'uri',
+            label: '🎬 觀看歌曲',
+            uri: registration.youtube
+          },
+          style: 'link',
+          margin: 'sm'
+        });
+      }
+      
+      footerContents.push({
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: `🍽️ ${registration.meal} | 💰 $${registration.fee}`,
+            size: 'xs',
+            color: '#999999',
+            align: 'center'
+          }
+        ],
+        margin: 'sm'
+      });
+      
+      const flexMessage = {
+        type: 'flex',
+        altText: `🎤 ${registration.name} 已報名街頭K歌活動`,
+        contents: {
+          type: 'bubble',
+          hero: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: '🎤 街頭K歌活動',
+                weight: 'bold',
+                size: 'xl',
+                color: '#ffffff'
+              },
+              {
+                type: 'text',
+                text: '新報名通知 ✨',
+                size: 'sm',
+                color: '#ffffff',
+                margin: 'md'
+              }
+            ],
+            backgroundColor: '#667eea',
+            paddingAll: '20px'
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: bodyContents
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: footerContents
+          }
+        }
+      };
+      
+      try {
+        const result = await liff.shareTargetPicker([flexMessage]);
+        
+        if (result) {
+          showMessage('success', '✅ 已成功分享到 LINE！');
+        } else {
+          showMessage('info', 'ℹ️ 您取消了分享');
+        }
+      } catch (error) {
+        console.error('分享失敗:', error);
+        showMessage('warning', '⚠️ 分享失敗：' + error.message);
+      }
+    }
+    
+    // ==================== 分享報名清單 ====================
+    async function shareRegistrationList() {
       if (!liff.isApiAvailable('shareTargetPicker')) {
         alert('此功能需要在 LINE 中開啟');
         return;
@@ -973,24 +1192,6 @@
       } catch (error) {
         console.error('分享失敗:', error);
         alert('分享失敗：' + error.message);
-      }
-    }
-    
-    // ==================== 測試 LINE 通知 ====================
-    async function testLineNotification() {
-      try {
-        const result = await jsonpRequest(GAS_URL, {
-          action: 'testLineNotification'
-        });
-        
-        if (result.success) {
-          showAdminMessage('success', '✅ 測試訊息已發送到 LINE 群組！');
-        } else {
-          showAdminMessage('error', '❌ 發送失敗：' + result.message);
-        }
-      } catch (error) {
-        console.error('測試失敗:', error);
-        showAdminMessage('error', '系統錯誤：' + error.message);
       }
     }
     
