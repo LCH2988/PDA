@@ -47,6 +47,25 @@
       margin-top: 15px;
     }
     
+    .share-link-btn {
+      margin-top: 15px;
+      width: auto;
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.3);
+      border: 2px solid white;
+      color: white;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .share-link-btn:hover {
+      background: white;
+      color: #667eea;
+    }
+    
     .tab-buttons {
       display: flex;
       background: #f8f9fa;
@@ -347,6 +366,10 @@
       font-size: 14px;
     }
     
+    .user-info p {
+      margin: 5px 0;
+    }
+    
     .share-options {
       background: #f8f9fa;
       padding: 20px;
@@ -407,7 +430,7 @@
     }
     
     .modal-header h2 {
-      color: #5a0000;
+      color: #667eea;
       font-size: 22px;
     }
     
@@ -436,13 +459,6 @@
       line-height: 1.5;
       max-height: 300px;
       overflow-y: auto;
-    }
-    
-    .error-message {
-      color: #e74c3c;
-      font-size: 14px;
-      margin-top: 5px;
-      display: none;
     }
     
     .usage-tip {
@@ -477,8 +493,15 @@
         <p><strong>活動時間：</strong><span id="displayTime">載入中...</span></p>
         <p><strong>活動地點：</strong><span id="displayLocation">載入中...</span></p>
       </div>
+      
+      <!-- 🆕 分享報名連結按鈕 -->
+      <button class="share-link-btn" onclick="shareRegistrationLink()">
+        📤 分享報名連結到 LINE
+      </button>
+      
       <div class="user-info" id="userInfo" style="display: none;">
         <p>👤 <span id="userName"></span></p>
+        <p id="groupInfo" style="display: none;">📱 群組：<span id="groupName"></span></p>
       </div>
     </div>
     
@@ -493,7 +516,7 @@
       <div class="form-section">
         <div id="message"></div>
         
-        <!-- 🔥 新增：使用提示 -->
+        <!-- 🆕 使用提示 -->
         <div id="usageTip" class="usage-tip hidden">
           <h4>💡 使用提示</h4>
           <p>您目前在外部瀏覽器中開啟，報名完成後會使用「分享選擇器」功能。</p>
@@ -701,6 +724,7 @@
           <p><strong>ShareTargetPicker 可用：</strong><span id="sharePickerStatus">檢查中...</span></p>
           <p><strong>開啟來源：</strong><span id="openSource">檢查中...</span></p>
           <p><strong>sendMessages 可用：</strong><span id="sendMessagesStatus">檢查中...</span></p>
+          <button class="btn btn-success" onclick="getGroupId()">取得目前群組 ID</button>
           <button class="btn" onclick="testSharePicker()">測試分享功能</button>
         </div>
         
@@ -743,7 +767,7 @@
   
   <script>
     // ==================== 設定區 ====================
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbzc3kx39LmYrU241b9B8QNOPEGGy6HvAouotIx6_uq4F1bZ0AFmW26enNvj_FFcnZ2O7g/exec'; // 🔥 請替換成您的 GAS URL
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbxhywVvoHaQlx_bEakVpNMWJgq_FtKIB474PkCG84CAwhqWocq0zIRNen3Ouy8Ah326bA/exec'; // 🔥 請替換成您的 GAS URL
     const LIFF_ID = '2001679903-r5VXNe5g'; // 🔥 請替換成您的 LIFF ID
     const ADMIN_PASSWORD = 'admin123';
     
@@ -754,6 +778,10 @@
     let liffContext = null;
     let isFromGroup = false;
     let isInLineApp = false;
+    
+    // 🆕 儲存群組資訊
+    window.currentGroupId = null;
+    window.currentGroupName = null;
     
     // ==================== JSONP 請求函數 ====================
     function jsonpRequest(url, params = {}) {
@@ -781,6 +809,17 @@
       });
     }
     
+    // ==================== 🆕 從 URL 參數取得使用者資訊 ====================
+    function getUserInfoFromUrl() {
+      const urlParams = new URLSearchParams(window.location.search);
+      return {
+        userId: urlParams.get('userId') || null,
+        userName: urlParams.get('userName') || null,
+        groupId: urlParams.get('groupId') || null,
+        groupName: urlParams.get('groupName') || null
+      };
+    }
+    
     // ==================== LIFF 初始化 ====================
     window.onload = async function() {
       try {
@@ -796,6 +835,28 @@
         liffProfile = await liff.getProfile();
         console.log('LIFF 登入成功:', liffProfile);
         
+        // 🆕 取得 URL 參數中的使用者資訊
+        const urlUserInfo = getUserInfoFromUrl();
+        console.log('URL 使用者資訊:', urlUserInfo);
+        
+        // 🆕 如果有 URL 參數，優先使用
+        if (urlUserInfo.userId) {
+          liffProfile.userId = urlUserInfo.userId;
+        }
+        if (urlUserInfo.userName) {
+          liffProfile.displayName = urlUserInfo.userName;
+        }
+        
+        // 🆕 儲存群組資訊
+        if (urlUserInfo.groupId) {
+          window.currentGroupId = urlUserInfo.groupId;
+          window.currentGroupName = urlUserInfo.groupName;
+          
+          // 顯示群組資訊
+          document.getElementById('groupInfo').style.display = 'block';
+          document.getElementById('groupName').textContent = urlUserInfo.groupName;
+        }
+        
         // 🔥 檢查是否在 LINE 應用程式中開啟
         isInLineApp = liff.isInClient();
         console.log('是否在 LINE 應用程式中:', isInLineApp);
@@ -808,8 +869,18 @@
             isFromGroup = liffContext.type === 'group' || liffContext.type === 'room';
             console.log('是否從群組開啟:', isFromGroup);
             
-            if (isFromGroup) {
-              showGroupInfo();
+            // 如果從 Context 也能取得群組資訊，且 URL 沒有，則使用 Context 的
+            if (isFromGroup && !window.currentGroupId) {
+              if (liffContext.type === 'group') {
+                window.currentGroupId = liffContext.groupId;
+              } else if (liffContext.type === 'room') {
+                window.currentGroupId = liffContext.roomId;
+              }
+              
+              if (window.currentGroupId) {
+                document.getElementById('groupInfo').style.display = 'block';
+                document.getElementById('groupName').textContent = '目前群組';
+              }
             }
           }
         } catch (contextError) {
@@ -862,21 +933,73 @@
       const usageTip = document.getElementById('usageTip');
       
       if (!isInLineApp) {
-        // 在外部瀏覽器中開啟，顯示提示
         usageTip.classList.remove('hidden');
       } else {
-        // 在 LINE 中開啟，隱藏提示
         usageTip.classList.add('hidden');
       }
     }
     
-    // ==================== 顯示群組資訊 ====================
-    function showGroupInfo() {
-      const userInfo = document.getElementById('userInfo');
-      const groupInfo = document.createElement('p');
-      groupInfo.style.marginTop = '5px';
-      groupInfo.innerHTML = '📱 從 LINE 群組開啟';
-      userInfo.appendChild(groupInfo);
+    // ==================== 🆕 分享報名連結功能 ====================
+    async function shareRegistrationLink() {
+      try {
+        if (!liff.isLoggedIn()) {
+          alert('請先登入 LINE');
+          return;
+        }
+        
+        // 取得目前的 LIFF URL
+        const liffUrl = window.location.href.split('?')[0];
+        
+        // 建立活動資訊訊息
+        const eventInfo = currentEvent ? 
+          `📅 ${currentEvent.date} ${currentEvent.startTime}-${currentEvent.endTime}\n📍 ${currentEvent.location}` : 
+          '活動資訊載入中';
+        
+        const shareMessage = `🎤 街頭K歌活動報名開始！
+
+${eventInfo}
+
+👉 點擊下方連結立即報名：
+${liffUrl}
+
+期待您的參與！🎶`;
+
+        // 使用 shareTargetPicker 分享
+        if (liff.isApiAvailable('shareTargetPicker')) {
+          const result = await liff.shareTargetPicker([
+            {
+              type: 'text',
+              text: shareMessage
+            }
+          ]);
+          
+          if (result) {
+            showMessage('success', '✅ 報名連結已分享！');
+          } else {
+            showMessage('info', '已取消分享');
+          }
+        } else {
+          // 備用方案：複製連結
+          copyToClipboard(liffUrl);
+          alert(`報名連結已複製！\n\n${liffUrl}\n\n請手動貼上到 LINE 群組`);
+        }
+        
+      } catch (error) {
+        console.error('分享連結失敗:', error);
+        showMessage('error', '分享失敗：' + error.message);
+      }
+    }
+    
+    // 複製到剪貼簿
+    function copyToClipboard(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
     }
     
     // ==================== 🔥 更新分享選項 ====================
@@ -887,15 +1010,12 @@
       if (!shareCheckbox || !shareOptionText) return;
       
       if (isInLineApp && isFromGroup) {
-        // 在 LINE 群組中開啟：可以自動發送
         shareOptionText.textContent = '報名完成後，自動發送通知到此 LINE 群組 ✅';
         shareCheckbox.checked = true;
       } else if (isInLineApp) {
-        // 在 LINE 中開啟（非群組）：可以選擇分享對象
         shareOptionText.textContent = '報名完成後，選擇要分享的 LINE 對象';
         shareCheckbox.checked = true;
       } else {
-        // 在外部瀏覽器：使用分享選擇器
         shareOptionText.textContent = '報名完成後，使用分享選擇器分享到 LINE';
         shareCheckbox.checked = true;
       }
@@ -1125,56 +1245,6 @@
       return message;
     }
     
-    // ==================== 🔥 發送訊息（統一處理） ====================
-    async function sendMessageToLine(message) {
-      try {
-        console.log('開始發送訊息到 LINE...');
-        console.log('isInLineApp:', isInLineApp);
-        console.log('isFromGroup:', isFromGroup);
-        
-        // 方案 1：在 LINE 群組中開啟，嘗試使用 sendMessages
-        if (isInLineApp && isFromGroup && liff.isApiAvailable('sendMessages')) {
-          try {
-            await liff.sendMessages([{
-              type: 'text',
-              text: message
-            }]);
-            console.log('✅ 已透過 sendMessages 發送到當前群組');
-            showMessage('success', '✅ 已自動發送通知到 LINE 群組！');
-            return true;
-          } catch (sendError) {
-            console.log('sendMessages 失敗，改用 shareTargetPicker:', sendError);
-          }
-        }
-        
-        // 方案 2：使用 shareTargetPicker（適用於所有情況）
-        if (liff.isApiAvailable('shareTargetPicker')) {
-          const result = await liff.shareTargetPicker([{
-            type: 'text',
-            text: message
-          }]);
-          
-          if (result) {
-            console.log('✅ 已透過 shareTargetPicker 發送');
-            showMessage('success', '✅ 已分享到 LINE！');
-            return true;
-          } else {
-            console.log('使用者取消分享');
-            showMessage('info', '您已取消分享');
-            return false;
-          }
-        }
-        
-        // 方案 3：無可用方式
-        throw new Error('無可用的分享方式');
-        
-      } catch (error) {
-        console.error('發送訊息失敗:', error);
-        showMessage('error', '分享失敗：' + error.message);
-        return false;
-      }
-    }
-    
     // ==================== 提交報名 ====================
     document.getElementById('registrationForm').addEventListener('submit', async function(e) {
       e.preventDefault();
@@ -1215,7 +1285,9 @@
           note: note || '-',
           timestamp: new Date().toISOString(),
           lineUserId: liffProfile?.userId || 'unknown',
-          lineUserName: liffProfile?.displayName || 'unknown'
+          lineUserName: liffProfile?.displayName || 'unknown',
+          groupId: window.currentGroupId || null,
+          groupName: window.currentGroupName || null
         };
         
         // 顯示預覽
@@ -1234,7 +1306,7 @@
       }
     });
     
-    // ==================== 🔥 確認並發送 ====================
+    // ==================== 🆕 確認並發送（使用 POST 提交到後端）====================
     async function confirmAndSend() {
       const registration = window.currentRegistration;
       if (!registration) return;
@@ -1244,21 +1316,22 @@
       confirmBtn.textContent = '處理中...';
       
       try {
-        // 提交到後端
-        const result = await jsonpRequest(GAS_URL, {
-          action: 'addRegistration',
-          data: JSON.stringify(registration)
+        // 🆕 使用 POST 方式提交到後端
+        const response = await fetch(GAS_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'submitRegistration',
+            registration: registration
+          })
         });
         
+        const result = await response.json();
+        
         if (result.success) {
-          showMessage('success', '報名成功！');
-          
-          // 根據使用者選擇決定是否分享
-          const shareToGroup = document.getElementById('shareToGroup').checked;
-          if (shareToGroup) {
-            const message = createRegistrationMessage(registration);
-            await sendMessageToLine(message);
-          }
+          showMessage('success', '✅ 報名成功！系統已自動發送確認訊息');
           
           // 重置表單
           document.getElementById('registrationForm').reset();
@@ -1272,7 +1345,14 @@
           loadRegistrations();
           
           closeModal('previewModal');
-          document.getElementById('successMessage').textContent = '您的報名已成功提交！';
+          
+          // 顯示成功訊息
+          let successMsg = '✅ 報名成功！<br><br>確認訊息已自動發送到您的 LINE';
+          if (window.currentGroupName) {
+            successMsg += '<br>群組通知已發送到：' + window.currentGroupName;
+          }
+          
+          document.getElementById('successMessage').innerHTML = successMsg;
           openModal('successModal');
           
         } else {
@@ -1376,7 +1456,19 @@
       
       message += `\n⏰ 更新時間：${new Date().toLocaleString('zh-TW')}`;
       
-      await sendMessageToLine(message);
+      try {
+        const result = await liff.shareTargetPicker([{
+          type: 'text',
+          text: message
+        }]);
+        
+        if (result) {
+          showMessage('success', '✅ 已分享報名清單！');
+        }
+      } catch (error) {
+        console.error('分享失敗:', error);
+        showMessage('error', '分享失敗：' + error.message);
+      }
     }
     
     // ==================== 下載 CSV ====================
@@ -1387,10 +1479,10 @@
       }
       
       let csv = '\uFEFF';
-      csv += '時間戳記,姓名,身分,表演形式,歌曲,YouTube連結,用餐,費用,備註,LINE使用者名稱\n';
+      csv += '時間戳記,姓名,身分,表演形式,歌曲,YouTube連結,用餐,費用,備註,LINE使用者名稱,群組名稱\n';
       
       allRegistrations.forEach(reg => {
-        csv += `"${reg.timestamp}","${reg.name}","${reg.identity}","${reg.performerType}","${reg.song}","${reg.youtube}","${reg.meal}","${reg.fee}","${reg.note}","${reg.lineUserName}"\n`;
+        csv += `"${reg.timestamp}","${reg.name}","${reg.identity}","${reg.performerType}","${reg.song}","${reg.youtube}","${reg.meal}","${reg.fee}","${reg.note}","${reg.lineUserName}","${reg.groupName || '-'}"\n`;
       });
       
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1506,9 +1598,74 @@
       await shareRegistrationList();
     }
     
-    async function testSharePicker() {
+        async function testSharePicker() {
       const testMessage = `🎤 街頭K歌活動報名系統\n\n測試訊息：分享功能正常運作！\n\n⏰ ${new Date().toLocaleString('zh-TW')}`;
-      await sendMessageToLine(testMessage);
+      
+      try {
+        if (liff.isApiAvailable('shareTargetPicker')) {
+          const result = await liff.shareTargetPicker([{
+            type: 'text',
+            text: testMessage
+          }]);
+          
+          if (result) {
+            showAdminMessage('success', '✅ 測試成功！分享功能正常');
+          } else {
+            showAdminMessage('info', '已取消測試');
+          }
+        } else {
+          showAdminMessage('error', '❌ ShareTargetPicker 不可用');
+        }
+      } catch (error) {
+        console.error('測試失敗:', error);
+        showAdminMessage('error', '測試失敗：' + error.message);
+      }
+    }
+    
+    // ==================== 🆕 取得群組 ID ====================
+    async function getGroupId() {
+      try {
+        if (!liff.isLoggedIn()) {
+          alert('請先登入 LINE');
+          return;
+        }
+        
+        const context = liff.getContext();
+        
+        if (!context) {
+          alert('無法取得 Context，請在 LINE 中開啟');
+          return;
+        }
+        
+        let groupId = '';
+        let groupType = '';
+        
+        if (context.type === 'group') {
+          groupId = context.groupId;
+          groupType = '群組';
+        } else if (context.type === 'room') {
+          groupId = context.roomId;
+          groupType = '聊天室';
+        } else {
+          alert('請在 LINE 群組或聊天室中開啟此功能');
+          return;
+        }
+        
+        // 顯示群組 ID
+        const message = `📱 ${groupType} ID 資訊\n\nID: ${groupId}\n\n請將此 ID 設定到 GAS 的 NOTIFICATION_GROUP_ID 變數中`;
+        
+        // 複製到剪貼簿
+        copyToClipboard(groupId);
+        
+        alert(message + '\n\n✅ ID 已複製到剪貼簿');
+        
+        // 顯示在管理介面
+        showAdminMessage('success', `${groupType} ID: ${groupId} (已複製)`);
+        
+      } catch (error) {
+        console.error('取得群組 ID 失敗:', error);
+        alert('取得失敗：' + error.message);
+      }
     }
     
     // ==================== 訊息顯示 ====================
@@ -1554,3 +1711,4 @@
   </script>
 </body>
 </html>
+
