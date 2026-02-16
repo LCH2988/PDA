@@ -407,7 +407,7 @@
     }
     
     .modal-header h2 {
-      color: #5a0000;
+      color: #667eea;
       font-size: 22px;
     }
     
@@ -466,6 +466,30 @@
     .usage-tip li {
       margin-bottom: 5px;
     }
+    
+    .group-id-display {
+      background: #e8f5e9;
+      padding: 10px;
+      border-radius: 5px;
+      margin-top: 10px;
+      font-family: monospace;
+      word-break: break-all;
+    }
+    
+    .copy-btn {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-left: 10px;
+      font-size: 14px;
+    }
+    
+    .copy-btn:hover {
+      background: #45a049;
+    }
   </style>
 </head>
 <body>
@@ -492,18 +516,6 @@
     <div id="registrationTab" class="tab-content active">
       <div class="form-section">
         <div id="message"></div>
-        
-        <!-- 🔥 新增：使用提示 -->
-        <div id="usageTip" class="usage-tip hidden">
-          <h4>💡 使用提示</h4>
-          <p>您目前在外部瀏覽器中開啟，報名完成後會使用「分享選擇器」功能。</p>
-          <p><strong>想要更好的體驗？</strong></p>
-          <ul>
-            <li>📱 將此連結分享到 LINE 群組</li>
-            <li>📱 在 LINE 中點擊開啟</li>
-            <li>✨ 即可享受自動發送功能</li>
-          </ul>
-        </div>
         
         <form id="registrationForm">
           <div class="form-group">
@@ -586,7 +598,7 @@
           <div class="share-options">
             <label>
               <input type="checkbox" id="shareToGroup" checked>
-              <span id="shareOptionText">報名完成後，分享通知到 LINE</span>
+              <span id="shareOptionText">報名完成後，發送通知到指定 LINE 群組</span>
             </label>
           </div>
           
@@ -646,6 +658,19 @@
         <div id="adminMessage"></div>
         
         <div class="event-card">
+          <h3>📱 群組 ID 設定</h3>
+          <p>請先在目標群組中開啟此 LIFF 應用程式，以取得群組 ID。</p>
+          <div class="form-group" style="margin-top: 15px;">
+            <label>目標群組 ID</label>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <input type="text" id="targetGroupId" placeholder="請輸入群組 ID 或從下方自動取得">
+              <button class="copy-btn" onclick="saveGroupId()">儲存</button>
+            </div>
+          </div>
+          <div id="currentGroupInfo" style="margin-top: 15px;"></div>
+        </div>
+        
+        <div class="event-card">
           <h3>新增/編輯活動資訊</h3>
           <form id="eventForm">
             <input type="hidden" id="eventId">
@@ -698,10 +723,10 @@
         <div class="event-card">
           <h3>📱 LIFF 資訊</h3>
           <p><strong>LIFF 狀態：</strong><span id="liffStatus">檢查中...</span></p>
-          <p><strong>ShareTargetPicker 可用：</strong><span id="sharePickerStatus">檢查中...</span></p>
+          <p><strong>當前群組 ID：</strong><span id="currentGroupId">檢查中...</span></p>
           <p><strong>開啟來源：</strong><span id="openSource">檢查中...</span></p>
           <p><strong>sendMessages 可用：</strong><span id="sendMessagesStatus">檢查中...</span></p>
-          <button class="btn" onclick="testSharePicker()">測試分享功能</button>
+          <button class="btn" onclick="testSendMessage()">測試發送功能</button>
         </div>
         
         <button class="btn btn-secondary" onclick="adminLogout()">登出</button>
@@ -743,9 +768,12 @@
   
   <script>
     // ==================== 設定區 ====================
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbw3JGBsoNDNduBtckGhIgiSGuZTvRAitau2e4kZGTo_3JQ9xM2aWw2iNqsQSq7qVtsAsQ/exec'; // 🔥 請替換成您的 GAS URL
-    const LIFF_ID = '2001679903-r5VXNe5g'; // 🔥 請替換成您的 LIFF ID
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbw3JGBsoNDNduBtckGhIgiSGuZTvRAitau2e4kZGTo_3JQ9xM2aWw2iNqsQSq7qVtsAsQ/exec';
+    const LIFF_ID = '2001679903-r5VXNe5g';
     const ADMIN_PASSWORD = 'admin123';
+    
+    // 🔥 群組 ID 設定（可透過管理介面修改）
+    let TARGET_GROUP_ID = localStorage.getItem('3dd061ac-0768-4aed-aecf-616c99014a98') || '';
     
     let currentEvent = null;
     let isAdmin = false;
@@ -820,9 +848,6 @@
         document.getElementById('userInfo').style.display = 'block';
         document.getElementById('userName').textContent = liffProfile.displayName;
         
-        // 🔥 顯示使用提示
-        showUsageTip();
-        
         updateLiffStatus();
         
         await Promise.all([
@@ -857,19 +882,6 @@
       }
     };
     
-    // ==================== 🔥 顯示使用提示 ====================
-    function showUsageTip() {
-      const usageTip = document.getElementById('usageTip');
-      
-      if (!isInLineApp) {
-        // 在外部瀏覽器中開啟，顯示提示
-        usageTip.classList.remove('hidden');
-      } else {
-        // 在 LINE 中開啟，隱藏提示
-        usageTip.classList.add('hidden');
-      }
-    }
-    
     // ==================== 顯示群組資訊 ====================
     function showGroupInfo() {
       const userInfo = document.getElementById('userInfo');
@@ -886,17 +898,23 @@
       
       if (!shareCheckbox || !shareOptionText) return;
       
-      if (isInLineApp && isFromGroup) {
-        // 在 LINE 群組中開啟：可以自動發送
+      if (!TARGET_GROUP_ID) {
+        shareOptionText.textContent = '⚠️ 尚未設定目標群組 ID（請至管理介面設定）';
+        shareCheckbox.checked = false;
+        shareCheckbox.disabled = true;
+        return;
+      }
+      
+      shareCheckbox.disabled = false;
+      
+      if (isInLineApp && isFromGroup && liffContext && liffContext.groupId === TARGET_GROUP_ID) {
         shareOptionText.textContent = '報名完成後，自動發送通知到此 LINE 群組 ✅';
         shareCheckbox.checked = true;
       } else if (isInLineApp) {
-        // 在 LINE 中開啟（非群組）：可以選擇分享對象
-        shareOptionText.textContent = '報名完成後，選擇要分享的 LINE 對象';
+        shareOptionText.textContent = '報名完成後，透過系統發送通知到指定 LINE 群組';
         shareCheckbox.checked = true;
       } else {
-        // 在外部瀏覽器：使用分享選擇器
-        shareOptionText.textContent = '報名完成後，使用分享選擇器分享到 LINE';
+        shareOptionText.textContent = '報名完成後，透過系統發送通知到指定 LINE 群組';
         shareCheckbox.checked = true;
       }
     }
@@ -904,7 +922,7 @@
     // ==================== 🔥 更新 LIFF 狀態 ====================
     function updateLiffStatus() {
       const liffStatusEl = document.getElementById('liffStatus');
-      const sharePickerStatusEl = document.getElementById('sharePickerStatus');
+      const currentGroupIdEl = document.getElementById('currentGroupId');
       const openSourceEl = document.getElementById('openSource');
       const sendMessagesStatusEl = document.getElementById('sendMessagesStatus');
       
@@ -912,12 +930,17 @@
         liffStatusEl.textContent = liff.isLoggedIn() ? '✅ 已登入' : '❌ 未登入';
       }
       
-      if (sharePickerStatusEl) {
-        try {
-          const hasSharePicker = liff.isApiAvailable('shareTargetPicker');
-          sharePickerStatusEl.textContent = hasSharePicker ? '✅ 可用' : '❌ 不可用';
-        } catch (e) {
-          sharePickerStatusEl.textContent = '❌ 檢查失敗';
+      if (currentGroupIdEl) {
+        if (liffContext && liffContext.groupId) {
+          currentGroupIdEl.textContent = liffContext.groupId;
+          currentGroupIdEl.style.color = '#4CAF50';
+          currentGroupIdEl.style.fontWeight = 'bold';
+        } else if (liffContext && liffContext.type === 'utou') {
+          currentGroupIdEl.textContent = '個人聊天（無群組 ID）';
+          currentGroupIdEl.style.color = '#999';
+        } else {
+          currentGroupIdEl.textContent = '外部瀏覽器（無群組 ID）';
+          currentGroupIdEl.style.color = '#999';
         }
       }
       
@@ -942,30 +965,8 @@
         }
       }
       
-      // 🔥 在管理介面顯示使用建議
-      if (!isInLineApp) {
-        const adminContentSection = document.getElementById('adminContentSection');
-        if (adminContentSection && !document.getElementById('warningCard')) {
-          const warningCard = document.createElement('div');
-          warningCard.id = 'warningCard';
-          warningCard.className = 'event-card warning';
-          warningCard.innerHTML = `
-            <h3>⚠️ 使用建議</h3>
-            <p>您目前在外部瀏覽器中開啟，部分功能受限。</p>
-            <p><strong>建議：</strong></p>
-            <ul style="margin-left: 20px; margin-top: 10px;">
-              <li>在 LINE 應用程式中開啟此連結</li>
-              <li>可獲得完整的自動發送功能</li>
-              <li>目前仍可使用分享選擇器功能</li>
-            </ul>
-          `;
-          
-          const firstCard = adminContentSection.querySelector('.event-card');
-          if (firstCard) {
-            adminContentSection.insertBefore(warningCard, firstCard);
-          }
-        }
-      }
+      // 🔥 更新管理介面的群組資訊
+      updateCurrentGroupInfo();
     }
     
     function getContextTypeText(type) {
@@ -978,6 +979,67 @@
       }
     }
     
+    // ==================== 🔥 更新當前群組資訊 ====================
+    function updateCurrentGroupInfo() {
+      const currentGroupInfo = document.getElementById('currentGroupInfo');
+      if (!currentGroupInfo) return;
+      
+      if (liffContext && liffContext.groupId) {
+        currentGroupInfo.innerHTML = `
+          <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; border: 2px solid #4CAF50;">
+            <p style="margin-bottom: 10px;"><strong>✅ 當前群組 ID：</strong></p>
+            <div class="group-id-display">${liffContext.groupId}</div>
+            <button class="copy-btn" onclick="copyGroupId('${liffContext.groupId}')" style="margin-top: 10px;">複製此 ID</button>
+            <button class="copy-btn" onclick="useCurrentGroupId('${liffContext.groupId}')" style="margin-top: 10px; background: #2196F3;">使用此 ID</button>
+          </div>
+        `;
+      } else {
+        currentGroupInfo.innerHTML = `
+          <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border: 2px solid #ffc107;">
+            <p><strong>⚠️ 提示：</strong>請在目標 LINE 群組中開啟此應用程式，以自動取得群組 ID。</p>
+          </div>
+        `;
+      }
+      
+      // 顯示已儲存的目標群組 ID
+      const targetGroupIdInput = document.getElementById('targetGroupId');
+      if (targetGroupIdInput && TARGET_GROUP_ID) {
+        targetGroupIdInput.value = TARGET_GROUP_ID;
+      }
+    }
+    
+    // ==================== 🔥 複製群組 ID ====================
+    function copyGroupId(groupId) {
+      navigator.clipboard.writeText(groupId).then(() => {
+        alert('✅ 群組 ID 已複製：' + groupId);
+      }).catch(err => {
+        prompt('請手動複製以下群組 ID：', groupId);
+      });
+    }
+    
+    // ==================== 🔥 使用當前群組 ID ====================
+    function useCurrentGroupId(groupId) {
+      document.getElementById('targetGroupId').value = groupId;
+      saveGroupId();
+    }
+    
+    // ==================== 🔥 儲存群組 ID ====================
+    function saveGroupId() {
+      const groupId = document.getElementById('targetGroupId').value.trim();
+      
+      if (!groupId) {
+        alert('❌ 請輸入群組 ID');
+        return;
+      }
+      
+      TARGET_GROUP_ID = groupId;
+      localStorage.setItem('TARGET_GROUP_ID', groupId);
+      
+      showAdminMessage('success', '✅ 目標群組 ID 已儲存！');
+      updateShareOptions();
+      updateCurrentGroupInfo();
+    }
+    
     // ==================== 頁籤切換 ====================
     function switchTab(tabName) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -988,6 +1050,10 @@
       
       if (tabName === 'list') {
         loadRegistrations();
+      }
+      
+      if (tabName === 'admin' && isAdmin) {
+        updateLiffStatus();
       }
     }
     
@@ -1125,52 +1191,132 @@
       return message;
     }
     
-    // ==================== 🔥 發送訊息（統一處理） ====================
-    async function sendMessageToLine(message) {
+    // ==================== 🔥 建立個人確認訊息 ====================
+    function createPersonalConfirmationMessage(registration) {
+      const eventInfo = currentEvent ? 
+        `📅 ${currentEvent.date} ${currentEvent.startTime}-${currentEvent.endTime}\n📍 ${currentEvent.location}` : 
+        '活動資訊載入中';
+      
+      let message = `✅ 報名確認通知\n\n`;
+      message += `親愛的 ${registration.name.split(' & ')[0]}，您的報名已成功！\n\n`;
+      message += `━━━━━━━━━━━━━━━━\n\n`;
+      message += `🎤 街頭K歌活動\n\n`;
+      message += `${eventInfo}\n\n`;
+      message += `━━━━━━━━━━━━━━━━\n\n`;
+      message += `📋 您的報名資訊：\n\n`;
+      message += `👤 姓名：${registration.name}\n`;
+      message += `🎭 身分：${registration.identity}\n`;
+      
+      if (registration.identity === '歌手') {
+        message += `🎵 歌曲：${registration.song}\n`;
+        if (registration.youtube !== '-') {
+          message += `🔗 YouTube：${registration.youtube}\n`;
+        }
+      }
+      
+      message += `🍽️ 用餐：${registration.meal}\n`;
+      message += `💰 應繳費用：$${registration.fee}\n`;
+      
+      if (registration.note !== '-') {
+        message += `📝 備註：${registration.note}\n`;
+      }
+      
+      message += `\n━━━━━━━━━━━━━━━━\n\n`;
+      message += `📌 重要提醒：\n`;
+      message += `• 請準時到場\n`;
+      message += `• 請攜帶應繳費用\n`;
+      message += `• 如需取消請提前通知\n\n`;
+      message += `期待您的參與！🎉\n\n`;
+      message += `⏰ 報名時間：${new Date().toLocaleString('zh-TW', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      })}`;
+      
+      return message;
+    }
+    
+    // ==================== 🔥 發送訊息到指定群組 ====================
+    async function sendMessageToGroup(message) {
       try {
-        console.log('開始發送訊息到 LINE...');
-        console.log('isInLineApp:', isInLineApp);
-        console.log('isFromGroup:', isFromGroup);
+        console.log('開始發送訊息到指定群組...');
+        console.log('目標群組 ID:', TARGET_GROUP_ID);
         
-        // 方案 1：在 LINE 群組中開啟，嘗試使用 sendMessages
-        if (isInLineApp && isFromGroup && liff.isApiAvailable('sendMessages')) {
+        if (!TARGET_GROUP_ID) {
+          showMessage('warning', '⚠️ 尚未設定目標群組 ID');
+          return false;
+        }
+        
+        // 🔥 方案 1：如果在目標群組中開啟，直接使用 sendMessages
+        if (isInLineApp && isFromGroup && liffContext && liffContext.groupId === TARGET_GROUP_ID) {
           try {
-            await liff.sendMessages([{
-              type: 'text',
-              text: message
-            }]);
-            console.log('✅ 已透過 sendMessages 發送到當前群組');
-            showMessage('success', '✅ 已自動發送通知到 LINE 群組！');
-            return true;
+            if (liff.isApiAvailable('sendMessages')) {
+              await liff.sendMessages([{
+                type: 'text',
+                text: message
+              }]);
+              console.log('✅ 已透過 sendMessages 發送到當前群組');
+              return true;
+            }
           } catch (sendError) {
-            console.log('sendMessages 失敗，改用 shareTargetPicker:', sendError);
+            console.error('sendMessages 失敗:', sendError);
           }
         }
         
-        // 方案 2：使用 shareTargetPicker（適用於所有情況）
-        if (liff.isApiAvailable('shareTargetPicker')) {
-          const result = await liff.shareTargetPicker([{
-            type: 'text',
-            text: message
-          }]);
+        // 🔥 方案 2：透過後端 Messaging API 發送（需要後端支援）
+        console.log('嘗試透過後端發送...');
+        
+        try {
+          const result = await jsonpRequest(GAS_URL, {
+            action: 'sendToGroup',
+            groupId: TARGET_GROUP_ID,
+            message: message
+          });
           
-          if (result) {
-            console.log('✅ 已透過 shareTargetPicker 發送');
-            showMessage('success', '✅ 已分享到 LINE！');
+          if (result.success) {
+            console.log('✅ 已透過後端發送到群組');
             return true;
           } else {
-            console.log('使用者取消分享');
-            showMessage('info', '您已取消分享');
-            return false;
+            throw new Error(result.message || '後端發送失敗');
           }
+        } catch (backendError) {
+          console.error('後端發送失敗:', backendError);
+          showMessage('warning', '⚠️ 無法自動發送到群組（需要後端 Messaging API 支援）');
+          return false;
         }
-        
-        // 方案 3：無可用方式
-        throw new Error('無可用的分享方式');
         
       } catch (error) {
         console.error('發送訊息失敗:', error);
-        showMessage('error', '分享失敗：' + error.message);
+        return false;
+      }
+    }
+    
+    // ==================== 🔥 發送個人確認訊息 ====================
+    async function sendPersonalConfirmation(registration) {
+      try {
+        const confirmMessage = createPersonalConfirmationMessage(registration);
+        
+        if (isInLineApp && liff.isApiAvailable('sendMessages')) {
+          try {
+            await liff.sendMessages([{
+              type: 'text',
+              text: confirmMessage
+            }]);
+            console.log('✅ 已發送個人確認訊息');
+            return true;
+          } catch (error) {
+            console.log('發送個人確認訊息失敗:', error);
+          }
+        }
+        
+        console.log('ℹ️ 無法發送個人確認訊息（需在 LINE 中開啟）');
+        return false;
+        
+      } catch (error) {
+        console.error('發送個人確認訊息失敗:', error);
         return false;
       }
     }
@@ -1199,7 +1345,6 @@
         const mealFee = mealType !== '不用餐' ? (currentEvent?.mealFee || 150) : 0;
         const donation = parseInt(document.getElementById('donation').value) || 0;
         const note = document.getElementById('note').value.trim();
-        const shareToGroup = document.getElementById('shareToGroup').checked;
         
         const name = performerType === '雙人' && nameB ? `${nameA} & ${nameB}` : nameA;
         const totalFee = karaokeFee + mealFee + donation;
@@ -1251,14 +1396,22 @@
         });
         
         if (result.success) {
-          showMessage('success', '報名成功！');
-          
-          // 根據使用者選擇決定是否分享
+          // 🔥 根據使用者選擇決定是否發送到群組
           const shareToGroup = document.getElementById('shareToGroup').checked;
           if (shareToGroup) {
-            const message = createRegistrationMessage(registration);
-            await sendMessageToLine(message);
+            const groupMessage = createRegistrationMessage(registration);
+            const sent = await sendMessageToGroup(groupMessage);
+            if (sent) {
+              showMessage('success', '✅ 報名成功！已發送通知到 LINE 群組');
+            } else {
+              showMessage('success', '✅ 報名成功！（群組通知發送失敗）');
+            }
+          } else {
+            showMessage('success', '✅ 報名成功！');
           }
+          
+          // 🔥 發送個人確認訊息
+          await sendPersonalConfirmation(registration);
           
           // 重置表單
           document.getElementById('registrationForm').reset();
@@ -1333,11 +1486,6 @@
     
     // ==================== 分享報名清單 ====================
     async function shareRegistrationList() {
-      if (!liff.isApiAvailable('shareTargetPicker')) {
-        alert('此功能需要在 LINE 中開啟');
-        return;
-      }
-      
       if (allRegistrations.length === 0) {
         alert('目前沒有報名資料');
         return;
@@ -1376,7 +1524,12 @@
       
       message += `\n⏰ 更新時間：${new Date().toLocaleString('zh-TW')}`;
       
-      await sendMessageToLine(message);
+      const sent = await sendMessageToGroup(message);
+      if (sent) {
+        showMessage('success', '✅ 已分享報名清單到 LINE 群組');
+      } else {
+        showMessage('warning', '⚠️ 分享失敗');
+      }
     }
     
     // ==================== 下載 CSV ====================
@@ -1415,8 +1568,7 @@
       const password = document.getElementById('adminPassword').value;
       if (password === ADMIN_PASSWORD) {
         isAdmin = true;
-        document.getElementById('adminLoginSection').classList.add('hidden');
-        document.getElementById('adminContentSection').classList.remove('hidden');
+                document.getElementById('adminContentSection').classList.remove('hidden');
         loadEventForEdit();
         updateLiffStatus();
       } else {
@@ -1506,9 +1658,20 @@
       await shareRegistrationList();
     }
     
-    async function testSharePicker() {
-      const testMessage = `🎤 街頭K歌活動報名系統\n\n測試訊息：分享功能正常運作！\n\n⏰ ${new Date().toLocaleString('zh-TW')}`;
-      await sendMessageToLine(testMessage);
+    async function testSendMessage() {
+      if (!TARGET_GROUP_ID) {
+        alert('⚠️ 請先設定目標群組 ID');
+        return;
+      }
+      
+      const testMessage = `🎤 街頭K歌活動報名系統\n\n✅ 測試訊息：發送功能正常運作！\n\n⏰ ${new Date().toLocaleString('zh-TW')}`;
+      
+      const sent = await sendMessageToGroup(testMessage);
+      if (sent) {
+        showAdminMessage('success', '✅ 測試訊息已發送');
+      } else {
+        showAdminMessage('error', '❌ 測試訊息發送失敗');
+      }
     }
     
     // ==================== 訊息顯示 ====================
@@ -1554,3 +1717,5 @@
   </script>
 </body>
 </html>
+
+
