@@ -194,6 +194,80 @@
             opacity: 0.9;
         }
         
+        /* 分享方式選擇器 */
+        .share-method-selector {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .share-method-selector h4 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .share-method-options {
+            display: flex;
+            gap: 10px;
+        }
+        .share-method-option {
+            flex: 1;
+        }
+        .share-method-option input[type="radio"] {
+            display: none;
+        }
+        .share-method-option label {
+            display: block;
+            padding: 12px;
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .share-method-option input[type="radio"]:checked + label {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        /* 分享預覽 */
+        .share-preview {
+            background: #f8f9fa;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+        }
+        .share-preview.show {
+            display: block;
+        }
+        .share-preview-title {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+        .share-preview-content {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .share-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
         .action-buttons {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -223,6 +297,10 @@
         }
         .action-btn.warning {
             background: linear-gradient(135deg, #f093fb, #f5576c);
+            color: white;
+        }
+        .action-btn.secondary {
+            background: linear-gradient(135deg, #6c757d, #495057);
             color: white;
         }
         .action-btn:hover {
@@ -348,6 +426,9 @@
             .data-table { font-size: 0.9em; }
             .data-table th,
             .data-table td { padding: 8px; }
+            .share-method-options {
+                flex-direction: column;
+            }
         }
     </style>
 </head>
@@ -435,16 +516,52 @@
                 </div>
 
                 <h3 style="margin: 30px 0 15px;">快速操作</h3>
+                
+                <!-- 分享方式選擇器 -->
+                <div class="share-method-selector">
+                    <h4>📤 選擇分享方式</h4>
+                    <div class="share-method-options">
+                        <div class="share-method-option">
+                            <input type="radio" id="shareMethodPersonal" name="shareMethod" value="personal" checked>
+                            <label for="shareMethodPersonal">
+                                👤 以個人身分分享<br>
+                                <small style="opacity: 0.8;">使用您的 LINE 帳號</small>
+                            </label>
+                        </div>
+                        <div class="share-method-option">
+                            <input type="radio" id="shareMethodBot" name="shareMethod" value="bot">
+                            <label for="shareMethodBot">
+                                🤖 以 Bot 身分分享<br>
+                                <small style="opacity: 0.8;">使用系統 Bot</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="action-buttons">
-                    <button class="action-btn primary" onclick="shareVolunteerStatus()">
+                    <button class="action-btn primary" onclick="prepareVolunteerShare()">
                         📤 分享志工狀態
                     </button>
-                    <button class="action-btn success" onclick="shareSponsorStatus()">
+                    <button class="action-btn success" onclick="prepareSponsorShare()">
                         📤 分享贊助狀態
                     </button>
                     <button class="action-btn warning" onclick="refreshDashboard()">
                         🔄 重新整理
                     </button>
+                </div>
+
+                <!-- 分享預覽區塊 -->
+                <div class="share-preview" id="sharePreview">
+                    <div class="share-preview-title">📝 分享預覽</div>
+                    <div class="share-preview-content" id="sharePreviewContent"></div>
+                    <div class="share-buttons">
+                        <button class="action-btn primary" onclick="confirmShare()">
+                            ✅ 確認分享
+                        </button>
+                        <button class="action-btn secondary" onclick="cancelShare()">
+                            ❌ 取消
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -458,9 +575,6 @@
                     </button>
                     <button class="action-btn success" onclick="exportVolunteers()">
                         📥 匯出 Excel
-                    </button>
-                    <button class="action-btn warning" onclick="shareVolunteerList()">
-                        📤 分享到群組
                     </button>
                 </div>
 
@@ -498,9 +612,6 @@
                     </button>
                     <button class="action-btn success" onclick="exportSponsors()">
                         📥 匯出 Excel
-                    </button>
-                    <button class="action-btn warning" onclick="shareSponsorList()">
-                        📤 分享到群組
                     </button>
                 </div>
 
@@ -573,14 +684,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script>
         // ⚠️ 請替換為您的實際值
-        const liffId = "2007905012-dQfXClGM"; // 管理後台 LIFF ID
-        const gasUrl = "https://script.google.com/macros/s/AKfycbxP6bmK1vwWmMfEeuTLxXyLNNLxuVw5p5k3ENdF2Sw69flrEZNWlz8CwJwN8hHmvYE06A/exec";
+        const liffId = "2007905012-dQfXClGM";
+        const gasUrl = "https://script.google.com/macros/s/AKfycbzgICRw7HFzIjoHUQ8bUZiUlRDM3yDKC3KLwPVYB2XYhDETY6Cx7zGp_74NGakUWHnXYw/exec";
         
         const ADMIN_PASSWORD = "admin123";
         let isLoggedIn = false;
         let userProfile = null;
         let volunteersData = [];
         let sponsorsData = [];
+        let pendingShareMessage = '';
+        let pendingShareType = '';
 
         // LIFF 初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -718,123 +831,322 @@
             showMessage('success', '重新整理完成', '資料已更新');
         }
 
-        // 載入志工列表
+        // ==================== 新增：分享功能 ====================
+
+        // 準備分享志工狀態
+        async function prepareVolunteerShare() {
+            try {
+                showLoading('準備資料中...');
+                
+                const result = await callAPI({ action: 'getVolunteerList' });
+                
+                if (!result.success) {
+                    showMessage('error', '取得資料失敗', result.message);
+                    return;
+                }
+                
+                volunteersData = result.volunteers || [];
+                const shiftLimits = await getShiftLimits();
+                
+                const message = generateVolunteerShareMessage(volunteersData, shiftLimits);
+                
+                pendingShareMessage = message;
+                pendingShareType = 'volunteer';
+                
+                showSharePreview(message);
+                
+            } catch (error) {
+                console.error('準備分享錯誤:', error);
+                showMessage('error', '準備失敗', error.message);
+            }
+        }
+
+        // 準備分享贊助狀態
+        async function prepareSponsorShare() {
+            try {
+                showLoading('準備資料中...');
+                
+                const result = await callAPI({ action: 'getSponsorList' });
+                
+                if (!result.success) {
+                    showMessage('error', '取得資料失敗', result.message);
+                    return;
+                }
+                
+                sponsorsData = result.sponsors || [];
+                const message = generateSponsorShareMessage(sponsorsData);
+                
+                pendingShareMessage = message;
+                pendingShareType = 'sponsor';
+                
+                showSharePreview(message);
+                
+            } catch (error) {
+                console.error('準備分享錯誤:', error);
+                showMessage('error', '準備失敗', error.message);
+            }
+        }
+
+        // 生成志工分享訊息
+        function generateVolunteerShareMessage(volunteers, shiftLimits) {
+            const shiftCounts = {};
+            volunteers.forEach(v => {
+                shiftCounts[v.workShift] = (shiftCounts[v.workShift] || 0) + 1;
+            });
+            
+            let message = `📊 捐血活動志工排班狀態
+
+📅 活動日期：2026/3/21 (六)
+⏰ 活動時間：09:00～17:00
+
+👥 總志工人數：${volunteers.length} 人
+
+各班次人數統計：\n`;
+
+            message += '\n🌟 全天班 (08:30～17:00)\n';
+            ['全天班-報到組', '全天班-領贈品組', '全天班-抽號叫號引導組', '全天班-義賣組'].forEach(shift => {
+                const count = shiftCounts[shift] || 0;
+                const max = shiftLimits[shift] || 5;
+                const percentage = Math.round(count / max * 100);
+                const status = count >= max ? '✅' : count > 0 ? '⚠️' : '❌';
+                message += `${status} ${shift.replace('全天班-', '')}：${count}/${max} (${percentage}%)\n`;
+            });
+            
+            message += '\n☀️ 上午班 (08:30～13:00)\n';
+            ['上午班-報到組', '上午班-領贈品組', '上午班-抽號叫號引導組', '上午班-佈置組', '上午班-義賣組'].forEach(shift => {
+                const count = shiftCounts[shift] || 0;
+                const max = shiftLimits[shift] || 5;
+                const percentage = Math.round(count / max * 100);
+                const status = count >= max ? '✅' : count > 0 ? '⚠️' : '❌';
+                message += `${status} ${shift.replace('上午班-', '')}：${count}/${max} (${percentage}%)\n`;
+            });
+            
+            message += '\n🌙 下午班 (13:00～17:00)\n';
+            ['下午班-報到組', '下午班-領贈品組', '下午班-抽號叫號引導組', '下午班-收拾組', '下午班-義賣組'].forEach(shift => {
+                const count = shiftCounts[shift] || 0;
+                const max = shiftLimits[shift] || 5;
+                const percentage = Math.round(count / max * 100);
+                const status = count >= max ? '✅' : count > 0 ? '⚠️' : '❌';
+                message += `${status} ${shift.replace('下午班-', '')}：${count}/${max} (${percentage}%)\n`;
+            });
+            
+            message += `\n📝 更新時間：${new Date().toLocaleString('zh-TW')}`;
+            message += '\n\n輸入「志工報名」立即加入我們！';
+            
+            return message;
+        }
+
+        // 生成贊助分享訊息
+        function generateSponsorShareMessage(sponsors) {
+            const totalAmount = sponsors.reduce((sum, s) => sum + (parseInt(s.amount) || 0), 0);
+            const avgAmount = sponsors.length > 0 ? Math.round(totalAmount / sponsors.length) : 0;
+            
+            let message = `💰 捐血活動贊助統計
+
+📅 活動日期：2026/3/21 (六)
+
+📊 贊助統計：
+👥 贊助人數：${sponsors.length} 人
+💵 總贊助金額：NT$ ${totalAmount.toLocaleString()}
+📈 平均贊助：NT$ ${avgAmount.toLocaleString()}
+
+🏆 感謝芳名錄（依贊助時間）：\n`;
+
+            sponsors.slice(0, 10).forEach((s, index) => {
+                message += `${index + 1}. ${s.name} - NT$ ${parseInt(s.amount).toLocaleString()}\n`;
+            });
+            
+            if (sponsors.length > 10) {
+                message += `... 及其他 ${sponsors.length - 10} 位善心人士\n`;
+            }
+            
+            message += `\n📝 更新時間：${new Date().toLocaleString('zh-TW')}`;
+            message += '\n\n感謝所有贊助者的支持！🙏';
+            message += '\n輸入「活動贊助」一起支持公益！';
+            
+            return message;
+        }
+
+        // 顯示分享預覽
+        function showSharePreview(message) {
+            document.getElementById('sharePreviewContent').textContent = message;
+            document.getElementById('sharePreview').classList.add('show');
+            closeModal();
+        }
+
+        // 取消分享
+        function cancelShare() {
+            document.getElementById('sharePreview').classList.remove('show');
+            pendingShareMessage = '';
+            pendingShareType = '';
+        }
+
+        // 確認分享
+        async function confirmShare() {
+            const shareMethod = document.querySelector('input[name="shareMethod"]:checked').value;
+                    
+            if (shareMethod === 'personal') {
+                // 使用個人 LIFF 身分分享
+                await shareAsPersonal();
+            } else {
+                // 使用 Bot 身分分享
+                await shareAsBot();
+            }
+        }
+
+        // 以個人身分分享
+        async function shareAsPersonal() {
+            try {
+                if (!liff.isInClient()) {
+                    showMessage('warning', '無法分享', '請在 LINE 應用程式中開啟此頁面');
+                    return;
+                }
+
+                // 檢查是否支援 shareTargetPicker
+                if (!liff.isApiAvailable('shareTargetPicker')) {
+                    showMessage('warning', '不支援', '您的 LINE 版本不支援此功能，請更新 LINE 應用程式');
+                    return;
+                }
+
+                showLoading('準備分享...');
+
+                // 使用 LIFF shareTargetPicker
+                const result = await liff.shareTargetPicker([
+                    {
+                        type: 'text',
+                        text: pendingShareMessage
+                    }
+                ]);
+
+                if (result) {
+                    showMessage('success', '分享成功', '訊息已成功分享');
+                    cancelShare();
+                } else {
+                    showMessage('info', '已取消', '您取消了分享');
+                }
+
+            } catch (error) {
+                console.error('個人分享錯誤:', error);
+                
+                if (error.code === 'INVALID_ARGUMENT') {
+                    showMessage('error', '分享失敗', '訊息格式錯誤');
+                } else if (error.code === 'FORBIDDEN') {
+                    showMessage('error', '分享失敗', '沒有分享權限');
+                } else {
+                    showMessage('error', '分享失敗', error.message || '未知錯誤');
+                }
+            }
+        }
+
+        // 以 Bot 身分分享
+        async function shareAsBot() {
+            try {
+                showLoading('發送中...');
+                
+                const action = pendingShareType === 'volunteer' 
+                    ? 'shareVolunteerStatus' 
+                    : 'shareSponsorStatus';
+                
+                const result = await callAPI({ 
+                    action: action,
+                    adminId: userProfile?.userId
+                });
+                
+                if (result.success) {
+                    showMessage('success', '分享成功', '訊息已發送到群組');
+                    cancelShare();
+                } else {
+                    showMessage('error', '分享失敗', result.message);
+                }
+                
+            } catch (error) {
+                console.error('Bot 分享錯誤:', error);
+                showMessage('error', '分享失敗', error.message);
+            }
+        }
+
+        // 取得班次設定
+        async function getShiftLimits() {
+            try {
+                const result = await callAPI({ action: 'getShiftSettings' });
+                return result.success ? result.limits : getDefaultShiftLimits();
+            } catch (error) {
+                console.error('取得班次設定錯誤:', error);
+                return getDefaultShiftLimits();
+            }
+        }
+
+        function getDefaultShiftLimits() {
+            return {
+                "全天班-報到組": 2,
+                "全天班-領贈品組": 2,
+                "全天班-抽號叫號引導組": 3,
+                "全天班-義賣組": 2,
+                "上午班-報到組": 2,
+                "上午班-領贈品組": 2,
+                "上午班-抽號叫號引導組": 3,
+                "上午班-佈置組": 2,
+                "上午班-義賣組": 2,
+                "下午班-報到組": 2,
+                "下午班-領贈品組": 2,
+                "下午班-抽號叫號引導組": 3,
+                "下午班-收拾組": 2,
+                "下午班-義賣組": 2
+            };
+        }
+
+        // ==================== 志工管理 ====================
+
+        // 載入志工名單
         async function loadVolunteers() {
             try {
-                const tbody = document.getElementById('volunteersTableBody');
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">載入中...</td></tr>';
-
+                showLoading('載入中...');
+                
                 const result = await callAPI({ action: 'getVolunteerList' });
                 
                 if (result.success) {
                     volunteersData = result.volunteers || [];
-                    
-                    if (volunteersData.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">目前尚無志工報名</td></tr>';
-                        return;
-                    }
-
-                    let html = '';
-                    volunteersData.forEach((v, index) => {
-                        html += `
-                            <tr>
-                                <td>#V${v.registrationId}</td>
-                                <td>${v.name}</td>
-                                <td>${v.phone}</td>
-                                <td>${v.workShift}</td>
-                                <td>${v.lunch || '無'}</td>
-                                <td>${v.registrationTime}</td>
-                                <td><span class="badge success">已報名</span></td>
-                            </tr>
-                        `;
-                    });
-                    tbody.innerHTML = html;
+                    renderVolunteersTable();
+                    closeModal();
+                } else {
+                    showMessage('error', '載入失敗', result.message);
                 }
             } catch (error) {
-                console.error('載入志工列表錯誤:', error);
+                console.error('載入志工名單錯誤:', error);
                 showMessage('error', '載入失敗', error.message);
             }
         }
 
-        // 載入贊助列表
-        async function loadSponsors() {
-            try {
-                const tbody = document.getElementById('sponsorsTableBody');
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">載入中...</td></tr>';
-
-                const result = await callAPI({ action: 'getSponsorList' });
-                
-                if (result.success) {
-                    sponsorsData = result.sponsors || [];
-                    
-                    if (sponsorsData.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">目前尚無贊助記錄</td></tr>';
-                        return;
-                    }
-
-                    let html = '';
-                    sponsorsData.forEach((s, index) => {
-                        html += `
-                            <tr>
-                                <td>#S${s.sponsorId}</td>
-                                <td>${s.name}</td>
-                                <td>${s.phone}</td>
-                                <td style="color: #FF8C00; font-weight: bold;">NT$ ${parseInt(s.amount).toLocaleString()}</td>
-                                <td>${s.sponsorTime}</td>
-                                <td><span class="badge warning">已登記</span></td>
-                            </tr>
-                        `;
-                    });
-                    tbody.innerHTML = html;
-                }
-            } catch (error) {
-                console.error('載入贊助列表錯誤:', error);
-                showMessage('error', '載入失敗', error.message);
+        // 渲染志工表格
+        function renderVolunteersTable() {
+            const tbody = document.getElementById('volunteersTableBody');
+            
+            if (volunteersData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">尚無志工報名</td></tr>';
+                return;
             }
+
+            let html = '';
+            volunteersData.forEach((v, index) => {
+                html += `
+                    <tr>
+                        <td>#V${v.registrationId}</td>
+                        <td>${v.name}</td>
+                        <td>${v.phone}</td>
+                        <td>${v.workShift}</td>
+                        <td>${v.lunch || '無'}</td>
+                        <td>${v.registrationTime}</td>
+                        <td><span class="badge success">已報名</span></td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
         }
 
-        // 分享志工狀態
-        async function shareVolunteerStatus() {
-            try {
-                showLoading('準備分享...');
-                const result = await callAPI({ 
-                    action: 'shareVolunteerStatus',
-                    adminId: userProfile?.userId
-                });
-                
-                if (result.success) {
-                    showMessage('success', '分享成功', '志工狀態已發送到群組');
-                } else {
-                    showMessage('error', '分享失敗', result.message);
-                }
-            } catch (error) {
-                showMessage('error', '分享失敗', error.message);
-            }
-        }
-
-        // 分享贊助狀態
-        async function shareSponsorStatus() {
-            try {
-                showLoading('準備分享...');
-                const result = await callAPI({ 
-                    action: 'shareSponsorStatus',
-                    adminId: userProfile?.userId
-                });
-                
-                if (result.success) {
-                    showMessage('success', '分享成功', '贊助狀態已發送到群組');
-                } else {
-                    showMessage('error', '分享失敗', result.message);
-                }
-            } catch (error) {
-                showMessage('error', '分享失敗', error.message);
-            }
-        }
-
-        // 匯出志工 Excel
+        // 匯出志工名單
         function exportVolunteers() {
             if (volunteersData.length === 0) {
-                showMessage('warning', '無資料', '目前沒有志工資料可匯出');
+                alert('目前沒有志工資料可匯出');
                 return;
             }
 
@@ -845,24 +1157,63 @@
                 '工作班次': v.workShift,
                 '午餐需求': v.lunch || '無',
                 '備註': v.remarks || '',
-                '報名時間': v.registrationTime,
-                '狀態': '已報名'
+                '報名時間': v.registrationTime
             }));
 
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "志工名單");
-            
-            const fileName = `志工名單_${new Date().toLocaleDateString('zh-TW')}.xlsx`;
-            XLSX.writeFile(wb, fileName);
-            
-            showMessage('success', '匯出成功', `已匯出 ${volunteersData.length} 筆資料`);
+            exportToExcel(data, '志工報名名單_' + getDateString());
         }
 
-        // 匯出贊助 Excel
+        // ==================== 贊助管理 ====================
+
+        // 載入贊助名單
+        async function loadSponsors() {
+            try {
+                showLoading('載入中...');
+                
+                const result = await callAPI({ action: 'getSponsorList' });
+                
+                if (result.success) {
+                    sponsorsData = result.sponsors || [];
+                    renderSponsorsTable();
+                    closeModal();
+                } else {
+                    showMessage('error', '載入失敗', result.message);
+                }
+            } catch (error) {
+                console.error('載入贊助名單錯誤:', error);
+                showMessage('error', '載入失敗', error.message);
+            }
+        }
+
+        // 渲染贊助表格
+        function renderSponsorsTable() {
+            const tbody = document.getElementById('sponsorsTableBody');
+            
+            if (sponsorsData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">尚無贊助記錄</td></tr>';
+                return;
+            }
+
+            let html = '';
+            sponsorsData.forEach((s, index) => {
+                html += `
+                    <tr>
+                        <td>#S${s.sponsorId}</td>
+                        <td>${s.name}</td>
+                        <td>${s.phone}</td>
+                        <td style="font-weight: bold; color: #FF8C00;">NT$ ${parseInt(s.amount).toLocaleString()}</td>
+                        <td>${s.sponsorTime}</td>
+                        <td><span class="badge success">已登記</span></td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        }
+
+        // 匯出贊助名單
         function exportSponsors() {
             if (sponsorsData.length === 0) {
-                showMessage('warning', '無資料', '目前沒有贊助資料可匯出');
+                alert('目前沒有贊助資料可匯出');
                 return;
             }
 
@@ -872,24 +1223,18 @@
                 '電話': s.phone,
                 '贊助金額': parseInt(s.amount),
                 '備註': s.remarks || '',
-                '贊助時間': s.sponsorTime,
-                '狀態': '已登記'
+                '贊助時間': s.sponsorTime
             }));
 
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "贊助名單");
-            
-            const fileName = `贊助名單_${new Date().toLocaleDateString('zh-TW')}.xlsx`;
-            XLSX.writeFile(wb, fileName);
-            
-            showMessage('success', '匯出成功', `已匯出 ${sponsorsData.length} 筆資料`);
+            exportToExcel(data, '活動贊助名單_' + getDateString());
         }
+
+        // ==================== 報表匯出 ====================
 
         // 匯出完整報表
         function exportFullReport() {
             if (volunteersData.length === 0 && sponsorsData.length === 0) {
-                showMessage('warning', '無資料', '目前沒有資料可匯出');
+                alert('目前沒有資料可匯出');
                 return;
             }
 
@@ -903,10 +1248,11 @@
                     '電話': v.phone,
                     '工作班次': v.workShift,
                     '午餐需求': v.lunch || '無',
+                    '備註': v.remarks || '',
                     '報名時間': v.registrationTime
                 }));
                 const ws1 = XLSX.utils.json_to_sheet(volunteerData);
-                XLSX.utils.book_append_sheet(wb, ws1, "志工名單");
+                XLSX.utils.book_append_sheet(wb, ws1, '志工名單');
             }
 
             // 贊助資料
@@ -916,60 +1262,187 @@
                     '姓名': s.name,
                     '電話': s.phone,
                     '贊助金額': parseInt(s.amount),
+                    '備註': s.remarks || '',
                     '贊助時間': s.sponsorTime
                 }));
                 const ws2 = XLSX.utils.json_to_sheet(sponsorData);
-                XLSX.utils.book_append_sheet(wb, ws2, "贊助名單");
+                XLSX.utils.book_append_sheet(wb, ws2, '贊助名單');
             }
 
-            const fileName = `捐血活動完整報表_${new Date().toLocaleDateString('zh-TW')}.xlsx`;
-            XLSX.writeFile(wb, fileName);
-            
-            showMessage('success', '匯出成功', '完整報表已匯出');
+            // 統計資料
+            const stats = [
+                { '項目': '總志工人數', '數值': volunteersData.length + ' 人' },
+                { '項目': '全天班', '數值': volunteersData.filter(v => v.workShift.includes('全天班')).length + ' 人' },
+                { '項目': '上午班', '數值': volunteersData.filter(v => v.workShift.includes('上午班')).length + ' 人' },
+                { '項目': '下午班', '數值': volunteersData.filter(v => v.workShift.includes('下午班')).length + ' 人' },
+                { '項目': '', '數值': '' },
+                { '項目': '贊助人數', '數值': sponsorsData.length + ' 人' },
+                { '項目': '總贊助金額', '數值': 'NT$ ' + sponsorsData.reduce((sum, s) => sum + parseInt(s.amount), 0).toLocaleString() }
+            ];
+            const ws3 = XLSX.utils.json_to_sheet(stats);
+            XLSX.utils.book_append_sheet(wb, ws3, '統計資料');
+
+            XLSX.writeFile(wb, '捐血活動完整報表_' + getDateString() + '.xlsx');
+            showMessage('success', '匯出成功', '報表已下載');
         }
 
         // 匯出志工報表
         function exportVolunteerReport() {
-            exportVolunteers();
+            if (volunteersData.length === 0) {
+                alert('目前沒有志工資料可匯出');
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+
+            // 志工明細
+            const volunteerData = volunteersData.map(v => ({
+                '序號': '#V' + v.registrationId,
+                '姓名': v.name,
+                '電話': v.phone,
+                '工作班次': v.workShift,
+                '午餐需求': v.lunch || '無',
+                '備註': v.remarks || '',
+                '報名時間': v.registrationTime
+            }));
+            const ws1 = XLSX.utils.json_to_sheet(volunteerData);
+            XLSX.utils.book_append_sheet(wb, ws1, '志工明細');
+
+            // 班次統計
+            const shiftStats = {};
+            volunteersData.forEach(v => {
+                shiftStats[v.workShift] = (shiftStats[v.workShift] || 0) + 1;
+            });
+            const shiftData = Object.keys(shiftStats).map(shift => ({
+                '班次': shift,
+                '人數': shiftStats[shift]
+            }));
+            const ws2 = XLSX.utils.json_to_sheet(shiftData);
+            XLSX.utils.book_append_sheet(wb, ws2, '班次統計');
+
+            // 午餐統計
+            const lunchStats = {};
+            volunteersData.forEach(v => {
+                const lunch = v.lunch || '無';
+                lunchStats[lunch] = (lunchStats[lunch] || 0) + 1;
+            });
+            const lunchData = Object.keys(lunchStats).map(lunch => ({
+                '午餐類型': lunch,
+                '人數': lunchStats[lunch]
+            }));
+            const ws3 = XLSX.utils.json_to_sheet(lunchData);
+            XLSX.utils.book_append_sheet(wb, ws3, '午餐統計');
+
+            XLSX.writeFile(wb, '志工報表_' + getDateString() + '.xlsx');
+            showMessage('success', '匯出成功', '志工報表已下載');
         }
 
         // 匯出贊助報表
         function exportSponsorReport() {
-            exportSponsors();
+            if (sponsorsData.length === 0) {
+                alert('目前沒有贊助資料可匯出');
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+
+            // 贊助明細
+            const sponsorData = sponsorsData.map(s => ({
+                '序號': '#S' + s.sponsorId,
+                '姓名': s.name,
+                '電話': s.phone,
+                '贊助金額': parseInt(s.amount),
+                '備註': s.remarks || '',
+                '贊助時間': s.sponsorTime
+            }));
+            const ws1 = XLSX.utils.json_to_sheet(sponsorData);
+            XLSX.utils.book_append_sheet(wb, ws1, '贊助明細');
+
+            // 金額統計
+            const totalAmount = sponsorsData.reduce((sum, s) => sum + parseInt(s.amount), 0);
+            const avgAmount = Math.round(totalAmount / sponsorsData.length);
+            const maxAmount = Math.max(...sponsorsData.map(s => parseInt(s.amount)));
+            const minAmount = Math.min(...sponsorsData.map(s => parseInt(s.amount)));
+
+            const stats = [
+                { '項目': '贊助人數', '數值': sponsorsData.length + ' 人' },
+                { '項目': '總贊助金額', '數值': 'NT$ ' + totalAmount.toLocaleString() },
+                { '項目': '平均贊助', '數值': 'NT$ ' + avgAmount.toLocaleString() },
+                { '項目': '最高贊助', '數值': 'NT$ ' + maxAmount.toLocaleString() },
+                { '項目': '最低贊助', '數值': 'NT$ ' + minAmount.toLocaleString() }
+            ];
+            const ws2 = XLSX.utils.json_to_sheet(stats);
+            XLSX.utils.book_append_sheet(wb, ws2, '金額統計');
+
+            // 芳名錄
+            const honorData = sponsorsData.map((s, index) => ({
+                '排序': index + 1,
+                '姓名': s.name,
+                '贊助金額': 'NT$ ' + parseInt(s.amount).toLocaleString()
+            }));
+            const ws3 = XLSX.utils.json_to_sheet(honorData);
+            XLSX.utils.book_append_sheet(wb, ws3, '芳名錄');
+
+            XLSX.writeFile(wb, '贊助報表_' + getDateString() + '.xlsx');
+            showMessage('success', '匯出成功', '贊助報表已下載');
         }
 
         // 匯出統計報表
         function exportStatisticsReport() {
             const wb = XLSX.utils.book_new();
 
-            // 志工統計
-            const volunteerStats = [
-                ['統計項目', '人數'],
-                ['總志工人數', volunteersData.length],
-                ['全天班', volunteersData.filter(v => v.workShift.includes('全天班')).length],
-                ['上午班', volunteersData.filter(v => v.workShift.includes('上午班')).length],
-                ['下午班', volunteersData.filter(v => v.workShift.includes('下午班')).length]
+            // 整體統計
+            const overallStats = [
+                { '類別': '志工', '項目': '總人數', '數值': volunteersData.length },
+                { '類別': '志工', '項目': '全天班', '數值': volunteersData.filter(v => v.workShift.includes('全天班')).length },
+                { '類別': '志工', '項目': '上午班', '數值': volunteersData.filter(v => v.workShift.includes('上午班')).length },
+                { '類別': '志工', '項目': '下午班', '數值': volunteersData.filter(v => v.workShift.includes('下午班')).length },
+                { '類別': '', '項目': '', '數值': '' },
+                { '類別': '贊助', '項目': '贊助人數', '數值': sponsorsData.length },
+                { '類別': '贊助', '項目': '總金額', '數值': sponsorsData.reduce((sum, s) => sum + parseInt(s.amount), 0) },
+                { '類別': '贊助', '項目': '平均金額', '數值': sponsorsData.length > 0 ? Math.round(sponsorsData.reduce((sum, s) => sum + parseInt(s.amount), 0) / sponsorsData.length) : 0 }
             ];
-            const ws1 = XLSX.utils.aoa_to_sheet(volunteerStats);
-            XLSX.utils.book_append_sheet(wb, ws1, "志工統計");
+            const ws1 = XLSX.utils.json_to_sheet(overallStats);
+            XLSX.utils.book_append_sheet(wb, ws1, '整體統計');
 
-            // 贊助統計
-            const totalAmount = sponsorsData.reduce((sum, s) => sum + (parseInt(s.amount) || 0), 0);
-            const avgAmount = sponsorsData.length > 0 ? Math.round(totalAmount / sponsorsData.length) : 0;
-            
-            const sponsorStats = [
-                ['統計項目', '數值'],
-                ['贊助人數', sponsorsData.length],
-                ['總贊助金額', totalAmount],
-                ['平均贊助金額', avgAmount]
-            ];
-            const ws2 = XLSX.utils.aoa_to_sheet(sponsorStats);
-            XLSX.utils.book_append_sheet(wb, ws2, "贊助統計");
+            // 詳細班次統計
+            const shiftDetails = [];
+            const shiftLimits = getDefaultShiftLimits();
+            Object.keys(shiftLimits).forEach(shift => {
+                const count = volunteersData.filter(v => v.workShift === shift).length;
+                const max = shiftLimits[shift];
+                const percentage = Math.round(count / max * 100);
+                shiftDetails.push({
+                    '班次': shift,
+                    '目前人數': count,
+                    '人數上限': max,
+                    '完成度': percentage + '%'
+                });
+            });
+            const ws2 = XLSX.utils.json_to_sheet(shiftDetails);
+            XLSX.utils.book_append_sheet(wb, ws2, '班次詳細統計');
 
-            const fileName = `統計報表_${new Date().toLocaleDateString('zh-TW')}.xlsx`;
-            XLSX.writeFile(wb, fileName);
-            
-            showMessage('success', '匯出成功', '統計報表已匯出');
+            XLSX.writeFile(wb, '統計報表_' + getDateString() + '.xlsx');
+            showMessage('success', '匯出成功', '統計報表已下載');
+        }
+
+        // ==================== 輔助函數 ====================
+
+        // 匯出到 Excel
+        function exportToExcel(data, filename) {
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+            XLSX.writeFile(wb, filename + '.xlsx');
+            showMessage('success', '匯出成功', '檔案已下載');
+        }
+
+        // 取得日期字串
+        function getDateString() {
+            const now = new Date();
+            return now.getFullYear() + 
+                   String(now.getMonth() + 1).padStart(2, '0') + 
+                   String(now.getDate()).padStart(2, '0');
         }
 
         // API 呼叫
@@ -1030,3 +1503,4 @@
     </script>
 </body>
 </html>
+
