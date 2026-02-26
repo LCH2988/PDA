@@ -159,6 +159,23 @@
     .mode-selector{flex-direction:column}
     .col-options{grid-template-columns:1fr 1fr}
   }
+
+  .simple-report-table{width:100%;border-collapse:collapse;font-size:0.9em;margin-bottom:5px}
+  .simple-report-table thead tr{background:linear-gradient(135deg,#8b5cf6,#6d28d9)}
+  .simple-report-table th{padding:10px 10px;color:white;font-weight:700;border-right:1px solid rgba(255,255,255,0.3);white-space:nowrap;text-align:center}
+  .simple-report-table th:first-child{text-align:left;min-width:80px}
+  .simple-report-table th:last-child{border-right:none;min-width:90px}
+  .simple-report-table td{padding:8px 10px;border-bottom:1px solid #e5e7eb;border-right:1px solid #f3f4f6;color:#1f2937;white-space:nowrap}
+  .simple-report-table td:first-child{font-weight:700;color:#4c1d95;background:#faf5ff}
+  .simple-report-table td:last-child{border-right:none;font-weight:700;color:#92400e;background:#fef9ec;text-align:right}
+  .simple-report-table tbody tr:hover td{background:#f5f3ff}
+  .simple-report-table tbody tr:hover td:first-child{background:#ede9fe}
+  .simple-report-table tbody tr:hover td:last-child{background:#fef3c7}
+  .simple-report-table .total-row td{background:#fef3c7!important;font-weight:700;color:#92400e;border-top:2px solid #f59e0b;padding:10px}
+  .simple-report-table .total-row td:first-child{background:#fef3c7!important}
+  .simple-qty-tag{display:inline-block;background:#ede9fe;color:#6d28d9;border-radius:6px;padding:2px 7px;font-weight:700;font-size:0.92em;margin-right:2px}
+  .simple-price-tag{display:inline-block;color:#6b7280;font-size:0.88em;margin-left:2px}
+  .simple-empty{color:#9ca3af;font-size:0.9em;text-align:center;padding:6px}
 </style>
 </head>
 <body>
@@ -181,6 +198,7 @@
     <button class="tab-btn" onclick="switchTab('reportDetail',this)">🎁 搶購詳細清單</button>
     <button class="tab-btn" onclick="switchTab('customReport',this)">📄 自訂報表</button>
     <button class="tab-btn" onclick="switchTab('maintenance',this)">🔧 團隊名單維護</button>
+    <button class="tab-btn" onclick="switchTab('simpleReport',this)">📝 簡易報表</button>
     <button class="tab-btn" onclick="switchTab('search',this)">🔍 搜尋</button>
   </div>
 
@@ -332,6 +350,17 @@
     </div>
   </div>
 
+  <div id="simpleReportTab" class="tab-content">
+    <div class="filter-bar">
+      <label>團隊：</label>
+      <select id="simpleReportTeamFilter" onchange="displaySimpleReport()">
+        <option value="all">全部團隊</option>
+      </select>
+      <button class="btn" onclick="printSimpleReport()">🖨️ 列印</button>
+    </div>
+    <div id="simpleReportContent"></div>
+  </div>
+
   <!-- 8.搜尋 -->
   <div id="searchTab" class="tab-content">
     <div class="search-bar">
@@ -380,6 +409,7 @@ function switchTab(name,btn){
            reportSummary:displayReportSummary,reportDetail:displayReportDetail,
            maintenance:loadMaintenanceList,customReport:initCustomReport};
   if(m[name])m[name]();
+  simpleReport: displaySimpleReport
 }
 
 /* ===== 資料載入 ===== */
@@ -1154,6 +1184,170 @@ function printCustomReport(){
     <h2>${title}</h2>
     <div class="meta">${meta}</div>
     ${tableHTML}
+    <script>window.onload=function(){window.print();}<\/script>
+  </body></html>`);
+  win.document.close();
+}
+
+function displaySimpleReport(){
+  const sel=document.getElementById('simpleReportTeamFilter').value;
+  const c=document.getElementById('simpleReportContent');
+  const teams=sel==='all'?sortTeams(Object.keys(teamAnalysisData)):[sel];
+  let html='';
+
+  teams.forEach(team=>{
+    const data=teamAnalysisData[team];
+    if(!data||Object.keys(data.orders).length===0)return;
+
+    // 收集此團隊所有出現過的產品代號（排序）
+    const gcSet=new Set();
+    Object.values(data.orders).forEach(groups=>{
+      Object.keys(groups).forEach(gc=>gcSet.add(gc));
+    });
+    const gcList=Array.from(gcSet).sort(sortGC);
+
+    html+=`<div class="team-container">
+      <div class="team-header">🏢 ${team} - 簡易訂購報表</div>
+      <div style="overflow-x:auto">
+      <table class="simple-report-table">
+        <thead><tr>
+          <th style="text-align:left">成員</th>`;
+
+    // 每個產品代號佔一欄（顯示 代號×數量 + 單價）
+    gcList.forEach(gc=>{
+      html+=`<th>${gc}<br><span style="font-size:0.78em;opacity:0.85">${productNameMap[gc]||''}</span></th>`;
+    });
+    html+=`<th>合計金額</th></tr></thead><tbody>`;
+
+    // 統計欄位總計用
+    const colTotals={};
+    gcList.forEach(gc=>{colTotals[gc]={qty:0,amount:0};});
+    let grandTotal=0;
+
+    // 逐成員產生列
+    Object.keys(data.orders).forEach(person=>{
+      const groups=data.orders[person];
+      let rowTotal=0;
+      html+=`<tr><td>${person}</td>`;
+      gcList.forEach(gc=>{
+        const g=groups[gc];
+        if(g&&g.qty>0){
+          const price=g.price||productPriceMap[gc]||0;
+          html+=`<td style="text-align:center">
+            <span class="simple-qty-tag">${gc} × ${g.qty}</span>
+            <span class="simple-price-tag">$${price.toLocaleString()}</span>
+          </td>`;
+          rowTotal+=g.amount;
+          colTotals[gc].qty+=g.qty;
+          colTotals[gc].amount+=g.amount;
+        } else {
+          html+=`<td style="text-align:center;color:#d1d5db">—</td>`;
+        }
+      });
+      html+=`<td>$${rowTotal.toLocaleString()}</td></tr>`;
+      grandTotal+=rowTotal;
+    });
+
+    // 合計列
+    html+=`<tr class="total-row"><td>合計</td>`;
+    gcList.forEach(gc=>{
+      const t=colTotals[gc];
+      html+=`<td style="text-align:center">${t.qty>0?`<strong>${t.qty} 組</strong><br><span style="font-size:0.85em">$${t.amount.toLocaleString()}</span>`:'—'}</td>`;
+    });
+    html+=`<td>$${grandTotal.toLocaleString()}</td></tr>`;
+
+    html+=`</tbody></table></div></div>`;
+  });
+
+  c.innerHTML=html||'<div class="team-container"><p style="text-align:center;color:#999">暫無訂購資料</p></div>';
+}
+
+function printSimpleReport(){
+  const sel=document.getElementById('simpleReportTeamFilter').value;
+  const teams=sel==='all'?sortTeams(Object.keys(teamAnalysisData)):[sel];
+  let bodyHTML='';
+
+  teams.forEach(team=>{
+    const data=teamAnalysisData[team];
+    if(!data||Object.keys(data.orders).length===0)return;
+
+    const gcSet=new Set();
+    Object.values(data.orders).forEach(groups=>{
+      Object.keys(groups).forEach(gc=>gcSet.add(gc));
+    });
+    const gcList=Array.from(gcSet).sort(sortGC);
+
+    bodyHTML+=`<h2>🏢 ${team} - 簡易訂購報表</h2>
+      <table>
+        <thead><tr>
+          <th>成員</th>`;
+    gcList.forEach(gc=>{
+      bodyHTML+=`<th>${gc}<br><span style="font-size:0.78em">${productNameMap[gc]||''}</span></th>`;
+    });
+    bodyHTML+=`<th>合計金額</th></tr></thead><tbody>`;
+
+    const colTotals={};
+    gcList.forEach(gc=>{colTotals[gc]={qty:0,amount:0};});
+    let grandTotal=0;
+
+    Object.keys(data.orders).forEach(person=>{
+      const groups=data.orders[person];
+      let rowTotal=0;
+      bodyHTML+=`<tr><td>${person}</td>`;
+      gcList.forEach(gc=>{
+        const g=groups[gc];
+        if(g&&g.qty>0){
+          const price=g.price||productPriceMap[gc]||0;
+          bodyHTML+=`<td>${gc} × ${g.qty}<br><span style="font-size:0.85em">$${price.toLocaleString()}</span></td>`;
+          rowTotal+=g.amount;
+          colTotals[gc].qty+=g.qty;
+          colTotals[gc].amount+=g.amount;
+        } else {
+          bodyHTML+=`<td style="color:#ccc">—</td>`;
+        }
+      });
+      bodyHTML+=`<td>$${rowTotal.toLocaleString()}</td></tr>`;
+      grandTotal+=rowTotal;
+    });
+
+    bodyHTML+=`<tr class="total-row"><td>合計</td>`;
+    gcList.forEach(gc=>{
+      const t=colTotals[gc];
+      bodyHTML+=`<td>${t.qty>0?`${t.qty} 組<br>$${t.amount.toLocaleString()}`:'—'}</td>`;
+    });
+    bodyHTML+=`<td>$${grandTotal.toLocaleString()}</td></tr>`;
+    bodyHTML+=`</tbody></table><br>`;
+  });
+
+  const now=new Date();
+  const dateStr=`${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const win=window.open('','_blank','width=1100,height=750');
+  win.document.write(`<!DOCTYPE html><html lang="zh-TW"><head>
+    <meta charset="UTF-8"><title>BOGO 簡易訂購報表</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:'Microsoft JhengHei','Arial',sans-serif;padding:20px;color:#000;font-size:13px}
+      h1{color:#4c1d95;font-size:1.3em;margin-bottom:4px}
+      .date{color:#6b7280;font-size:0.85em;margin-bottom:18px}
+      h2{color:#6d28d9;font-size:1.1em;margin:16px 0 8px 0;padding-bottom:6px;border-bottom:2px solid #8b5cf6}
+      table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:0.88em}
+      thead tr{background:#6d28d9}
+      th{padding:9px 8px;color:white;font-weight:700;border-right:1px solid rgba(255,255,255,0.3);text-align:center;white-space:nowrap}
+      th:first-child{text-align:left}th:last-child{border-right:none}
+      td{padding:7px 8px;border-bottom:1px solid #e5e7eb;border-right:1px solid #f3f4f6;text-align:center;white-space:nowrap}
+      td:first-child{text-align:left;font-weight:700;color:#4c1d95;background:#faf5ff}
+      td:last-child{border-right:none;font-weight:700;color:#92400e;background:#fef9ec;text-align:right}
+      .total-row td{background:#fef3c7!important;font-weight:700;color:#92400e;border-top:2px solid #f59e0b;padding:9px 8px}
+      .total-row td:first-child{background:#fef3c7!important}
+      @page{margin:1.2cm;size:landscape}
+      @media print{
+        -webkit-print-color-adjust:exact;print-color-adjust:exact;
+        thead tr{background:#6d28d9!important}
+      }
+    </style></head><body>
+    <h1>📝 BOGO多福氣 簡易訂購報表</h1>
+    <div class="date">列印時間：${dateStr}</div>
+    ${bodyHTML}
     <script>window.onload=function(){window.print();}<\/script>
   </body></html>`);
   win.document.close();
