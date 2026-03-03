@@ -1,0 +1,956 @@
+  <!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<title>線上會議平台</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+:root{
+  --blue:#1565C0;--blue-d:#0d47a1;--blue-l:#e3f2fd;
+  --green:#2e7d32;--green-l:#e8f5e9;
+  --orange:#e65100;--orange-l:#fff8e1;
+  --red:#c62828;--red-l:#fce4ec;
+  --purple:#6a1b9a;--purple-l:#f3e5f5;
+  --grey:#546e7a;--grey-l:#eceff1;
+  --bg:#f0f4f8;--r:14px;--sh:0 2px 10px rgba(0,0,0,.1);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:'Noto Sans TC','Segoe UI',sans-serif;background:var(--bg);color:#1a1a1a;font-size:16px;min-height:100vh}
+#loadingScreen{position:fixed;inset:0;background:var(--blue);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;color:#fff}
+#loadingScreen .logo{font-size:64px;margin-bottom:16px}
+#loadingScreen h1{font-size:24px;font-weight:700;margin-bottom:8px}
+#loadingScreen p{font-size:15px;opacity:.8;margin-bottom:32px}
+.spinner{width:40px;height:40px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
+.spinner-sm{width:20px;height:20px;border:3px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.topbar{background:var(--blue);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.topbar-title{font-size:20px;font-weight:700;display:flex;align-items:center;gap:8px}
+.topbar-user{display:flex;align-items:center;gap:8px}
+.user-avatar{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.5);background:rgba(255,255,255,.2)}
+.user-name{font-size:14px;font-weight:600;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.role-badge{background:rgba(255,255,255,.25);border-radius:10px;padding:3px 10px;font-size:12px;font-weight:700}
+.bottomnav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:2px solid #e0e0e0;display:flex;z-index:100;box-shadow:0 -2px 8px rgba(0,0,0,.08)}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;padding:10px 4px;cursor:pointer;color:#90a4ae;border-top:3px solid transparent;transition:.15s}
+.nav-item.active{color:var(--blue);border-top-color:var(--blue)}
+.nav-icon{font-size:26px;margin-bottom:3px}
+.nav-label{font-size:13px;font-weight:600}
+.main{padding:16px;padding-bottom:90px}
+.page{display:none}
+.page.active{display:block}
+.card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);margin-bottom:14px;overflow:hidden}
+.card-hd{padding:14px 16px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card-body{padding:16px}
+.btn{min-height:52px;padding:0 20px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:inherit}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-block{width:100%;margin-bottom:10px}
+.btn-primary{background:var(--blue);color:#fff}
+.btn-primary:hover:not(:disabled){background:var(--blue-d)}
+.btn-green{background:var(--green);color:#fff}
+.btn-orange{background:var(--orange);color:#fff}
+.btn-red{background:var(--red);color:#fff}
+.btn-grey{background:var(--grey-l);color:#37474f}
+.btn-outline{background:#fff;border:2.5px solid var(--blue);color:var(--blue)}
+.btn-outline-g{background:#fff;border:2.5px solid var(--green);color:var(--green)}
+.btn-sm{min-height:40px;padding:0 14px;font-size:14px;border-radius:9px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.btn-row .btn{flex:1;min-width:0}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:14px;font-size:13px;font-weight:700}
+.b-blue{background:var(--blue-l);color:var(--blue)}
+.b-green{background:var(--green-l);color:var(--green)}
+.b-orange{background:var(--orange-l);color:var(--orange)}
+.b-red{background:var(--red-l);color:var(--red)}
+.b-purple{background:var(--purple-l);color:var(--purple)}
+.b-grey{background:var(--grey-l);color:var(--grey)}
+.fg{margin-bottom:16px}
+.fl{font-size:15px;font-weight:700;margin-bottom:8px;display:block;color:#37474f}
+.fc{width:100%;min-height:52px;padding:12px 14px;border:2.5px solid #b0bec5;border-radius:10px;font-size:16px;font-family:inherit;background:#fafafa;transition:.15s;outline:none}
+.fc:focus{border-color:var(--blue);background:#fff}
+textarea.fc{min-height:100px;resize:vertical}
+select.fc{cursor:pointer}
+.m-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);margin-bottom:14px;overflow:hidden;border-left:5px solid var(--blue)}
+.m-card.ended{border-left-color:var(--grey)}
+.m-card-hd{padding:14px 16px;display:flex;align-items:flex-start;gap:12px}
+.m-icon{font-size:32px;flex-shrink:0}
+.m-info{flex:1;min-width:0}
+.m-title{font-size:17px;font-weight:700;margin-bottom:4px}
+.m-meta{font-size:13px;color:var(--grey);line-height:1.7}
+.m-actions{padding:10px 16px;background:#f8f9fa;display:flex;gap:8px;flex-wrap:wrap}
+.t-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);margin-bottom:12px;overflow:hidden}
+.t-hd{padding:14px 16px;display:flex;align-items:flex-start;gap:12px}
+.t-icon{font-size:28px;flex-shrink:0}
+.t-info{flex:1;min-width:0}
+.t-title{font-size:16px;font-weight:700;margin-bottom:4px}
+.t-meta{font-size:13px;color:var(--grey)}
+.t-actions{padding:10px 16px;background:#f8f9fa;display:flex;gap:8px}
+.c-item{padding:12px 0;border-bottom:1px solid #f0f0f0}
+.c-item:last-child{border-bottom:none}
+.c-hd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.c-avatar{width:36px;height:36px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;overflow:hidden}
+.c-avatar img{width:100%;height:100%;object-fit:cover}
+.c-name{font-size:14px;font-weight:700}
+.c-time{font-size:12px;color:var(--grey);margin-left:auto}
+.c-body{font-size:15px;line-height:1.7;color:#333;padding-left:44px}
+.mn-sec{background:#fff;border-radius:var(--r);box-shadow:var(--sh);margin-bottom:14px;overflow:hidden;border-left:5px solid var(--green)}
+.mn-sec.orange{border-left-color:var(--orange)}
+.mn-hd{padding:13px 16px;display:flex;align-items:center;gap:8px;background:var(--green-l);font-size:16px;font-weight:700}
+.mn-hd.orange{background:var(--orange-l)}
+.mn-body{padding:14px 16px}
+.mn-item{display:flex;align-items:flex-start;gap:12px;padding:10px;border-radius:10px;margin-bottom:8px}
+.mn-item.d{background:var(--green-l)}
+.mn-item.a{background:var(--orange-l)}
+.mn-num{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;color:#fff}
+.mn-num.d{background:var(--green)}
+.mn-num.a{background:var(--orange)}
+.mn-text{font-size:15px;line-height:1.7;padding-top:4px}
+.banner{border-radius:12px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;border:2px solid}
+.banner.red{background:var(--red-l);border-color:#ef9a9a}
+.banner.green{background:var(--green-l);border-color:#a5d6a7}
+.banner.blue{background:var(--blue-l);border-color:#90caf9}
+.banner-icon{font-size:28px;flex-shrink:0}
+.banner-text{font-size:15px;font-weight:600;line-height:1.6}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;display:none;align-items:flex-end;justify-content:center}
+.overlay.show{display:flex}
+.modal{background:#fff;border-radius:24px 24px 0 0;width:100%;max-height:92vh;overflow-y:auto;padding-bottom:20px}
+.modal-drag{width:40px;height:5px;background:#e0e0e0;border-radius:3px;margin:14px auto 4px}
+.modal-hd{padding:4px 20px 0;text-align:center}
+.modal-icon{font-size:48px;margin-bottom:8px}
+.modal-title{font-size:20px;font-weight:700;margin-bottom:6px}
+.modal-desc{font-size:14px;color:var(--grey);line-height:1.7;margin-bottom:4px}
+.modal-body{padding:16px 20px}
+.modal-footer{padding:0 20px;display:flex;gap:10px}
+.modal-footer .btn{flex:1}
+.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(20px);background:#323232;color:#fff;padding:12px 24px;border-radius:24px;font-size:15px;font-weight:600;z-index:400;opacity:0;transition:.3s;white-space:nowrap;max-width:90vw;text-align:center;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.empty{text-align:center;padding:48px 20px;color:var(--grey)}
+.empty-icon{font-size:56px;margin-bottom:12px}
+.empty-text{font-size:16px;font-weight:600}
+.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.stat-card{background:#fff;border-radius:12px;padding:14px 10px;text-align:center;box-shadow:var(--sh)}
+.stat-val{font-size:28px;font-weight:800;color:var(--blue)}
+.stat-lbl{font-size:12px;color:var(--grey);margin-top:4px}
+.divider{height:1px;background:#f0f0f0;margin:14px 0}
+.refresh-btn{background:none;border:none;cursor:pointer;font-size:20px;padding:4px;color:rgba(255,255,255,.8)}
+</style>
+</head>
+<body>
+
+<!-- 載入畫面 -->
+<div id="loadingScreen">
+  <div class="logo">📋</div>
+  <h1>線上會議平台</h1>
+  <p>正在登入，請稍候…</p>
+  <div class="spinner"></div>
+</div>
+
+<!-- 頂部欄 -->
+<div class="topbar" id="topbar" style="display:none">
+  <div class="topbar-title">📋 會議平台</div>
+  <div class="topbar-user">
+    <img class="user-avatar" id="userAvatar" src="" alt="avatar">
+    <div>
+      <div class="user-name" id="userName">—</div>
+      <div class="role-badge" id="roleLabel">載入中</div>
+    </div>
+    <button class="refresh-btn" onclick="重新整理()" title="重新整理">🔄</button>
+  </div>
+</div>
+
+<!-- 主內容 -->
+<div class="main" id="mainContent" style="display:none">
+
+  <!-- 會議列表頁 -->
+  <div class="page active" id="page-meetings">
+    <div id="adminMeetingBtn"></div>
+    <div id="meetingStats"></div>
+    <div id="meetingList">
+      <div class="empty"><div class="empty-icon">⏳</div><div class="empty-text">載入中…</div></div>
+    </div>
+  </div>
+
+  <!-- 議題討論頁 -->
+  <div class="page" id="page-topics">
+    <div class="card">
+      <div class="card-body" style="padding:14px">
+        <div class="fg" style="margin-bottom:0">
+          <label class="fl">📅 請選擇會議</label>
+          <select class="fc" id="topicMeetingSel" onchange="載入議題()">
+            <option value="">— 請選擇 —</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="topicBanner"></div>
+    <div id="adminTopicBtn"></div>
+    <div id="topicList">
+      <div class="empty"><div class="empty-icon">💬</div><div class="empty-text">請先選擇會議</div></div>
+    </div>
+  </div>
+
+  <!-- 會議紀錄頁 -->
+  <div class="page" id="page-minutes">
+    <div class="card">
+      <div class="card-body" style="padding:14px">
+        <div class="fg" style="margin-bottom:0">
+          <label class="fl">📅 請選擇會議</label>
+          <select class="fc" id="minutesMeetingSel" onchange="載入紀錄()">
+            <option value="">— 請選擇 —</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="minutesContent">
+      <div class="empty"><div class="empty-icon">📝</div><div class="empty-text">請先選擇會議</div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 底部導航 -->
+<div class="bottomnav" id="bottomnav" style="display:none">
+  <div class="nav-item active" id="nav-meetings" onclick="切換頁面('meetings')">
+    <div class="nav-icon">📅</div><div class="nav-label">會議</div>
+  </div>
+  <div class="nav-item" id="nav-topics" onclick="切換頁面('topics')">
+    <div class="nav-icon">💬</div><div class="nav-label">議題</div>
+  </div>
+  <div class="nav-item" id="nav-minutes" onclick="切換頁面('minutes')">
+    <div class="nav-icon">📝</div><div class="nav-label">紀錄</div>
+  </div>
+</div>
+
+<!-- ══ Modals ══ -->
+
+<!-- 建立會議 -->
+<div class="overlay" id="m-createMeeting">
+  <div class="modal">
+    <div class="modal-drag"></div>
+    <div class="modal-hd">
+      <div class="modal-icon">📅</div>
+      <div class="modal-title">建立新會議</div>
+    </div>
+    <div class="modal-body">
+      <div class="fg"><label class="fl">會議名稱 *</label>
+        <input class="fc" id="f-mTitle" placeholder="請輸入會議名稱"></div>
+      <div class="fg"><label class="fl">會議日期時間 *</label>
+        <input class="fc" id="f-mDate" type="datetime-local"></div>
+      <div class="fg" style="margin-bottom:0"><label class="fl">會議說明（選填）</label>
+        <textarea class="fc" id="f-mDesc" placeholder="請輸入說明"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-grey" onclick="closeM('m-createMeeting')">❌ 取消</button>
+      <button class="btn btn-primary" id="btn-createMeeting" onclick="確認建立會議()">✅ 建立</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增議題 -->
+<div class="overlay" id="m-addTopic">
+  <div class="modal">
+    <div class="modal-drag"></div>
+    <div class="modal-hd">
+      <div class="modal-icon">💬</div>
+      <div class="modal-title">新增議題</div>
+    </div>
+    <div class="modal-body">
+      <div class="fg"><label class="fl">議題標題 *</label>
+        <input class="fc" id="f-tTitle" placeholder="請輸入議題標題"></div>
+      <div class="fg" style="margin-bottom:0"><label class="fl">議題說明（選填）</label>
+        <textarea class="fc" id="f-tDesc" placeholder="請輸入說明"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-grey" onclick="closeM('m-addTopic')">❌ 取消</button>
+      <button class="btn btn-green" id="btn-addTopic" onclick="確認新增議題()">✅ 新增</button>
+    </div>
+  </div>
+</div>
+
+<!-- 議題討論 -->
+<div class="overlay" id="m-discussion">
+  <div class="modal">
+    <div class="modal-drag"></div>
+    <div class="modal-hd">
+      <div class="modal-icon">💬</div>
+      <div class="modal-title" id="d-title">議題討論</div>
+      <div class="modal-desc" id="d-desc"></div>
+    </div>
+    <div class="modal-body">
+      <div id="d-comments" style="max-height:280px;overflow-y:auto;margin-bottom:14px"></div>
+      <div id="d-input">
+        <div class="fg" style="margin-bottom:8px">
+          <textarea class="fc" id="f-comment" placeholder="請輸入您的意見…" style="min-height:80px"></textarea>
+        </div>
+        <button class="btn btn-primary btn-block" id="btn-sendComment" onclick="送出留言()">📤 送出留言</button>
+      </div>
+      <div id="d-lock" style="display:none">
+        <div class="banner green"><div class="banner-icon">🔒</div>
+          <div class="banner-text">此議題已結案，<b>無法新增留言</b>。</div></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-grey" onclick="closeM('m-discussion')">關閉</button>
+      <button class="btn btn-red btn-sm" id="btn-closeTopic" style="display:none" onclick="openM('m-confirmClose')">🔒 結案議題</button>
+    </div>
+  </div>
+</div>
+
+<!-- 確認結案議題 -->
+<div class="overlay" id="m-confirmClose">
+  <div class="modal">
+    <div class="modal-drag"></div>
+    <div class="modal-hd">
+      <div class="modal-icon">🔒</div>
+      <div class="modal-title">確認結案議題</div>
+      <div class="modal-desc">結案後此議題將鎖定，<b>無法再新增留言</b>，確定要結案嗎？</div>
+    </div>
+    <div class="modal-footer" style="padding-top:16px">
+      <button class="btn btn-grey" onclick="closeM('m-confirmClose')">❌ 取消</button>
+      <button class="btn btn-red" id="btn-doClose" onclick="執行結案議題()">🔒 確認結案</button>
+    </div>
+  </div>
+</div>
+
+<!-- 儲存會議紀錄 -->
+<div class="overlay" id="m-saveMinutes">
+  <div class="modal">
+    <div class="modal-drag"></div>
+    <div class="modal-hd">
+      <div class="modal-icon">💾</div>
+      <div class="modal-title">儲存會議紀錄並結案</div>
+      <div class="modal-desc">儲存後將鎖定所有議題並推播通知，此操作<b>無法復原</b>。</div>
+    </div>
+    <div class="modal-body">
+      <div class="fg"><label class="fl">會議摘要 *</label>
+        <textarea class="fc" id="f-summary" placeholder="請輸入會議摘要…"></textarea></div>
+      <div class="fg"><label class="fl">決策事項（每行一項）</label>
+        <textarea class="fc" id="f-decisions" placeholder="例：核准 Q2 行銷預算 150 萬元"></textarea></div>
+      <div class="fg" style="margin-bottom:0"><label class="fl">行動事項（每行一項）</label>
+        <textarea class="fc" id="f-actions" placeholder="例：王小明負責彙整報告（3/15 前）"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-grey" onclick="closeM('m-saveMinutes')">❌ 取消</button>
+      <button class="btn btn-orange" id="btn-saveMinutes" onclick="確認儲存紀錄()">💾 確認儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// ⚙️ 設定（部署前請修改這兩行）
+// ══════════════════════════════════════════════════════════════
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbx-noDUEGyJ3vXk5VK4aauws3s6mEXoBhKOFA210dYE5T6UKd9ohRyb-yi2a9SMCqOKzg/exec';  // GAS 部署網址
+const LIFF_ID = '2001679903-r5VXNe5g';         // LINE LIFF ID
+
+// ══════════════════════════════════════════════════════════════
+// 全域狀態
+// ══════════════════════════════════════════════════════════════
+let 用戶 = { lineId:'', displayName:'', pictureUrl:'', role:'成員' };
+let 當前議題ID      = null;
+let 當前議題狀態    = null;
+let 當前結案會議ID  = null;
+let 快取 = { meetings:[], topics:{}, comments:{}, minutes:{} };
+
+// ══════════════════════════════════════════════════════════════
+// 工具函式
+// ══════════════════════════════════════════════════════════════
+function showToast(msg, ms=2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), ms);
+}
+
+function openM(id)  { document.getElementById(id).classList.add('show'); }
+function closeM(id) { document.getElementById(id).classList.remove('show'); }
+
+function setBtnLoading(id, loading, label='') {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  btn.disabled = loading;
+  if (label) btn.innerHTML = loading ? '<span class="spinner-sm"></span>' : label;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ══════════════════════════════════════════════════════════════
+// API 呼叫（含 retry）
+// ══════════════════════════════════════════════════════════════
+async function api(action, payload={}, retry=2) {
+  for (let i=0; i<=retry; i++) {
+    try {
+      const res = await fetch(GAS_URL, {
+        method:  'POST',
+        headers: { 'Content-Type':'application/json' },
+        body:    JSON.stringify({ action, lineId: 用戶.lineId, payload })
+      });
+      return await res.json();
+    } catch(e) {
+      if (i === retry) return { 狀態:'錯誤', 訊息:'網路連線失敗，請稍後再試' };
+      await new Promise(r => setTimeout(r, 800));
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// LIFF 初始化
+// ══════════════════════════════════════════════════════════════
+async function initApp() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+
+    const profile = await liff.getProfile();
+    用戶.lineId      = profile.userId;
+    用戶.displayName = profile.displayName;
+    用戶.pictureUrl  = profile.pictureUrl || '';
+
+    // 綁定用戶 & 取得角色
+    const bindRes = await api('bindUser', {
+      displayName: 用戶.displayName,
+      pictureUrl:  用戶.pictureUrl
+    });
+    if (bindRes.狀態 === '成功') {
+      用戶.role = bindRes.資料.role || '成員';
+    }
+
+    // 更新頂部欄
+    const av = document.getElementById('userAvatar');
+    av.src   = 用戶.pictureUrl || '';
+    av.onerror = () => { av.style.display='none'; };
+    document.getElementById('userName').textContent  = 用戶.displayName;
+    document.getElementById('roleLabel').textContent = 用戶.role === '管理員' ? '👑 管理員' : '👤 成員';
+
+    // 顯示主畫面
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('topbar').style.display        = '';
+    document.getElementById('mainContent').style.display   = '';
+    document.getElementById('bottomnav').style.display     = '';
+
+    // 初始載入
+    await 載入會議列表();
+
+  } catch(err) {
+    document.getElementById('loadingScreen').innerHTML = `
+      <div class="logo">⚠️</div>
+      <h1 style="color:#fff">載入失敗</h1>
+      <p style="color:rgba(255,255,255,.8);padding:0 24px;text-align:center">${escHtml(err.message)}</p>
+      <button onclick="location.reload()" style="margin-top:24px;padding:14px 32px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;background:#fff;color:var(--blue)">🔄 重新載入</button>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 頁面切換
+// ══════════════════════════════════════════════════════════════
+function 切換頁面(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`page-${page}`).classList.add('active');
+  document.getElementById(`nav-${page}`).classList.add('active');
+  if (page === 'meetings') 渲染會議列表();
+  if (page === 'topics')   { 更新下拉選單(); 載入議題(); }
+  if (page === 'minutes')  { 更新下拉選單(); 載入紀錄(); }
+}
+
+async function 重新整理() {
+  showToast('🔄 重新整理中…');
+  快取 = { meetings:[], topics:{}, comments:{}, minutes:{} };
+  await 載入會議列表();
+  更新下拉選單();
+  const active = ['meetings','topics','minutes'].find(p =>
+    document.getElementById(`page-${p}`).classList.contains('active'));
+  if (active === 'topics')  載入議題();
+  if (active === 'minutes') 載入紀錄();
+  showToast('✅ 已更新');
+}
+
+// ══════════════════════════════════════════════════════════════
+// 會議列表
+// ══════════════════════════════════════════════════════════════
+async function 載入會議列表() {
+  const res = await api('getMeetings');
+  if (res.狀態 === '成功') {
+    快取.meetings = res.資料 || [];
+  }
+  渲染會議列表();
+  更新下拉選單();
+}
+
+function 渲染會議列表() {
+  // 管理員按鈕
+  document.getElementById('adminMeetingBtn').innerHTML =
+    用戶.role === '管理員'
+      ? `<button class="btn btn-primary btn-block" onclick="openM('m-createMeeting');重置建立會議表單()">➕ 建立新會議</button>`
+      : '';
+
+  const ms     = 快取.meetings;
+  const total  = ms.length;
+  const active = ms.filter(m => m.status === '即將舉行').length;
+  const ended  = ms.filter(m => m.status === '已結束').length;
+
+  document.getElementById('meetingStats').innerHTML = `
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-val">${total}</div><div class="stat-lbl">總會議數</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--green)">${active}</div><div class="stat-lbl">即將舉行</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--grey)">${ended}</div><div class="stat-lbl">已結束</div></div>
+    </div>`;
+
+  if (ms.length === 0) {
+    document.getElementById('meetingList').innerHTML =
+      `<div class="empty"><div class="empty-icon">📅</div><div class="empty-text">尚無會議</div></div>`;
+    return;
+  }
+
+  document.getElementById('meetingList').innerHTML = ms.map(m => {
+    const isEnded = m.status === '已結束';
+    const badge   = isEnded
+      ? `<span class="badge b-grey">🔴 已結束</span>`
+      : `<span class="badge b-blue">🔵 即將舉行</span>`;
+    const tc = (快取.topics[m.meetingId] || []).length;
+
+    let acts = `
+      <button class="btn btn-outline btn-sm" onclick="前往議題('${escHtml(m.meetingId)}')">💬 議題${tc?`（${tc}）`:''}</button>
+      <button class="btn btn-outline-g btn-sm" onclick="前往紀錄('${escHtml(m.meetingId)}')">📝 紀錄</button>`;
+    if (用戶.role === '管理員' && !isEnded) {
+      acts += `<button class="btn btn-orange btn-sm" onclick="開啟結案Modal('${escHtml(m.meetingId)}')">💾 結案</button>`;
+    }
+
+    return `
+      <div class="m-card ${isEnded?'ended':''}">
+        <div class="m-card-hd">
+          <div class="m-icon">${isEnded?'🔒':'📅'}</div>
+          <div class="m-info">
+            <div class="m-title">${escHtml(m.title)}</div>
+            <div class="m-meta">🗓 ${escHtml(m.dateTime)}${m.description?`<br>📝 ${escHtml(m.description)}`:''}
+            </div>
+            <div style="margin-top:8px">${badge}</div>
+          </div>
+        </div>
+        <div class="m-actions">${acts}</div>
+      </div>`;
+  }).join('');
+}
+
+function 重置建立會議表單() {
+  ['f-mTitle','f-mDate','f-mDesc'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+}
+
+async function 確認建立會議() {
+  const title = document.getElementById('f-mTitle').value.trim();
+  const date  = document.getElementById('f-mDate').value;
+  const desc  = document.getElementById('f-mDesc').value.trim();
+  if (!title) { showToast('⚠️ 請輸入會議名稱'); return; }
+  if (!date)  { showToast('⚠️ 請選擇日期時間'); return; }
+
+  setBtnLoading('btn-createMeeting', true, '✅ 建立');
+  const res = await api('createMeeting', { title, dateTime: date, description: desc });
+  setBtnLoading('btn-createMeeting', false, '✅ 建立');
+
+  if (res.狀態 === '成功') {
+    closeM('m-createMeeting');
+    showToast('✅ 會議建立成功！已推播通知給所有成員');
+    await 載入會議列表();
+  } else {
+    showToast('❌ ' + res.訊息);
+  }
+}
+
+function 前往議題(meetingId) {
+  切換頁面('topics');
+  setTimeout(() => {
+    document.getElementById('topicMeetingSel').value = meetingId;
+    載入議題();
+  }, 60);
+}
+
+function 前往紀錄(meetingId) {
+  切換頁面('minutes');
+  setTimeout(() => {
+    document.getElementById('minutesMeetingSel').value = meetingId;
+    載入紀錄();
+  }, 60);
+}
+
+// ══════════════════════════════════════════════════════════════
+// 議題頁
+// ══════════════════════════════════════════════════════════════
+async function 載入議題() {
+  const meetingId = document.getElementById('topicMeetingSel').value;
+  if (!meetingId) {
+    document.getElementById('topicBanner').innerHTML   = '';
+    document.getElementById('adminTopicBtn').innerHTML = '';
+    document.getElementById('topicList').innerHTML     =
+      `<div class="empty"><div class="empty-icon">💬</div><div class="empty-text">請先選擇會議</div></div>`;
+    return;
+  }
+
+  document.getElementById('topicList').innerHTML =
+    `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-text">載入中…</div></div>`;
+
+  const res = await api('getTopics', { meetingId });
+  if (res.狀態 === '成功') {
+    快取.topics[meetingId] = res.資料 || [];
+  }
+  渲染議題列表(meetingId);
+}
+
+function 渲染議題列表(meetingId) {
+  const meeting = 快取.meetings.find(m => m.meetingId === meetingId);
+  const isEnded = meeting && meeting.status === '已結束';
+  const topics  = 快取.topics[meetingId] || [];
+
+  // 鎖定橫幅
+  document.getElementById('topicBanner').innerHTML = isEnded
+    ? `<div class="banner red"><div class="banner-icon">🔒</div>
+        <div class="banner-text">此會議已結束，所有議題已鎖定，<b>無法新增或修改</b>。</div></div>`
+    : '';
+
+  // 新增議題按鈕
+  document.getElementById('adminTopicBtn').innerHTML =
+    (!isEnded && meetingId)
+      ? `<button class="btn btn-green btn-block" onclick="openM('m-addTopic');重置新增議題表單()">➕ 新增議題</button>`
+      : '';
+
+  if (topics.length === 0) {
+    document.getElementById('topicList').innerHTML =
+      `<div class="empty"><div class="empty-icon">💬</div><div class="empty-text">此會議尚無議題</div></div>`;
+    return;
+  }
+
+  document.getElementById('topicList').innerHTML = topics.map(t => {
+    const isClosed = t.status === '已結案';
+    const badge    = isClosed
+      ? `<span class="badge b-purple">🔒 已結案</span>`
+      : `<span class="badge b-green">🟢 進行中</span>`;
+    const cc = (快取.comments[t.topicId] || []).length;
+
+    let acts = `<button class="btn btn-outline btn-sm" onclick="開啟討論Modal('${escHtml(t.topicId)}')">💬 查看討論${cc?`（${cc}）`:''}</button>`;
+    if (!isClosed && !isEnded && 用戶.role === '管理員') {
+      acts += `<button class="btn btn-red btn-sm" onclick="準備結案議題('${escHtml(t.topicId)}')">🔒 結案</button>`;
+    }
+
+    return `
+      <div class="t-card">
+        <div class="t-hd">
+          <div class="t-icon">${isClosed?'🔒':'💬'}</div>
+          <div class="t-info">
+            <div class="t-title">${escHtml(t.title)}</div>
+            <div class="t-meta">👤 ${escHtml(t.creatorName)} · ${escHtml(t.createdAt)}</div>
+            ${t.description?`<div style="font-size:13px;color:var(--grey);margin-top:4px">${escHtml(t.description)}</div>`:''}
+            <div style="margin-top:8px">${badge}</div>
+          </div>
+        </div>
+        <div class="t-actions">${acts}</div>
+      </div>`;
+  }).join('');
+}
+
+function 重置新增議題表單() {
+  ['f-tTitle','f-tDesc'].forEach(id => { document.getElementById(id).value=''; });
+}
+
+async function 確認新增議題() {
+  const meetingId = document.getElementById('topicMeetingSel').value;
+  if (!meetingId) { showToast('⚠️ 請先選擇會議'); return; }
+  const title = document.getElementById('f-tTitle').value.trim();
+  const desc  = document.getElementById('f-tDesc').value.trim();
+  if (!title) { showToast('⚠️ 請輸入議題標題'); return; }
+
+  setBtnLoading('btn-addTopic', true, '✅ 新增');
+  const res = await api('addTopic', { meetingId, title, description: desc });
+  setBtnLoading('btn-addTopic', false, '✅ 新增');
+
+  if (res.狀態 === '成功') {
+    closeM('m-addTopic');
+    showToast('✅ 議題新增成功！');
+    await 載入議題();
+  } else {
+    showToast('❌ ' + res.訊息);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 討論 Modal
+// ══════════════════════════════════════════════════════════════
+async function 開啟討論Modal(topicId) {
+  當前議題ID = topicId;
+
+  // 找議題資料
+  let topic = null;
+  for (const mid in 快取.topics) {
+    topic = 快取.topics[mid].find(t => t.topicId === topicId);
+    if (topic) break;
+  }
+  if (!topic) return;
+
+  const meeting  = 快取.meetings.find(m => m.meetingId === topic.meetingId);
+  const isClosed = topic.status === '已結案' || (meeting && meeting.status === '已結束');
+  當前議題狀態 = isClosed ? '已結案' : '進行中';
+
+  document.getElementById('d-title').textContent = topic.title;
+  document.getElementById('d-desc').textContent  = topic.description || '';
+  document.getElementById('d-comments').innerHTML =
+    `<div class="empty" style="padding:20px"><div class="empty-icon" style="font-size:32px">⏳</div></div>`;
+  document.getElementById('d-input').style.display = isClosed ? 'none' : 'block';
+  document.getElementById('d-lock').style.display  = isClosed ? 'block' : 'none';
+  document.getElementById('f-comment').value = '';
+  document.getElementById('btn-closeTopic').style.display =
+    (用戶.role === '管理員' && !isClosed) ? 'inline-flex' : 'none';
+
+  openM('m-discussion');
+
+  // 載入留言
+  const res = await api('getComments', { topicId });
+  if (res.狀態 === '成功') {
+    快取.comments[topicId] = res.資料 || [];
+  }
+  渲染留言列表(topicId);
+}
+
+function 渲染留言列表(topicId) {
+  const comments = 快取.comments[topicId] || [];
+  if (comments.length === 0) {
+    document.getElementById('d-comments').innerHTML =
+      `<div style="text-align:center;color:var(--grey);padding:20px;font-size:14px">尚無留言，歡迎發表意見！</div>`;
+    return;
+  }
+  document.getElementById('d-comments').innerHTML = comments.map(c => `
+    <div class="c-item">
+      <div class="c-hd">
+        <div class="c-avatar">${escHtml(c.displayName ? c.displayName[0] : '?')}</div>
+        <div class="c-name">${escHtml(c.displayName)}</div>
+        <div class="c-time">${escHtml(c.createdAt)}</div>
+      </div>
+      <div class="c-body">${escHtml(c.content)}</div>
+    </div>`).join('');
+  // 捲到最新
+  const box = document.getElementById('d-comments');
+  box.scrollTop = box.scrollHeight;
+}
+
+async function 送出留言() {
+  const content = document.getElementById('f-comment').value.trim();
+  if (!content) { showToast('⚠️ 請輸入留言內容'); return; }
+
+  setBtnLoading('btn-sendComment', true, '📤 送出留言');
+  const res = await api('addComment', { topicId: 當前議題ID, content });
+  setBtnLoading('btn-sendComment', false, '📤 送出留言');
+
+  if (res.狀態 === '成功') {
+    document.getElementById('f-comment').value = '';
+    showToast('✅ 留言送出成功！');
+    // 重新載入留言
+    const cRes = await api('getComments', { topicId: 當前議題ID });
+    if (cRes.狀態 === '成功') 快取.comments[當前議題ID] = cRes.資料 || [];
+    渲染留言列表(當前議題ID);
+    // 更新議題列表留言數
+    const sel = document.getElementById('topicMeetingSel').value;
+    if (sel) 渲染議題列表(sel);
+  } else {
+    showToast('❌ ' + res.訊息);
+  }
+}
+
+function 準備結案議題(topicId) {
+  當前議題ID = topicId;
+  openM('m-confirmClose');
+}
+
+async function 執行結案議題() {
+  setBtnLoading('btn-doClose', true, '🔒 確認結案');
+  const res = await api('closeTopic', { topicId: 當前議題ID });
+  setBtnLoading('btn-doClose', false, '🔒 確認結案');
+
+  if (res.狀態 === '成功') {
+    closeM('m-confirmClose');
+    closeM('m-discussion');
+    showToast('🔒 議題已結案，內容鎖定無法修改');
+    const sel = document.getElementById('topicMeetingSel').value;
+    if (sel) await 載入議題();
+  } else {
+    showToast('❌ ' + res.訊息);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 會議紀錄頁
+// ══════════════════════════════════════════════════════════════
+async function 載入紀錄() {
+  const meetingId = document.getElementById('minutesMeetingSel').value;
+  if (!meetingId) {
+    document.getElementById('minutesContent').innerHTML =
+      `<div class="empty"><div class="empty-icon">📝</div><div class="empty-text">請先選擇會議</div></div>`;
+    return;
+  }
+
+  document.getElementById('minutesContent').innerHTML =
+    `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-text">載入中…</div></div>`;
+
+  const res = await api('getMinutes', { meetingId });
+  if (res.狀態 === '成功') {
+    快取.minutes[meetingId] = res.資料;
+  }
+  渲染紀錄(meetingId);
+}
+
+function 渲染紀錄(meetingId) {
+  const meeting = 快取.meetings.find(m => m.meetingId === meetingId);
+  const minutes = 快取.minutes[meetingId];
+  const isEnded = meeting && meeting.status === '已結束';
+
+  let html = '';
+
+  if (!minutes) {
+    if (用戶.role === '管理員' && !isEnded) {
+      html += `<button class="btn btn-orange btn-block" onclick="開啟結案Modal('${escHtml(meetingId)}')">💾 儲存會議紀錄並結案</button>`;
+    }
+    html += `<div class="empty"><div class="empty-icon">📝</div><div class="empty-text">此會議尚無紀錄</div></div>`;
+  } else {
+    html += `
+      <div class="banner green">
+        <div class="banner-icon">🔒</div>
+        <div class="banner-text">此會議紀錄已儲存並鎖定，<b>內容無法修改</b>。</div>
+      </div>
+      <div class="mn-sec">
+        <div class="mn-hd">📋 會議摘要</div>
+        <div class="mn-body" style="font-size:16px;line-height:1.8;color:#333">${escHtml(minutes.summary)}</div>
+      </div>`;
+
+    if (minutes.decisions && minutes.decisions.length > 0) {
+      html += `<div class="mn-sec">
+        <div class="mn-hd">✅ 決策事項</div>
+        <div class="mn-body">
+          ${minutes.decisions.map((d,i) => `
+            <div class="mn-item d">
+              <div class="mn-num d">${i+1}</div>
+              <div class="mn-text">${escHtml(d)}</div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    if (minutes.actions && minutes.actions.length > 0) {
+      html += `<div class="mn-sec orange">
+        <div class="mn-hd orange">🎯 行動事項</div>
+        <div class="mn-body">
+          ${minutes.actions.map((a,i) => `
+            <div class="mn-item a">
+              <div class="mn-num a">${i+1}</div>
+              <div class="mn-text">${escHtml(a)}</div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    // 相關議題
+    const topics = 快取.topics[meetingId];
+    if (topics && topics.length > 0) {
+      html += `<div class="card">
+        <div class="card-hd"><div class="card-title">💬 相關議題（${topics.length}）</div></div>
+        <div class="card-body" style="padding:0">
+          ${topics.map(t => `
+            <div style="padding:12px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between">
+              <div>
+                <div style="font-size:15px;font-weight:700">${escHtml(t.title)}</div>
+                <div style="font-size:12px;color:var(--grey)">👤 ${escHtml(t.creatorName)}</div>
+              </div>
+              <span class="badge b-purple">🔒 已結案</span>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    html += `<div style="text-align:center;color:var(--grey);font-size:13px;padding:8px 0 16px">
+      📅 紀錄建立時間：${escHtml(minutes.createdAt)}
+    </div>`;
+  }
+
+  document.getElementById('minutesContent').innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 結案 Modal（儲存紀錄）
+// ══════════════════════════════════════════════════════════════
+function 開啟結案Modal(meetingId) {
+  const meeting = 快取.meetings.find(m => m.meetingId === meetingId);
+  if (meeting && meeting.status === '已結束') {
+    showToast('❌ 此會議已結束，無法重複結案');
+    return;
+  }
+  當前結案會議ID = meetingId;
+  ['f-summary','f-decisions','f-actions'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  openM('m-saveMinutes');
+}
+
+async function 確認儲存紀錄() {
+  const summary   = document.getElementById('f-summary').value.trim();
+  const decisions = document.getElementById('f-decisions').value.trim();
+  const actions   = document.getElementById('f-actions').value.trim();
+  if (!summary) { showToast('⚠️ 請輸入會議摘要'); return; }
+
+  const decisionsArr = decisions ? decisions.split('\n').map(s=>s.trim()).filter(Boolean) : [];
+  const actionsArr   = actions   ? actions.split('\n').map(s=>s.trim()).filter(Boolean)   : [];
+
+  setBtnLoading('btn-saveMinutes', true, '💾 確認儲存');
+  const res = await api('saveMinutes', {
+    meetingId:  當前結案會議ID,
+    summary,
+    decisions:  decisionsArr,
+    actions:    actionsArr
+  });
+  setBtnLoading('btn-saveMinutes', false, '💾 確認儲存');
+
+  if (res.狀態 === '成功') {
+    closeM('m-saveMinutes');
+    showToast('🔒 會議紀錄已儲存！所有議題已鎖定，已推播通知');
+    // 重新載入全部資料
+    await 載入會議列表();
+    // 跳至紀錄頁
+    切換頁面('minutes');
+    setTimeout(() => {
+      document.getElementById('minutesMeetingSel').value = 當前結案會議ID;
+      載入紀錄();
+    }, 100);
+  } else {
+    showToast('❌ ' + res.訊息);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 下拉選單同步
+// ══════════════════════════════════════════════════════════════
+function 更新下拉選單() {
+  const tSel = document.getElementById('topicMeetingSel');
+  const mSel = document.getElementById('minutesMeetingSel');
+  const tVal = tSel.value;
+  const mVal = mSel.value;
+
+  const opts = 快取.meetings.map(m =>
+    `<option value="${escHtml(m.meetingId)}">${escHtml(m.title)}（${m.status}）</option>`
+  ).join('');
+  const blank = '<option value="">— 請選擇 —</option>';
+
+  tSel.innerHTML = blank + opts;
+  mSel.innerHTML = blank + opts;
+  if (tVal) tSel.value = tVal;
+  if (mVal) mSel.value = mVal;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 初始化
+// ══════════════════════════════════════════════════════════════
+window.onload = initApp;
+</script>
+</body>
+</html>
