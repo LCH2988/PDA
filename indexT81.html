@@ -198,6 +198,9 @@ select.fc{cursor:pointer}
 }
 .cal-event-label.meeting{background:var(--blue-l);color:var(--blue)}
 .cal-event-label.topic{background:var(--green-l);color:var(--green)}
+.cal-event-label.static-admin{background:var(--orange-l);color:var(--orange)}
+.cal-event-label.static-activity{background:var(--purple-l);color:var(--purple)}
+.cal-event-label.static-meeting{background:var(--blue-l);color:var(--blue)}
 .cal-legend{
   display:flex;gap:16px;padding:10px 16px;
   background:#fafafa;border-top:1px solid #eee;flex-wrap:wrap;
@@ -259,7 +262,7 @@ select.fc{cursor:pointer}
 }
 .view-btn.active{background:#fff;color:var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.12)}
 </style>
-</head>
+
 <body>
 <!-- 載入畫面 -->
 <div id="loadingScreen">
@@ -335,8 +338,8 @@ select.fc{cursor:pointer}
 
     <!-- 視圖切換 -->
     <div class="view-toggle">
-      <button class="view-btn active" id="vbtn-month"  onclick="切換視圖('month')">📅 月曆</button>
-      <button class="view-btn"        id="vbtn-week"   onclick="切換視圖('week')">📆 週視圖</button>
+      <button class="view-btn active" id="vbtn-month"    onclick="切換視圖('month')">📅 月曆</button>
+      <button class="view-btn"        id="vbtn-week"     onclick="切換視圖('week')">📆 週視圖</button>
       <button class="view-btn"        id="vbtn-upcoming" onclick="切換視圖('upcoming')">📋 待辦清單</button>
     </div>
 
@@ -358,15 +361,19 @@ select.fc{cursor:pointer}
           <div class="cal-weekday">六</div>
         </div>
         <div class="cal-grid" id="calGrid"></div>
+        <!-- ★ 圖例新增行政/活動說明 -->
         <div class="cal-legend">
           <div class="cal-legend-item">
             <div class="cal-legend-dot" style="background:var(--blue)"></div>會議
           </div>
           <div class="cal-legend-item">
-            <div class="cal-legend-dot" style="background:var(--green)"></div>議題截止
+            <div class="cal-legend-dot" style="background:var(--green)"></div>議題
           </div>
           <div class="cal-legend-item">
-            <div class="cal-legend-dot" style="background:var(--orange)"></div>今日
+            <div class="cal-legend-dot" style="background:var(--orange)"></div>行政事項
+          </div>
+          <div class="cal-legend-item">
+            <div class="cal-legend-dot" style="background:var(--purple)"></div>活動/課程
           </div>
         </div>
       </div>
@@ -414,12 +421,15 @@ select.fc{cursor:pointer}
           <div class="empty"><div class="empty-icon">💬</div><div class="empty-text">暫無進行中議題</div></div>
         </div>
       </div>
+      <!-- ★ 本月年度行事曆事項（動態插入區塊） -->
+      <div id="staticMonthCard"></div>
     </div>
 
-  </div>
+  </div><!-- end page-calendar -->
 
-</div>
+</div><!-- end main -->
 
+<!-- 底部導覽 -->
 <div class="bottomnav" id="bottomnav" style="display:none">
   <div class="nav-item active" id="nav-meetings" onclick="切換頁面('meetings')">
     <div class="nav-icon">📅</div><div class="nav-label">會議</div>
@@ -547,22 +557,23 @@ select.fc{cursor:pointer}
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
-<!-- ══ 以下接第三段 JavaScript ══ -->
+
 <script>
 
 // ══════════════════════════════════════════════════════════════
-// ⚙️ 設定（部署前請修改這兩行）
+// ⚙️ 設定
 // ══════════════════════════════════════════════════════════════
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwqSMboGEChmgc0MpGqNb45JIZG3Ve9FZB8ON__ulXSZc6V20qtkv96b2d7TkSj9qOjhg/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwUMoGr5cZnStSycwqUxJZHhvMxJWroG8aDHy2YhxC7vQ6HUxOXzyhBwI-c_D4Rv3koHQ/exec';
 const LIFF_ID = '2001679903-r5VXNe5g';
 
 // ══════════════════════════════════════════════════════════════
 // 全域狀態
+// ★ 快取新增 annualCalendar:[]
 // ══════════════════════════════════════════════════════════════
 var 用戶 = { lineId:'', displayName:'', pictureUrl:'', role:'成員' };
 var 當前議題ID     = null;
 var 當前結案會議ID = null;
-var 快取 = { meetings:[], topics:{}, comments:{}, minutes:{} };
+var 快取 = { meetings:[], topics:{}, comments:{}, minutes:{}, annualCalendar:[] };
 var debugLines = [];
 var debugTimer = null;
 
@@ -577,8 +588,8 @@ function dbg(msg) {
   if (debugLines.length > 40) debugLines.shift();
   var panel = document.getElementById('debugPanel');
   if (panel && panel.style.display !== 'none') {
-    panel.innerHTML  = debugLines.map(function(l){ return escHtml(l); }).join('<br>');
-    panel.scrollTop  = panel.scrollHeight;
+    panel.innerHTML = debugLines.map(function(l){ return escHtml(l); }).join('<br>');
+    panel.scrollTop = panel.scrollHeight;
   }
 }
 
@@ -632,10 +643,7 @@ function setLoadingMsg(msg) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ★ 核心修正：API 呼叫
-//   1. Content-Type 改為 text/plain;charset=utf-8（避免 CORS preflight）
-//   2. redirect:'follow' 處理 GAS 302 重導向
-//   3. 完整 log 方便除錯
+// API 呼叫
 // ══════════════════════════════════════════════════════════════
 async function api(action, payload, retry) {
   payload = payload || {};
@@ -672,7 +680,7 @@ async function api(action, payload, retry) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ★ LIFF 初始化（加強驗證與錯誤處理）
+// ★ LIFF 初始化（加入載入年度行事曆）
 // ══════════════════════════════════════════════════════════════
 async function initApp() {
   try {
@@ -706,7 +714,6 @@ async function initApp() {
     用戶.pictureUrl  = profile.pictureUrl || '';
     dbg('profile OK: ' + 用戶.lineId + ' / ' + 用戶.displayName);
 
-    // ★ bindUser：帶入完整 payload
     setLoadingMsg('綁定帳號中…');
     var bindRes = await api('bindUser', {
       displayName: 用戶.displayName,
@@ -741,7 +748,12 @@ async function initApp() {
     document.getElementById('mainContent').style.display   = '';
     document.getElementById('bottomnav').style.display     = '';
 
-    await 載入會議列表();
+    // ★ 同時載入會議列表與年度行事曆
+    setLoadingMsg('載入資料中…');
+    await Promise.all([
+      載入會議列表(),
+      載入年度行事曆()
+    ]);
 
   } catch(err) {
     dbg('initApp 例外: ' + err.message);
@@ -764,16 +776,6 @@ window.onload = initApp;
 // ══════════════════════════════════════════════════════════════
 // 頁面切換
 // ══════════════════════════════════════════════════════════════
-// function 切換頁面(page) {
-//   document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
-//   document.querySelectorAll('.nav-item').forEach(function(n){ n.classList.remove('active'); });
-//   document.getElementById('page-' + page).classList.add('active');
-//   document.getElementById('nav-'  + page).classList.add('active');
-//   if (page === 'meetings') 渲染會議列表();
-//   if (page === 'topics')  { 更新下拉選單(); 載入議題(); }
-//   if (page === 'minutes') { 更新下拉選單(); 載入紀錄(); }
-// }
-
 function 切換頁面(page) {
   document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
   document.querySelectorAll('.nav-item').forEach(function(n){ n.classList.remove('active'); });
@@ -788,20 +790,41 @@ function 切換頁面(page) {
   }
 }
 
+// ★ 重新整理加入年度行事曆重載
 async function 重新整理() {
   showToast('🔄 重新整理中…');
-  快取 = { meetings:[], topics:{}, comments:{}, minutes:{} };
-  await 載入會議列表();
+  快取 = { meetings:[], topics:{}, comments:{}, minutes:{}, annualCalendar:[] };
+  await Promise.all([
+    載入會議列表(),
+    載入年度行事曆()
+  ]);
   更新下拉選單();
-  var pages = ['meetings','topics','minutes'];
+  var pages = ['meetings','topics','minutes','calendar'];
   for (var i = 0; i < pages.length; i++) {
-    if (document.getElementById('page-' + pages[i]).classList.contains('active')) {
-      if (pages[i] === 'topics')  載入議題();
-      if (pages[i] === 'minutes') 載入紀錄();
+    var el = document.getElementById('page-' + pages[i]);
+    if (el && el.classList.contains('active')) {
+      if (pages[i] === 'topics')   載入議題();
+      if (pages[i] === 'minutes')  載入紀錄();
+      if (pages[i] === 'calendar') 切換視圖(calState.view);
       break;
     }
   }
   showToast('✅ 已更新');
+}
+
+// ══════════════════════════════════════════════════════════════
+// ★ 載入年度行事曆（從後端 GAS）
+// ══════════════════════════════════════════════════════════════
+async function 載入年度行事曆() {
+  dbg('載入年度行事曆');
+  var res = await api('getAnnualCalendar', { year: new Date().getFullYear() });
+  if (res['狀態'] === '成功') {
+    快取.annualCalendar = res['資料'] || [];
+    dbg('年度行事曆筆數: ' + 快取.annualCalendar.length);
+  } else {
+    dbg('getAnnualCalendar 失敗: ' + res['訊息']);
+    快取.annualCalendar = [];
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -946,7 +969,6 @@ function 渲染議題列表(meetingId) {
       '<div class="banner-text">此會議已結束，所有議題已鎖定，<b>無法新增或修改</b>。</div></div>'
     : '';
 
-  // ★ 所有登入用戶皆可新增議題
   document.getElementById('topicAddBtn').innerHTML =
     (!isEnded && meetingId)
       ? '<button class="btn btn-green btn-block" onclick="openM(\'m-addTopic\');重置新增議題表單()">➕ 新增議題</button>'
@@ -1271,26 +1293,25 @@ function 更新下拉選單() {
 // 行事曆全域狀態
 // ══════════════════════════════════════════════════════════════
 var calState = {
-  year:       new Date().getFullYear(),
-  month:      new Date().getMonth(),       // 0-based
-  weekOffset: 0,                           // 週偏移（0=本週）
-  selectedDate: null,                      // 'YYYY-MM-DD'
-  view:       'month'                      // month | week | upcoming
+  year:             new Date().getFullYear(),
+  month:            new Date().getMonth(),   // 0-based
+  weekOffset:       0,
+  weekSelectedDate: null,
+  selectedDate:     null,                    // 'YYYY-MM-DD'
+  view:             'month'
 };
 
 // ══════════════════════════════════════════════════════════════
 // 工具：日期格式化
 // ══════════════════════════════════════════════════════════════
 function fmtDate(d) {
-  // Date → 'YYYY-MM-DD'
-  var y = d.getFullYear();
-  var m = String(d.getMonth() + 1).padStart(2, '0');
+  var y   = d.getFullYear();
+  var m   = String(d.getMonth() + 1).padStart(2, '0');
   var day = String(d.getDate()).padStart(2, '0');
   return y + '-' + m + '-' + day;
 }
 
 function fmtDateCN(dateStr) {
-  // 'YYYY-MM-DD' → 'M月D日（週X）'
   if (!dateStr) return '';
   var d    = new Date(dateStr + 'T00:00:00');
   var days = ['日','一','二','三','四','五','六'];
@@ -1298,7 +1319,6 @@ function fmtDateCN(dateStr) {
 }
 
 function parseEventDate(dateTimeStr) {
-  // 從 'YYYY-MM-DDTHH:mm' 或 'YYYY/MM/DD HH:mm' 等格式取出 'YYYY-MM-DD'
   if (!dateTimeStr) return null;
   var s = String(dateTimeStr).replace(/\//g, '-');
   var m = s.match(/(\d{4}-\d{2}-\d{2})/);
@@ -1313,12 +1333,36 @@ function parseEventTime(dateTimeStr) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 取得行事曆事件（從快取整理）
+// ★ 取得行事曆事件（動態快取 + 後端年度行事曆）
 // ══════════════════════════════════════════════════════════════
 function getCalEvents() {
   var events = [];
 
-  // 會議事件
+  // ── 1. 年度行事曆（後端靜態事項）────────────────────────
+  (快取.annualCalendar || []).forEach(function(item) {
+    var typeIconMap = { meeting:'🏛', admin:'📋', activity:'⭐' };
+    var icon        = typeIconMap[item.type] || '📌';
+    // staticType 用於 CSS class 對應顏色
+    var staticType  = item.type === 'meeting'  ? 'static-meeting'
+                    : item.type === 'activity' ? 'static-activity'
+                    : 'static-admin';
+    events.push({
+      date:       item.date,
+      time:       '',
+      type:       'static',
+      staticType: staticType,
+      rawType:    item.type,
+      title:      item.title,
+      status:     '預定',
+      desc:       '【' + item.category + '】' + (item.endDate ? ' 至 ' + item.endDate : ''),
+      icon:       icon,
+      isStatic:   true,
+      endDate:    item.endDate,
+      category:   item.category
+    });
+  });
+
+  // ── 2. 動態快取：會議 ────────────────────────────────────
   快取.meetings.forEach(function(m) {
     var d = parseEventDate(m.dateTime);
     if (!d) return;
@@ -1326,14 +1370,17 @@ function getCalEvents() {
       date:      d,
       time:      parseEventTime(m.dateTime),
       type:      'meeting',
+      staticType:'meeting',
       title:     m.title,
       status:    m.status,
       meetingId: m.meetingId,
-      desc:      m.description || ''
+      desc:      m.description || '',
+      icon:      '📅',
+      isStatic:  false
     });
   });
 
-  // 議題事件（從所有快取的議題中取出）
+  // ── 3. 動態快取：議題 ────────────────────────────────────
   Object.keys(快取.topics).forEach(function(mid) {
     快取.topics[mid].forEach(function(t) {
       var meeting = 快取.meetings.find(function(m){ return m.meetingId === mid; });
@@ -1343,11 +1390,14 @@ function getCalEvents() {
         date:      d,
         time:      parseEventTime(meeting ? meeting.dateTime : ''),
         type:      'topic',
+        staticType:'topic',
         title:     t.title,
         status:    t.status,
         topicId:   t.topicId,
         meetingId: mid,
-        desc:      '所屬會議：' + (meeting ? meeting.title : mid)
+        desc:      '所屬會議：' + (meeting ? meeting.title : mid),
+        icon:      '💬',
+        isStatic:  false
       });
     });
   });
@@ -1361,7 +1411,7 @@ function getCalEvents() {
 function 切換視圖(view) {
   calState.view = view;
   ['month','week','upcoming'].forEach(function(v) {
-    document.getElementById('cal-view-' + v).style.display  = (v === view) ? '' : 'none';
+    document.getElementById('cal-view-' + v).style.display = (v === view) ? '' : 'none';
     document.getElementById('vbtn-' + v).classList.toggle('active', v === view);
   });
   if (view === 'month')    渲染月曆();
@@ -1385,29 +1435,24 @@ function calNextMonth() {
 }
 
 function 渲染月曆() {
-  var y = calState.year;
-  var mo = calState.month;
-  var today = fmtDate(new Date());
+  var y      = calState.year;
+  var mo     = calState.month;
+  var today  = fmtDate(new Date());
   var events = getCalEvents();
 
-  // 標題
   document.getElementById('calMonthTitle').textContent = y + '年 ' + (mo + 1) + '月';
 
-  // 計算格子
-  var firstDay  = new Date(y, mo, 1).getDay();   // 0=日
-  var daysInMon = new Date(y, mo + 1, 0).getDate();
+  var firstDay   = new Date(y, mo, 1).getDay();
+  var daysInMon  = new Date(y, mo + 1, 0).getDate();
   var daysInPrev = new Date(y, mo, 0).getDate();
 
   var cells = [];
-  // 上月補位
   for (var i = firstDay - 1; i >= 0; i--) {
     cells.push({ date: new Date(y, mo - 1, daysInPrev - i), otherMonth: true });
   }
-  // 本月
   for (var d = 1; d <= daysInMon; d++) {
     cells.push({ date: new Date(y, mo, d), otherMonth: false });
   }
-  // 下月補位（補滿 6 週）
   var remain = 42 - cells.length;
   for (var j = 1; j <= remain; j++) {
     cells.push({ date: new Date(y, mo + 1, j), otherMonth: true });
@@ -1422,14 +1467,14 @@ function 渲染月曆() {
 
   var html = '';
   cells.forEach(function(cell) {
-    var ds       = fmtDate(cell.date);
-    var isToday  = ds === today;
-    var isSel    = ds === calState.selectedDate;
-    var evs      = evMap[ds] || [];
-    var cls      = 'cal-cell';
-    if (cell.otherMonth) cls += ' other-month';
-    if (isToday)  cls += ' today';
-    if (isSel && !isToday) cls += ' selected';
+    var ds      = fmtDate(cell.date);
+    var isToday = ds === today;
+    var isSel   = ds === calState.selectedDate;
+    var evs     = evMap[ds] || [];
+    var cls     = 'cal-cell';
+    if (cell.otherMonth)      cls += ' other-month';
+    if (isToday)              cls += ' today';
+    if (isSel && !isToday)    cls += ' selected';
 
     var dayHtml = '<div class="cal-day">' + cell.date.getDate() + '</div>';
 
@@ -1438,8 +1483,8 @@ function 渲染月曆() {
     var shown  = 0;
     evs.forEach(function(ev) {
       if (shown >= 2) return;
-      evHtml += '<span class="cal-event-label ' + ev.type + '">' +
-                  (ev.type === 'meeting' ? '📅' : '💬') + ' ' + escHtml(ev.title) +
+      evHtml += '<span class="cal-event-label ' + ev.staticType + '">' +
+                  ev.icon + ' ' + escHtml(ev.title) +
                 '</span>';
       shown++;
     });
@@ -1453,8 +1498,6 @@ function 渲染月曆() {
   });
 
   document.getElementById('calGrid').innerHTML = html;
-
-  // 若有選取日期，重新渲染詳情
   if (calState.selectedDate) calShowDayDetail(calState.selectedDate);
 }
 
@@ -1464,6 +1507,7 @@ function calSelectDate(ds) {
   calShowDayDetail(ds);
 }
 
+// ★ 日期詳情（支援靜態年度事項）
 function calShowDayDetail(ds) {
   var events = getCalEvents().filter(function(ev){ return ev.date === ds; });
   var detail = document.getElementById('calDayDetail');
@@ -1474,26 +1518,43 @@ function calShowDayDetail(ds) {
   title.textContent    = '📅 ' + fmtDateCN(ds);
 
   if (events.length === 0) {
-    list.innerHTML = '<div class="empty" style="padding:24px"><div class="empty-icon" style="font-size:36px">🌤</div>' +
-                     '<div class="empty-text">這天沒有行程</div></div>';
+    list.innerHTML =
+      '<div class="empty" style="padding:24px">' +
+        '<div class="empty-icon" style="font-size:36px">🌤</div>' +
+        '<div class="empty-text">這天沒有行程</div>' +
+      '</div>';
     return;
   }
 
   list.innerHTML = events.map(function(ev) {
-    var icon   = ev.type === 'meeting' ? '📅' : '💬';
-    var badge  = ev.type === 'meeting'
-      ? (ev.status === '已結束'
-          ? '<span class="badge b-grey" style="font-size:12px">🔴 已結束</span>'
-          : '<span class="badge b-blue" style="font-size:12px">🔵 即將舉行</span>')
-      : (ev.status === '已結案'
-          ? '<span class="badge b-purple" style="font-size:12px">🔒 已結案</span>'
-          : '<span class="badge b-green" style="font-size:12px">🟢 進行中</span>');
-    var action = ev.type === 'meeting'
-      ? '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="前往議題(\'' + escHtml(ev.meetingId) + '\')">💬 查看議題</button>'
-      : '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="開啟討論Modal(\'' + escHtml(ev.topicId) + '\')">💬 查看討論</button>';
+    var badge  = '';
+    var action = '';
+
+    if (ev.isStatic) {
+      // 年度行事曆靜態事項
+      var badgeClass = ev.rawType === 'activity' ? 'b-purple'
+                     : ev.rawType === 'meeting'  ? 'b-blue'
+                     : 'b-orange';
+      badge  = '<span class="badge ' + badgeClass + '" style="font-size:12px">' +
+                 ev.icon + ' ' + escHtml(ev.category) +
+               '</span>';
+      action = '';   // 靜態事項無操作按鈕
+    } else if (ev.type === 'meeting') {
+      badge  = ev.status === '已結束'
+        ? '<span class="badge b-grey"   style="font-size:12px">🔴 已結束</span>'
+        : '<span class="badge b-blue"   style="font-size:12px">🔵 即將舉行</span>';
+      action = '<button class="btn btn-outline btn-sm" style="margin-top:8px" ' +
+                 'onclick="前往議題(\'' + escHtml(ev.meetingId) + '\')">💬 查看議題</button>';
+    } else if (ev.type === 'topic') {
+      badge  = ev.status === '已結案'
+        ? '<span class="badge b-purple" style="font-size:12px">🔒 已結案</span>'
+        : '<span class="badge b-green"  style="font-size:12px">🟢 進行中</span>';
+      action = '<button class="btn btn-outline btn-sm" style="margin-top:8px" ' +
+                 'onclick="開啟討論Modal(\'' + escHtml(ev.topicId) + '\')">💬 查看討論</button>';
+    }
 
     return '<div class="day-event-item">' +
-             '<div class="day-event-icon">' + icon + '</div>' +
+             '<div class="day-event-icon">' + ev.icon + '</div>' +
              '<div class="day-event-info">' +
                '<div class="day-event-title">' + escHtml(ev.title) + '</div>' +
                '<div class="day-event-meta">' +
@@ -1515,7 +1576,7 @@ function calPrevWeek() { calState.weekOffset--; 渲染週視圖(); }
 function calNextWeek() { calState.weekOffset++; 渲染週視圖(); }
 
 function 渲染週視圖() {
-  var today    = new Date();
+  var today     = new Date();
   var weekStart = new Date(today);
   weekStart.setDate(today.getDate() - today.getDay() + calState.weekOffset * 7);
 
@@ -1531,11 +1592,10 @@ function 渲染週視圖() {
   document.getElementById('calWeekTitle').textContent =
     days[0].getFullYear() + '年  ' + startStr + ' ～ ' + endStr;
 
-  var todayStr  = fmtDate(new Date());
-  var events    = getCalEvents();
-  var dayNames  = ['日','一','二','三','四','五','六'];
+  var todayStr = fmtDate(new Date());
+  var events   = getCalEvents();
+  var dayNames = ['日','一','二','三','四','五','六'];
 
-  // 預設選取今天（若在本週），否則選週一
   if (!calState.weekSelectedDate) {
     var todayInWeek = days.find(function(d){ return fmtDate(d) === todayStr; });
     calState.weekSelectedDate = todayInWeek ? todayStr : fmtDate(days[1]);
@@ -1545,7 +1605,6 @@ function 渲染週視圖() {
   days.forEach(function(d) {
     var ds      = fmtDate(d);
     var hasEv   = events.some(function(ev){ return ev.date === ds; });
-    var isToday = ds === todayStr;
     var isSel   = ds === calState.weekSelectedDate;
     var cls     = 'mini-day' + (isSel ? ' active' : '') + (hasEv && !isSel ? ' has-event' : '');
 
@@ -1565,6 +1624,7 @@ function weekSelectDay(ds) {
   渲染週視圖();
 }
 
+// ★ 週視圖日期詳情（支援靜態年度事項）
 function weekShowDayDetail(ds) {
   var events = getCalEvents().filter(function(ev){ return ev.date === ds; });
   var box    = document.getElementById('weekDayDetail');
@@ -1583,20 +1643,33 @@ function weekShowDayDetail(ds) {
       '📅 ' + fmtDateCN(ds) + ' · ' + events.length + ' 個行程' +
     '</div>' +
     events.map(function(ev) {
-      var icon  = ev.type === 'meeting' ? '📅' : '💬';
-      var badge = ev.type === 'meeting'
-        ? (ev.status === '已結束'
-            ? '<span class="badge b-grey" style="font-size:12px">🔴 已結束</span>'
-            : '<span class="badge b-blue" style="font-size:12px">🔵 即將舉行</span>')
-        : (ev.status === '已結案'
-            ? '<span class="badge b-purple" style="font-size:12px">🔒 已結案</span>'
-            : '<span class="badge b-green" style="font-size:12px">🟢 進行中</span>');
-      var action = ev.type === 'meeting'
-        ? '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="前往議題(\'' + escHtml(ev.meetingId) + '\')">💬 查看議題</button>'
-        : '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="開啟討論Modal(\'' + escHtml(ev.topicId) + '\')">💬 查看討論</button>';
+      var badge  = '';
+      var action = '';
+
+      if (ev.isStatic) {
+        var badgeClass = ev.rawType === 'activity' ? 'b-purple'
+                       : ev.rawType === 'meeting'  ? 'b-blue'
+                       : 'b-orange';
+        badge  = '<span class="badge ' + badgeClass + '" style="font-size:12px">' +
+                   ev.icon + ' ' + escHtml(ev.category) +
+                 '</span>';
+        action = '';
+      } else if (ev.type === 'meeting') {
+        badge  = ev.status === '已結束'
+          ? '<span class="badge b-grey"   style="font-size:12px">🔴 已結束</span>'
+          : '<span class="badge b-blue"   style="font-size:12px">🔵 即將舉行</span>';
+        action = '<button class="btn btn-outline btn-sm" style="margin-top:6px" ' +
+                   'onclick="前往議題(\'' + escHtml(ev.meetingId) + '\')">💬 查看議題</button>';
+      } else if (ev.type === 'topic') {
+        badge  = ev.status === '已結案'
+          ? '<span class="badge b-purple" style="font-size:12px">🔒 已結案</span>'
+          : '<span class="badge b-green"  style="font-size:12px">🟢 進行中</span>';
+        action = '<button class="btn btn-outline btn-sm" style="margin-top:6px" ' +
+                   'onclick="開啟討論Modal(\'' + escHtml(ev.topicId) + '\')">💬 查看討論</button>';
+      }
 
       return '<div class="day-event-item">' +
-               '<div class="day-event-icon">' + icon + '</div>' +
+               '<div class="day-event-icon">' + ev.icon + '</div>' +
                '<div class="day-event-info">' +
                  '<div class="day-event-title">' + escHtml(ev.title) + '</div>' +
                  '<div class="day-event-meta">' +
@@ -1612,13 +1685,15 @@ function weekShowDayDetail(ds) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 待辦清單視圖
+// ★ 待辦清單視圖（新增本月年度事項區塊）
 // ══════════════════════════════════════════════════════════════
 function 渲染待辦清單() {
   var today  = fmtDate(new Date());
-  var events = getCalEvents();
+  var nowD   = new Date();
+  var nowY   = nowD.getFullYear();
+  var nowM   = String(nowD.getMonth() + 1).padStart(2, '0');
 
-  // 即將到來的會議（今天以後，未結束）
+  // ── 即將到來的會議 ────────────────────────────────────────
   var upcoming = 快取.meetings
     .filter(function(m) {
       var d = parseEventDate(m.dateTime);
@@ -1630,6 +1705,8 @@ function 渲染待辦清單() {
 
   document.getElementById('upcomingCount').textContent = upcoming.length + ' 場';
 
+  var dayNames = ['日','一','二','三','四','五','六'];
+
   if (upcoming.length === 0) {
     document.getElementById('upcomingList').innerHTML =
       '<div class="empty" style="padding:16px">' +
@@ -1637,7 +1714,6 @@ function 渲染待辦清單() {
         '<div class="empty-text">暫無即將到來的會議</div>' +
       '</div>';
   } else {
-    var dayNames = ['日','一','二','三','四','五','六'];
     document.getElementById('upcomingList').innerHTML = upcoming.map(function(m) {
       var d     = new Date(parseEventDate(m.dateTime) + 'T00:00:00');
       var month = (d.getMonth() + 1) + '月';
@@ -1672,7 +1748,7 @@ function 渲染待辦清單() {
     }).join('');
   }
 
-  // 進行中的議題
+  // ── 進行中的議題 ──────────────────────────────────────────
   var activeTopics = [];
   Object.keys(快取.topics).forEach(function(mid) {
     var meeting = 快取.meetings.find(function(m){ return m.meetingId === mid; });
@@ -1715,9 +1791,59 @@ function 渲染待辦清單() {
              '</div>';
     }).join('');
   }
+
+  // ── ★ 本月年度行事曆事項 ──────────────────────────────────
+  var monthPrefix = nowY + '-' + nowM;
+  var staticItems = (快取.annualCalendar || []).filter(function(item) {
+    return item.date && item.date.startsWith(monthPrefix);
+  });
+
+  var staticCard = document.getElementById('staticMonthCard');
+  if (!staticCard) return;
+
+  if (staticItems.length === 0) {
+    staticCard.innerHTML = '';
+    return;
+  }
+
+  var typeLabel = { meeting:'理監事會議', admin:'行政事項', activity:'活動/課程' };
+  var typeBadge = {
+    meeting:  '<span class="badge b-blue"   style="font-size:12px">🏛 理監事會議</span>',
+    admin:    '<span class="badge b-orange" style="font-size:12px">📋 行政事項</span>',
+    activity: '<span class="badge b-purple" style="font-size:12px">⭐ 活動/課程</span>'
+  };
+
+  staticCard.innerHTML =
+    '<div class="card">' +
+      '<div class="card-hd">' +
+        '<div class="card-title">📆 本月年度事項</div>' +
+        '<span class="badge b-grey">' + staticItems.length + ' 項</span>' +
+      '</div>' +
+      '<div class="card-body" style="padding:0">' +
+        staticItems.map(function(item) {
+          var badge = typeBadge[item.type] ||
+                      '<span class="badge b-grey" style="font-size:12px">📌 其他</span>';
+          var dateD = new Date(item.date + 'T00:00:00');
+          var dateLabel = (dateD.getMonth()+1) + '月' + dateD.getDate() + '日';
+          return '<div class="upcoming-item" style="padding:12px 16px">' +
+                   '<div class="upcoming-date-box">' +
+                     '<div class="upcoming-date-month">' + (dateD.getMonth()+1) + '月</div>' +
+                     '<div class="upcoming-date-day">'   + dateD.getDate()      + '</div>' +
+                     '<div class="upcoming-date-week">預定</div>' +
+                   '</div>' +
+                   '<div class="upcoming-info">' +
+                     '<div class="upcoming-title">' + escHtml(item.title) + '</div>' +
+                     '<div class="upcoming-meta">' +
+                       escHtml(item.category) +
+                       (item.endDate ? '&nbsp;&nbsp;📅 至 ' + escHtml(item.endDate) : '') +
+                     '</div>' +
+                     '<div style="margin-top:6px">' + badge + '</div>' +
+                   '</div>' +
+                 '</div>';
+        }).join('') +
+      '</div>' +
+    '</div>';
 }
-
-
 
 </script>
 </body>
