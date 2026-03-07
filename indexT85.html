@@ -1873,585 +1873,409 @@ async function loadAdminMembers() {
   }
 
   // ══════════════════════════════════════════
-  // 活動花絮
-  // ══════════════════════════════════════════
-  async function renderGallery() {
-    var main = document.getElementById('mainContent');
-    if (!main) return;
-    main.innerHTML =
-      '<div class="page">' +
-      '<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">' +
-      '<div><div class="page-title"><i class="fas fa-images"></i> 活動花絮</div>' +
-      '<div class="page-subtitle">精彩活動照片與相簿</div></div>' +
-      (APP.token ?
-        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
-        '<button class="btn btn-outline" onclick="showCreateAlbum()"><i class="fas fa-folder-plus"></i> 建立相簿</button>' +
-        '<button class="btn btn-primary" onclick="showBatchUpload()"><i class="fas fa-cloud-upload-alt"></i> 上傳照片</button>' +
-        '</div>' : '') +
-      '</div>' +
-      '<div class="grid-3" style="margin-bottom:24px">' +
-      '<div class="big-action-btn" id="albumsTabBtn" onclick="switchGalleryTab(\'albums\')" style="border-color:var(--primary);background:var(--primary-light)"><i class="fas fa-folder-open" style="color:var(--primary)"></i><span>相簿列表</span></div>' +
-      '<div class="big-action-btn" id="photosTabBtn" onclick="switchGalleryTab(\'photos\')"><i class="fas fa-images" style="color:var(--info)"></i><span>所有照片</span></div>' +
-      '<div class="big-action-btn" id="reviewsTabBtn" onclick="switchGalleryTab(\'reviews\')"><i class="fas fa-book-open" style="color:var(--success)"></i><span>活動回顧</span></div>' +
-      '</div>' +
-      '<div id="galleryContent"></div></div>';
-    await loadAlbums();
-  }
+// 燈箱全域狀態（加在全域變數區）
+// ══════════════════════════════════════════
+var _lbPhotos = [];   // 燈箱照片陣列
+var _lbIndex  = 0;   // 目前索引
 
-  async function switchGalleryTab(tab) {
-    ['albums','photos','reviews'].forEach(function(t) {
-      var btn = document.getElementById(t+'TabBtn');
-      if (!btn) return;
-      btn.style.borderColor = t===tab ? 'var(--primary)' : 'var(--border)';
-      btn.style.background  = t===tab ? 'var(--primary-light)' : '#fff';
-    });
-    currentAlbumId = null; galleryPage = 1;
-    if (tab==='albums')       await loadAlbums();
-    else if (tab==='photos')  await loadAllPhotos();
-    else                      await loadEventReviews();
+// ══════════════════════════════════════════
+// 燈箱函式（取代原本的 openLightbox）
+// ══════════════════════════════════════════
+function openLightbox(photos, index) {
+  // photos 可以是陣列（URL字串）或由 data 屬性傳來的 key
+  if (typeof photos === 'string') {
+    // 從全域暫存取得（由 renderPhotoItem 存入）
+    _lbPhotos = window._galleryPhotoCache[photos] || [];
+  } else {
+    _lbPhotos = photos;
   }
+  _lbIndex = index || 0;
+  _renderLightbox();
+  var lb = document.getElementById('_lightbox');
+  if (lb) { lb.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+}
 
-  async function loadAlbums(page) {
-    galleryPage = page || 1;
-    var el = document.getElementById('galleryContent');
-    if (!el) return;
-    el.innerHTML = '<div class="album-grid">' + Array(6).fill('<div class="skeleton" style="height:240px;border-radius:14px"></div>').join('') + '</div>';
-    var res = await callServer('getAlbums','all',galleryPage);
-    if (!res.success || !res.albums.length) {
-      el.innerHTML = '<div class="empty-state"><i class="fas fa-folder-open"></i><h3>尚無相簿</h3>' +
-        (APP.token ? '<button class="btn btn-primary btn-lg" style="margin-top:20px" onclick="showCreateAlbum()"><i class="fas fa-folder-plus"></i> 建立相簿</button>' : '') + '</div>';
-      return;
-    }
-    el.innerHTML = '<div class="album-grid">' + res.albums.map(function(a){ return renderAlbumCard(a); }).join('') + '</div><div id="albumPagination"></div>';
-    renderPagination('albumPagination', galleryPage, Math.ceil(res.total/12), function(p){ loadAlbums(p); });
+function closeLightbox() {
+  var lb = document.getElementById('_lightbox');
+  if (lb) { lb.style.display = 'none'; document.body.style.overflow = ''; }
+}
+
+function lightboxNav(dir) {
+  if (!_lbPhotos.length) return;
+  _lbIndex = (_lbIndex + dir + _lbPhotos.length) % _lbPhotos.length;
+  _renderLightbox();
+}
+
+function _renderLightbox() {
+  var url = typeof _lbPhotos[_lbIndex] === 'object'
+    ? _lbPhotos[_lbIndex].url
+    : _lbPhotos[_lbIndex];
+  var caption = typeof _lbPhotos[_lbIndex] === 'object'
+    ? (_lbPhotos[_lbIndex].caption || '')
+    : '';
+
+  var img = document.getElementById('_lbImg');
+  if (img) {
+    img.style.opacity = '0';
+    img.onload = function() { img.style.opacity = '1'; };
+    img.src = url || '';
   }
+  var cap = document.getElementById('_lbCaption');
+  if (cap) cap.textContent = caption;
+  var ctr = document.getElementById('_lbCounter');
+  if (ctr) ctr.textContent = (_lbIndex + 1) + ' / ' + _lbPhotos.length;
+  var prev = document.getElementById('_lbPrev');
+  var next = document.getElementById('_lbNext');
+  var show = _lbPhotos.length > 1;
+  if (prev) prev.style.display = show ? 'flex' : 'none';
+  if (next) next.style.display = show ? 'flex' : 'none';
+}
 
-  function renderAlbumCard(a) {
-    var isOwner = APP.token && APP.user && (a.creatorId===APP.user.id || APP.user.memberType==='管理員');
-    return '<div class="album-card" onclick="openAlbum(\'' + a.id + '\',\'' + escHtml(a.title) + '\')">' +
-      '<div class="album-cover">' +
-      (a.coverImage ?
-        '<img src="' + escHtml(a.coverImage) + '" loading="lazy" alt="' + escHtml(a.title) + '">' :
-        '<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">' +
-        '<i class="fas fa-images" style="font-size:56px;color:var(--primary);opacity:.4"></i>' +
-        '<span style="color:var(--secondary);font-size:var(--font-sm)">點擊開啟相簿</span></div>') +
-      '<div class="album-cover-overlay"><div class="album-cover-title">' + escHtml(a.title) + '</div></div>' +
-      (isOwner ?
-        '<div class="album-cover-actions" onclick="event.stopPropagation()">' +
-        '<button class="album-action-btn" onclick="showEditAlbum(\'' + a.id + '\')"><i class="fas fa-edit"></i> 編輯</button>' +
-        '<button class="album-action-btn danger" onclick="confirmDeleteAlbum(\'' + a.id + '\')"><i class="fas fa-trash"></i> 刪除</button>' +
-        '</div>' : '') +
-      '</div>' +
-      '<div class="album-info">' +
-      (a.description ? '<div class="album-desc">' + escHtml(a.description) + '</div>' : '') +
-      '<div class="album-meta">' +
-      '<span class="album-photo-count"><i class="fas fa-image"></i> ' + (a.photoCount||0) + ' 張照片</span>' +
-      '<span style="font-size:var(--font-sm)"><i class="fas fa-clock"></i> ' + formatDate(a.createdAt) + '</span></div>' +
-      '<div style="font-size:var(--font-sm);color:var(--secondary);margin-top:6px"><i class="fas fa-user"></i> ' + escHtml(a.creatorName||'') + '</div>' +
-      '</div></div>';
-  }
+// 鍵盤控制
+document.addEventListener('keydown', function(e) {
+  var lb = document.getElementById('_lightbox');
+  if (!lb || lb.style.display === 'none') return;
+  if (e.key === 'Escape')     closeLightbox();
+  if (e.key === 'ArrowLeft')  lightboxNav(-1);
+  if (e.key === 'ArrowRight') lightboxNav(1);
+});
 
-  async function openAlbum(albumId, albumTitle) {
-    currentAlbumId = albumId;
-    var el = document.getElementById('galleryContent');
-    if (!el) return;
-    el.innerHTML = '<div class="skeleton" style="height:300px;border-radius:14px"></div>';
-    var res = await callServer('getAlbumById', albumId, 1);
-    if (!res.success) { showToast('載入相簿失敗','error'); return; }
-    var album = res.album, photos = res.photos || [], totalPhotos = res.totalPhotos;
-    var allUrls = photos.map(function(p){ return p.url; });
-    var isOwner = APP.token && APP.user && (album.creatorId===APP.user.id || APP.user.memberType==='管理員');
-    el.innerHTML =
-      '<div class="breadcrumb" style="margin-bottom:20px">' +
-      '<a onclick="switchGalleryTab(\'albums\')"><i class="fas fa-folder-open"></i> 相簿列表</a>' +
-      '<span class="sep"><i class="fas fa-chevron-right"></i></span>' +
-      '<span style="font-weight:700">' + escHtml(album.title) + '</span>' +
-      '<span class="badge badge-primary" style="margin-left:4px">' + totalPhotos + ' 張</span>' +
-      (APP.token ?
-        '<div style="margin-left:auto;display:flex;gap:10px;flex-wrap:wrap">' +
-        '<button class="btn btn-primary btn-sm" onclick="showBatchUploadToAlbum(\'' + album.id + '\',\'' + escHtml(album.title) + '\')"><i class="fas fa-upload"></i> 上傳照片到此相簿</button>' +
-        (isOwner ? '<button class="btn btn-light btn-sm" onclick="showEditAlbum(\'' + album.id + '\')"><i class="fas fa-edit"></i> 編輯相簿</button>' : '') +
-        '</div>' : '') +
-      '</div>' +
-      (album.description ?
-        '<div style="background:var(--primary-light);border-radius:var(--radius-sm);padding:16px 20px;margin-bottom:20px;font-size:var(--font-md);border:2px solid rgba(74,144,217,.2);display:flex;align-items:center;gap:10px">' +
-        '<i class="fas fa-info-circle" style="color:var(--primary);font-size:22px;flex-shrink:0"></i>' +
-        '<span>' + escHtml(album.description) + '</span></div>' : '') +
-      '<div class="gallery-grid" id="albumPhotoGrid">' +
-      (photos.length ?
-        photos.map(function(p,i){ return renderPhotoItem(p, i, allUrls, albumId); }).join('') :
-        '<div class="empty-state" style="grid-column:1/-1;padding:60px 20px"><i class="fas fa-camera"></i><h3>相簿還沒有照片</h3>' +
-        (APP.token ? '<button class="btn btn-primary btn-lg" style="margin-top:20px" onclick="showBatchUploadToAlbum(\'' + album.id + '\',\'' + escHtml(album.title) + '\')"><i class="fas fa-upload"></i> 上傳照片</button>' : '') + '</div>') +
-      '</div><div id="albumPhotoPagination"></div>';
-    renderPagination('albumPhotoPagination', 1, Math.ceil(totalPhotos/24), function(p){ loadAlbumPhotos(albumId, p); });
-  }
+// 確保燈箱 DOM 存在（只建立一次）
+function _ensureLightboxDOM() {
+  if (document.getElementById('_lightbox')) return;
+  var div = document.createElement('div');
+  div.id = '_lightbox';
+  div.style.cssText = [
+    'display:none','position:fixed','inset:0','z-index:9999',
+    'background:rgba(0,0,0,.92)','align-items:center',
+    'justify-content:center','flex-direction:column'
+  ].join(';');
+  div.innerHTML = [
+    // 關閉按鈕
+    '<button onclick="closeLightbox()" style="position:fixed;top:16px;right:18px;',
+      'background:rgba(255,255,255,.18);border:none;color:#fff;font-size:28px;',
+      'width:46px;height:46px;border-radius:50%;cursor:pointer;z-index:10001;',
+      'display:flex;align-items:center;justify-content:center">',
+      '<i class="fas fa-times"></i></button>',
+    // 左箭頭
+    '<button id="_lbPrev" onclick="lightboxNav(-1)" style="position:fixed;left:12px;top:50%;',
+      'transform:translateY(-50%);background:rgba(255,255,255,.18);border:none;color:#fff;',
+      'font-size:28px;width:50px;height:50px;border-radius:50%;cursor:pointer;z-index:10001;',
+      'display:flex;align-items:center;justify-content:center">',
+      '<i class="fas fa-chevron-left"></i></button>',
+    // 圖片
+    '<img id="_lbImg" src="" alt="" style="max-width:90vw;max-height:80vh;',
+      'object-fit:contain;border-radius:10px;transition:opacity .25s;',
+      'box-shadow:0 0 40px rgba(0,0,0,.6)">',
+    // 右箭頭
+    '<button id="_lbNext" onclick="lightboxNav(1)" style="position:fixed;right:12px;top:50%;',
+      'transform:translateY(-50%);background:rgba(255,255,255,.18);border:none;color:#fff;',
+      'font-size:28px;width:50px;height:50px;border-radius:50%;cursor:pointer;z-index:10001;',
+      'display:flex;align-items:center;justify-content:center">',
+      '<i class="fas fa-chevron-right"></i></button>',
+    // 說明文字
+    '<div id="_lbCaption" style="color:#fff;font-size:15px;margin-top:14px;',
+      'text-align:center;max-width:80vw;opacity:.88;min-height:22px"></div>',
+    // 計數器
+    '<div id="_lbCounter" style="color:rgba(255,255,255,.55);font-size:13px;margin-top:6px"></div>'
+  ].join('');
+  // 點擊背景關閉
+  div.addEventListener('click', function(e) {
+    if (e.target === div) closeLightbox();
+  });
+  document.body.appendChild(div);
+}
 
-  async function loadAlbumPhotos(albumId, page) {
-    var res = await callServer('getAlbumById', albumId, page);
-    if (!res.success) return;
-    var photos = res.photos || [], totalPhotos = res.totalPhotos;
-    var allUrls = photos.map(function(p){ return p.url; });
-    var grid = document.getElementById('albumPhotoGrid');
-    if (grid) grid.innerHTML = photos.map(function(p,i){ return renderPhotoItem(p, i, allUrls, albumId); }).join('');
-    renderPagination('albumPhotoPagination', page, Math.ceil(totalPhotos/24), function(p){ loadAlbumPhotos(albumId, p); });
-  }
+// ══════════════════════════════════════════
+// 全域照片快取（解決 onclick 傳陣列問題）
+// ══════════════════════════════════════════
+window._galleryPhotoCache = {};
 
-  function renderPhotoItem(p, i, allUrls, albumId) {
-    var isOwner = APP.token && APP.user && (p.uploaderId===APP.user.id || APP.user.memberType==='管理員');
-    return '<div class="gallery-item" onclick="openLightbox(' + escHtml(JSON.stringify(allUrls)) + ',' + i + ')">' +
-      '<img src="' + escHtml(p.url) + '" loading="lazy" alt="' + escHtml(p.caption||'') + '">' +
-      '<div class="gallery-item-overlay"><div class="gallery-item-caption">' +
-      (p.caption ? '<div style="font-weight:700;margin-bottom:3px">' + escHtml(p.caption) + '</div>' : '') +
-      '<div style="font-size:var(--font-sm);opacity:.88">' + escHtml(p.uploaderName||'') + ' · ' + formatDate(p.createdAt) + '</div>' +
-      '</div></div>' +
-      (isOwner ?
-        '<div class="gallery-item-actions" onclick="event.stopPropagation()">' +
-        '<button class="photo-action-btn" onclick="showEditCaption(\'' + p.id + '\',\'' + escHtml(p.caption||'') + '\',\'' + (albumId||'') + '\')"><i class="fas fa-pen"></i> 說明</button>' +
-        '<button class="photo-action-btn danger" onclick="confirmDeletePhoto(\'' + p.id + '\',\'' + (albumId||'') + '\')"><i class="fas fa-trash"></i> 刪除</button>' +
-        '</div>' : '') +
+// ══════════════════════════════════════════
+// renderGallery（不變）
+// ══════════════════════════════════════════
+async function renderGallery() {
+  _ensureLightboxDOM();   // ← 確保燈箱 DOM 存在
+  var main = document.getElementById('mainContent');
+  if (!main) return;
+  main.innerHTML =
+    '<div class="page">' +
+    '<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">' +
+    '<div><div class="page-title"><i class="fas fa-images"></i> 活動花絮</div>' +
+    '<div class="page-subtitle">精彩活動照片與相簿</div></div>' +
+    (APP.token ?
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+      '<button class="btn btn-outline" onclick="showCreateAlbum()"><i class="fas fa-folder-plus"></i> 建立相簿</button>' +
+      '<button class="btn btn-primary" onclick="showBatchUpload()"><i class="fas fa-cloud-upload-alt"></i> 上傳照片</button>' +
+      '</div>' : '') +
+    '</div>' +
+    '<div class="grid-3" style="margin-bottom:24px">' +
+    '<div class="big-action-btn" id="albumsTabBtn" onclick="switchGalleryTab(\'albums\')" style="border-color:var(--primary);background:var(--primary-light)"><i class="fas fa-folder-open" style="color:var(--primary)"></i><span>相簿列表</span></div>' +
+    '<div class="big-action-btn" id="photosTabBtn" onclick="switchGalleryTab(\'photos\')"><i class="fas fa-images" style="color:var(--info)"></i><span>所有照片</span></div>' +
+    '<div class="big-action-btn" id="reviewsTabBtn" onclick="switchGalleryTab(\'reviews\')"><i class="fas fa-book-open" style="color:var(--success)"></i><span>活動回顧</span></div>' +
+    '</div>' +
+    '<div id="galleryContent"></div></div>';
+  await loadAlbums();
+}
+
+async function switchGalleryTab(tab) {
+  ['albums','photos','reviews'].forEach(function(t) {
+    var btn = document.getElementById(t+'TabBtn');
+    if (!btn) return;
+    btn.style.borderColor = t===tab ? 'var(--primary)' : 'var(--border)';
+    btn.style.background  = t===tab ? 'var(--primary-light)' : '#fff';
+  });
+  currentAlbumId = null; galleryPage = 1;
+  if (tab==='albums')       await loadAlbums();
+  else if (tab==='photos')  await loadAllPhotos();
+  else                      await loadEventReviews();
+}
+
+async function loadAlbums(page) {
+  galleryPage = page || 1;
+  var el = document.getElementById('galleryContent');
+  if (!el) return;
+  el.innerHTML = '<div class="album-grid">' +
+    Array(6).fill('<div class="skeleton" style="height:240px;border-radius:14px"></div>').join('') +
+    '</div>';
+  var res = await callServer('getAlbums','all',galleryPage);
+  if (!res.success || !res.albums.length) {
+    el.innerHTML = '<div class="empty-state"><i class="fas fa-folder-open"></i><h3>尚無相簿</h3>' +
+      (APP.token ? '<button class="btn btn-primary btn-lg" style="margin-top:20px" onclick="showCreateAlbum()"><i class="fas fa-folder-plus"></i> 建立相簿</button>' : '') +
       '</div>';
+    return;
   }
+  el.innerHTML =
+    '<div class="album-grid">' +
+    res.albums.map(function(a){ return renderAlbumCard(a); }).join('') +
+    '</div><div id="albumPagination"></div>';
+  renderPagination('albumPagination', galleryPage, Math.ceil(res.total/12), function(p){ loadAlbums(p); });
+}
 
-  // ══════════════════════════════════════════
-  // 所有照片（續）
-  // ══════════════════════════════════════════
-  async function loadAllPhotos(page) {
-    galleryPage = page || 1;
-    var el = document.getElementById('galleryContent');
-    if (!el) return;
-    el.innerHTML = '<div class="gallery-grid">' +
-      Array(8).fill('<div class="skeleton" style="aspect-ratio:1;border-radius:14px"></div>').join('') +
-      '</div>';
-    var res = await callServer('getEventPhotos','all','all',galleryPage);
-    if (!res.success || !res.photos.length) {
-      el.innerHTML =
-        '<div class="empty-state"><i class="fas fa-images"></i><h3>尚無照片</h3>' +
-        (APP.token
-          ? '<button class="btn btn-primary btn-lg" style="margin-top:20px" onclick="showBatchUpload()">' +
-            '<i class="fas fa-upload"></i> 上傳第一張照片</button>'
-          : '') +
-        '</div>';
-      return;
-    }
-    var allUrls = res.photos.map(function(p){ return p.url; });
+function renderAlbumCard(a) {
+  var isOwner = APP.token && APP.user && (a.creatorId===APP.user.id || APP.user.memberType==='管理員');
+  return '<div class="album-card" onclick="openAlbum(\'' + a.id + '\',\'' + escHtml(a.title) + '\')">' +
+    '<div class="album-cover">' +
+    (a.coverImage ?
+      '<img src="' + escHtml(a.coverImage) + '" loading="lazy" alt="' + escHtml(a.title) + '"' +
+      ' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
+      '<div style="display:none;width:100%;height:100%;flex-direction:column;align-items:center;justify-content:center;gap:8px">' +
+      '<i class="fas fa-images" style="font-size:56px;color:var(--primary);opacity:.4"></i>' +
+      '<span style="color:var(--secondary);font-size:var(--font-sm)">點擊開啟相簿</span></div>' :
+      '<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">' +
+      '<i class="fas fa-images" style="font-size:56px;color:var(--primary);opacity:.4"></i>' +
+      '<span style="color:var(--secondary);font-size:var(--font-sm)">點擊開啟相簿</span></div>') +
+    '<div class="album-cover-overlay"><div class="album-cover-title">' + escHtml(a.title) + '</div></div>' +
+    (isOwner ?
+      '<div class="album-cover-actions" onclick="event.stopPropagation()">' +
+      '<button class="album-action-btn" onclick="showEditAlbum(\'' + a.id + '\')"><i class="fas fa-edit"></i> 編輯</button>' +
+      '<button class="album-action-btn danger" onclick="confirmDeleteAlbum(\'' + a.id + '\')"><i class="fas fa-trash"></i> 刪除</button>' +
+      '</div>' : '') +
+    '</div>' +
+    '<div class="album-info">' +
+    (a.description ? '<div class="album-desc">' + escHtml(a.description) + '</div>' : '') +
+    '<div class="album-meta">' +
+    '<span class="album-photo-count"><i class="fas fa-image"></i> ' + (a.photoCount||0) + ' 張照片</span>' +
+    '<span style="font-size:var(--font-sm)"><i class="fas fa-clock"></i> ' + formatDate(a.createdAt) + '</span></div>' +
+    '<div style="font-size:var(--font-sm);color:var(--secondary);margin-top:6px"><i class="fas fa-user"></i> ' + escHtml(a.creatorName||'') + '</div>' +
+    '</div></div>';
+}
+
+async function openAlbum(albumId, albumTitle) {
+  _ensureLightboxDOM();
+  currentAlbumId = albumId;
+  var el = document.getElementById('galleryContent');
+  if (!el) return;
+  el.innerHTML = '<div class="skeleton" style="height:300px;border-radius:14px"></div>';
+  var res = await callServer('getAlbumById', albumId, 1);
+  if (!res.success) { showToast('載入相簿失敗','error'); return; }
+  var album = res.album, photos = res.photos || [], totalPhotos = res.totalPhotos;
+  var isOwner = APP.token && APP.user && (album.creatorId===APP.user.id || APP.user.memberType==='管理員');
+
+  // ✅ 將照片物件陣列存入快取，用 albumId 作為 key
+  var cacheKey = 'album_' + albumId;
+  window._galleryPhotoCache[cacheKey] = photos;
+
+  el.innerHTML =
+    '<div class="breadcrumb" style="margin-bottom:20px">' +
+    '<a onclick="switchGalleryTab(\'albums\')"><i class="fas fa-folder-open"></i> 相簿列表</a>' +
+    '<span class="sep"><i class="fas fa-chevron-right"></i></span>' +
+    '<span style="font-weight:700">' + escHtml(album.title) + '</span>' +
+    '<span class="badge badge-primary" style="margin-left:4px">' + totalPhotos + ' 張</span>' +
+    (APP.token ?
+      '<div style="margin-left:auto;display:flex;gap:10px;flex-wrap:wrap">' +
+      '<button class="btn btn-primary btn-sm" onclick="showBatchUploadToAlbum(\'' + album.id + '\',\'' + escHtml(album.title) + '\')"><i class="fas fa-upload"></i> 上傳照片到此相簿</button>' +
+      (isOwner ? '<button class="btn btn-light btn-sm" onclick="showEditAlbum(\'' + album.id + '\')"><i class="fas fa-edit"></i> 編輯相簿</button>' : '') +
+      '</div>' : '') +
+    '</div>' +
+    (album.description ?
+      '<div style="background:var(--primary-light);border-radius:var(--radius-sm);padding:16px 20px;margin-bottom:20px;font-size:var(--font-md);border:2px solid rgba(74,144,217,.2);display:flex;align-items:center;gap:10px">' +
+      '<i class="fas fa-info-circle" style="color:var(--primary);font-size:22px;flex-shrink:0"></i>' +
+      '<span>' + escHtml(album.description) + '</span></div>' : '') +
+    '<div class="gallery-grid" id="albumPhotoGrid">' +
+    (photos.length ?
+      photos.map(function(p,i){ return renderPhotoItem(p, i, cacheKey, albumId); }).join('') :
+      '<div class="empty-state" style="grid-column:1/-1;padding:60px 20px"><i class="fas fa-camera"></i><h3>相簿還沒有照片</h3>' +
+      (APP.token ? '<button class="btn btn-primary btn-lg" style="margin-top:20px" onclick="showBatchUploadToAlbum(\'' + album.id + '\',\'' + escHtml(album.title) + '\')"><i class="fas fa-upload"></i> 上傳照片</button>' : '') +
+      '</div>') +
+    '</div><div id="albumPhotoPagination"></div>';
+  renderPagination('albumPhotoPagination', 1, Math.ceil(totalPhotos/24), function(p){ loadAlbumPhotos(albumId, p); });
+}
+
+async function loadAlbumPhotos(albumId, page) {
+  var res = await callServer('getAlbumById', albumId, page);
+  if (!res.success) return;
+  var photos = res.photos || [], totalPhotos = res.totalPhotos;
+
+  // ✅ 更新快取
+  var cacheKey = 'album_' + albumId + '_p' + page;
+  window._galleryPhotoCache[cacheKey] = photos;
+
+  var grid = document.getElementById('albumPhotoGrid');
+  if (grid) grid.innerHTML = photos.map(function(p,i){ return renderPhotoItem(p, i, cacheKey, albumId); }).join('');
+  renderPagination('albumPhotoPagination', page, Math.ceil(totalPhotos/24), function(p){ loadAlbumPhotos(albumId, p); });
+}
+
+// ══════════════════════════════════════════
+// ✅ 核心修復：renderPhotoItem
+//    改用 data-cache / data-index，完全不在
+//    onclick 字串中傳遞陣列或 JSON
+// ══════════════════════════════════════════
+function renderPhotoItem(p, i, cacheKey, albumId) {
+  var isOwner = APP.token && APP.user && (p.uploaderId===APP.user.id || APP.user.memberType==='管理員');
+  return '<div class="gallery-item"' +
+    ' data-cache="' + escHtml(cacheKey) + '"' +
+    ' data-index="' + i + '"' +
+    ' onclick="handlePhotoClick(this)">' +
+    '<img src="' + escHtml(p.url) + '" loading="lazy" alt="' + escHtml(p.caption||'') + '"' +
+    ' onerror="this.src=\'data:image/svg+xml,<svg xmlns=\\\'http://www.w3.org/2000/svg\\\' width=\\\'100\\\' height=\\\'100\\\'><rect fill=\\\'%23eee\\\' width=\\\'100\\\' height=\\\'100\\\'/><text x=\\\'50%\\\' y=\\\'50%\\\' text-anchor=\\\'middle\\\' fill=\\\'%23aaa\\\' dy=\\\'.3em\\\'>載入失敗</text></svg>\'">' +
+    '<div class="gallery-item-overlay"><div class="gallery-item-caption">' +
+    (p.caption ? '<div style="font-weight:700;margin-bottom:3px">' + escHtml(p.caption) + '</div>' : '') +
+    '<div style="font-size:var(--font-sm);opacity:.88">' + escHtml(p.uploaderName||'') + ' · ' + formatDate(p.createdAt) + '</div>' +
+    '</div></div>' +
+    (isOwner ?
+      '<div class="gallery-item-actions" onclick="event.stopPropagation()">' +
+      '<button class="photo-action-btn" onclick="showEditCaption(\'' + p.id + '\',\'' + escHtml(p.caption||'') + '\',\'' + (albumId||'') + '\')"><i class="fas fa-pen"></i> 說明</button>' +
+      '<button class="photo-action-btn danger" onclick="confirmDeletePhoto(\'' + p.id + '\',\'' + (albumId||'') + '\')"><i class="fas fa-trash"></i> 刪除</button>' +
+      '</div>' : '') +
+    '</div>';
+}
+
+// ✅ 透過 data 屬性取得快取 key 與索引，再開啟燈箱
+function handlePhotoClick(el) {
+  var cacheKey = el.getAttribute('data-cache');
+  var index    = parseInt(el.getAttribute('data-index'), 10);
+  openLightbox(cacheKey, index);
+}
+
+// ══════════════════════════════════════════
+// 所有照片
+// ══════════════════════════════════════════
+async function loadAllPhotos(page) {
+  _ensureLightboxDOM();
+  galleryPage = page || 1;
+  var el = document.getElementById('galleryContent');
+  if (!el) return;
+  el.innerHTML = '<div class="gallery-grid">' +
+    Array(8).fill('<div class="skeleton" style="aspect-ratio:1;border-radius:14px"></div>').join('') +
+    '</div>';
+  var res = await callServer('getEventPhotos','all','all',galleryPage);
+  if (!res.success || !res.photos.length) {
     el.innerHTML =
-      '<div class="gallery-grid" id="allPhotoGrid">' +
-      res.photos.map(function(p,i){ return renderPhotoItem(p, i, allUrls, null); }).join('') +
-      '</div><div id="allPhotoPagination"></div>';
-    renderPagination('allPhotoPagination', galleryPage,
-      Math.ceil(res.total / 20),
-      function(p){ loadAllPhotos(p); });
-  }
-
-  // ══════════════════════════════════════════
-  // 活動回顧
-  // ══════════════════════════════════════════
-  async function loadEventReviews() {
-    var el = document.getElementById('galleryContent');
-    if (!el) return;
-    el.innerHTML = '<div class="skeleton" style="height:200px;border-radius:14px"></div>';
-    var res = await callServer('getAllEvents');
-    if (!res.success || !res.events.length) {
-      el.innerHTML = '<div class="empty-state"><i class="fas fa-calendar-times"></i><h3>尚無活動記錄</h3></div>';
-      return;
-    }
-    var monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    el.innerHTML =
-      '<div class="grid-2">' +
-      res.events.map(function(e) {
-        var d = new Date(e.startDate);
-        return '<div class="card card-hover" style="cursor:pointer" onclick="showEventReviewDetail(\'' + e.id + '\')">' +
-          '<div style="height:140px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">' +
-          (e.coverImage
-            ? '<img src="' + escHtml(e.coverImage) + '" style="width:100%;height:100%;object-fit:cover;opacity:.7">'
-            : '<i class="fas fa-calendar-alt" style="font-size:56px;color:rgba(255,255,255,.35)"></i>') +
-          '<div style="position:absolute;top:12px;left:12px;background:rgba(0,0,0,.55);color:#fff;border-radius:var(--radius-sm);padding:8px 12px;text-align:center">' +
-          '<div style="font-size:12px">' + monthAbbr[d.getMonth()] + '</div>' +
-          '<div style="font-size:28px;font-weight:800;line-height:1">' + d.getDate() + '</div></div>' +
-          '<div style="position:absolute;bottom:10px;right:10px">' +
-          '<span class="badge badge-success" style="background:rgba(40,167,69,.85);color:#fff;border:none">' +
-          '<i class="fas fa-images"></i> 點擊查看</span></div></div>' +
-          '<div class="card-body">' +
-          '<div style="font-size:var(--font-lg);font-weight:700;margin-bottom:8px">' + escHtml(e.title) + '</div>' +
-          '<div style="font-size:var(--font-sm);color:var(--secondary);display:flex;gap:14px;flex-wrap:wrap">' +
-          (e.location ? '<span><i class="fas fa-map-marker-alt"></i> ' + escHtml(e.location) + '</span>' : '') +
-          '<span><i class="fas fa-users"></i> ' + (e.currentParticipants||0) + ' 人參與</span>' +
-          '<span><i class="fas fa-clock"></i> ' + formatDate(e.startDate) + '</span>' +
-          '</div></div></div>';
-      }).join('') +
+      '<div class="empty-state"><i class="fas fa-images"></i><h3>尚無照片</h3>' +
+      (APP.token ? '<button class="btn btn-primary btn-lg" style="margin-top:20px" onclick="showBatchUpload()"><i class="fas fa-upload"></i> 上傳第一張照片</button>' : '') +
       '</div>';
+    return;
   }
+  var cacheKey = 'allPhotos_p' + galleryPage;
+  window._galleryPhotoCache[cacheKey] = res.photos;
+  el.innerHTML =
+    '<div class="gallery-grid" id="allPhotoGrid">' +
+    res.photos.map(function(p,i){ return renderPhotoItem(p, i, cacheKey, null); }).join('') +
+    '</div><div id="allPhotoPagination"></div>';
+  renderPagination('allPhotoPagination', galleryPage, Math.ceil(res.total/20), function(p){ loadAllPhotos(p); });
+}
 
-  async function showEventReviewDetail(eventId) {
-    showLoading(true);
-    var results = await Promise.all([
-      callServer('getEventById', eventId),
-      callServer('getEventPhotos', 'event', eventId, 1)
-    ]);
-    showLoading(false);
-    var eventRes = results[0], photoRes = results[1];
-    if (!eventRes.success) { showToast('載入失敗','error'); return; }
-    var e = eventRes.event;
-    var photos = photoRes.photos || [];
-    var allUrls = photos.map(function(p){ return p.url; });
-    showModal('eventReview',
-      '<div class="modal-header">' +
-      '<div class="modal-title"><i class="fas fa-book-open"></i> ' + escHtml(e.title) + '</div>' +
-      '<button class="modal-close" onclick="closeModal(\'eventReview\')"><i class="fas fa-times"></i></button></div>' +
-      '<div class="modal-body">' +
-      '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px;font-size:var(--font-md);color:var(--secondary)">' +
-      '<span><i class="fas fa-calendar"></i> ' + formatFullDate(e.startDate) + '</span>' +
-      (e.location ? '<span><i class="fas fa-map-marker-alt"></i> ' + escHtml(e.location) + '</span>' : '') +
-      '<span><i class="fas fa-users"></i> ' + (e.currentParticipants||0) + ' 人參與</span></div>' +
-      (e.description
-        ? '<div style="font-size:var(--font-md);line-height:1.8;margin-bottom:18px;padding:16px;background:var(--light);border-radius:var(--radius-sm);border-left:5px solid var(--primary)">' +
-          escHtml(e.description) + '</div>'
-        : '') +
-      (photos.length
-        ? '<div style="font-size:var(--font-lg);font-weight:700;margin-bottom:14px">' +
-          '<i class="fas fa-images" style="color:var(--primary)"></i> 活動照片（' + photos.length + ' 張）</div>' +
-          '<div class="gallery-grid">' +
-          photos.map(function(p,i){
-            return '<div class="gallery-item" onclick="openLightbox(' + escHtml(JSON.stringify(allUrls)) + ',' + i + ')">' +
-              '<img src="' + escHtml(p.url) + '" loading="lazy">' +
-              '<div class="gallery-item-overlay"><div class="gallery-item-caption">' +
-              (p.caption ? escHtml(p.caption) : '') + '</div></div></div>';
-          }).join('') + '</div>'
-        : '<div class="empty-state" style="padding:40px"><i class="fas fa-camera"></i><p>此活動尚無照片</p></div>') +
-      '</div>' +
-      '<div class="modal-footer" style="flex-wrap:wrap;gap:10px">' +
-      '<button class="btn btn-secondary btn-lg" onclick="closeModal(\'eventReview\')"><i class="fas fa-times"></i> 關閉</button>' +
-      (APP.token
-        ? '<button class="btn btn-primary btn-lg" onclick="closeModal(\'eventReview\');showBatchUploadToEvent(\'' + e.id + '\',\'' + escHtml(e.title) + '\')">' +
-          '<i class="fas fa-upload"></i> 上傳照片</button>'
-        : '') +
-      '</div>', { size:'lg' });
+// ══════════════════════════════════════════
+// 活動回顧
+// ══════════════════════════════════════════
+async function loadEventReviews() {
+  var el = document.getElementById('galleryContent');
+  if (!el) return;
+  el.innerHTML = '<div class="skeleton" style="height:200px;border-radius:14px"></div>';
+  var res = await callServer('getAllEvents');
+  if (!res.success || !res.events.length) {
+    el.innerHTML = '<div class="empty-state"><i class="fas fa-calendar-times"></i><h3>尚無活動記錄</h3></div>';
+    return;
   }
+  var monthAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  el.innerHTML =
+    '<div class="grid-2">' +
+    res.events.map(function(e) {
+      var d = new Date(e.startDate);
+      return '<div class="card card-hover" style="cursor:pointer" onclick="showEventReviewDetail(\'' + e.id + '\')">' +
+        '<div style="height:140px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">' +
+        (e.coverImage ? '<img src="' + escHtml(e.coverImage) + '" style="width:100%;height:100%;object-fit:cover;opacity:.7">' :
+          '<i class="fas fa-calendar-alt" style="font-size:56px;color:rgba(255,255,255,.35)"></i>') +
+        '<div style="position:absolute;top:12px;left:12px;background:rgba(0,0,0,.55);color:#fff;border-radius:var(--radius-sm);padding:8px 12px;text-align:center">' +
+        '<div style="font-size:12px">' + monthAbbr[d.getMonth()] + '</div>' +
+        '<div style="font-size:28px;font-weight:800;line-height:1">' + d.getDate() + '</div></div>' +
+        '<div style="position:absolute;bottom:10px;right:10px">' +
+        '<span class="badge badge-success" style="background:rgba(40,167,69,.85);color:#fff;border:none"><i class="fas fa-images"></i> 點擊查看</span></div></div>' +
+        '<div class="card-body">' +
+        '<div style="font-size:var(--font-lg);font-weight:700;margin-bottom:8px">' + escHtml(e.title) + '</div>' +
+        '<div style="font-size:var(--font-sm);color:var(--secondary);display:flex;gap:14px;flex-wrap:wrap">' +
+        (e.location ? '<span><i class="fas fa-map-marker-alt"></i> ' + escHtml(e.location) + '</span>' : '') +
+        '<span><i class="fas fa-users"></i> ' + (e.currentParticipants||0) + ' 人參與</span>' +
+        '<span><i class="fas fa-clock"></i> ' + formatDate(e.startDate) + '</span>' +
+        '</div></div></div>';
+    }).join('') + '</div>';
+}
 
-  // ══════════════════════════════════════════
-  // 相簿操作
-  // ══════════════════════════════════════════
-  function showCreateAlbum() {
-    if (!APP.token) { navigateTo('auth'); return; }
-    showModal('createAlbum',
-      '<div class="modal-header"><div class="modal-title"><i class="fas fa-folder-plus"></i> 建立相簿</div>' +
-      '<button class="modal-close" onclick="closeModal(\'createAlbum\')"><i class="fas fa-times"></i></button></div>' +
-      '<div class="modal-body">' +
-      '<div class="form-group"><label class="form-label"><i class="fas fa-heading"></i> 相簿名稱<span class="required">*</span></label>' +
-      '<input type="text" class="form-control" id="albumTitle" placeholder="請輸入相簿名稱"></div>' +
-      '<div class="form-group"><label class="form-label"><i class="fas fa-align-left"></i> 相簿說明</label>' +
-      '<textarea class="form-control" id="albumDesc" rows="4" placeholder="選填，描述此相簿的內容..."></textarea></div>' +
-      '<div class="form-group"><label class="form-label"><i class="fas fa-tags"></i> 分類</label>' +
-      '<select class="form-control" id="albumCategory">' +
-      ['活動照片','年度活動','健康講座','聯誼活動','其他'].map(function(c){ return '<option>' + c + '</option>'; }).join('') +
-      '</select></div></div>' +
-      '<div class="modal-footer">' +
-      '<button class="btn btn-secondary" onclick="closeModal(\'createAlbum\')"><i class="fas fa-times"></i> 取消</button>' +
-      '<button class="btn btn-primary" onclick="submitCreateAlbum()"><i class="fas fa-save"></i> 建立相簿</button>' +
-      '</div>', { size:'sm' });
-  }
+async function showEventReviewDetail(eventId) {
+  _ensureLightboxDOM();
+  showLoading(true);
+  var results = await Promise.all([
+    callServer('getEventById', eventId),
+    callServer('getEventPhotos', 'event', eventId, 1)
+  ]);
+  showLoading(false);
+  var eventRes = results[0], photoRes = results[1];
+  if (!eventRes.success) { showToast('載入失敗','error'); return; }
+  var e = eventRes.event;
+  var photos = photoRes.photos || [];
 
-  async function submitCreateAlbum() {
-    var title = document.getElementById('albumTitle')?.value?.trim();
-    if (!title) { showToast('請輸入相簿名稱','warning'); return; }
-    showLoading(true);
-    var res = await callServer('createAlbum', APP.token, {
-      title,
-      description: document.getElementById('albumDesc')?.value?.trim(),
-      category:    document.getElementById('albumCategory')?.value || '活動照片'
-    });
-    showLoading(false);
-    if (res.success) { showToast('相簿建立成功！','success'); closeModal('createAlbum'); loadAlbums(); }
-    else showToast(res.message,'error');
-  }
+  // ✅ 存入快取
+  var cacheKey = 'event_' + eventId;
+  window._galleryPhotoCache[cacheKey] = photos;
 
-  async function showEditAlbum(albumId) {
-    showLoading(true);
-    var res = await callServer('getAlbumById', albumId, 1);
-    showLoading(false);
-    if (!res.success) { showToast('載入失敗','error'); return; }
-    var a = res.album;
-    showModal('editAlbum',
-      '<div class="modal-header"><div class="modal-title"><i class="fas fa-edit"></i> 編輯相簿</div>' +
-      '<button class="modal-close" onclick="closeModal(\'editAlbum\')"><i class="fas fa-times"></i></button></div>' +
-      '<div class="modal-body">' +
-      '<div class="form-group"><label class="form-label"><i class="fas fa-heading"></i> 相簿名稱<span class="required">*</span></label>' +
-      '<input type="text" class="form-control" id="editAlbumTitle" value="' + escHtml(a.title||'') + '"></div>' +
-      '<div class="form-group"><label class="form-label"><i class="fas fa-align-left"></i> 相簿說明</label>' +
-      '<textarea class="form-control" id="editAlbumDesc" rows="4">' + escHtml(a.description||'') + '</textarea></div>' +
-      '<div class="form-group"><label class="form-label"><i class="fas fa-tags"></i> 分類</label>' +
-      '<select class="form-control" id="editAlbumCategory">' +
-      ['活動照片','年度活動','健康講座','聯誼活動','其他'].map(function(c){
-        return '<option ' + (a.category===c?'selected':'') + '>' + c + '</option>';
-      }).join('') + '</select></div>' +
-      '<div class="form-group"><label class="form-label"><i class="fas fa-eye"></i> 顯示狀態</label>' +
-      '<select class="form-control" id="editAlbumStatus">' +
-      '<option ' + (a.status==='公開'?'selected':'') + ' value="公開">🌐 公開</option>' +
-      '<option ' + (a.status==='隱藏'?'selected':'') + ' value="隱藏">🔒 隱藏</option>' +
-      '</select></div></div>' +
-      '<div class="modal-footer">' +
-      '<button class="btn btn-secondary" onclick="closeModal(\'editAlbum\')"><i class="fas fa-times"></i> 取消</button>' +
-      '<button class="btn btn-primary" onclick="submitEditAlbum(\'' + albumId + '\')"><i class="fas fa-save"></i> 儲存</button>' +
-      '</div>', { size:'sm' });
-  }
-
-  async function submitEditAlbum(albumId) {
-    var title = document.getElementById('editAlbumTitle')?.value?.trim();
-    if (!title) { showToast('請輸入相簿名稱','warning'); return; }
-    showLoading(true);
-    var res = await callServer('updateAlbum', APP.token, albumId, {
-      title,
-      description: document.getElementById('editAlbumDesc')?.value?.trim(),
-      category:    document.getElementById('editAlbumCategory')?.value,
-      status:      document.getElementById('editAlbumStatus')?.value
-    });
-    showLoading(false);
-    if (res.success) {
-      showToast('相簿更新成功！','success');
-      closeModal('editAlbum');
-      if (currentAlbumId === albumId) openAlbum(albumId, title);
-      else loadAlbums();
-    } else showToast(res.message,'error');
-  }
-
-  async function confirmDeleteAlbum(albumId) {
-    var confirmed = await Swal.fire({
-      title:'確定刪除此相簿？',
-      text:'刪除後所有照片也會一併移除，無法復原',
-      icon:'warning', showCancelButton:true,
-      confirmButtonText:'<i class="fas fa-trash"></i> 確定刪除',
-      cancelButtonText:'<i class="fas fa-times"></i> 取消',
-      confirmButtonColor:'#dc3545'
-    });
-    if (!confirmed.isConfirmed) return;
-    showLoading(true);
-    var res = await callServer('deleteAlbum', APP.token, albumId);
-    showLoading(false);
-    if (res.success) { showToast('相簿已刪除','success'); loadAlbums(); }
-    else showToast(res.message,'error');
-  }
-
-  // ══════════════════════════════════════════
-  // 批次上傳
-  // ══════════════════════════════════════════
-  function showBatchUpload() {
-    if (!APP.token) { navigateTo('auth'); return; }
-    showBatchUploadToAlbum('','');
-  }
-
-  function _buildBatchUploadBody(albumId, albumName) {
-    return '<input type="hidden" id="uploadAlbumId" value="' + escHtml(albumId) + '">' +
-      '<input type="hidden" id="uploadAlbumName" value="' + escHtml(albumName) + '">' +
-      '<div class="upload-zone" id="uploadZone" onclick="document.getElementById(\'batchFileInput\').click()"' +
-      ' ondragover="event.preventDefault();this.classList.add(\'drag-over\')"' +
-      ' ondragleave="this.classList.remove(\'drag-over\')"' +
-      ' ondrop="handleDropFiles(event)">' +
-      '<i class="fas fa-cloud-upload-alt"></i>' +
-      '<p>點擊這裡選擇照片</p>' +
-      '<small>或將照片拖曳到此處 · 支援 JPG、PNG，可一次多選</small></div>' +
-      '<input type="file" id="batchFileInput" accept="image/*" multiple style="display:none"' +
-      ' onchange="handleBatchFiles(this.files)">' +
-      '<div id="batchPreview" class="upload-preview" style="margin-top:14px"></div>' +
-      '<div id="batchCount" style="font-size:var(--font-md);color:var(--primary);margin-top:10px;font-weight:700"></div>' +
-      '<div class="form-group" style="margin-top:18px">' +
-      '<label class="form-label"><i class="fas fa-comment"></i> 統一說明文字（選填）</label>' +
-      '<input type="text" class="form-control" id="batchCaption" placeholder="為所有照片加上說明..."></div>' +
-      '<div id="batchProgress" style="display:none;margin-top:16px">' +
-      '<div style="font-size:var(--font-md);margin-bottom:8px;font-weight:700" id="batchProgressText">上傳中，請稍候...</div>' +
-      '<div class="progress"><div class="progress-bar" id="batchProgressBar" style="width:0%"></div></div></div>';
-  }
-
-  function showBatchUploadToAlbum(albumId, albumName) {
-    if (!APP.token) { navigateTo('auth'); return; }
-    batchFiles = [];
-    showModal('batchUpload',
-      '<div class="modal-header">' +
-      '<div class="modal-title"><i class="fas fa-cloud-upload-alt"></i> 上傳照片' +
-      (albumName ? ' → ' + escHtml(albumName) : '') + '</div>' +
-      '<button class="modal-close" onclick="closeModal(\'batchUpload\')"><i class="fas fa-times"></i></button></div>' +
-      '<div class="modal-body">' + _buildBatchUploadBody(albumId, albumName) + '</div>' +
-      '<div class="modal-footer">' +
-      '<button class="btn btn-secondary" onclick="closeModal(\'batchUpload\')"><i class="fas fa-times"></i> 取消</button>' +
-      '<button class="btn btn-primary btn-lg" id="batchUploadBtn" onclick="submitBatchUpload()">' +
-      '<i class="fas fa-upload"></i> 開始上傳</button></div>',
-      { size:'md' });
-  }
-
-  function showBatchUploadToEvent(eventId, eventName) {
-    if (!APP.token) { navigateTo('auth'); return; }
-    batchFiles = [];
-    showModal('batchUpload',
-      '<div class="modal-header">' +
-      '<div class="modal-title"><i class="fas fa-cloud-upload-alt"></i> 上傳照片 → ' + escHtml(eventName) + '</div>' +
-      '<button class="modal-close" onclick="closeModal(\'batchUpload\')"><i class="fas fa-times"></i></button></div>' +
-      '<div class="modal-body">' +
-      '<input type="hidden" id="uploadEventId" value="' + escHtml(eventId) + '">' +
-      '<input type="hidden" id="uploadEventName" value="' + escHtml(eventName) + '">' +
-      '<div class="upload-zone" id="uploadZone" onclick="document.getElementById(\'batchFileInput\').click()"' +
-      ' ondragover="event.preventDefault();this.classList.add(\'drag-over\')"' +
-      ' ondragleave="this.classList.remove(\'drag-over\')"' +
-      ' ondrop="handleDropFiles(event)">' +
-      '<i class="fas fa-cloud-upload-alt"></i><p>點擊這裡選擇照片</p>' +
-      '<small>或將照片拖曳到此處 · 支援 JPG、PNG，可一次多選</small></div>' +
-      '<input type="file" id="batchFileInput" accept="image/*" multiple style="display:none"' +
-      ' onchange="handleBatchFiles(this.files)">' +
-      '<div id="batchPreview" class="upload-preview" style="margin-top:14px"></div>' +
-      '<div id="batchCount" style="font-size:var(--font-md);color:var(--primary);margin-top:10px;font-weight:700"></div>' +
-      '<div class="form-group" style="margin-top:18px">' +
-      '<label class="form-label"><i class="fas fa-comment"></i> 統一說明文字（選填）</label>' +
-      '<input type="text" class="form-control" id="batchCaption" placeholder="為所有照片加上說明..."></div>' +
-      '<div id="batchProgress" style="display:none;margin-top:16px">' +
-      '<div style="font-size:var(--font-md);margin-bottom:8px;font-weight:700" id="batchProgressText">上傳中，請稍候...</div>' +
-      '<div class="progress"><div class="progress-bar" id="batchProgressBar" style="width:0%"></div></div></div>' +
-      '</div>' +
-      '<div class="modal-footer">' +
-      '<button class="btn btn-secondary" onclick="closeModal(\'batchUpload\')"><i class="fas fa-times"></i> 取消</button>' +
-      '<button class="btn btn-primary btn-lg" id="batchUploadBtn" onclick="submitBatchUploadEvent()">' +
-      '<i class="fas fa-upload"></i> 開始上傳</button></div>',
-      { size:'md' });
-  }
-
-  function handleDropFiles(e) {
-    e.preventDefault();
-    document.getElementById('uploadZone')?.classList.remove('drag-over');
-    handleBatchFiles(e.dataTransfer.files);
-  }
-
-  function handleBatchFiles(files) {
-    batchFiles = batchFiles.concat(Array.from(files));
-    var preview = document.getElementById('batchPreview');
-    var count   = document.getElementById('batchCount');
-    if (preview) {
-      preview.innerHTML = batchFiles.map(function(f,i) {
-        var url = URL.createObjectURL(f);
-        return '<div class="upload-preview-item">' +
-          '<img src="' + url + '" alt="' + escHtml(f.name) + '">' +
-          '<button class="remove-btn" onclick="removeBatchFile(' + i + ')"><i class="fas fa-times"></i></button>' +
-          '</div>';
-      }).join('');
-    }
-    if (count) count.textContent = batchFiles.length > 0
-      ? '✅ 已選擇 ' + batchFiles.length + ' 張照片，準備上傳' : '';
-  }
-
-  function removeBatchFile(idx) {
-    batchFiles.splice(idx, 1);
-    var preview = document.getElementById('batchPreview');
-    var count   = document.getElementById('batchCount');
-    if (preview) {
-      preview.innerHTML = batchFiles.map(function(f,i) {
-        var url = URL.createObjectURL(f);
-        return '<div class="upload-preview-item">' +
-          '<img src="' + url + '" alt="' + escHtml(f.name) + '">' +
-          '<button class="remove-btn" onclick="removeBatchFile(' + i + ')"><i class="fas fa-times"></i></button>' +
-          '</div>';
-      }).join('');
-    }
-    if (count) count.textContent = batchFiles.length > 0
-      ? '✅ 已選擇 ' + batchFiles.length + ' 張照片，準備上傳' : '';
-  }
-
-  async function submitBatchUpload() {
-    if (!batchFiles.length) { showToast('請先選擇照片','warning'); return; }
-    var albumId   = document.getElementById('uploadAlbumId')?.value || '';
-    var albumName = document.getElementById('uploadAlbumName')?.value || '';
-    var caption   = document.getElementById('batchCaption')?.value?.trim() || '';
-    await runBatchUpload(batchFiles, { albumId, albumName, caption });
-  }
-
-  async function submitBatchUploadEvent() {
-    if (!batchFiles.length) { showToast('請先選擇照片','warning'); return; }
-    var eventId   = document.getElementById('uploadEventId')?.value || '';
-    var eventName = document.getElementById('uploadEventName')?.value || '';
-    var caption   = document.getElementById('batchCaption')?.value?.trim() || '';
-    await runBatchUpload(batchFiles, { eventId, eventName, caption });
-  }
-
-  async function runBatchUpload(files, meta) {
-    var btn      = document.getElementById('batchUploadBtn');
-    var progress = document.getElementById('batchProgress');
-    var bar      = document.getElementById('batchProgressBar');
-    var text     = document.getElementById('batchProgressText');
-    if (btn)      btn.disabled = true;
-    if (progress) progress.style.display = 'block';
-    var done = 0, success = 0;
-    for (var i = 0; i < files.length; i++) {
-      try {
-        var b64 = await fileToBase64(files[i]);
-        var photoData = {
-          base64:    b64.split(',')[1],
-          mimeType:  files[i].type,
-          filename:  files[i].name,
-          caption:   meta.caption   || '',
-          albumId:   meta.albumId   || '',
-          albumName: meta.albumName || '',
-          eventId:   meta.eventId   || '',
-          eventName: meta.eventName || ''
-        };
-        var res = await callServer('batchUploadPhotos', APP.token, [photoData]);
-        if (res.success && res.successCount > 0) success++;
-      } catch(e) { console.error('上傳失敗', e); }
-      done++;
-      var pct = Math.round(done / files.length * 100);
-      if (bar)  bar.style.width  = pct + '%';
-      if (text) text.textContent = '上傳中... 第 ' + done + ' 張 / 共 ' + files.length + ' 張（' + pct + '%）';
-    }
-    if (btn) btn.disabled = false;
-    showToast(
-      '上傳完成！成功 ' + success + ' 張，失敗 ' + (files.length - success) + ' 張',
-      success === files.length ? 'success' : 'warning'
-    );
-    closeModal('batchUpload');
-    batchFiles = [];
-    if (currentAlbumId && meta.albumId === currentAlbumId) openAlbum(currentAlbumId, '');
-    else if (meta.albumId) openAlbum(meta.albumId, meta.albumName);
-    else loadAllPhotos();
-  }
-
-  function showEditCaption(photoId, currentCaption, albumId) {
-    showModal('editCaption',
-      '<div class="modal-header"><div class="modal-title"><i class="fas fa-pen"></i> 編輯照片說明</div>' +
-      '<button class="modal-close" onclick="closeModal(\'editCaption\')"><i class="fas fa-times"></i></button></div>' +
-      '<div class="modal-body">' +
-      '<div class="form-group"><label class="form-label"><i class="fas fa-comment"></i> 照片說明文字</label>' +
-      '<input type="text" class="form-control" id="editCaptionInput" value="' + escHtml(currentCaption) + '" placeholder="輸入照片說明..."></div>' +
-      '</div>' +
-      '<div class="modal-footer">' +
-      '<button class="btn btn-secondary" onclick="closeModal(\'editCaption\')"><i class="fas fa-times"></i> 取消</button>' +
-      '<button class="btn btn-primary" onclick="submitEditCaption(\'' + photoId + '\',\'' + (albumId||'') + '\')">' +
-      '<i class="fas fa-save"></i> 儲存說明</button></div>',
-      { size:'sm' });
-  }
-
-  async function submitEditCaption(photoId, albumId) {
-    var caption = document.getElementById('editCaptionInput')?.value?.trim() || '';
-    showLoading(true);
-    var res = await callServer('updatePhotoCaption', APP.token, photoId, caption);
-    showLoading(false);
-    if (res.success) {
-      showToast('說明已更新！','success');
-      closeModal('editCaption');
-      if (albumId) openAlbum(albumId,''); else loadAllPhotos();
-    } else showToast(res.message,'error');
-  }
-
-  async function confirmDeletePhoto(photoId, albumId) {
-    var confirmed = await Swal.fire({
-      title:'確定刪除此照片？', text:'刪除後無法復原', icon:'warning',
-      showCancelButton:true,
-      confirmButtonText:'<i class="fas fa-trash"></i> 確定刪除',
-      cancelButtonText:'<i class="fas fa-times"></i> 取消',
-      confirmButtonColor:'#dc3545'
-    });
-    if (!confirmed.isConfirmed) return;
-    showLoading(true);
-    var res = await callServer('deleteEventPhoto', APP.token, photoId);
-    showLoading(false);
-    if (res.success) {
-      showToast('照片已刪除','success');
-      if (albumId) openAlbum(albumId,''); else loadAllPhotos();
-    } else showToast(res.message,'error');
-  }
+  showModal('eventReview',
+    '<div class="modal-header">' +
+    '<div class="modal-title"><i class="fas fa-book-open"></i> ' + escHtml(e.title) + '</div>' +
+    '<button class="modal-close" onclick="closeModal(\'eventReview\')"><i class="fas fa-times"></i></button></div>' +
+    '<div class="modal-body">' +
+    '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px;font-size:var(--font-md);color:var(--secondary)">' +
+    '<span><i class="fas fa-calendar"></i> ' + formatFullDate(e.startDate) + '</span>' +
+    (e.location ? '<span><i class="fas fa-map-marker-alt"></i> ' + escHtml(e.location) + '</span>' : '') +
+    '<span><i class="fas fa-users"></i> ' + (e.currentParticipants||0) + ' 人參與</span></div>' +
+    (e.description ?
+      '<div style="font-size:var(--font-md);line-height:1.8;margin-bottom:18px;padding:16px;background:var(--light);border-radius:var(--radius-sm);border-left:5px solid var(--primary)">' +
+      escHtml(e.description) + '</div>' : '') +
+    (photos.length ?
+      '<div style="font-size:var(--font-lg);font-weight:700;margin-bottom:14px">' +
+      '<i class="fas fa-images" style="color:var(--primary)"></i> 活動照片（' + photos.length + ' 張）</div>' +
+      '<div class="gallery-grid">' +
+      photos.map(function(p,i){ return renderPhotoItem(p, i, cacheKey, null); }).join('') +
+      '</div>' :
+      '<div class="empty-state" style="padding:40px"><i class="fas fa-camera"></i><p>此活動尚無照片</p></div>') +
+    '</div>' +
+    '<div class="modal-footer" style="flex-wrap:wrap;gap:10px">' +
+    '<button class="btn btn-secondary btn-lg" onclick="closeModal(\'eventReview\')"><i class="fas fa-times"></i> 關閉</button>' +
+    (APP.token ?
+      '<button class="btn btn-primary btn-lg" onclick="closeModal(\'eventReview\');showBatchUploadToEvent(\'' + e.id + '\',\'' + escHtml(e.title) + '\')">' +
+      '<i class="fas fa-upload"></i> 上傳照片</button>' : '') +
+    '</div>', { size:'lg' });
+}
 
   // ══════════════════════════════════════════
   // 行事曆
