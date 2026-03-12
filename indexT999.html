@@ -486,7 +486,7 @@
 // ============================================================
 const APP_CONFIG = {
   // ✅ 填入你的 GAS 部署 URL（每次重新部署後需更新）
-  gasUrl: 'https://script.google.com/macros/s/AKfycby4W5eU47NWqx14t6wBhwNJUbGbjh6zR3-LiP3NgFCtf3x7oLdaxSOjJGUwTj_slEU/exec',
+  gasUrl: 'https://script.google.com/macros/s/AKfycbwHamRZXnTcmamRbkXnlShuS_3p0K-0zjrukCze55I7mitQuAYyr294AJ0MKo30LtH8/exec',
   // ✅ 填入你的 LIFF ID
   liffId: '2001679903-r5VXNe5g',
   orgName: '台灣帕金森病友權益促進會',
@@ -687,42 +687,62 @@ const App = (() => {
     }
   }
 
+  // ============================================================
+// 替換 App 模組中的 loadMemberData 函式
+// ============================================================
   async function loadMemberData() {
     try {
-      memberData = await API.get('getMemberProfile');
-      if (memberData && !memberData.error) {
-        // 更新 Top Bar 狀態
-        const daysLeft = memberData.expireDate
-          ? Math.ceil((new Date(memberData.expireDate) - new Date()) / 86400000) : null;
-        const statusText = daysLeft === null ? '帕金森病友權益促進會'
-          : daysLeft <= 0 ? '⚠️ 會籍已到期'
-          : daysLeft <= 30 ? '⚠️ 會籍剩 ' + daysLeft + ' 天'
-          : '✅ 會籍有效（剩 ' + daysLeft + ' 天）';
-        document.getElementById('top-status').textContent = statusText;
+      // ✅ 確認 userId 已取得
+      if (!App.userId) {
+        console.warn('loadMemberData: userId 尚未取得，跳過');
+        return;
+      }
 
-        // 更新首頁統計
-        document.getElementById('stat-days').textContent =
-          daysLeft !== null ? Math.max(0, daysLeft) : '--';
-        document.getElementById('stat-points').textContent =
-          memberData.points || 0;
+      const d = await API.get('getMemberProfile');
 
-        // 管理員按鈕
-        if (memberData.isAdmin) {
-          document.getElementById('admin-btn').style.display = '';
-          // 底部導航加入管理後台
-          const nav = document.querySelector('.bottom-nav');
-          if (!document.querySelector('[data-page="admin"]')) {
-            const adminBtn = document.createElement('button');
-            adminBtn.className = 'nav-item';
-            adminBtn.setAttribute('data-page', 'admin');
-            adminBtn.innerHTML = '<span class="nav-icon">⚙️</span><span class="nav-label">後台</span>';
-            adminBtn.onclick = () => showPage('admin');
-            nav.appendChild(adminBtn);
-          }
+      // ✅ 容錯：找不到資料時顯示提示，不中斷流程
+      if (!d || d.error) {
+        console.warn('loadMemberData:', d ? d.error : '無回應');
+        document.getElementById('top-status').textContent = '帕金森病友權益促進會';
+        document.getElementById('stat-days').textContent   = '--';
+        document.getElementById('stat-points').textContent = '0';
+        return;
+      }
+
+      App.memberData = d;
+
+      // 更新 Top Bar 狀態
+      const daysLeft = d.expireDate
+        ? Math.ceil((new Date(d.expireDate) - new Date()) / 86400000) : null;
+      const statusText = daysLeft === null ? '帕金森病友權益促進會'
+        : daysLeft <= 0  ? '⚠️ 會籍已到期'
+        : daysLeft <= 30 ? '⚠️ 會籍剩 ' + daysLeft + ' 天'
+        : '✅ 會籍有效（剩 ' + daysLeft + ' 天）';
+      document.getElementById('top-status').textContent = statusText;
+
+      // 更新首頁統計
+      document.getElementById('stat-days').textContent =
+        daysLeft !== null ? Math.max(0, daysLeft) : '--';
+      document.getElementById('stat-points').textContent = d.points || 0;
+
+      // 管理員按鈕
+      if (d.isAdmin) {
+        document.getElementById('admin-btn').style.display = '';
+        const nav = document.querySelector('.bottom-nav');
+        if (!document.querySelector('[data-page="admin"]')) {
+          const adminBtn = document.createElement('button');
+          adminBtn.className = 'nav-item';
+          adminBtn.setAttribute('data-page', 'admin');
+          adminBtn.innerHTML = '<span class="nav-icon">⚙️</span><span class="nav-label">後台</span>';
+          adminBtn.onclick = () => App.showPage('admin');
+          nav.appendChild(adminBtn);
         }
       }
+
     } catch (e) {
-      console.warn('loadMemberData:', e.message);
+      // ✅ 網路錯誤不中斷 App 啟動
+      console.warn('loadMemberData 例外：', e.message);
+      document.getElementById('top-status').textContent = '帕金森病友權益促進會';
     }
   }
 
