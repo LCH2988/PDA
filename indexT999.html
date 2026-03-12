@@ -3349,36 +3349,128 @@ const Admin = (() => {
     );
   }
 
-  async function _submitEditAdminEvent(eventId) {
-    const title = document.getElementById('ace-edit-title').value.trim();
-    if (!title) { Toast.warning('請填寫事項名稱'); return; }
-    const btn = document.getElementById('ace-edit-btn');
-    if (btn) { btn.disabled = true; btn.textContent = '儲存中…'; }
-    try {
-      const result = await API.postOnce('updateAdminEvent', {
-        eventId,
-        title,
-        type:        document.getElementById('ace-edit-type').value,
-        date:        document.getElementById('ace-edit-date').value,
-        time:        document.getElementById('ace-edit-time').value,
-        location:    document.getElementById('ace-edit-location').value.trim(),
-        attendees:   document.getElementById('ace-edit-attendees').value.trim(),
-        description: document.getElementById('ace-edit-desc').value.trim(),
-      });
-      if (result && result.success) {
-        Toast.success('已更新！');
-        Modal.close();
-        await _renderAdminCal(document.getElementById('admin-content'));
-      } else {
-        Toast.error(result.error || '更新失敗');
-        if (btn) { btn.disabled = false; btn.textContent = '儲存'; }
-      }
-    } catch (e) {
-      Toast.error(e.message);
-      if (btn) { btn.disabled = false; btn.textContent = '儲存'; }
-    }
+  // ── 公告發送 ─────────────────────────────────────────────
+  function _renderBroadcast(el) {
+    el.innerHTML =
+      '<div class="card">' +
+      '  <div class="section-title">📢 發送系統公告</div>' +
+      '  <div class="form-group">' +
+      '    <label class="form-label">公告標題 <span class="req">*</span></label>' +
+      '    <input id="bc-title" class="form-control" placeholder="請輸入公告標題">' +
+      '  </div>' +
+      '  <div class="form-group">' +
+      '    <label class="form-label">公告內容 <span class="req">*</span></label>' +
+      '    <textarea id="bc-content" class="form-control" rows="5"' +
+      '      placeholder="請輸入公告內容…"></textarea>' +
+      '  </div>' +
+      '  <div class="form-group">' +
+      '    <label class="form-label">重要程度</label>' +
+      '    <select id="bc-importance" class="form-control">' +
+      '      <option value="一般">📢 一般</option>' +
+      '      <option value="重要">🔴 重要</option>' +
+      '      <option value="緊急">🚨 緊急</option>' +
+      '    </select>' +
+      '  </div>' +
+      '  <div class="form-group">' +
+      '    <label class="form-label">推播對象</label>' +
+      '    <select id="bc-target" class="form-control">' +
+      '      <option value="all">全部會員</option>' +
+      '      <option value="active">有效會員</option>' +
+      '      <option value="expired">已到期會員</option>' +
+      '    </select>' +
+      '  </div>' +
+      '  <div style="background:#FFF3E0;border-radius:10px;padding:14px;' +
+      '    margin-bottom:16px;font-size:15px;color:var(--orange)">' +
+      '    ⚠️ 公告將以 LINE 訊息推播給所選對象，請確認內容正確後再送出' +
+      '  </div>' +
+      '  <button class="btn btn-primary btn-full" id="bc-submit-btn"' +
+      '    onclick="Admin._submitBroadcast()">📤 發送公告</button>' +
+      '</div>';
   }
 
+  async function _submitBroadcast() {
+    const title   = (document.getElementById('bc-title')   || {}).value?.trim();
+    const content = (document.getElementById('bc-content') || {}).value?.trim();
+    if (!title)   { Toast.warning('請填寫公告標題'); return; }
+    if (!content) { Toast.warning('請填寫公告內容'); return; }
+
+    const importance = (document.getElementById('bc-importance') || {}).value || '一般';
+    const targetType = (document.getElementById('bc-target')     || {}).value || 'all';
+    const targetLabel = targetType === 'all'     ? '全部會員'
+                      : targetType === 'active'  ? '有效會員'
+                      :                            '已到期會員';
+
+    Modal.confirm(
+      '確定要發送公告給「' + targetLabel + '」嗎？',
+      async () => {
+        const btn = document.getElementById('bc-submit-btn');
+        if (btn) { btn.disabled = true; btn.textContent = '發送中…'; }
+        try {
+          const result = await API.postOnce('broadcastAnnouncement', {
+            title, content, importance, targetType,
+          });
+          if (result && result.success) {
+            Toast.success(
+              '公告已發送給 ' + (result.sentCount || 0) + ' 位會員！'
+            );
+            const titleEl   = document.getElementById('bc-title');
+            const contentEl = document.getElementById('bc-content');
+            if (titleEl)   titleEl.value   = '';
+            if (contentEl) contentEl.value = '';
+          } else {
+            Toast.error(result.message || result.error || '發送失敗');
+          }
+        } catch (e) {
+          Toast.error(e.message);
+        } finally {
+          const b = document.getElementById('bc-submit-btn');
+          if (b) { b.disabled = false; b.textContent = '📤 發送公告'; }
+        }
+      }
+    );
+  }
+
+  // ── 支出審核 ─────────────────────────────────────────────
+  async function reviewExpense(expenseId, approved) {
+    const label = approved ? '核准' : '拒絕';
+    Modal.confirm(
+      '確定要' + label + '此支出申請嗎？',
+      async () => {
+        try {
+          const result = await API.postOnce('reviewExpense', {
+            expenseId, approved,
+          });
+          if (result && result.success) {
+            Toast.success('已' + label + '支出申請');
+            await switchTab('finance');
+          } else {
+            Toast.error(result.error || '操作失敗');
+          }
+        } catch (e) { Toast.error(e.message); }
+      },
+      '確認' + label,
+      !approved   // 拒絕時顯示紅色按鈕
+    );
+  }
+
+  // ── 公開介面 ─────────────────────────────────────────────
+  return {
+    load, switchTab, reviewExpense,
+    _filterMembers,
+    _adminCalPrev, _adminCalNext, _selectAdminDay,
+    _showCreateAdminEvent, _submitAdminEvent,
+    _editAdminEvent, _submitEditAdminEvent,
+    _deleteAdminEvent,
+  };
+
+})(); // ✅ Admin 模組正確閉合
+
+// ============================================================
+// ✅ 啟動應用程式
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  App.init();
+});
   
 </script>
 </body>
