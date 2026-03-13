@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>行事曆 — 帕金森病友權益促進會</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary:#1565C0; --primary-l:#E3F2FD; --primary-d:#0D47A1;
+      --green:#2E7D32;   --green-l:#E8F5E9;
+      --orange:#E65100;  --orange-l:#FFF3E0;
+      --purple:#6A1B9A;  --purple-l:#F3E8FF;
+      --red:#C62828;     --amber:#F57F17;
+      --grey1:#212121;   --grey3:#424242; --grey5:#757575;
+      --grey7:#BDBDBD;   --grey9:#F5F5F5;
+      --radius:14px;     --shadow:0 2px 12px rgba(0,0,0,.10);
+      --shadow-lg:0 6px 28px rgba(0,0,0,.16);
+      --transition:.2s ease;
+    }
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif;
+      background: #EEF2F7; color: var(--grey1); font-size: 16px; line-height: 1.65;
+    }
+
+    /* ── Loading ── */
+    #loading-screen {
+      position: fixed; inset: 0;
+      background: linear-gradient(160deg,#1565C0 0%,#0D47A1 100%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 9999; transition: opacity .4s ease;
+    }
+    #loading-screen.hide { opacity: 0; pointer-events: none; }
+    .loading-logo  { font-size: 72px; margin-bottom: 20px; animation: pulse 1.5s infinite; }
+    .loading-title { color: #fff; font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .loading-sub   { color: rgba(255,255,255,.78); font-size: 14px; }
+    .loading-bar   { width: 180px; height: 5px; background: rgba(255,255,255,.3); border-radius: 3px; margin-top: 24px; overflow: hidden; }
+    .loading-bar-inner { height: 100%; background: #fff; border-radius: 3px; animation: loadProg 2s ease forwards; }
+    @keyframes loadProg { from{width:0} to{width:100%} }
+    @keyframes pulse    { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
+
+    /* ── App Shell ── */
+    #app { display: none; flex-direction: column; height: 100%; max-width: 520px; margin: 0 auto; background: #fff; box-shadow: var(--shadow-lg); }
+    #app.visible { display: flex; }
+
+    /* ── Top Bar ── */
+    .top-bar {
+      background: linear-gradient(135deg,var(--primary),var(--primary-d));
+      color: #fff; padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+      flex-shrink: 0; box-shadow: 0 3px 12px rgba(0,0,0,.25); position: sticky; top: 0; z-index: 100;
+    }
+    .top-bar-avatar { width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(255,255,255,.6); object-fit: cover; background: rgba(255,255,255,.2); flex-shrink: 0; }
+    .top-bar-info   { flex: 1; min-width: 0; }
+    .top-bar-name   { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .top-bar-sub    { font-size: 13px; color: rgba(255,255,255,.82); margin-top: 2px; }
+
+    /* ── Page Content ── */
+    .page-content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 80px; }
+
+    /* ── Bottom Nav ── */
+    .bottom-nav {
+      display: flex; background: #fff; border-top: 1px solid #E0E0E0;
+      position: sticky; bottom: 0; z-index: 100; flex-shrink: 0;
+      box-shadow: 0 -3px 12px rgba(0,0,0,.1); padding-bottom: env(safe-area-inset-bottom);
+    }
+    .nav-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 10px 4px; cursor: pointer; transition: all var(--transition);
+      color: var(--grey5); border: none; background: none; gap: 4px; min-height: 62px;
+    }
+    .nav-item.active { color: var(--primary); }
+    .nav-icon-wrap   { padding: 4px 12px; border-radius: 12px; transition: background var(--transition); }
+    .nav-item.active .nav-icon-wrap { background: var(--primary-l); }
+    .nav-icon  { font-size: 24px; line-height: 1; display: block; }
+    .nav-label { font-size: 12px; font-weight: 700; }
+
+    /* ── Page ── */
+    .page { display: none; animation: fadeIn .25s ease; }
+    .page.active { display: block; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ── Section / Card ── */
+    .section       { padding: 16px; }
+    .section-title { font-size: 18px; font-weight: 700; color: var(--grey1); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .card          { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 14px; }
+    .card-header   { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+    .card-icon     { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+    .card-title    { font-size: 17px; font-weight: 700; }
+    .card-sub      { font-size: 13px; color: var(--grey5); margin-top: 3px; }
+
+    /* ── Tabs ── */
+    .tabs    { display: flex; background: #F1F5F9; border-radius: 12px; padding: 4px; margin-bottom: 16px; gap: 2px; }
+    .tab-btn { flex: 1; padding: 10px 8px; border: none; background: none; border-radius: 10px; font-size: 13px; font-weight: 700; color: var(--grey5); cursor: pointer; transition: all var(--transition); white-space: nowrap; }
+    .tab-btn.active { background: #fff; color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+
+    /* ── Tag ── */
+    .tag        { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+    .tag-blue   { background: #DBEAFE; color: #1D4ED8; }
+    .tag-green  { background: #DCFCE7; color: #166534; }
+    .tag-orange { background: #FEF3C7; color: #92400E; }
+    .tag-red    { background: #FEE2E2; color: #991B1B; }
+    .tag-purple { background: #F3E8FF; color: #6B21A8; }
+    .tag-grey   { background: #F3F4F6; color: #6B7280; }
+
+    /* ── Button ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 13px 20px; border-radius: 10px; font-size: 15px; font-weight: 700;
+      cursor: pointer; border: none; transition: all var(--transition);
+    }
+    .btn-primary   { background: var(--primary); color: #fff; box-shadow: 0 3px 10px rgba(21,101,192,.3); }
+    .btn-primary:hover { background: var(--primary-d); }
+    .btn-secondary { background: #F1F5F9; color: var(--grey3); }
+    .btn-danger    { background: var(--red);    color: #fff; }
+    .btn-success   { background: var(--green);  color: #fff; }
+    .btn-purple    { background: var(--purple);  color: #fff; }
+    .btn-outline   { background: transparent; color: var(--primary); border: 2px solid var(--primary); }
+    .btn-sm   { padding: 8px 14px; font-size: 13px; }
+    .btn-full { width: 100%; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Form ── */
+    .form-group   { margin-bottom: 16px; }
+    .form-label   { font-size: 15px; font-weight: 700; color: var(--grey3); margin-bottom: 7px; display: block; }
+    .form-label .req { color: var(--red); margin-left: 3px; }
+    .form-control {
+      width: 100%; padding: 12px 14px; border: 2px solid #E2E8F0; border-radius: 10px;
+      font-size: 16px; color: var(--grey1); background: #fff;
+      transition: border-color var(--transition); outline: none;
+    }
+    .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(21,101,192,.12); }
+    .form-control::placeholder { color: #CBD5E1; }
+    select.form-control {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9'%3E%3Cpath fill='%239E9E9E' d='M7 9L0 0h14z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px;
+    }
+    textarea.form-control { resize: vertical; min-height: 80px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-hint { font-size: 13px; color: var(--grey5); margin-top: 5px; }
+
+    /* ── Info Row ── */
+    .info-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid #F5F5F5; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { font-size: 13px; color: var(--grey5); flex-shrink: 0; width: 80px; }
+    .info-value { font-size: 14px; font-weight: 500; text-align: right; flex: 1; word-break: break-all; }
+
+    /* ── Toast ── */
+    #toast-container {
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      z-index: 9998; display: flex; flex-direction: column; gap: 10px;
+      pointer-events: none; width: calc(100% - 32px); max-width: 480px;
+    }
+    .toast {
+      background: var(--grey1); color: #fff; padding: 13px 16px; border-radius: 12px;
+      font-size: 15px; font-weight: 600; box-shadow: var(--shadow-lg);
+      animation: toastIn .3s ease; display: flex; align-items: center; gap: 10px;
+    }
+    .toast.success { background: #166534; } .toast.error   { background: #991B1B; }
+    .toast.warning { background: #92400E; } .toast.info    { background: var(--primary-d); }
+    .toast.hide    { animation: toastOut .3s ease forwards; }
+    @keyframes toastIn  { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes toastOut { from{opacity:1} to{opacity:0;transform:translateY(-12px)} }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1000;
+      display: flex; align-items: flex-end; justify-content: center; animation: overlayIn .2s ease;
+    }
+    .modal-overlay.hide { animation: overlayOut .2s ease forwards; }
+    @keyframes overlayIn  { from{opacity:0} to{opacity:1} }
+    @keyframes overlayOut { from{opacity:1} to{opacity:0} }
+    .modal-sheet {
+      background: #fff; border-radius: 22px 22px 0 0; width: 100%; max-width: 520px;
+      max-height: 92vh; overflow-y: auto; padding: 20px 18px 36px; animation: sheetIn .3s ease;
+    }
+    .modal-sheet.hide { animation: sheetOut .3s ease forwards; }
+    @keyframes sheetIn  { from{transform:translateY(100%)} to{transform:translateY(0)} }
+    @keyframes sheetOut { from{transform:translateY(0)} to{transform:translateY(100%)} }
+    .modal-handle { width: 44px; height: 5px; background: #E0E0E0; border-radius: 3px; margin: 0 auto 16px; }
+    .modal-title  { font-size: 20px; font-weight: 700; margin-bottom: 16px; text-align: center; }
+
+    /* ── Skeleton ── */
+    .skeleton { background: linear-gradient(90deg,#F0F4F8 25%,#E2E8F0 50%,#F0F4F8 75%); background-size: 200% 100%; animation: skelLoad 1.4s infinite; border-radius: 8px; }
+    @keyframes skelLoad { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    .skeleton-line { height: 18px; margin-bottom: 10px; }
+    .skeleton-line.medium { width: 75%; }
+    .skeleton-line.short  { width: 50%; }
+
+    /* ── Empty State ── */
+    .empty-state { text-align: center; padding: 48px 24px; color: var(--grey5); }
+    .empty-icon  { font-size: 56px; margin-bottom: 12px; }
+    .empty-text  { font-size: 17px; font-weight: 700; margin-bottom: 6px; color: var(--grey3); }
+    .empty-sub   { font-size: 14px; }
+
+    /* ── Calendar Grid ── */
+    .cal-header      { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: #fff; border-bottom: 1px solid #F0F0F0; }
+    .cal-month-label { font-size: 20px; font-weight: 700; }
+    .cal-nav-btn     { background: var(--primary-l); border: none; border-radius: 10px; width: 42px; height: 42px; font-size: 22px; cursor: pointer; color: var(--primary); display: flex; align-items: center; justify-content: center; }
+    .cal-weekdays    { display: grid; grid-template-columns: repeat(7,1fr); background: #F8FAFC; }
+    .cal-weekday     { text-align: center; padding: 10px 0; font-size: 13px; font-weight: 700; color: var(--grey5); }
+    .cal-weekday:first-child { color: var(--red); }
+    .cal-weekday:last-child  { color: var(--primary); }
+    .cal-days { display: grid; grid-template-columns: repeat(7,1fr); }
+    .cal-day  {
+      min-height: 54px; padding: 5px 3px; border-right: 1px solid #F0F0F0; border-bottom: 1px solid #F0F0F0;
+      cursor: pointer; position: relative; display: flex; flex-direction: column; align-items: center;
+      transition: background var(--transition);
+    }
+    .cal-day:hover       { background: var(--primary-l); }
+    .cal-day.other-month { opacity: .35; }
+    .cal-day.today .cal-day-num { background: var(--primary); color: #fff; border-radius: 50%; }
+    .cal-day.selected    { background: #DBEAFE; }
+    .cal-day-num  { font-size: 15px; font-weight: 600; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+    .cal-day-num.sun { color: var(--red); }
+    .cal-day-num.sat { color: var(--primary); }
+    .cal-dots { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; margin-top: 2px; }
+    .cal-dot  { width: 5px; height: 5px; border-radius: 50%; }
+
+    /* ── Calendar Event Panel ── */
+    .cal-events-panel   { background: #F8FAFC; padding: 14px 16px; min-height: 80px; }
+    .cal-event-item     { background: #fff; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; border-left: 4px solid var(--primary); box-shadow: var(--shadow); cursor: pointer; }
+    .cal-event-title    { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .cal-event-sub      { font-size: 13px; color: var(--grey5); }
+    .cal-event-admin    { border-left-color: var(--purple); background: #FDFAFF; }
+
+    /* ── Calendar Legend ── */
+    .cal-legend      { display: flex; gap: 14px; padding: 10px 16px; background: #fff; border-top: 1px solid #F0F0F0; flex-wrap: wrap; }
+    .cal-legend-item { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--grey5); }
+    .cal-legend-dot  { width: 10px; height: 10px; border-radius: 50%; }
+
+    /* ── Event Card ── */
+    .event-card        { border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); margin-bottom: 14px; background: #fff; }
+    .event-card-header { padding: 14px 16px; color: #fff; }
+    .event-card-type   { font-size: 13px; opacity: .88; margin-bottom: 3px; font-weight: 600; }
+    .event-card-title  { font-size: 17px; font-weight: 700; }
+    .event-card-body   { padding: 14px 16px; }
+    .event-card-row    { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--grey3); margin-bottom: 6px; }
+    .event-card-footer { padding: 12px 16px; border-top: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
+
+    /* ── Admin Cal Event ── */
+    .admin-event-card  { background: #fff; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; border-left: 5px solid var(--purple); box-shadow: var(--shadow); }
+    .admin-event-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+    .admin-event-meta  { font-size: 13px; color: var(--grey5); }
+    .admin-badge       { background: #F3E8FF; color: var(--purple); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+
+    /* ── Utilities ── */
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
+    .font-bold    { font-weight: 700; }
+    .color-primary{ color: var(--primary); }
+    .color-purple { color: var(--purple); }
+    .mt-8  { margin-top: 8px; }
+    .mt-12 { margin-top: 12px; }
+    .mb-8  { margin-bottom: 8px; }
+    .mb-12 { margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div class="loading-logo">📅</div>
+  <div class="loading-title">帕金森病友權益促進會</div>
+  <div class="loading-sub" id="loading-sub">行事曆載入中…</div>
+  <div class="loading-bar"><div class="loading-bar-inner"></div></div>
+</div>
+
+<div id="toast-container" role="status" aria-live="polite"></div>
+
+<div id="app">
+  <header class="top-bar">
+    <img id="top-avatar" class="top-bar-avatar" src="" alt="頭像" onerror="this.style.display='none'">
+    <div class="top-bar-info">
+      <div class="top-bar-name" id="top-name">載入中…</div>
+      <div class="top-bar-sub">帕金森病友權益促進會</div>
+    </div>
+  </header>
+
+  <main class="page-content">
+
+    <!-- ══ 活動行事曆 ══ -->
+    <div class="page active" id="page-activity">
+      <div class="section" style="padding-bottom:0">
+        <div class="section-title">📅 活動行事曆</div>
+        <div class="tabs">
+          <button class="tab-btn active" onclick="CalApp.switchActivityView('grid',this)">📆 月曆</button>
+          <button class="tab-btn" onclick="CalApp.switchActivityView('upcoming',this)">即將舉辦</button>
+          <button class="tab-btn" onclick="CalApp.switchActivityView('registered',this)">我的報名</button>
+          <button class="tab-btn" onclick="CalApp.switchActivityView('past',this)">歷史活動</button>
+        </div>
+      </div>
+      <div id="activity-cal-container"></div>
+    </div>
+
+    <!-- ══ 行政行事曆 ══ -->
+    <div class="page" id="page-admin">
+      <div class="section" style="padding-bottom:0">
+        <div class="section-title">🔒 行政行事曆</div>
+        <div class="tabs">
+          <button class="tab-btn active" onclick="CalApp.switchAdminView('grid',this)">📆 月曆</button>
+          <button class="tab-btn" onclick="CalApp.switchAdminView('list',this)">📋 清單</button>
+          <button class="tab-btn" onclick="CalApp.switchAdminView('add',this)">➕ 新增</button>
+        </div>
+      </div>
+      <div id="admin-cal-container"></div>
+    </div>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <button class="nav-item active" onclick="CalApp.showPage('activity')" data-page="activity">
+      <div class="nav-icon-wrap"><span class="nav-icon">📅</span></div>
+      <span class="nav-label">活動行事曆</span>
+    </button>
+    <button class="nav-item" onclick="CalApp.showPage('admin')" data-page="admin">
+      <div class="nav-icon-wrap"><span class="nav-icon">🔒</span></div>
+      <span class="nav-label">行政行事曆</span>
+    </button>
+  </nav>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const CFG = {
+  gasUrl : 'https://script.google.com/macros/s/AKfycbwUXkFXf5jKSxot0qVXrciKESf1pk-ncz0hnjHHKUXrIKvEIiz7LRsolKtNNNh7uAn8/exec',
+  liffId : '2001679903-r5VXNe5g',
+  org    : '台灣帕金森病友權益促進會',
+};
+
+// ============================================================
+// 工具函式
+// ============================================================
+const _esc     = v => String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const _v       = id => { const el=document.getElementById(id); return el?el.value.trim():''; };
+const _set     = (id,val) => { const el=document.getElementById(id); if(el) el.value=val; };
+const _html    = (id,h) => { const el=document.getElementById(id); if(el) el.innerHTML=h; };
+const _today   = () => new Date().toISOString().slice(0,10);
+const _now     = () => new Date().toLocaleString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+const _fmtDate = d => d ? d.replace(/-/g,'/') : '—';
+const _phoneOk = p => /^09\d{8}$/.test((p||'').replace(/\s/g,''));
+
+const TYPE_COLOR = {
+  '醫療講座':'#1565C0','復健活動':'#2E7D32','社交聚會':'#6A1B9A',
+  '志工活動':'#E65100','一般活動':'#00695C','健康講座':'#AD1457',
+};
+
+// ============================================================
+// Toast
+// ============================================================
+const Toast = (() => {
+  const IC = {success:'✅',error:'❌',warning:'⚠️',info:'ℹ️'};
+  function show(msg,type='info',dur=3200) {
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.innerHTML = '<span style="font-size:19px;flex-shrink:0">'+(IC[type]||'')+'</span><span style="flex:1">'+msg+'</span>';
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(()=>{ el.classList.add('hide'); setTimeout(()=>el.remove(),320); },dur);
+  }
+  return {
+    success:(m,d)=>show(m,'success',d), error:(m,d)=>show(m,'error',d||4500),
+    warning:(m,d)=>show(m,'warning',d), info:(m,d)=>show(m,'info',d),
+  };
+})();
+
+// ============================================================
+// Modal
+// ============================================================
+const Modal = (() => {
+  let _cur = null;
+  function show(html) {
+    close();
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay'; ov.id = 'modal-active';
+    ov.innerHTML = '<div class="modal-sheet"><div class="modal-handle"></div>'+html+'</div>';
+    ov.addEventListener('click', e=>{ if(e.target===ov) close(); });
+    document.body.appendChild(ov); _cur = ov;
+  }
+  function close() {
+    if(!_cur) return;
+    _cur.classList.add('hide');
+    const s = _cur.querySelector('.modal-sheet');
+    if(s) s.classList.add('hide');
+    const ref=_cur;
+    setTimeout(()=>{ ref.remove(); if(_cur===ref) _cur=null; },320);
+  }
+  function confirm(msg,onOk,okLabel,danger) {
+    show(
+      '<div class="modal-title">確認操作</div>' +
+      '<p style="font-size:16px;color:#424242;text-align:center;margin-bottom:22px;line-height:1.7">'+msg+'</p>' +
+      '<div style="display:flex;gap:12px">' +
+      '<button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button>' +
+      '<button class="btn '+(danger?'btn-danger':'btn-primary')+' btn-full" id="modal-ok">'+(okLabel||'確認')+'</button>' +
+      '</div>'
+    );
+    document.getElementById('modal-ok').onclick = ()=>{ close(); if(onOk) onOk(); };
+  }
+  return { show, close, confirm };
+})();
+
+// ============================================================
+// API
+// ============================================================
+const API = (() => {
+  let _pending = new Set();
+  let _userId  = '';
+  function setUser(id) { _userId = id; }
+  async function get(action, params={}) {
+    const url = new URL(CFG.gasUrl);
+    url.searchParams.set('action', action);
+    if(_userId) url.searchParams.set('userId', _userId);
+    Object.entries(params).forEach(([k,v])=>{ if(v!==undefined&&v!==null&&v!=='') url.searchParams.set(k,String(v)); });
+    const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),15000);
+    try {
+      const res = await fetch(url.toString(),{signal:ctrl.signal});
+      if(!res.ok) throw new Error('伺服器錯誤('+res.status+')');
+      const d = await res.json();
+      if(d&&d.error) throw new Error(d.error);
+      return d;
+    } catch(e) {
+      if(e.name==='AbortError') throw new Error('請求逾時，請重試');
+      throw e;
+    } finally { clearTimeout(t); }
+  }
+  async function post(action, body={}) {
+    const key = action+JSON.stringify(body);
+    if(_pending.has(key)) throw new Error('請求處理中，請勿重複送出');
+    _pending.add(key);
+    const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),25000);
+    try {
+      const res = await fetch(CFG.gasUrl,{
+        method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({action,userId:_userId,...body}), signal:ctrl.signal,
+      });
+      if(!res.ok) throw new Error('伺服器錯誤('+res.status+')');
+      const d = await res.json();
+      if(d&&d.error) throw new Error(d.error);
+      return d;
+    } catch(e) {
+      if(e.name==='AbortError') throw new Error('請求逾時，請重試');
+      throw e;
+    } finally { clearTimeout(t); _pending.delete(key); }
+  }
+  return { setUser, get, post };
+})();
+
+// ============================================================
+// CalApp — 主應用程式
+// ============================================================
+const CalApp = (() => {
+  // ── 共用狀態 ─────────────────────────────────────────
+  let _isAdmin      = false;
+  let _actView      = 'grid';
+  let _adminView    = 'grid';
+
+  // ── 活動行事曆狀態 ───────────────────────────────────
+  let _actYear      = new Date().getFullYear();
+  let _actMonth     = new Date().getMonth();
+  let _actSelDay    = null;
+  let _actEvents    = [];
+
+  // ── 行政行事曆狀態 ───────────────────────────────────
+  let _admYear      = new Date().getFullYear();
+  let _admMonth     = new Date().getMonth();
+  let _admSelDay    = null;
+  let _admEvents    = [];
+
+  // ============================================================
+  // LIFF 初始化
+  // ============================================================
+  async function init() {
+    try {
+      await liff.init({ liffId: CFG.liffId });
+      if(!liff.isLoggedIn()) {
+        if(liff.isInClient()) { liff.login({redirectUri:location.href}); return; }
+        _setSub('請在 LINE App 中開啟此頁面'); return;
+      }
+      const profile = await liff.getProfile();
+      API.setUser(profile.userId);
+      const avatarEl = document.getElementById('top-avatar');
+      if(profile.pictureUrl) { avatarEl.src=profile.pictureUrl; avatarEl.style.display=''; }
+      document.getElementById('top-name').textContent = profile.displayName||'會員';
+
+      // 確認管理員身份
+      try {
+        const md = await API.get('getMemberProfile');
+        _isAdmin = !!(md && md.isAdmin);
+      } catch(e) { _isAdmin = false; }
+
+      _hideLoading();
+      await switchActivityView('grid');
+    } catch(err) {
+      console.error('init error:', err);
+      _setSub('啟動失敗：' + err.message);
+    }
+  }
+
+  // ============================================================
+  // 頁面切換
+  // ============================================================
+  function showPage(pageId) {
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    const target = document.getElementById('page-'+pageId);
+    if(target) target.classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(b=>{
+      b.classList.toggle('active', b.getAttribute('data-page')===pageId);
+    });
+    document.querySelector('.page-content').scrollTop = 0;
+    if(pageId==='activity') switchActivityView(_actView);
+    if(pageId==='admin')    switchAdminView(_adminView);
+  }
+
+  // ============================================================
+  // ① 活動行事曆
+  // ============================================================
+  async function switchActivityView(view, btnEl) {
+    _actView = view;
+    if(btnEl) {
+      document.querySelectorAll('#page-activity .tab-btn').forEach(b=>b.classList.remove('active'));
+      btnEl.classList.add('active');
+    }
+    const container = document.getElementById('activity-cal-container');
+    if(view==='grid') await _loadActivityGrid(container);
+    else              await _renderActivityList(view, container);
+  }
+
+  async function _loadActivityGrid(container) {
+    container.innerHTML = _skelHtml();
+    try {
+      const [upcoming, past] = await Promise.all([
+        API.get('getEvents',{tab:'upcoming'}),
+        API.get('getEvents',{tab:'past'}),
+      ]);
+      _actEvents = [
+        ...(Array.isArray(upcoming)?upcoming:[]),
+        ...(Array.isArray(past)?past:[]),
+      ];
+      _renderActivityGrid(container);
+    } catch(e) {
+      container.innerHTML = _errHtml(e.message);
+    }
+  }
+
+  function _renderActivityGrid(container) {
+    const evMap = _buildEvMap(_actEvents);
+    container.innerHTML =
+      _calHeaderHtml(_actYear, _actMonth, 'CalApp._actPrev()', 'CalApp._actNext()') +
+      _calGridHtml(_actYear, _actMonth, _actSelDay, evMap, 'CalApp._actSelectDay') +
+      _calLegendHtml() +
+      '<div class="cal-events-panel" id="act-events-panel">' +
+      _buildDayPanel(_actSelDay, evMap, false) + '</div>';
+  }
+
+  function _actSelectDay(dateStr) {
+    _actSelDay = dateStr;
+    const evMap = _buildEvMap(_actEvents);
+    const panel = document.getElementById('act-events-panel');
+    if(panel) panel.innerHTML = _buildDayPanel(dateStr, evMap, false);
+    // 重繪格子選中狀態
+    document.querySelectorAll('#activity-cal-container .cal-day').forEach(d=>{
+      d.classList.toggle('selected', d.getAttribute('data-date')===dateStr);
+    });
+  }
+
+  function _actPrev() {
+    if(_actMonth===0){_actMonth=11;_actYear--;} else _actMonth--;
+    _actSelDay=null;
+    _renderActivityGrid(document.getElementById('activity-cal-container'));
+  }
+  function _actNext() {
+    if(_actMonth===11){_actMonth=0;_actYear++;} else _actMonth++;
+    _actSelDay=null;
+    _renderActivityGrid(document.getElementById('activity-cal-container'));
+  }
+
+  async function _renderActivityList(tab, container) {
+    container.innerHTML = _skelHtml();
+    try {
+      const data = await API.get('getEvents',{tab});
+      const list = Array.isArray(data)?data:[];
+      if(!list.length) {
+        const msgs = {upcoming:'目前沒有即將舉辦的活動',registered:'您尚未報名任何活動',past:'沒有歷史活動記錄'};
+        container.innerHTML = _emptyHtml('📅', msgs[tab]||'沒有資料');
+        return;
+      }
+      container.innerHTML = '<div style="padding:16px">' +
+        list.map(ev=>_buildEventCard(ev,tab)).join('') + '</div>';
+    } catch(e) {
+      container.innerHTML = _errHtml(e.message);
+    }
+  }
+
+  function _buildEventCard(ev, tab) {
+    const color  = TYPE_COLOR[ev.type]||'#455A64';
+    const full   = (ev.currentParticipants||ev.registered||0) >= (ev.maxParticipants||ev.quota||1);
+    const isPast = tab==='past';
+    return (
+      '<div class="event-card">' +
+      '<div class="event-card-header" style="background:'+color+'">' +
+      '<div class="event-card-type">'+_esc(ev.type||'活動')+'</div>' +
+      '<div class="event-card-title">'+_esc(ev.title)+'</div>' +
+      '</div>' +
+      '<div class="event-card-body">' +
+      '<div class="event-card-row">📅 '+_esc(ev.startDate||ev.date||'')+'  '+_esc(ev.startTime||ev.time||'')+'</div>' +
+      '<div class="event-card-row">📍 '+_esc(ev.location||'--')+'</div>' +
+      '<div class="event-card-row">👥 '+(ev.currentParticipants||ev.registered||0)+' / '+(ev.maxParticipants||ev.quota||0)+' 人' +
+      (full?' <span class="tag tag-red" style="margin-left:6px">已額滿</span>':'')+'</div>' +
+      (ev.description?'<div class="event-card-row" style="color:var(--grey5);font-size:13px">'+_esc(ev.description.slice(0,60))+(ev.description.length>60?'…':'')+'</div>':'') +
+      '</div>' +
+      '<div class="event-card-footer">' +
+      '<span class="tag tag-'+(isPast?'grey':full?'red':'green')+'">'+(isPast?'已結束':full?'已額滿':'報名中')+'</span>' +
+      '<div style="display:flex;gap:8px">' +
+      (tab==='registered'
+        ? '<button class="btn btn-danger btn-sm" onclick="CalApp.cancelReg(\''+ev.id+'\')">取消報名</button>'
+        : !isPast&&!full
+          ? '<button class="btn btn-primary btn-sm" style="background:'+color+'" onclick="CalApp.register(\''+ev.id+'\',\''+ev.title.replace(/'/g,"\\'")+'\')" >立即報名</button>'
+          : '') +
+      '</div></div></div>'
+    );
+  }
+
+  function _buildDayPanel(dateStr, evMap, isAdmin) {
+    if(!dateStr) return '<div style="text-align:center;color:var(--grey5);padding:20px;font-size:14px">👆 點選日期查看活動</div>';
+    const evList = evMap[dateStr]||[];
+    if(!evList.length) return '<div style="text-align:center;color:var(--grey5);padding:20px;font-size:14px">📅 '+dateStr+' 沒有活動</div>';
+    return '<div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--grey3)">📅 '+dateStr+' 的活動</div>' +
+      evList.map(ev=>{
+        const color = isAdmin ? 'var(--purple)' : (TYPE_COLOR[ev.type]||'#455A64');
+        const full  = (ev.currentParticipants||0)>=(ev.maxParticipants||1);
+        return (
+          '<div class="cal-event-item '+(isAdmin?'cal-event-admin':'')+'" style="border-left-color:'+color+'">' +
+          '<div class="cal-event-title">'+_esc(ev.title)+'</div>' +
+          '<div class="cal-event-sub">⏰ '+_esc(ev.startTime||ev.time||'--')+
+          (ev.location?' &nbsp;|&nbsp; 📍 '+_esc(ev.location):'') +
+          (!isAdmin?' &nbsp;|&nbsp; 👥 '+(ev.currentParticipants||0)+'/'+(ev.maxParticipants||0):'') +
+          '</div>' +
+          (!isAdmin&&!full
+            ? '<div style="margin-top:8px"><button class="btn btn-primary btn-sm" style="background:'+color+'" '+
+              'onclick="CalApp.register(\''+ev.id+'\',\''+ev.title.replace(/'/g,"\\'")+'\')">立即報名</button></div>'
+            : !isAdmin&&full ? '<div style="margin-top:8px"><span class="tag tag-red">已額滿</span></div>' : '') +
+          '</div>'
+        );
+      }).join('');
+  }
+
+  async function register(eventId, title) {
+    Modal.confirm('確定要報名「'+title+'」嗎？', async ()=>{
+      try {
+        const r = await API.post('registerEvent',{eventId});
+        if(r&&r.success) { Toast.success('報名成功！積分 +10'); await switchActivityView(_actView); }
+        else Toast.error(r.error||'報名失敗');
+      } catch(e) { Toast.error(e.message); }
+    });
+  }
+
+  async function cancelReg(eventId) {
+    Modal.confirm('確定要取消報名嗎？', async ()=>{
+      try {
+        const r = await API.post('cancelEvent',{eventId});
+        if(r&&r.success) { Toast.success('已取消報名'); await switchActivityView('registered'); }
+        else Toast.error(r.error||'取消失敗');
+      } catch(e) { Toast.error(e.message); }
+    },'確認取消',true);
+  }
+
+  // ============================================================
+  // ② 行政行事曆
+  // ============================================================
+  async function switchAdminView(view, btnEl) {
+    _adminView = view;
+    if(btnEl) {
+      document.querySelectorAll('#page-admin .tab-btn').forEach(b=>b.classList.remove('active'));
+      btnEl.classList.add('active');
+    }
+    const container = document.getElementById('admin-cal-container');
+    if(view==='grid')   await _loadAdminGrid(container);
+    else if(view==='list') await _renderAdminList(container);
+    else                   _renderAdminAdd(container);
+  }
+
+  async function _loadAdminGrid(container) {
+    container.innerHTML = _skelHtml();
+    try {
+      const data = await API.get('getAdminCalendar');
+      _admEvents = Array.isArray(data)?data:[];
+      _renderAdminGrid(container);
+    } catch(e) {
+      container.innerHTML = _errHtml(e.message);
+    }
+  }
+
+  function _renderAdminGrid(container) {
+    const evMap = {};
+    _admEvents.forEach(ev=>{
+      const key = ev.date||'';
+      if(!key) return;
+      if(!evMap[key]) evMap[key]=[];
+      evMap[key].push(ev);
+    });
+    container.innerHTML =
+      _calHeaderHtml(_admYear, _admMonth, 'CalApp._admPrev()', 'CalApp._admNext()') +
+      _calGridHtml(_admYear, _admMonth, _admSelDay, evMap, 'CalApp._admSelectDay', '#6A1B9A') +
+      '<div style="padding:8px 16px;background:#fff;border-top:1px solid #F0F0F0;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--purple)">' +
+      '<div style="width:10px;height:10px;border-radius:50%;background:var(--purple)"></div>行政事項（僅管理員可見）</div>' +
+      '<div class="cal-events-panel" id="adm-events-panel">' +
+      _buildDayPanel(_admSelDay, evMap, true) + '</div>';
+  }
+
+  function _admSelectDay(dateStr) {
+    _admSelDay = dateStr;
+    const evMap = {};
+    _admEvents.forEach(ev=>{ const k=ev.date||''; if(!k) return; if(!evMap[k]) evMap[k]=[]; evMap[k].push(ev); });
+    const panel = document.getElementById('adm-events-panel');
+    if(panel) panel.innerHTML = _buildDayPanel(dateStr, evMap, true);
+    document.querySelectorAll('#admin-cal-container .cal-day').forEach(d=>{
+      d.classList.toggle('selected', d.getAttribute('data-date')===dateStr);
+    });
+  }
+
+  function _admPrev() {
+    if(_admMonth===0){_admMonth=11;_admYear--;} else _admMonth--;
+    _admSelDay=null;
+    _renderAdminGrid(document.getElementById('admin-cal-container'));
+  }
+  function _admNext() {
+    if(_admMonth===11){_admMonth=0;_admYear++;} else _admMonth++;
+    _admSelDay=null;
+    _renderAdminGrid(document.getElementById('admin-cal-container'));
+  }
+
+  async function _renderAdminList(container) {
+    container.innerHTML = _skelHtml();
+    try {
+      const data = await API.get('getAdminCalendar');
+      _admEvents = Array.isArray(data)?data:[];
+      if(!_admEvents.length) {
+        container.innerHTML = _emptyHtml('📅','尚無行政事項');
+        return;
+      }
+      container.innerHTML =
+        '<div style="padding:16px">' +
+        '<div style="font-size:14px;color:var(--grey5);margin-bottom:12px">共 '+_admEvents.length+' 筆行政事項</div>' +
+        _admEvents.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map((ev,idx)=>
+          '<div class="admin-event-card">' +
+          '<div class="admin-event-title">' +
+          _esc(ev.title)+'<span class="admin-badge">🔒 行政</span>' +
+          '</div>' +
+          '<div class="admin-event-meta">📅 '+_esc(ev.date||'--')+(ev.time?' &nbsp;⏰ '+_esc(ev.time):'')+'</div>' +
+          (ev.note?'<div style="margin-top:6px;font-size:13px;color:var(--grey3)">📝 '+_esc(ev.note)+'</div>':'') +
+          (_isAdmin
+            ? '<div style="display:flex;gap:8px;margin-top:10px">' +
+              '<button class="btn btn-secondary btn-sm" style="flex:1" onclick="CalApp.editAdminEvent('+idx+')">✏️ 編輯</button>' +
+              '<button class="btn btn-danger btn-sm" style="flex:1" onclick="CalApp.deleteAdminEvent(\''+_esc(ev.id||'')+'\','+idx+')">🗑️ 刪除</button>' +
+              '</div>'
+            : '') +
+          '</div>'
+        ).join('') + '</div>';
+    } catch(e) {
+      container.innerHTML = _errHtml(e.message);
+    }
+  }
+
+  function _renderAdminAdd(container) {
+    if(!_isAdmin) {
+      container.innerHTML =
+        '<div class="empty-state"><div class="empty-icon">🔒</div>' +
+        '<div class="empty-text">僅管理員可新增行政事項</div></div>';
+      return;
+    }
+    container.innerHTML =
+      '<div style="padding:16px">' +
+      '<div class="card">' +
+      '<div class="card-header">' +
+      '<div class="card-icon" style="background:var(--purple-l)">🔒</div>' +
+      '<div><div class="card-title">新增行政事項</div>' +
+      '<div class="card-sub">僅管理員可見</div></div></div>' +
+      _fg('事項名稱',true,'<input id="adcal-title" class="form-control" placeholder="例：理監事會議">') +
+      '<div class="form-row">' +
+      _fg('日期',true,'<input id="adcal-date" class="form-control" type="date" value="'+_today()+'">') +
+      _fg('時間',false,'<input id="adcal-time" class="form-control" type="time" value="09:00">') +
+      '</div>' +
+      _fg('類型',false,
+        '<select id="adcal-type" class="form-control">' +
+        ['會議','公文','財務','人事','活動籌備','其他'].map(t=>'<option value="'+t+'">'+t+'</option>').join('') +
+        '</select>') +
+      _fg('參與人員',false,'<input id="adcal-attendees" class="form-control" placeholder="例：理事長、秘書長…">') +
+      _fg('說明',false,'<textarea id="adcal-note" class="form-control" rows="3" placeholder="選填說明…"></textarea>') +
+      '<button class="btn btn-purple btn-full" onclick="CalApp.submitAdminEvent()">➕ 新增行政事項</button>' +
+      '</div></div>';
+  }
+
+  async function submitAdminEvent() {
+    const title = _v('adcal-title');
+    const date  = _v('adcal-date');
+    if(!title) { Toast.warning('請填寫事項名稱'); return; }
+    if(!date)  { Toast.warning('請選擇日期');     return; }
+    const btn = document.querySelector('#admin-cal-container .btn-purple');
+    if(btn) { btn.disabled=true; btn.textContent='新增中…'; }
+    try {
+      const result = await API.post('addAdminCalEvent',{
+        title, date,
+        time      : _v('adcal-time'),
+        type      : _v('adcal-type'),
+        attendees : _v('adcal-attendees'),
+        note      : _v('adcal-note'),
+      });
+      if(result&&result.success) {
+        Toast.success('行政事項已新增！');
+        await switchAdminView('list');
+      } else {
+        Toast.error(result.error||'新增失敗');
+        if(btn) { btn.disabled=false; btn.textContent='➕ 新增行政事項'; }
+      }
+    } catch(e) {
+      Toast.error(e.message);
+      if(btn) { btn.disabled=false; btn.textContent='➕ 新增行政事項'; }
+    }
+  }
+
+  function editAdminEvent(idx) {
+    const ev = _admEvents[idx];
+    if(!ev) return;
+    Modal.show(
+      '<div class="modal-title">✏️ 編輯行政事項</div>' +
+      _fg('事項名稱',true,'<input id="edit-adcal-title" class="form-control" value="'+_esc(ev.title||'')+'">') +
+      '<div class="form-row">' +
+      _fg('日期',true,'<input id="edit-adcal-date" class="form-control" type="date" value="'+_esc(ev.date||'')+'">') +
+      _fg('時間',false,'<input id="edit-adcal-time" class="form-control" type="time" value="'+_esc(ev.time||'09:00')+'">') +
+      '</div>' +
+      _fg('說明',false,'<textarea id="edit-adcal-note" class="form-control" rows="3">'+_esc(ev.note||'')+'</textarea>') +
+      '<div style="display:flex;gap:12px">' +
+      '<button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button>' +
+      '<button class="btn btn-primary btn-full" id="edit-adcal-btn" onclick="CalApp._saveAdminEvent(\''+_esc(ev.id||'')+'\','+idx+')">💾 儲存</button>' +
+      '</div>'
+    );
+  }
+
+  async function _saveAdminEvent(evId, idx) {
+    const title = _v('edit-adcal-title');
+    const date  = _v('edit-adcal-date');
+    if(!title) { Toast.warning('事項名稱不可為空'); return; }
+    const btn = document.getElementById('edit-adcal-btn');
+    if(btn) { btn.disabled=true; btn.textContent='儲存中…'; }
+    try {
+      const result = await API.post('updateAdminCalEvent',{
+        id:evId, title, date,
+        time : _v('edit-adcal-time'),
+        note : _v('edit-adcal-note'),
+      });
+      if(result&&result.success) {
+        Toast.success('行政事項已更新！');
+        Modal.close();
+        await switchAdminView('list');
+      } else {
+        Toast.error(result.error||'更新失敗');
+        if(btn) { btn.disabled=false; btn.textContent='💾 儲存'; }
+      }
+    } catch(e) {
+      Toast.error(e.message);
+      if(btn) { btn.disabled=false; btn.textContent='💾 儲存'; }
+    }
+  }
+
+  function deleteAdminEvent(evId, idx) {
+    const ev = _admEvents[idx];
+    if(!ev) return;
+    Modal.confirm('確定要刪除「'+ev.title+'」嗎？', async ()=>{
+      try {
+        const result = await API.post('deleteAdminCalEvent',{id:evId});
+        if(result&&result.success) {
+          Toast.success('行政事項已刪除');
+          await switchAdminView('list');
+        } else Toast.error(result.error||'刪除失敗');
+      } catch(e) { Toast.error(e.message); }
+    },'確認刪除',true);
+  }
+
+  // ============================================================
+  // 共用行事曆 HTML 建構函式
+  // ============================================================
+  function _calHeaderHtml(year, month, prevFn, nextFn) {
+    const names = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    return (
+      '<div class="cal-header">' +
+      '<button class="cal-nav-btn" onclick="'+prevFn+'">‹</button>' +
+      '<div class="cal-month-label">'+year+' 年 '+names[month]+'</div>' +
+      '<button class="cal-nav-btn" onclick="'+nextFn+'">›</button>' +
+      '</div>'
+    );
+  }
+
+  function _calGridHtml(year, month, selDay, evMap, selectFn, dotColor) {
+    const today    = new Date();
+    const firstDay = new Date(year,month,1).getDay();
+    const lastDate = new Date(year,month+1,0).getDate();
+    const prevLast = new Date(year,month,0).getDate();
+    let html =
+      '<div class="cal-weekdays">' +
+      ['日','一','二','三','四','五','六'].map(d=>'<div class="cal-weekday">'+d+'</div>').join('') +
+      '</div><div class="cal-days">';
+
+    for(let i=firstDay-1;i>=0;i--) {
+      html += '<div class="cal-day other-month"><div class="cal-day-num">'+(prevLast-i)+'</div></div>';
+    }
+    for(let d=1;d<=lastDate;d++) {
+      const ds  = year+'-'+String(month+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      const isT = (year===today.getFullYear()&&month===today.getMonth()&&d===today.getDate());
+      const isS = selDay===ds;
+      const dow = new Date(year,month,d).getDay();
+      const evs = evMap[ds]||[];
+      html +=
+        '<div class="cal-day'+(isT?' today':'')+(isS?' selected':'')+'" '+
+        'data-date="'+ds+'" onclick="'+selectFn+'(\''+ds+'\')">' +
+        '<div class="cal-day-num'+(dow===0?' sun':dow===6?' sat':'')+'">' + d + '</div>';
+      if(evs.length) {
+        html += '<div class="cal-dots">';
+        evs.slice(0,3).forEach(ev=>{
+          const c = dotColor || (TYPE_COLOR[ev.type]||'#455A64');
+          html += '<div class="cal-dot" style="background:'+c+'"></div>';
+        });
+        if(evs.length>3) html += '<div class="cal-dot" style="background:#9E9E9E"></div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    const total = firstDay + lastDate;
+    const rem   = total%7===0 ? 0 : 7-(total%7);
+    for(let d=1;d<=rem;d++) {
+      html += '<div class="cal-day other-month"><div class="cal-day-num">'+d+'</div></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function _calLegendHtml() {
+    return (
+      '<div class="cal-legend">' +
+      Object.entries(TYPE_COLOR).map(([type,color])=>
+        '<div class="cal-legend-item">' +
+        '<div class="cal-legend-dot" style="background:'+color+'"></div>'+type+
+        '</div>'
+      ).join('') +
+      '</div>'
+    );
+  }
+
+  // ============================================================
+  // 共用 HTML 片段
+  // ============================================================
+  function _skelHtml() {
+    return (
+      '<div style="padding:16px">' +
+      '<div class="skeleton skeleton-line" style="height:44px;margin-bottom:12px"></div>' +
+      '<div class="skeleton skeleton-line" style="height:200px;margin-bottom:12px"></div>' +
+      '<div class="skeleton skeleton-line medium"></div>' +
+      '</div>'
+    );
+  }
+  function _errHtml(msg) {
+    return '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">載入失敗</div><div class="empty-sub">'+_esc(msg)+'</div></div>';
+  }
+  function _emptyHtml(icon, text, sub) {
+    return '<div class="empty-state"><div class="empty-icon">'+icon+'</div><div class="empty-text">'+text+'</div>'+(sub?'<div class="empty-sub">'+sub+'</div>':'')+'</div>';
+  }
+  function _fg(label, required, inputHtml) {
+    return '<div class="form-group"><label class="form-label">'+label+(required?'<span class="req">*</span>':'')+
+      '</label>'+inputHtml+'</div>';
+  }
+  function _buildEvMap(events) {
+    const map = {};
+    events.forEach(ev=>{
+      const key = ev.startDate||ev.date||'';
+      if(!key) return;
+      if(!map[key]) map[key]=[];
+      map[key].push(ev);
+    });
+    return map;
+  }
+  function _setSub(msg) {
+    const el = document.getElementById('loading-sub');
+    if(el) el.textContent = msg;
+  }
+  function _hideLoading() {
+    const el = document.getElementById('loading-screen');
+    el.classList.add('hide');
+    setTimeout(()=>el.style.display='none', 420);
+    document.getElementById('app').classList.add('visible');
+  }
+
+  // ============================================================
+  // 公開介面
+  // ============================================================
+  return {
+    init, showPage,
+    // 活動行事曆
+    switchActivityView,
+    register, cancelReg,
+    _actSelectDay, _actPrev, _actNext,
+    // 行政行事曆
+    switchAdminView,
+    submitAdminEvent,
+    editAdminEvent, _saveAdminEvent,
+    deleteAdminEvent,
+    _admSelectDay, _admPrev, _admNext,
+  };
+})();
+
+// ============================================================
+// 全域掛載 & 啟動
+// ============================================================
+window.CalApp = CalApp;
+window.Modal  = Modal;
+window.Toast  = Toast;
+
+window.addEventListener('error', e=>{
+  console.error('[Error]', e.message);
+  Toast.error('發生未預期錯誤，請重新整理');
+});
+window.addEventListener('unhandledrejection', e=>{
+  const msg = (e.reason&&e.reason.message)?e.reason.message:String(e.reason);
+  if(msg&&!msg.includes('AbortError')) Toast.error('操作失敗：'+msg);
+});
+
+document.addEventListener('DOMContentLoaded', ()=>{ CalApp.init(); });
+</script>
+</body>
+</html>
