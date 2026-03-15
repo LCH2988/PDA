@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>樂齡社群平台</title>
+  <title>LSVTBIG論壇</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
       * {
@@ -390,7 +390,7 @@
   
   <div class="container">
       <div class="header">
-          <h1>🌟 樂齡社群平台</h1>
+          <div class="logo">LVST<span>BIG</span></div>
           <p>分享生活、交流經驗、記錄美好時光</p>
       </div>
 
@@ -495,7 +495,7 @@
 
   <script>
       // 設定 Google Apps Script Web App URL
-      const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxxCgDjPkoKego-3t02B1a8aCVFqEQEBaadNK_huCuWehcV04_oh8HTHDjIfOnzTelO/exec';
+      const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxxD1kzEQ0-prl8vtjG4MEjWH9fvo3SbCndqqhwLLYI1HtAuf3-DHMHsAHreg3v8V4znQ/exec';
       
       // 全域變數
       let currentPosts = [];
@@ -503,21 +503,27 @@
       let currentGallery = [];
       let selectedFiles = [];
       let isConnected = false;
+      let liffReady = false;
 
-      // LIFF 初始化
+      // LIFF 初始化 (可選，如果沒有 LIFF ID 就跳過)
       window.onload = function() {
+          // 先測試連線
+          testConnection();
+          
+          // LIFF 初始化 (如果有 LIFF ID 的話)
+        
           if (typeof liff !== 'undefined') {
               liff.init({
-                  liffId: '2006336845-yKMxKOJG' // 請替換為實際的 LIFF ID
+                  liffId: '2009456572-AUDE1qmM' // 請替換為實際的 LIFF ID
               }).then(() => {
                   console.log('LIFF 初始化成功');
+                  liffReady = true;
               }).catch((err) => {
                   console.log('LIFF 初始化失敗', err);
+                  liffReady = false;
               });
           }
           
-          // 測試連線並載入初始資料
-          testConnection();
       };
 
       // 測試連線
@@ -553,36 +559,31 @@
           }
       }
 
-      // API 呼叫函數 - 修改為支援多種方法
-      async function callGASAPI(action, data = null, method = 'GET') {
+      // API 呼叫函數 - 統一使用 GET 請求避開 CORS
+      async function callGASAPI(action, data = null) {
           try {
               let url = GAS_WEB_APP_URL;
-              let options = {
-                  method: method,
-                  redirect: 'follow'
-              };
-
-              if (method === 'POST' && data) {
-                  options.headers = {
-                      'Content-Type': 'application/json',
-                  };
-                  options.body = JSON.stringify({ action, ...data });
-              } else {
-                  // GET 請求
-                  const params = new URLSearchParams({ action });
-                  if (data) {
-                      Object.keys(data).forEach(key => {
-                          if (data[key] !== null && data[key] !== undefined) {
+              const params = new URLSearchParams({ action });
+              
+              if (data) {
+                  Object.keys(data).forEach(key => {
+                      if (data[key] !== null && data[key] !== undefined) {
+                          if (typeof data[key] === 'object') {
+                              params.append(key, JSON.stringify(data[key]));
+                          } else {
                               params.append(key, data[key]);
                           }
-                      });
-                  }
-                  url += '?' + params.toString();
+                      }
+                  });
               }
-
+              
+              url += '?' + params.toString();
               console.log('API 請求:', url);
               
-              const response = await fetch(url, options);
+              const response = await fetch(url, {
+                  method: 'GET',
+                  redirect: 'follow'
+              });
               
               if (!response.ok) {
                   throw new Error(`HTTP error! status: ${response.status}`);
@@ -893,14 +894,6 @@
                           <textarea class="form-control" id="postContent" placeholder="請輸入內容..."></textarea>
                       </div>
                       <div class="form-group">
-                          <label>📎 附件上傳</label>
-                          <div class="file-upload" onclick="document.getElementById('postFile').click()">
-                              <input type="file" id="postFile" multiple accept="image/*,application/pdf,.doc,.docx" onchange="handleFileSelect(this, 'postFilePreview')">
-                              <p style="font-size: 20px; color: #718096;">📁 點擊上傳檔案<br><small>支援圖片、PDF、Word文件</small></p>
-                          </div>
-                          <div id="postFilePreview"></div>
-                      </div>
-                      <div class="form-group">
                           <label>🔗 相關連結</label>
                           <input type="url" class="form-control" id="postLink" placeholder="https://...">
                       </div>
@@ -931,14 +924,6 @@
                       <div class="form-group">
                           <label>📄 資訊內容</label>
                           <textarea class="form-control" id="infoContent" placeholder="請輸入資訊內容..."></textarea>
-                      </div>
-                      <div class="form-group">
-                          <label>📎 附件上傳</label>
-                          <div class="file-upload" onclick="document.getElementById('infoFile').click()">
-                              <input type="file" id="infoFile" multiple onchange="handleFileSelect(this, 'infoFilePreview')">
-                              <p style="font-size: 20px; color: #718096;">📁 點擊上傳檔案</p>
-                          </div>
-                          <div id="infoFilePreview"></div>
                       </div>
                       <div style="text-align: center; margin-top: 30px;">
                           <button class="btn btn-primary" onclick="submitInfo()">📤 發布資訊</button>
@@ -1027,13 +1012,12 @@
           preview.innerHTML = html;
       }
 
-      // 提交貼文
+      // 提交貼文 - 使用 GET 請求
       async function submitPost() {
           const title = document.getElementById('postTitle').value;
           const category = document.getElementById('postCategory').value;
           const content = document.getElementById('postContent').value;
           const link = document.getElementById('postLink').value;
-          const fileInput = document.getElementById('postFile');
           
           if (!title || !content) {
               showMessage('❌ 請填寫標題和內容', 'error');
@@ -1046,22 +1030,15 @@
           submitBtn.textContent = '📤 提交中...';
           
           try {
-              // 處理檔案上傳
-              let attachments = [];
-              if (fileInput.files.length > 0) {
-                  attachments = await processFiles(fileInput.files);
-              }
-              
               const postData = {
                   title,
                   category,
                   content,
                   link,
-                  attachments,
                   author: '用戶' // 可以從 LIFF 取得用戶資訊
               };
               
-              const result = await callGASAPI('createPost', postData, 'POST');
+              const result = await callGASAPI('createPost', postData);
               
               if (result.success) {
                   showMessage('✅ 主題發表成功！', 'success');
@@ -1078,12 +1055,11 @@
           }
       }
 
-      // 提交資訊
+      // 提交資訊 - 使用 GET 請求
       async function submitInfo() {
           const title = document.getElementById('infoTitle').value;
           const category = document.getElementById('infoCategory').value;
           const content = document.getElementById('infoContent').value;
-          const fileInput = document.getElementById('infoFile');
           
           if (!title || !content) {
               showMessage('❌ 請填寫標題和內容', 'error');
@@ -1095,20 +1071,14 @@
           submitBtn.textContent = '📤 發布中...';
           
           try {
-              let attachments = [];
-              if (fileInput.files.length > 0) {
-                  attachments = await processFiles(fileInput.files);
-              }
-              
               const infoData = {
                   title,
                   category,
                   content,
-                  attachments,
                   publisher: '管理員'
               };
               
-              const result = await callGASAPI('createInfo', infoData, 'POST');
+              const result = await callGASAPI('createInfo', infoData);
               
               if (result.success) {
                   showMessage('✅ 資訊發布成功！', 'success');
@@ -1125,7 +1095,7 @@
           }
       }
 
-      // 建立相簿
+      // 建立相簿 - 使用 GET 請求
       async function createAlbum() {
           const name = document.getElementById('albumName').value;
           const date = document.getElementById('albumDate').value;
@@ -1148,7 +1118,7 @@
                   creator: '管理員'
               };
               
-              const result = await callGASAPI('createAlbum', albumData, 'POST');
+              const result = await callGASAPI('createAlbum', albumData);
               
               if (result.success) {
                   showMessage('✅ 相簿建立成功！', 'success');
@@ -1165,82 +1135,16 @@
           }
       }
 
-      // 上傳照片
+      // 上傳照片 - 簡化版本，暫時不支援檔案上傳
       async function uploadPhotos() {
-          const albumFolderId = document.getElementById('photoAlbum').value;
-          const fileInput = document.getElementById('photoFiles');
-          
-          if (!albumFolderId) {
-              showMessage('❌ 請選擇相簿', 'error');
-              return;
-          }
-          
-          if (fileInput.files.length === 0) {
-              showMessage('❌ 請選擇要上傳的照片', 'error');
-              return;
-          }
-          
-          const submitBtn = event.target;
-          submitBtn.disabled = true;
-          submitBtn.textContent = '📤 上傳中...';
-          
-          try {
-              const photos = await processFiles(fileInput.files);
-              
-              const uploadData = {
-                  albumFolderId,
-                  photos
-              };
-              
-              const result = await callGASAPI('uploadPhoto', uploadData, 'POST');
-              
-              if (result.success) {
-                  showMessage(`✅ 成功上傳 ${result.files.length} 張照片！`, 'success');
-                  closeModal();
-                  loadGallery();
-              } else {
-                  showMessage('❌ 上傳失敗: ' + (result.message || '未知錯誤'), 'error');
-              }
-          } catch (error) {
-              showMessage('❌ 上傳失敗: ' + error.message, 'error');
-          } finally {
-              submitBtn.disabled = false;
-              submitBtn.textContent = '📤 上傳照片';
-          }
-      }
-
-      // 處理檔案轉換為 base64
-      async function processFiles(files) {
-          const processedFiles = [];
-          
-          for (let i = 0; i < files.length; i++) {
-              const file = files[i];
-              const base64 = await fileToBase64(file);
-              
-              processedFiles.push({
-                  name: file.name,
-                  data: base64.split(',')[1], // 移除 data:image/jpeg;base64, 前綴
-                  mimeType: file.type
-              });
-          }
-          
-          return processedFiles;
-      }
-
-      // 檔案轉 base64
-      function fileToBase64(file) {
-          return new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.readAsDataURL(file);
-              reader.onload = () => resolve(reader.result);
-              reader.onerror = error => reject(error);
-          });
+          showMessage('📷 照片上傳功能開發中，敬請期待！', 'info');
+          closeModal();
       }
 
       // 按讚功能
       async function likePost(postId) {
           try {
-              const result = await callGASAPI('likePost', { postId }, 'POST');
+              const result = await callGASAPI('likePost', { postId });
               
               if (result.success) {
                   showMessage('👍 按讚成功！', 'success');
@@ -1255,7 +1159,7 @@
 
       // LINE 分享功能
       function shareToLine(title) {
-          if (typeof liff !== 'undefined' && liff.isLoggedIn()) {
+          if (liffReady && typeof liff !== 'undefined' && liff.isLoggedIn()) {
               liff.shareTargetPicker([
                   {
                       type: 'text',
@@ -1269,7 +1173,7 @@
               });
           } else {
               // 備用分享方式
-              const shareText = `來看看這個有趣的主題：${title}`;
+              const shareText = `來看看這個有趣的主題：${title}\n\n來自樂齡社群平台的分享 🌟`;
               const shareUrl = `https://line.me/R/share?text=${encodeURIComponent(shareText)}`;
               window.open(shareUrl, '_blank');
           }
