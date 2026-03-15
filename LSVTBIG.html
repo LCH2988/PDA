@@ -345,6 +345,26 @@
           font-size: 16px;
       }
 
+      .connection-status {
+          position: fixed;
+          top: 10px;
+          right: 10px;
+          padding: 10px 15px;
+          border-radius: 5px;
+          font-size: 14px;
+          z-index: 1001;
+      }
+
+      .connection-status.connected {
+          background: #c6f6d5;
+          color: #22543d;
+      }
+
+      .connection-status.disconnected {
+          background: #fed7d7;
+          color: #c53030;
+      }
+
       @media (max-width: 768px) {
           .container {
               padding: 10px;
@@ -366,6 +386,8 @@
   </style>
 </head>
 <body>
+  <div class="connection-status" id="connectionStatus">🔄 檢查連線中...</div>
+  
   <div class="container">
       <div class="header">
           <h1>🌟 樂齡社群平台</h1>
@@ -473,19 +495,20 @@
 
   <script>
       // 設定 Google Apps Script Web App URL
-      const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzOQ5s6enlJ2oFRpGJ5wGDTe8nV-CyiY4o31B8XF00jbQxShmupZJRZC88267bN5F5SdA/exec';
+      const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxxCgDjPkoKego-3t02B1a8aCVFqEQEBaadNK_huCuWehcV04_oh8HTHDjIfOnzTelO/exec';
       
       // 全域變數
       let currentPosts = [];
       let currentInfo = [];
       let currentGallery = [];
       let selectedFiles = [];
+      let isConnected = false;
 
       // LIFF 初始化
       window.onload = function() {
           if (typeof liff !== 'undefined') {
               liff.init({
-                  liffId: '2009456572-AUDE1qmM' // 請替換為實際的 LIFF ID
+                  liffId: '2006336845-yKMxKOJG' // 請替換為實際的 LIFF ID
               }).then(() => {
                   console.log('LIFF 初始化成功');
               }).catch((err) => {
@@ -493,17 +516,50 @@
               });
           }
           
-          // 載入初始資料
-          loadPosts();
+          // 測試連線並載入初始資料
+          testConnection();
       };
 
-      // API 呼叫函數
+      // 測試連線
+      async function testConnection() {
+          try {
+              const result = await callGASAPI('test');
+              if (result && result.success) {
+                  updateConnectionStatus(true);
+                  loadPosts();
+              } else {
+                  updateConnectionStatus(false);
+              }
+          } catch (error) {
+              console.error('連線測試失敗:', error);
+              updateConnectionStatus(false);
+          }
+      }
+
+      // 更新連線狀態
+      function updateConnectionStatus(connected) {
+          const statusElement = document.getElementById('connectionStatus');
+          isConnected = connected;
+          
+          if (connected) {
+              statusElement.textContent = '✅ 已連線';
+              statusElement.className = 'connection-status connected';
+              setTimeout(() => {
+                  statusElement.style.display = 'none';
+              }, 3000);
+          } else {
+              statusElement.textContent = '❌ 連線失敗';
+              statusElement.className = 'connection-status disconnected';
+          }
+      }
+
+      // API 呼叫函數 - 修改為支援多種方法
       async function callGASAPI(action, data = null, method = 'GET') {
           try {
-              let url = `${GAS_WEB_APP_URL}?action=${action}`;
+              let url = GAS_WEB_APP_URL;
               let options = {
                   method: method,
-                  mode: 'cors'
+                  redirect: 'follow'
               };
 
               if (method === 'POST' && data) {
@@ -511,11 +567,21 @@
                       'Content-Type': 'application/json',
                   };
                   options.body = JSON.stringify({ action, ...data });
-              } else if (method === 'GET' && data) {
-                  const params = new URLSearchParams(data);
-                  url += '&' + params.toString();
+              } else {
+                  // GET 請求
+                  const params = new URLSearchParams({ action });
+                  if (data) {
+                      Object.keys(data).forEach(key => {
+                          if (data[key] !== null && data[key] !== undefined) {
+                              params.append(key, data[key]);
+                          }
+                      });
+                  }
+                  url += '?' + params.toString();
               }
 
+              console.log('API 請求:', url);
+              
               const response = await fetch(url, options);
               
               if (!response.ok) {
@@ -523,10 +589,18 @@
               }
               
               const result = await response.json();
+              console.log('API 回應:', result);
+              
+              // 更新連線狀態
+              if (!isConnected) {
+                  updateConnectionStatus(true);
+              }
+              
               return result;
           } catch (error) {
               console.error('API 呼叫錯誤:', error);
-              showMessage('❌ 連線錯誤，請檢查網路連線', 'error');
+              updateConnectionStatus(false);
+              showMessage('❌ 連線錯誤，請檢查網路連線或稍後再試', 'error');
               return { error: error.message };
           }
       }
