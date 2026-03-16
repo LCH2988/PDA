@@ -912,7 +912,7 @@
   // ═══════════════════════════════════════
   
   // 🔧 重要：請將此 URL 替換為您的 Google Apps Script Web App URL
-  const API_BASE_URL = 'https://script.google.com/macros/s/AKfycbx2K5ArMQiByKHNOM5HhV4pA3rUadUlpZrHI2cuOI0jihguLKVgvjQAjzOQKzRe6tHf/exec';
+  const API_BASE_URL = 'https://script.google.com/macros/s/AKfycbyxq2v38ioCsiPBM9irSBTH-etIhKDbSMVyUhjSVeAv4tnVMAiXQFJ7ozNdsrEJT9cJ/exec';
   
   // 系統狀態
   let currentUser = null;
@@ -945,9 +945,9 @@
   // ═══════════════════════════════════════
   
   /**
-   * 核心 API 呼叫函數
+   * 核心 API 呼叫函數 - 修正版
    */
-   async function callAPI(action, data = {}, showLoading = true) {
+  async function callAPI(action, data = {}, showLoading = true) {
     try {
       if (showLoading) {
         showLoadingIndicator(true);
@@ -961,28 +961,42 @@
       
       console.log('API 呼叫:', action, data);
       
-      // 方法一：使用 no-cors 模式（但會限制回應處理）
-      const response = await fetch(API_BASE_URL, {
-        method: 'POST',
-        mode: 'cors', // 保持 cors 模式
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      // 方法一：使用標準 fetch（推薦）
+      try {
+        const response = await fetch(API_BASE_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestData),
+          mode: 'cors'
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('API 回應:', action, result);
+        
+        if (showLoading) {
+          showLoadingIndicator(false);
+        }
+        
+        return result;
+        
+      } catch (fetchError) {
+        console.warn('標準 fetch 失敗，嘗試 JSONP:', fetchError);
+        
+        // 方法二：使用 JSONP 作為備用方案
+        const result = await callAPIWithJSONP(action, data);
+        
+        if (showLoading) {
+          showLoadingIndicator(false);
+        }
+        
+        return result;
       }
-      
-      const result = await response.json();
-      console.log('API 回應:', action, result);
-      
-      if (showLoading) {
-        showLoadingIndicator(false);
-      }
-      
-      return result;
       
     } catch (error) {
       console.error('API 呼叫失敗:', action, error);
@@ -991,45 +1005,66 @@
         showLoadingIndicator(false);
       }
       
-      // 如果是 CORS 錯誤，提供更友善的錯誤訊息
+      // 提供更詳細的錯誤訊息
+      let errorMessage = '系統暫時無法使用';
+      
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        showErrorMessage('網路連線問題，請檢查後端設定或稍後再試');
+        errorMessage = '網路連線問題，請檢查：\n1. 網路連線是否正常\n2. API_BASE_URL 是否正確\n3. Google Apps Script 是否已正確部署';
+      } else if (error.message.includes('CORS')) {
+        errorMessage = 'CORS 錯誤，請確認 Google Apps Script 部署設定';
       } else {
-        showErrorMessage('系統暫時無法使用：' + error.message);
+        errorMessage = error.message;
       }
+      
+      showErrorMessage(errorMessage);
       
       return {
         success: false,
-        error: error.message
+        error: errorMessage
       };
     }
   }
   
-  // 備用方案：使用 JSONP（如果 Google Apps Script 支援）
+  /**
+   * JSONP 備用方案
+   */
   async function callAPIWithJSONP(action, data = {}) {
     return new Promise((resolve, reject) => {
-      const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      const callbackName = 'jsonp_callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
       const script = document.createElement('script');
       
+      // 設定全域回調函數
       window[callbackName] = function(response) {
         document.head.removeChild(script);
         delete window[callbackName];
         resolve(response);
       };
       
-      const params = new URLSearchParams({
-        action: action,
-        data: JSON.stringify(data),
-        callback: callbackName
-      });
-      
-      script.src = `${API_BASE_URL}?${params.toString()}`;
-      script.onerror = () => {
+      // 設定錯誤處理
+      script.onerror = function() {
         document.head.removeChild(script);
         delete window[callbackName];
         reject(new Error('JSONP 請求失敗'));
       };
       
+      // 設定超時
+      setTimeout(() => {
+        if (window[callbackName]) {
+          document.head.removeChild(script);
+          delete window[callbackName];
+          reject(new Error('JSONP 請求超時'));
+        }
+      }, 30000); // 30秒超時
+      
+      // 建構請求參數
+      const params = new URLSearchParams({
+        action: action,
+        data: JSON.stringify(data),
+        userId: currentUser ? currentUser['使用者ID'] : '',
+        callback: callbackName
+      });
+      
+      script.src = `${API_BASE_URL}?${params.toString()}`;
       document.head.appendChild(script);
     });
   }
@@ -1038,11 +1073,35 @@
    * 顯示載入指示器
    */
   function showLoadingIndicator(show) {
-    // 可以在這裡添加全域載入指示器
     if (show) {
       document.body.style.cursor = 'wait';
     } else {
       document.body.style.cursor = '';
+    }
+  }
+  
+  /**
+   * 測試 API 連線
+   */
+  async function testConnection() {
+    console.log('測試 API 連線...');
+    console.log('API_BASE_URL:', API_BASE_URL);
+    
+    try {
+      // 測試 1：直接 GET 請求
+      const response = await fetch(API_BASE_URL);
+      const text = await response.text();
+      console.log('GET 測試成功:', text);
+      
+      // 測試 2：JSONP 請求
+      const jsonpResult = await callAPIWithJSONP('getCurrentUser', {});
+      console.log('JSONP 測試成功:', jsonpResult);
+      
+      showSuccessMessage('API 連線測試成功！');
+      
+    } catch (error) {
+      console.error('API 連線測試失敗:', error);
+      showErrorMessage('API 連線測試失敗: ' + error.message);
     }
   }
   
@@ -1070,6 +1129,9 @@
       setupVoiceFeatures();
     }
     
+    // 延遲測試連線
+    setTimeout(testConnection, 2000);
+    
     console.log('✅ LSVTBIG論壇初始化完成');
   });
   
@@ -1092,7 +1154,7 @@
         // 載入通知數量
         loadNotificationBadge();
       } else {
-        console.log('使用者未登入或登入失敗');
+        console.log('使用者未登入或登入失敗:', userResult.error);
         showErrorMessage('請重新整理頁面或檢查登入狀態');
       }
       
@@ -1580,7 +1642,6 @@
     showSuccessMessage('網路連線已恢復');
   });
 
-
   // ═══════════════════════════════════════
   //  年長者友善：標籤頁管理
   // ═══════════════════════════════════════
@@ -1967,7 +2028,7 @@
     currentPage++;
     await loadPosts(currentCategory, false);
   }
-  
+
   // ═══════════════════════════════════════
   //  年長者友善：搜尋功能
   // ═══════════════════════════════════════
@@ -2259,8 +2320,7 @@
     
     showModal(modalHtml);
   }
-
-
+  
   // ═══════════════════════════════════════
   //  年長者友善：快速連結功能
   // ═══════════════════════════════════════
@@ -2401,6 +2461,63 @@
     }
   }
   
+  /**
+   * 顯示我的回覆模態框
+   */
+  function showMyRepliesModal(replies) {
+    const repliesHtml = replies.map(reply => `
+      <div class="reply-item card" style="margin-bottom: var(--space-3);">
+        <div class="card-header">
+          <div>
+            <h4 class="card-title" style="font-size: var(--font-base); margin-bottom: var(--space-1);">
+              回覆：${escapeHtml(reply['文章標題'])}
+            </h4>
+            <div class="card-meta">
+              ${reply['樓層']}樓 • ${getTimeAgo(reply['建立時間'])}
+            </div>
+          </div>
+        </div>
+        <div class="card-content">
+          ${escapeHtml(reply['內容']).replace(/\n/g, '<br>')}
+        </div>
+        <div class="card-footer">
+          <button class="btn btn-secondary" onclick="showPostDetail('${reply['文章ID']}')">
+            查看原文
+          </button>
+        </div>
+      </div>
+    `).join('');
+    
+    const modalHtml = `
+      <div class="modal-overlay" onclick="closeModal(event)">
+        <div class="modal" style="max-width: 700px;" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <h2 class="modal-title">💬 我的回覆</h2>
+            <button class="modal-close" onclick="closeAllModals()" aria-label="關閉">&times;</button>
+          </div>
+          
+          <div class="modal-body">
+            ${replies.length > 0 ? repliesHtml : `
+              <div class="empty-state">
+                <div class="empty-icon">💬</div>
+                <div class="empty-title">還沒有回覆</div>
+                <div class="empty-description">快去文章下方發表您的看法吧！</div>
+              </div>
+            `}
+          </div>
+          
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" onclick="closeAllModals()">
+              關閉
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    showModal(modalHtml);
+  }
+
   // ═══════════════════════════════════════
   //  年長者友善：模態框系統
   // ═══════════════════════════════════════
@@ -2801,65 +2918,6 @@
       showErrorMessage('回覆失敗：' + error.message);
     }
   }
-  
-  // ═══════════════════════════════════════
-  //  年長者友善：我的回覆模態框
-  // ═══════════════════════════════════════
-  
-  function showMyRepliesModal(replies) {
-    const repliesHtml = replies.map(reply => `
-      <div class="reply-item card" style="margin-bottom: var(--space-3);">
-        <div class="card-header">
-          <div>
-            <h4 class="card-title" style="font-size: var(--font-base); margin-bottom: var(--space-1);">
-              回覆：${escapeHtml(reply['文章標題'])}
-            </h4>
-            <div class="card-meta">
-              ${reply['樓層']}樓 • ${getTimeAgo(reply['建立時間'])}
-            </div>
-          </div>
-        </div>
-        <div class="card-content">
-          ${escapeHtml(reply['內容']).replace(/\n/g, '<br>')}
-        </div>
-        <div class="card-footer">
-          <button class="btn btn-secondary" onclick="showPostDetail('${reply['文章ID']}')">
-            查看原文
-          </button>
-        </div>
-      </div>
-    `).join('');
-    
-    const modalHtml = `
-      <div class="modal-overlay" onclick="closeModal(event)">
-        <div class="modal" style="max-width: 700px;" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <h2 class="modal-title">💬 我的回覆</h2>
-            <button class="modal-close" onclick="closeAllModals()" aria-label="關閉">&times;</button>
-          </div>
-          
-          <div class="modal-body">
-            ${replies.length > 0 ? repliesHtml : `
-              <div class="empty-state">
-                <div class="empty-icon">💬</div>
-                <div class="empty-title">還沒有回覆</div>
-                <div class="empty-description">快去文章下方發表您的看法吧！</div>
-              </div>
-            `}
-          </div>
-          
-          <div class="modal-footer">
-            <button type="button" class="btn btn-primary" onclick="closeAllModals()">
-              關閉
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-    
-    showModal(modalHtml);
-  }
-
 
   // ═══════════════════════════════════════
   //  年長者友善：設定模態框
@@ -3180,693 +3238,6 @@
   }
   
   // ═══════════════════════════════════════
-  //  年長者友善：編輯文章模態框
-  // ═══════════════════════════════════════
-  
-  async function showEditPostModal(postId) {
-    try {
-      const result = await callAPI('getPostDetail', { postId: postId });
-      
-      if (result.success) {
-        const post = result.post;
-        
-        const modalHtml = `
-          <div class="modal-overlay" onclick="closeModal(event)">
-            <div class="modal" onclick="event.stopPropagation()">
-              <div class="modal-header">
-                <h2 class="modal-title">✏️ 編輯文章</h2>
-                <button class="modal-close" onclick="closeAllModals()" aria-label="關閉">&times;</button>
-              </div>
-              
-              <form class="modal-body">
-                <div class="form-group">
-                  <label class="form-label" for="edit-post-title">文章標題 *</label>
-                  <input type="text" id="edit-post-title" class="form-input" 
-                         required maxlength="100" value="${escapeHtml(post['標題'])}"
-                         oninput="updateCharCount(this, 'edit-title-char-count', 100)">
-                  <div class="form-help">
-                    還可以輸入 <span id="edit-title-char-count">${100 - post['標題'].length}</span> 字
-                  </div>
-                </div>
-                
-                <div class="form-group">
-                  <label class="form-label" for="edit-post-category">文章分類 *</label>
-                  <select id="edit-post-category" class="form-select" required>
-                    <option value="">請選擇分類</option>
-                    <option value="公告" ${post['分類'] === '公告' ? 'selected' : ''}>📢 公告</option>
-                    <option value="健康" ${post['分類'] === '健康' ? 'selected' : ''}>💊 健康</option>
-                    <option value="生活" ${post['分類'] === '生活' ? 'selected' : ''}>🏡 生活</option>
-                    <option value="活動" ${post['分類'] === '活動' ? 'selected' : ''}>🎨 活動</option>
-                    <option value="其他" ${post['分類'] === '其他' ? 'selected' : ''}>📝 其他</option>
-                  </select>
-                </div>
-                
-                <div class="form-group">
-                  <label class="form-label" for="edit-post-content">文章內容 *</label>
-                  <textarea id="edit-post-content" class="form-textarea" 
-                            required maxlength="2000" rows="8"
-                            oninput="updateCharCount(this, 'edit-content-char-count', 2000)">${escapeHtml(post['內容'])}</textarea>
-                  <div class="form-help">
-                    還可以輸入 <span id="edit-content-char-count">${2000 - post['內容'].length}</span> 字
-                  </div>
-                </div>
-                
-                <div class="form-group">
-                  <label class="form-label" for="edit-post-images">圖片網址（選填）</label>
-                  <input type="url" id="edit-post-images" class="form-input" 
-                         value="${post['圖片網址'] || ''}" placeholder="請輸入圖片網址">
-                </div>
-                
-                <div class="form-group">
-                  <label class="form-label" for="edit-post-link">相關連結（選填）</label>
-                  <input type="url" id="edit-post-link" class="form-input" 
-                         value="${post['連結網址'] || ''}" placeholder="請輸入相關連結網址">
-                </div>
-                
-                <div class="form-group">
-                  <label class="form-label" for="edit-post-link-label">連結說明</label>
-                  <input type="text" id="edit-post-link-label" class="form-input" 
-                         value="${post['連結說明'] || ''}" placeholder="請輸入連結說明文字" maxlength="50">
-                </div>
-                
-                ${currentUser && currentUser['角色'] === 'mod' ? `
-                  <div class="form-group">
-                    <label class="form-label">
-                      <input type="checkbox" id="edit-post-pinned" ${post['置頂'] ? 'checked' : ''} style="margin-right: var(--space-2);">
-                      置頂文章
-                    </label>
-                  </div>
-                ` : ''}
-              </form>
-              
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeAllModals()">
-                  取消
-                </button>
-                <button type="button" class="btn btn-primary" onclick="submitEditPost('${postId}')">
-                  ✅ 儲存變更
-                </button>
-              </div>
-            </div>
-          </div>
-        `;
-        
-        showModal(modalHtml);
-      } else {
-        showErrorMessage(result.error || '載入文章失敗');
-      }
-      
-    } catch (error) {
-      console.error('載入編輯表單失敗:', error);
-      showErrorMessage('載入編輯表單失敗：' + error.message);
-    }
-  }
-  
-  async function submitEditPost(postId) {
-    const title = document.getElementById('edit-post-title').value.trim();
-    const category = document.getElementById('edit-post-category').value;
-    const content = document.getElementById('edit-post-content').value.trim();
-    const imageUrls = document.getElementById('edit-post-images').value.trim();
-    const linkUrl = document.getElementById('edit-post-link').value.trim();
-    const linkLabel = document.getElementById('edit-post-link-label').value.trim();
-    const pinned = document.getElementById('edit-post-pinned') ? document.getElementById('edit-post-pinned').checked : false;
-    
-    // 驗證
-    if (!title) {
-      showErrorMessage('請輸入文章標題');
-      document.getElementById('edit-post-title').focus();
-      return;
-    }
-    
-    if (!category) {
-      showErrorMessage('請選擇文章分類');
-      document.getElementById('edit-post-category').focus();
-      return;
-    }
-    
-    if (!content) {
-      showErrorMessage('請輸入文章內容');
-      document.getElementById('edit-post-content').focus();
-      return;
-    }
-    
-    try {
-      const result = await callAPI('editPost', {
-        postId: postId,
-        title: title,
-        content: content,
-        category: category,
-        image_urls: imageUrls,
-        link_url: linkUrl,
-        link_label: linkLabel,
-        pinned: pinned ? 'true' : 'false'
-      });
-      
-      if (result.success) {
-        closeAllModals();
-        showSuccessMessage('文章更新成功！');
-        
-        // 重新載入文章列表
-        await loadPosts(currentCategory, true);
-        
-        // 語音提示
-        if (userPreferences.voiceEnabled) {
-          speakText('文章更新成功');
-        }
-      } else {
-        showErrorMessage(result.error || '更新失敗');
-      }
-      
-    } catch (error) {
-      console.error('更新文章失敗:', error);
-      showErrorMessage('更新文章失敗：' + error.message);
-    }
-  }
-  
-  // ═══════════════════════════════════════
-  //  年長者友善：資料庫功能
-  // ═══════════════════════════════════════
-  
-  async function loadDatabase() {
-    try {
-      const result = await callAPI('getDatabaseFolders');
-      
-      const container = document.getElementById('folders-container');
-      
-      if (result.success) {
-        displayDatabaseFolders(result.folders);
-      } else {
-        container.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">❌</div>
-            <div class="empty-title">載入失敗</div>
-            <div class="empty-description">${result.error || '請稍後再試'}</div>
-          </div>
-        `;
-      }
-      
-    } catch (error) {
-      console.error('載入資料庫失敗:', error);
-      showErrorMessage('載入資料庫失敗：' + error.message);
-    }
-  }
-  
-  function displayDatabaseFolders(folders) {
-    const container = document.getElementById('folders-container');
-    
-    if (!folders || folders.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">📁</div>
-          <div class="empty-title">目前沒有資料夾</div>
-          <div class="empty-description">
-            ${currentUser && currentUser['角色'] === 'mod' ? '點擊上方「新增資料夾」按鈕來建立第一個資料夾' : '版主還沒有建立任何資料夾'}
-          </div>
-        </div>
-      `;
-      return;
-    }
-    
-    const foldersHtml = folders.map(folder => `
-      <div class="card folder-card" onclick="showFolderDetail('${folder['資料夾ID']}')" style="cursor: pointer;">
-        <div class="card-header">
-          <div>
-            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-2);">
-              <span style="font-size: var(--font-xl);">${folder['圖示']}</span>
-              ${escapeHtml(folder['名稱'])}
-            </h3>
-            <div class="card-meta">
-              建立於 ${getTimeAgo(folder['建立時間'])} • 由 ${escapeHtml(folder['建立者名稱'])} 建立
-            </div>
-          </div>
-        </div>
-        
-        <div class="card-content">
-          <p>${escapeHtml(folder['說明'] || '沒有說明')}</p>
-        </div>
-        
-        <div class="card-footer">
-          <div style="display: flex; align-items: center; gap: var(--space-3);">
-            <span style="color: var(--text-secondary);">
-              📄 ${folder['檔案數量'] || 0} 個檔案
-            </span>
-            <span style="color: var(--text-secondary);">
-              🔗 ${folder['連結數量'] || 0} 個連結
-            </span>
-          </div>
-        </div>
-      </div>
-    `).join('');
-    
-    container.innerHTML = foldersHtml;
-  }
-  
-  async function showFolderDetail(folderId) {
-    try {
-      const [filesResult, linksResult] = await Promise.all([
-        callAPI('getDatabaseFiles', { folderId: folderId }),
-        callAPI('getDatabaseLinks', { folderId: folderId })
-      ]);
-      
-      if (filesResult.success && linksResult.success) {
-        showFolderDetailModal(filesResult.files, linksResult.links, folderId);
-      } else {
-        showErrorMessage('載入資料夾內容失敗');
-      }
-      
-    } catch (error) {
-      console.error('載入資料夾詳情失敗:', error);
-      showErrorMessage('載入資料夾詳情失敗：' + error.message);
-    }
-  }
-  
-  function showFolderDetailModal(files, links, folderId) {
-    const filesHtml = files.map(file => `
-      <div class="file-item" style="display: flex; justify-content: space-between; align-items: center; padding: var(--space-2); border-bottom: 1px solid var(--border);">
-        <div>
-          <div style="font-weight: 500;">${escapeHtml(file['檔案名稱'])}</div>
-          <div style="font-size: var(--font-sm); color: var(--text-secondary);">
-            ${file['檔案類型']} • 下載 ${file['下載次數']} 次
-          </div>
-        </div>
-        <button class="btn btn-secondary" onclick="downloadFile('${file['檔案ID']}', '${file['檔案網址']}')">
-          📥 下載
-        </button>
-      </div>
-    `).join('');
-    
-    const linksHtml = links.map(link => `
-      <div class="link-item" style="display: flex; justify-content: space-between; align-items: center; padding: var(--space-2); border-bottom: 1px solid var(--border);">
-        <div>
-          <div style="font-weight: 500;">${escapeHtml(link['連結名稱'])}</div>
-          <div style="font-size: var(--font-sm); color: var(--text-secondary);">
-            ${escapeHtml(link['說明'] || '沒有說明')} • 點擊 ${link['點擊次數']} 次
-          </div>
-        </div>
-        <button class="btn btn-secondary" onclick="openLink('${link['連結ID']}', '${link['連結網址']}')">
-          🔗 開啟
-        </button>
-      </div>
-    `).join('');
-    
-    const modalHtml = `
-      <div class="modal-overlay" onclick="closeModal(event)">
-        <div class="modal" style="max-width: 700px;" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <h2 class="modal-title">📁 資料夾內容</h2>
-            <button class="modal-close" onclick="closeAllModals()" aria-label="關閉">&times;</button>
-          </div>
-          
-          <div class="modal-body">
-            <div class="folder-section" style="margin-bottom: var(--space-4);">
-              <h3 style="font-size: var(--font-lg); margin-bottom: var(--space-3);">📄 檔案 (${files.length})</h3>
-              ${files.length > 0 ? filesHtml : '<div style="text-align: center; color: var(--text-secondary); padding: var(--space-4);">此資料夾沒有檔案</div>'}
-            </div>
-            
-            <div class="folder-section">
-              <h3 style="font-size: var(--font-lg); margin-bottom: var(--space-3);">🔗 連結 (${links.length})</h3>
-              ${links.length > 0 ? linksHtml : '<div style="text-align: center; color: var(--text-secondary); padding: var(--space-4);">此資料夾沒有連結</div>'}
-            </div>
-          </div>
-          
-          <div class="modal-footer">
-            <button type="button" class="btn btn-primary" onclick="closeAllModals()">
-              關閉
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-    
-    showModal(modalHtml);
-  }
-  
-  async function downloadFile(fileId, fileUrl) {
-    try {
-      // 記錄下載
-      await callAPI('recordFileDownload', { fileId: fileId }, false);
-      
-      // 開啟檔案
-      window.open(fileUrl, '_blank');
-      
-      showSuccessMessage('檔案已開啟');
-      
-    } catch (error) {
-      console.error('下載檔案失敗:', error);
-      showErrorMessage('下載檔案失敗：' + error.message);
-    }
-  }
-  
-  async function openLink(linkId, linkUrl) {
-    try {
-      // 記錄點擊
-      await callAPI('recordLinkClick', { linkId: linkId }, false);
-      
-      // 開啟連結
-      window.open(linkUrl, '_blank');
-      
-      showSuccessMessage('連結已開啟');
-      
-    } catch (error) {
-      console.error('開啟連結失敗:', error);
-      showErrorMessage('開啟連結失敗：' + error.message);
-    }
-  }
-  
-  // 資料庫管理功能（僅版主可用）
-  function showAddFolderModal() {
-    if (!currentUser || currentUser['角色'] !== 'mod') {
-      showErrorMessage('只有版主可以新增資料夾');
-      return;
-    }
-    
-    showSuccessMessage('資料庫管理功能開發中，敬請期待！');
-  }
-  
-  function showAddFileModal() {
-    if (!currentUser || currentUser['角色'] !== 'mod') {
-      showErrorMessage('只有版主可以新增檔案');
-      return;
-    }
-    
-    showSuccessMessage('檔案管理功能開發中，敬請期待！');
-  }
-  
-  function showAddLinkModal() {
-    if (!currentUser || currentUser['角色'] !== 'mod') {
-      showErrorMessage('只有版主可以新增連結');
-      return;
-    }
-    
-    showSuccessMessage('連結管理功能開發中，敬請期待！');
-  }
-
-
-  // ═══════════════════════════════════════
-  //  年長者友善：行事曆功能
-  // ═══════════════════════════════════════
-  
-  async function loadCalendar() {
-    try {
-      const filter = document.getElementById('event-filter').value || 'upcoming';
-      const result = await callAPI('getEvents', { filter: filter, limit: 50 });
-      
-      const container = document.getElementById('events-container');
-      
-      if (result.success) {
-        displayEvents(result.events, filter);
-      } else {
-        container.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">❌</div>
-            <div class="empty-title">載入失敗</div>
-            <div class="empty-description">${result.error || '請稍後再試'}</div>
-          </div>
-        `;
-      }
-      
-    } catch (error) {
-      console.error('載入行事曆失敗:', error);
-      showErrorMessage('載入行事曆失敗：' + error.message);
-    }
-  }
-  
-  function displayEvents(events, filter) {
-    const container = document.getElementById('events-container');
-    
-    if (!events || events.length === 0) {
-      const emptyMessages = {
-        'upcoming': '目前沒有即將到來的活動',
-        'ongoing': '目前沒有進行中的活動',
-        'past': '目前沒有已結束的活動',
-        'all': '目前沒有任何活動'
-      };
-      
-      container.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">📅</div>
-          <div class="empty-title">${emptyMessages[filter] || '目前沒有活動'}</div>
-          <div class="empty-description">
-            ${currentUser && currentUser['角色'] === 'mod' ? '點擊上方「新增活動」按鈕來建立第一個活動' : '版主還沒有建立任何活動'}
-          </div>
-        </div>
-      `;
-      return;
-    }
-    
-    const eventsHtml = events.map(event => createEventCard(event)).join('');
-    container.innerHTML = eventsHtml;
-    
-    // 年長者友善：添加載入動畫
-    const cards = container.querySelectorAll('.card');
-    cards.forEach((card, index) => {
-      card.style.opacity = '0';
-      card.style.transform = 'translateY(20px)';
-      setTimeout(() => {
-        card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-        card.style.opacity = '1';
-        card.style.transform = 'translateY(0)';
-      }, index * 50);
-    });
-  }
-  
-  function createEventCard(event) {
-    const statusColors = {
-      '即將開始': 'var(--primary)',
-      '進行中': 'var(--success)',
-      '已結束': 'var(--text-secondary)'
-    };
-    
-    const statusColor = statusColors[event['活動狀態']] || 'var(--text-secondary)';
-    
-    return `
-      <article class="card event-card" data-event-id="${event['活動ID']}" role="article">
-        <header class="card-header">
-          <div style="flex: 1; min-width: 0;">
-            <h2 class="card-title" style="margin-bottom: var(--space-1);">
-              <button onclick="showEventDetail('${event['活動ID']}')" 
-                      style="background: none; border: none; text-align: left; cursor: pointer; font: inherit; color: inherit; padding: 0; width: 100%;"
-                      onmouseover="this.style.color='var(--primary)'" 
-                      onmouseout="this.style.color='inherit'">
-                ${escapeHtml(event['標題'])}
-              </button>
-            </h2>
-            
-            <div class="card-meta">
-              <span class="status-badge" style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 12px; font-size: var(--font-xs);">
-                ${event['活動狀態']}
-              </span>
-              
-              <span class="category-badge" style="background: rgba(59, 130, 246, 0.1); color: var(--primary); padding: 2px 8px; border-radius: 12px; font-size: var(--font-xs); margin-left: var(--space-2);">
-                ${event['分類'] || '一般活動'}
-              </span>
-            </div>
-          </div>
-        </header>
-        
-        <div class="card-content">
-          <div class="event-time" style="margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2);">
-            <span style="font-size: var(--font-lg);">📅</span>
-            <div>
-              <div style="font-weight: 500;">${event['時間描述'] || formatEventTime(event)}</div>
-              ${event['地點'] ? `<div style="font-size: var(--font-sm); color: var(--text-secondary); margin-top: 2px;">📍 ${escapeHtml(event['地點'])}</div>` : ''}
-            </div>
-          </div>
-          
-          ${event['說明'] ? `
-            <div class="event-description" style="margin-bottom: var(--space-3);">
-              ${formatEventDescription(event['說明'])}
-            </div>
-          ` : ''}
-          
-          ${event['圖片網址'] ? `
-            <div class="event-image" style="margin-bottom: var(--space-3);">
-              <img src="${event['圖片網址']}" alt="活動圖片" style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer;" onclick="showImageModal('${event['圖片網址']}')">
-            </div>
-          ` : ''}
-        </div>
-        
-        <footer class="card-footer">
-          <div class="event-stats" style="display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;">
-            ${event['參與人數'] !== undefined ? `
-              <span style="color: var(--text-secondary);">
-                👥 ${event['參與人數']}${event['最大人數'] ? `/${event['最大人數']}` : ''} 人參與
-              </span>
-            ` : ''}
-            
-            <span style="color: var(--text-secondary);">
-              由 ${escapeHtml(event['建立者名稱'])} 建立
-            </span>
-          </div>
-          
-          <div class="event-actions" style="display: flex; gap: var(--space-2);">
-            ${event['報名連結'] ? `
-              <button class="btn btn-primary" onclick="openEventRegistration('${event['報名連結']}')" 
-                      aria-label="報名活動">
-                📝 報名
-              </button>
-            ` : ''}
-            
-            <button class="btn btn-secondary" onclick="shareEvent('${event['活動ID']}')" 
-                    aria-label="分享活動" title="分享活動">
-              📤 分享
-            </button>
-            
-            ${userPreferences.voiceEnabled ? `
-              <button class="btn btn-secondary btn-icon" onclick="readEventAloud('${event['活動ID']}')" 
-                      title="朗讀活動" aria-label="朗讀活動">
-                🔊
-              </button>
-            ` : ''}
-          </div>
-        </footer>
-      </article>
-    `;
-  }
-  
-  function formatEventTime(event) {
-    try {
-      const startTime = new Date(event['開始時間']);
-      const endTime = new Date(event['結束時間']);
-      
-      const startDate = startTime.toLocaleDateString('zh-TW', { 
-        month: 'numeric', 
-        day: 'numeric',
-        weekday: 'short'
-      });
-      const startHour = startTime.toLocaleTimeString('zh-TW', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
-      const endHour = endTime.toLocaleTimeString('zh-TW', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
-      
-      // 判斷是否為同一天
-      const isSameDay = startTime.toDateString() === endTime.toDateString();
-      
-      if (isSameDay) {
-        return `${startDate} ${startHour} - ${endHour}`;
-      } else {
-        const endDate = endTime.toLocaleDateString('zh-TW', { 
-          month: 'numeric', 
-          day: 'numeric',
-          weekday: 'short'
-        });
-        return `${startDate} ${startHour} - ${endDate} ${endHour}`;
-      }
-    } catch (e) {
-      return '時間待定';
-    }
-  }
-  
-  function formatEventDescription(description) {
-    if (!description) return '';
-    
-    let formatted = escapeHtml(description);
-    formatted = formatted.replace(/\n/g, '<br>');
-    
-    // 年長者友善：限制顯示長度
-    if (formatted.length > 200) {
-      const truncated = formatted.substring(0, 200);
-      const lastSpace = truncated.lastIndexOf(' ');
-      const cutPoint = lastSpace > 150 ? lastSpace : 200;
-      
-      formatted = formatted.substring(0, cutPoint) + 
-        `... <button onclick="expandEventContent(this)" style="color: var(--primary); background: none; border: none; cursor: pointer; text-decoration: underline;">展開全文</button>
-         <div class="full-content" style="display: none;">${formatted.substring(cutPoint)}</div>`;
-    }
-    
-    return formatted;
-  }
-  
-  function expandEventContent(button) {
-    const fullContent = button.nextElementSibling;
-    if (fullContent) {
-      button.style.display = 'none';
-      fullContent.style.display = 'inline';
-      
-      // 語音朗讀展開的內容
-      if (userPreferences.voiceEnabled) {
-        speakText(fullContent.textContent);
-      }
-    }
-  }
-  
-  function filterEvents(filter) {
-    currentEventFilter = filter;
-    loadCalendar();
-    
-    // 語音提示
-    if (userPreferences.voiceEnabled) {
-      const filterNames = {
-        'upcoming': '即將到來的活動',
-        'ongoing': '進行中的活動',
-        'past': '已結束的活動',
-        'all': '全部活動'
-      };
-      speakText(`切換到${filterNames[filter]}`);
-    }
-  }
-  
-  function openEventRegistration(registrationUrl) {
-    window.open(registrationUrl, '_blank');
-    
-    // 語音提示
-    if (userPreferences.voiceEnabled) {
-      speakText('正在開啟報名頁面');
-    }
-  }
-  
-  function shareEvent(eventId) {
-    // 實作分享功能
-    const shareUrl = `${window.location.origin}${window.location.pathname}?event=${eventId}`;
-    
-    if (navigator.share) {
-      navigator.share({
-        title: '活動分享 - LSVTBIG 論壇',
-        url: shareUrl
-      }).catch(err => console.log('分享失敗:', err));
-    } else {
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        showSuccessMessage('活動連結已複製到剪貼簿');
-      }).catch(() => {
-        prompt('請複製以下連結分享：', shareUrl);
-      });
-    }
-  }
-  
-  function readEventAloud(eventId) {
-    // 實作朗讀活動功能
-    if (userPreferences.voiceEnabled) {
-      const eventCard = document.querySelector(`[data-event-id="${eventId}"]`);
-      if (eventCard) {
-        const title = eventCard.querySelector('.card-title').textContent.trim();
-        const description = eventCard.querySelector('.event-description');
-        const descriptionText = description ? description.textContent.trim() : '';
-        
-        const text = `活動：${title}。${descriptionText}`;
-        speakText(text);
-      }
-    }
-  }
-  
-  async function showEventDetail(eventId) {
-    showSuccessMessage('活動詳情功能開發中，敬請期待！');
-  }
-  
-  // 活動管理功能（僅版主可用）
-  function showAddEventModal() {
-    if (!currentUser || currentUser['角色'] !== 'mod') {
-      showErrorMessage('只有版主可以新增活動');
-      return;
-    }
-    
-    showSuccessMessage('活動管理功能開發中，敬請期待！');
-  }
-  
-  // ═══════════════════════════════════════
   //  年長者友善：通知系統
   // ═══════════════════════════════════════
   
@@ -4171,6 +3542,528 @@
       const text = `通知：${title}。內容：${content}`;
       speakText(text);
     }
+  }
+  
+  // ═══════════════════════════════════════
+  //  年長者友善：資料庫功能
+  // ═══════════════════════════════════════
+  
+  async function loadDatabase() {
+    try {
+      const result = await callAPI('getDatabaseFolders');
+      
+      const container = document.getElementById('folders-container');
+      
+      if (result.success) {
+        displayDatabaseFolders(result.folders);
+      } else {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">❌</div>
+            <div class="empty-title">載入失敗</div>
+            <div class="empty-description">${result.error || '請稍後再試'}</div>
+          </div>
+        `;
+      }
+      
+    } catch (error) {
+      console.error('載入資料庫失敗:', error);
+      showErrorMessage('載入資料庫失敗：' + error.message);
+    }
+  }
+  
+  function displayDatabaseFolders(folders) {
+    const container = document.getElementById('folders-container');
+    
+    if (!folders || folders.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📁</div>
+          <div class="empty-title">目前沒有資料夾</div>
+          <div class="empty-description">
+            ${currentUser && currentUser['角色'] === 'mod' ? '點擊上方「新增資料夾」按鈕來建立第一個資料夾' : '版主還沒有建立任何資料夾'}
+          </div>
+        </div>
+      `;
+      return;
+    }
+    
+    const foldersHtml = folders.map(folder => `
+      <div class="card folder-card" onclick="showFolderDetail('${folder['資料夾ID']}')" style="cursor: pointer;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title" style="display: flex; align-items: center; gap: var(--space-2);">
+              <span style="font-size: var(--font-xl);">${folder['圖示']}</span>
+              ${escapeHtml(folder['名稱'])}
+            </h3>
+            <div class="card-meta">
+              建立於 ${getTimeAgo(folder['建立時間'])} • 由 ${escapeHtml(folder['建立者名稱'])} 建立
+            </div>
+          </div>
+        </div>
+        
+        <div class="card-content">
+          <p>${escapeHtml(folder['說明'] || '沒有說明')}</p>
+        </div>
+        
+        <div class="card-footer">
+          <div style="display: flex; align-items: center; gap: var(--space-3);">
+            <span style="color: var(--text-secondary);">
+              📄 ${folder['檔案數量'] || 0} 個檔案
+            </span>
+            <span style="color: var(--text-secondary);">
+              🔗 ${folder['連結數量'] || 0} 個連結
+            </span>
+          </div>
+        </div>
+      </div>
+    `).join('');
+    
+    container.innerHTML = foldersHtml;
+  }
+  
+  async function showFolderDetail(folderId) {
+    try {
+      const [filesResult, linksResult] = await Promise.all([
+        callAPI('getDatabaseFiles', { folderId: folderId }),
+        callAPI('getDatabaseLinks', { folderId: folderId })
+      ]);
+      
+      if (filesResult.success && linksResult.success) {
+        showFolderDetailModal(filesResult.files, linksResult.links, folderId);
+      } else {
+        showErrorMessage('載入資料夾內容失敗');
+      }
+      
+    } catch (error) {
+      console.error('載入資料夾詳情失敗:', error);
+      showErrorMessage('載入資料夾詳情失敗：' + error.message);
+    }
+  }
+  
+  function showFolderDetailModal(files, links, folderId) {
+    const filesHtml = files.map(file => `
+      <div class="file-item" style="display: flex; justify-content: space-between; align-items: center; padding: var(--space-2); border-bottom: 1px solid var(--border);">
+        <div>
+          <div style="font-weight: 500;">${escapeHtml(file['檔案名稱'])}</div>
+          <div style="font-size: var(--font-sm); color: var(--text-secondary);">
+            ${file['檔案類型']} • 下載 ${file['下載次數']} 次
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="downloadFile('${file['檔案ID']}', '${file['檔案網址']}')">
+          📥 下載
+        </button>
+      </div>
+    `).join('');
+    
+    const linksHtml = links.map(link => `
+      <div class="link-item" style="display: flex; justify-content: space-between; align-items: center; padding: var(--space-2); border-bottom: 1px solid var(--border);">
+        <div>
+          <div style="font-weight: 500;">${escapeHtml(link['連結名稱'])}</div>
+          <div style="font-size: var(--font-sm); color: var(--text-secondary);">
+            ${escapeHtml(link['說明'] || '沒有說明')} • 點擊 ${link['點擊次數']} 次
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="openLink('${link['連結ID']}', '${link['連結網址']}')">
+          🔗 開啟
+        </button>
+      </div>
+    `).join('');
+    
+    const modalHtml = `
+      <div class="modal-overlay" onclick="closeModal(event)">
+        <div class="modal" style="max-width: 700px;" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <h2 class="modal-title">📁 資料夾內容</h2>
+            <button class="modal-close" onclick="closeAllModals()" aria-label="關閉">&times;</button>
+          </div>
+          
+          <div class="modal-body">
+            <div class="folder-section" style="margin-bottom: var(--space-4);">
+              <h3 style="font-size: var(--font-lg); margin-bottom: var(--space-3);">📄 檔案 (${files.length})</h3>
+              ${files.length > 0 ? filesHtml : '<div style="text-align: center; color: var(--text-secondary); padding: var(--space-4);">此資料夾沒有檔案</div>'}
+            </div>
+            
+            <div class="folder-section">
+              <h3 style="font-size: var(--font-lg); margin-bottom: var(--space-3);">🔗 連結 (${links.length})</h3>
+              ${links.length > 0 ? linksHtml : '<div style="text-align: center; color: var(--text-secondary); padding: var(--space-4);">此資料夾沒有連結</div>'}
+            </div>
+          </div>
+          
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" onclick="closeAllModals()">
+              關閉
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    showModal(modalHtml);
+  }
+  
+  async function downloadFile(fileId, fileUrl) {
+    try {
+      // 記錄下載
+      await callAPI('recordFileDownload', { fileId: fileId }, false);
+      
+      // 開啟檔案
+      window.open(fileUrl, '_blank');
+      
+      showSuccessMessage('檔案已開啟');
+      
+    } catch (error) {
+      console.error('下載檔案失敗:', error);
+      showErrorMessage('下載檔案失敗：' + error.message);
+    }
+  }
+  
+  async function openLink(linkId, linkUrl) {
+    try {
+      // 記錄點擊
+      await callAPI('recordLinkClick', { linkId: linkId }, false);
+      
+      // 開啟連結
+      window.open(linkUrl, '_blank');
+      
+      showSuccessMessage('連結已開啟');
+      
+    } catch (error) {
+      console.error('開啟連結失敗:', error);
+      showErrorMessage('開啟連結失敗：' + error.message);
+    }
+  }
+  
+  // 資料庫管理功能（僅版主可用）
+  function showAddFolderModal() {
+    if (!currentUser || currentUser['角色'] !== 'mod') {
+      showErrorMessage('只有版主可以新增資料夾');
+      return;
+    }
+    
+    showSuccessMessage('資料庫管理功能開發中，敬請期待！');
+  }
+  
+  function showAddFileModal() {
+    if (!currentUser || currentUser['角色'] !== 'mod') {
+      showErrorMessage('只有版主可以新增檔案');
+      return;
+    }
+    
+    showSuccessMessage('檔案管理功能開發中，敬請期待！');
+  }
+  
+  function showAddLinkModal() {
+    if (!currentUser || currentUser['角色'] !== 'mod') {
+      showErrorMessage('只有版主可以新增連結');
+      return;
+    }
+    
+    showSuccessMessage('連結管理功能開發中，敬請期待！');
+  }
+  
+  // ═══════════════════════════════════════
+  //  年長者友善：行事曆功能
+  // ═══════════════════════════════════════
+  
+  async function loadCalendar() {
+    try {
+      const filter = document.getElementById('event-filter').value || 'upcoming';
+      const result = await callAPI('getEvents', { filter: filter, limit: 50 });
+      
+      const container = document.getElementById('events-container');
+      
+      if (result.success) {
+        displayEvents(result.events, filter);
+      } else {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">❌</div>
+            <div class="empty-title">載入失敗</div>
+            <div class="empty-description">${result.error || '請稍後再試'}</div>
+          </div>
+        `;
+      }
+      
+    } catch (error) {
+      console.error('載入行事曆失敗:', error);
+      showErrorMessage('載入行事曆失敗：' + error.message);
+    }
+  }
+  
+  function displayEvents(events, filter) {
+    const container = document.getElementById('events-container');
+    
+    if (!events || events.length === 0) {
+      const emptyMessages = {
+        'upcoming': '目前沒有即將到來的活動',
+        'ongoing': '目前沒有進行中的活動',
+        'past': '目前沒有已結束的活動',
+        'all': '目前沒有任何活動'
+      };
+      
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📅</div>
+          <div class="empty-title">${emptyMessages[filter] || '目前沒有活動'}</div>
+          <div class="empty-description">
+            ${currentUser && currentUser['角色'] === 'mod' ? '點擊上方「新增活動」按鈕來建立第一個活動' : '版主還沒有建立任何活動'}
+          </div>
+        </div>
+      `;
+      return;
+    }
+    
+    const eventsHtml = events.map(event => createEventCard(event)).join('');
+    container.innerHTML = eventsHtml;
+    
+    // 年長者友善：添加載入動畫
+    const cards = container.querySelectorAll('.card');
+    cards.forEach((card, index) => {
+      card.style.opacity = '0';
+      card.style.transform = 'translateY(20px)';
+      setTimeout(() => {
+        card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        card.style.opacity = '1';
+        card.style.transform = 'translateY(0)';
+      }, index * 50);
+    });
+  }
+  
+  function createEventCard(event) {
+    const statusColors = {
+      '即將開始': 'var(--primary)',
+      '進行中': 'var(--success)',
+      '已結束': 'var(--text-secondary)'
+    };
+    
+    const statusColor = statusColors[event['活動狀態']] || 'var(--text-secondary)';
+    
+    return `
+      <article class="card event-card" data-event-id="${event['活動ID']}" role="article">
+        <header class="card-header">
+          <div style="flex: 1; min-width: 0;">
+            <h2 class="card-title" style="margin-bottom: var(--space-1);">
+              <button onclick="showEventDetail('${event['活動ID']}')" 
+                      style="background: none; border: none; text-align: left; cursor: pointer; font: inherit; color: inherit; padding: 0; width: 100%;"
+                      onmouseover="this.style.color='var(--primary)'" 
+                      onmouseout="this.style.color='inherit'">
+                ${escapeHtml(event['標題'])}
+              </button>
+            </h2>
+            
+            <div class="card-meta">
+              <span class="status-badge" style="background: ${statusColor}; color: white; padding: 2px 8px; border-radius: 12px; font-size: var(--font-xs);">
+                ${event['活動狀態']}
+              </span>
+              
+              <span class="category-badge" style="background: rgba(59, 130, 246, 0.1); color: var(--primary); padding: 2px 8px; border-radius: 12px; font-size: var(--font-xs); margin-left: var(--space-2);">
+                ${event['分類'] || '一般活動'}
+              </span>
+            </div>
+          </div>
+        </header>
+        
+        <div class="card-content">
+          <div class="event-time" style="margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2);">
+            <span style="font-size: var(--font-lg);">📅</span>
+            <div>
+              <div style="font-weight: 500;">${event['時間描述'] || formatEventTime(event)}</div>
+              ${event['地點'] ? `<div style="font-size: var(--font-sm); color: var(--text-secondary); margin-top: 2px;">📍 ${escapeHtml(event['地點'])}</div>` : ''}
+            </div>
+          </div>
+          
+          ${event['說明'] ? `
+            <div class="event-description" style="margin-bottom: var(--space-3);">
+              ${formatEventDescription(event['說明'])}
+            </div>
+          ` : ''}
+          
+          ${event['圖片網址'] ? `
+            <div class="event-image" style="margin-bottom: var(--space-3);">
+              <img src="${event['圖片網址']}" alt="活動圖片" style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer;" onclick="showImageModal('${event['圖片網址']}')">
+            </div>
+          ` : ''}
+        </div>
+        
+        <footer class="card-footer">
+          <div class="event-stats" style="display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;">
+            ${event['參與人數'] !== undefined ? `
+              <span style="color: var(--text-secondary);">
+                👥 ${event['參與人數']}${event['最大人數'] ? `/${event['最大人數']}` : ''} 人參與
+              </span>
+            ` : ''}
+            
+            <span style="color: var(--text-secondary);">
+              由 ${escapeHtml(event['建立者名稱'])} 建立
+            </span>
+          </div>
+          
+          <div class="event-actions" style="display: flex; gap: var(--space-2);">
+            ${event['報名連結'] ? `
+              <button class="btn btn-primary" onclick="openEventRegistration('${event['報名連結']}')" 
+                      aria-label="報名活動">
+                📝 報名
+              </button>
+            ` : ''}
+            
+            <button class="btn btn-secondary" onclick="shareEvent('${event['活動ID']}')" 
+                    aria-label="分享活動" title="分享活動">
+              📤 分享
+            </button>
+            
+            ${userPreferences.voiceEnabled ? `
+              <button class="btn btn-secondary btn-icon" onclick="readEventAloud('${event['活動ID']}')" 
+                      title="朗讀活動" aria-label="朗讀活動">
+                🔊
+              </button>
+            ` : ''}
+          </div>
+        </footer>
+      </article>
+    `;
+  }
+  
+  function formatEventTime(event) {
+    try {
+      const startTime = new Date(event['開始時間']);
+      const endTime = new Date(event['結束時間']);
+      
+      const startDate = startTime.toLocaleDateString('zh-TW', { 
+        month: 'numeric', 
+        day: 'numeric',
+        weekday: 'short'
+      });
+      const startHour = startTime.toLocaleTimeString('zh-TW', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      const endHour = endTime.toLocaleTimeString('zh-TW', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      
+      // 判斷是否為同一天
+      const isSameDay = startTime.toDateString() === endTime.toDateString();
+      
+      if (isSameDay) {
+        return `${startDate} ${startHour} - ${endHour}`;
+      } else {
+        const endDate = endTime.toLocaleDateString('zh-TW', { 
+          month: 'numeric', 
+          day: 'numeric',
+          weekday: 'short'
+        });
+        return `${startDate} ${startHour} - ${endDate} ${endHour}`;
+      }
+    } catch (e) {
+      return '時間待定';
+    }
+  }
+  
+  function formatEventDescription(description) {
+    if (!description) return '';
+    
+    let formatted = escapeHtml(description);
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // 年長者友善：限制顯示長度
+    if (formatted.length > 200) {
+      const truncated = formatted.substring(0, 200);
+      const lastSpace = truncated.lastIndexOf(' ');
+      const cutPoint = lastSpace > 150 ? lastSpace : 200;
+      
+      formatted = formatted.substring(0, cutPoint) + 
+        `... <button onclick="expandEventContent(this)" style="color: var(--primary); background: none; border: none; cursor: pointer; text-decoration: underline;">展開全文</button>
+         <div class="full-content" style="display: none;">${formatted.substring(cutPoint)}</div>`;
+    }
+    
+    return formatted;
+  }
+  
+  function expandEventContent(button) {
+    const fullContent = button.nextElementSibling;
+    if (fullContent) {
+      button.style.display = 'none';
+      fullContent.style.display = 'inline';
+      
+      // 語音朗讀展開的內容
+      if (userPreferences.voiceEnabled) {
+        speakText(fullContent.textContent);
+      }
+    }
+  }
+  
+  function filterEvents(filter) {
+    currentEventFilter = filter;
+    loadCalendar();
+    
+    // 語音提示
+    if (userPreferences.voiceEnabled) {
+      const filterNames = {
+        'upcoming': '即將到來的活動',
+        'ongoing': '進行中的活動',
+        'past': '已結束的活動',
+        'all': '全部活動'
+      };
+      speakText(`切換到${filterNames[filter]}`);
+    }
+  }
+  
+  function openEventRegistration(registrationUrl) {
+    window.open(registrationUrl, '_blank');
+    
+    // 語音提示
+    if (userPreferences.voiceEnabled) {
+      speakText('正在開啟報名頁面');
+    }
+  }
+  
+  function shareEvent(eventId) {
+    // 實作分享功能
+    const shareUrl = `${window.location.origin}${window.location.pathname}?event=${eventId}`;
+    
+    if (navigator.share) {
+      navigator.share({
+        title: '活動分享 - LSVTBIG 論壇',
+        url: shareUrl
+      }).catch(err => console.log('分享失敗:', err));
+    } else {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        showSuccessMessage('活動連結已複製到剪貼簿');
+      }).catch(() => {
+        prompt('請複製以下連結分享：', shareUrl);
+      });
+    }
+  }
+  
+  function readEventAloud(eventId) {
+    // 實作朗讀活動功能
+    if (userPreferences.voiceEnabled) {
+      const eventCard = document.querySelector(`[data-event-id="${eventId}"]`);
+      if (eventCard) {
+        const title = eventCard.querySelector('.card-title').textContent.trim();
+        const description = eventCard.querySelector('.event-description');
+        const descriptionText = description ? description.textContent.trim() : '';
+        
+        const text = `活動：${title}。${descriptionText}`;
+        speakText(text);
+      }
+    }
+  }
+  
+  async function showEventDetail(eventId) {
+    showSuccessMessage('活動詳情功能開發中，敬請期待！');
+  }
+  
+  // 活動管理功能（僅版主可用）
+  function showAddEventModal() {
+    if (!currentUser || currentUser['角色'] !== 'mod') {
+      showErrorMessage('只有版主可以新增活動');
+      return;
+    }
+    
+    showSuccessMessage('活動管理功能開發中，敬請期待！');
   }
 </script>
 </body>
