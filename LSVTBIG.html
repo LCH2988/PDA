@@ -912,7 +912,7 @@
   // ═══════════════════════════════════════
   
   // 🔧 重要：請將此 URL 替換為您的 Google Apps Script Web App URL
-  const API_BASE_URL = 'https://script.google.com/macros/s/AKfycbwCqwiUsDiOxAWk_ICPi8Inb4RWEQ3tp6fnMHYWUku-KuNvEq0Fuk1qY5j3EsvnhyRK/exec';
+  const API_BASE_URL = 'https://script.google.com/macros/s/AKfycbyeavVqtMx-XhfaV7HM0pm2ObR2WC7tkrVQ0kJiZ9AyQIJu346eZ42SOJMsGWgMfqW9/exec';
   
   // 系統狀態
   let currentUser = null;
@@ -947,7 +947,7 @@
   /**
    * 核心 API 呼叫函數
    */
-  async function callAPI(action, data = {}, showLoading = true) {
+   async function callAPI(action, data = {}, showLoading = true) {
     try {
       if (showLoading) {
         showLoadingIndicator(true);
@@ -961,8 +961,10 @@
       
       console.log('API 呼叫:', action, data);
       
+      // 方法一：使用 no-cors 模式（但會限制回應處理）
       const response = await fetch(API_BASE_URL, {
         method: 'POST',
+        mode: 'cors', // 保持 cors 模式
         headers: {
           'Content-Type': 'application/json',
         },
@@ -989,11 +991,11 @@
         showLoadingIndicator(false);
       }
       
-      // 網路錯誤處理
+      // 如果是 CORS 錯誤，提供更友善的錯誤訊息
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        showErrorMessage('網路連線失敗，請檢查網路設定');
+        showErrorMessage('網路連線問題，請檢查後端設定或稍後再試');
       } else {
-        showErrorMessage('系統暫時無法使用，請稍後再試');
+        showErrorMessage('系統暫時無法使用：' + error.message);
       }
       
       return {
@@ -1001,6 +1003,35 @@
         error: error.message
       };
     }
+  }
+  
+  // 備用方案：使用 JSONP（如果 Google Apps Script 支援）
+  async function callAPIWithJSONP(action, data = {}) {
+    return new Promise((resolve, reject) => {
+      const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      const script = document.createElement('script');
+      
+      window[callbackName] = function(response) {
+        document.head.removeChild(script);
+        delete window[callbackName];
+        resolve(response);
+      };
+      
+      const params = new URLSearchParams({
+        action: action,
+        data: JSON.stringify(data),
+        callback: callbackName
+      });
+      
+      script.src = `${API_BASE_URL}?${params.toString()}`;
+      script.onerror = () => {
+        document.head.removeChild(script);
+        delete window[callbackName];
+        reject(new Error('JSONP 請求失敗'));
+      };
+      
+      document.head.appendChild(script);
+    });
   }
   
   /**
