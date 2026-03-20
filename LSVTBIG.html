@@ -458,7 +458,7 @@
 // ═══════════════════════════════════════
 //  全域變數和設定
 // ═══════════════════════════════════════
-const API_BASE_URL = 'https://script.google.com/macros/s/AKfycby_EBHIIOPLIkVvPvarYcUqy12IyVLKirE1G-dPrpi1-D9h2j9IslM_1RsbkKEGu7Z9/exec';
+const API_BASE_URL = 'https://script.google.com/macros/s/AKfycbwb7qcIJHKxMrYRqmCaDCfuJhRv5kQh30ZtHHi5OMFZoU4DibRHTGyqABuapj-RoLdq/exec';
 const LIFF_ID = '2009456572-AUDE1qmM';
 
 let liffInitialized = false;
@@ -1024,19 +1024,19 @@ async function previewResource(resourceId) {
   }
 }
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload  = (e) => {
-      // e.target.result 格式：data:image/png;base64,XXXXXX
-      // 只取逗號後面的純 Base64 部分
-      const base64 = e.target.result.split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = (e) => reject(new Error('讀取檔案失敗'));
-    reader.readAsDataURL(file);
-  });
-}
+// function fileToBase64(file) {
+//   return new Promise((resolve, reject) => {
+//     const reader = new FileReader();
+//     reader.onload  = (e) => {
+//       // e.target.result 格式：data:image/png;base64,XXXXXX
+//       // 只取逗號後面的純 Base64 部分
+//       const base64 = e.target.result.split(',')[1];
+//       resolve(base64);
+//     };
+//     reader.onerror = (e) => reject(new Error('讀取檔案失敗'));
+//     reader.readAsDataURL(file);
+//   });
+// }
 
 function createPreviewContent(resource, previewUrl) {
   const fileType = resource.type.toLowerCase();
@@ -2043,6 +2043,110 @@ function showUploadModal() {
   if (userPreferences.voiceEnabled) speakText('開啟上傳資源視窗');
 }
 
+async function uploadFile(file, category = 'general') {
+  if (!currentUser) throw new Error('請先登入');
+  if (!file)        throw new Error('未選擇檔案');
+
+  // ✅ 修復1：確保取得有效檔名
+  const rawName  = (file.name || '').trim();
+  const fileName = rawName !== ''
+    ? rawName
+    : `upload_${Date.now()}.${getExtFromMime(file.type)}`;
+
+  // ✅ 修復2：檔名長度限制（GAS 欄位上限）
+  const safeName = fileName.length > 200
+    ? fileName.substring(0, 200)
+    : fileName;
+
+  // 檔案大小限制：10MB
+  const MAX_SIZE = 10 * 1024 * 1024;
+  if (file.size > MAX_SIZE) {
+    throw new Error(
+      `檔案大小超過限制（最大 10MB），目前：${(file.size / 1024 / 1024).toFixed(1)}MB`
+    );
+  }
+
+  // ✅ 修復3：mimeType 不可為空
+  const mimeType = (file.type && file.type.trim() !== '')
+    ? file.type
+    : 'application/octet-stream';
+
+  console.log('📤 準備上傳：', { fileName: safeName, mimeType, size: file.size });
+
+  try {
+    // Step 1：轉 Base64
+    const base64 = await fileToBase64(file);
+
+    // ✅ 修復4：上傳前再次確認 base64 非空
+    if (!base64 || base64.trim() === '') {
+      throw new Error('檔案讀取失敗，Base64 內容為空');
+    }
+
+    // Step 2：送出請求
+    const response = await apiCall('uploadFile', {
+      userId     : currentUser.userId,
+      userName   : currentUser.displayName || '',
+      fileName   : safeName,          // ✅ 確保有值
+      mimeType   : mimeType,          // ✅ 確保有值
+      fileBase64 : base64,
+      category   : category || 'general'
+    });
+
+    if (!response || !response.success) {
+      throw new Error(response?.error || '上傳失敗，伺服器未回應');
+    }
+
+    console.log('✅ 檔案上傳成功:', response.fileName, response.url);
+    return response;
+
+  } catch (error) {
+    console.error('檔案上傳失敗:', error);
+    throw error;
+  }
+}
+
+/**
+ * File → 純 Base64 字串（不含 data:xxx;base64, 前綴）
+ */
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result || '';
+      const parts  = result.split(',');
+      if (parts.length < 2 || !parts[1]) {
+        reject(new Error('Base64 轉換失敗：格式異常'));
+        return;
+      }
+      resolve(parts[1]);
+    };
+    reader.onerror = () => reject(new Error('FileReader 讀取失敗'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * 根據 MIME type 推算副檔名（fileName 為空時備用）
+ */
+function getExtFromMime(mimeType) {
+  const map = {
+    'image/jpeg'      : 'jpg',
+    'image/png'       : 'png',
+    'image/gif'       : 'gif',
+    'image/webp'      : 'webp',
+    'application/pdf' : 'pdf',
+    'text/plain'      : 'txt',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'docx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'       : 'xlsx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'application/msword'   : 'doc',
+    'application/vnd.ms-excel' : 'xls',
+    'video/mp4'  : 'mp4',
+    'audio/mpeg' : 'mp3',
+  };
+  return map[mimeType] || 'bin';
+}
+
 function setupResourceUpload() {
   const fileUploadArea = document.getElementById('file-upload-area');
   const fileInput = document.getElementById('file-input');
@@ -2064,7 +2168,7 @@ function setupResourceUpload() {
     fileUploadArea.innerHTML = `
       <div style="color:var(--success);">
         <span style="font-size:var(--font-2xl);">✅</span>
-        <p>已選擇檔案：${escapeHtml(file.name)}</p>
+        <p>已選擇檔案：${escapeHtml(file.name)}</p>2
         <p style="font-size:var(--font-sm);color:var(--text-muted);">大小：${formatFileSize(file.size)}</p>
         <button type="button" class="btn btn-outline btn-sm" onclick="clearSelectedFile()">重新選擇</button>
       </div>`;
@@ -2636,6 +2740,91 @@ function setupErrorHandling() {
     console.error('未處理的 Promise 錯誤:', e.reason);
     e.preventDefault();
   });
+}
+
+async function uploadFile(file, category = 'general') {
+  if (!currentUser) throw new Error('請先登入');
+  if (!file)        throw new Error('未選擇檔案');
+
+  // ✅ 修復1：確保取得有效檔名
+  const rawName  = (file.name || '').trim();
+  const fileName = rawName !== ''
+    ? rawName
+    : `upload_${Date.now()}.${getExtFromMime(file.type)}`;
+
+  // ✅ 修復2：檔名長度限制（GAS 欄位上限）
+  const safeName = fileName.length > 200
+    ? fileName.substring(0, 200)
+    : fileName;
+
+  // 檔案大小限制：10MB
+  const MAX_SIZE = 10 * 1024 * 1024;
+  if (file.size > MAX_SIZE) {
+    throw new Error(
+      `檔案大小超過限制（最大 10MB），目前：${(file.size / 1024 / 1024).toFixed(1)}MB`
+    );
+  }
+
+  // ✅ 修復3：mimeType 不可為空
+  const mimeType = (file.type && file.type.trim() !== '')
+    ? file.type
+    : 'application/octet-stream';
+
+  console.log('📤 準備上傳：', { fileName: safeName, mimeType, size: file.size });
+
+  try {
+    // Step 1：轉 Base64
+    const base64 = await fileToBase64(file);
+
+    // ✅ 修復4：上傳前再次確認 base64 非空
+    if (!base64 || base64.trim() === '') {
+      throw new Error('檔案讀取失敗，Base64 內容為空');
+    }
+
+    // Step 2：送出請求
+    const response = await apiCall('uploadFile', {
+      userId     : currentUser.userId,
+      userName   : currentUser.displayName || '',
+      fileName   : safeName,          // ✅ 確保有值
+      mimeType   : mimeType,          // ✅ 確保有值
+      fileBase64 : base64,
+      category   : category || 'general'
+    });
+
+    if (!response || !response.success) {
+      throw new Error(response?.error || '上傳失敗，伺服器未回應');
+    }
+
+    console.log('✅ 檔案上傳成功:', response.fileName, response.url);
+    return response;
+
+  } catch (error) {
+    console.error('檔案上傳失敗:', error);
+    throw error;
+  }
+}
+
+
+/**
+ * 根據 MIME type 推算副檔名（fileName 為空時備用）
+ */
+function getExtFromMime(mimeType) {
+  const map = {
+    'image/jpeg'      : 'jpg',
+    'image/png'       : 'png',
+    'image/gif'       : 'gif',
+    'image/webp'      : 'webp',
+    'application/pdf' : 'pdf',
+    'text/plain'      : 'txt',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'docx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'       : 'xlsx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'application/msword'   : 'doc',
+    'application/vnd.ms-excel' : 'xls',
+    'video/mp4'  : 'mp4',
+    'audio/mpeg' : 'mp3',
+  };
+  return map[mimeType] || 'bin';
 }
 
 // ═══════════════════════════════════════
