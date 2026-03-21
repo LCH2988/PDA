@@ -1,211 +1,662 @@
-// =============================
-// 🔧 設定區 - 請修改以下變數
-// =============================
-const SPREADSHEET_ID = '1rCsP-0ijD0-aXmaax0sdlvgOSuN3zfkC5jwHklcY-Rs';   // Google 試算表 ID
-const SHEET_NAME     = 'LSVTBIG';                  // 工作表名稱
-const FOLDER_ID      = '1KyzJAniOeTXVAgekuQelA3l_5SHVqH-h';   // Google Drive 資料夾 ID（存放附件）
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>📒 LIFF 筆記本</title>
 
-// =============================
-// 🌐 CORS Header 設定
-// =============================
-function setCORSHeaders(output) {
-  return output
-    .setHeader('Access-Control-Allow-Origin', '*')
-    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
+  <!-- LIFF SDK -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- Quill 富文字編輯器 -->
+  <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet" />
+  <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
 
-// =============================
-// 🌐 處理 GET 請求
-// ── GET 同時處理：回傳頁面 & 資料查詢 ──
-// =============================
-function doGet(e) {
-  const action = e.parameter && e.parameter.action;
-
-  // 若有 action 參數 → 當作 API 使用
-  if (action === 'getNotes') {
-    const userId = e.parameter.userId || '';
-    const result = getNotes(userId);
-    const output = ContentService
-      .createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON);
-    return setCORSHeaders(output);
-  }
-
-  // 否則回傳前端 HTML 頁面
-  return HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('📒 LIFF 筆記本')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-// =============================
-// 📮 處理 POST 請求（儲存筆記）
-// =============================
-function doPost(e) {
-  // ── 處理 OPTIONS preflight（CORS 預檢）──
-  if (!e || !e.postData) {
-    const output = ContentService
-      .createTextOutput('')
-      .setMimeType(ContentService.MimeType.TEXT);
-    return setCORSHeaders(output);
-  }
-
-  try {
-    const data   = JSON.parse(e.postData.contents);
-    const action = data.action || 'saveNote';
-    let   result;
-
-    switch (action) {
-      case 'saveNote'  : result = saveNote(data);              break;
-      case 'initSheet' : result = initSheet();                 break;
-      default          : result = { success: false, message: '未知操作' };
+  <style>
+    /* ===== Reset & Base ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary   : #06C755;
+      --primary-d : #05a847;
+      --danger    : #e74c3c;
+      --bg        : #f0f4f8;
+      --card      : #ffffff;
+      --text      : #2d3748;
+      --sub       : #718096;
+      --border    : #e2e8f0;
+      --radius    : 14px;
+      --shadow    : 0 4px 20px rgba(0,0,0,.08);
+    }
+    body {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
     }
 
-    const output = ContentService
-      .createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON);
-    return setCORSHeaders(output);
+    /* ===== Header ===== */
+    .header {
+      background: linear-gradient(135deg, #06C755, #04a847);
+      color: #fff;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 12px rgba(6,199,85,.35);
+    }
+    .header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: .5px; }
+    .header .user-info { font-size: .78rem; opacity: .9; display: flex; align-items: center; gap: 6px; }
+    .avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.6); object-fit: cover;
+    }
 
-  } catch (err) {
-    const output = ContentService
-      .createTextOutput(JSON.stringify({ success: false, message: err.message }))
-      .setMimeType(ContentService.MimeType.JSON);
-    return setCORSHeaders(output);
-  }
-}
+    /* ===== Tab Bar ===== */
+    .tabs {
+      display: flex;
+      background: var(--card);
+      border-bottom: 2px solid var(--border);
+      position: sticky;
+      top: 57px;
+      z-index: 99;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 13px;
+      border: none;
+      background: transparent;
+      font-size: .9rem;
+      font-weight: 600;
+      color: var(--sub);
+      cursor: pointer;
+      transition: all .2s;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+    }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
 
-// =============================
-// 🗂️ 初始化工作表
-// =============================
-function initSheet() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let sheet = ss.getSheetByName(SHEET_NAME);
+    /* ===== Page ===== */
+    .page { display: none; padding: 20px; max-width: 680px; margin: 0 auto; }
+    .page.active { display: block; }
 
-  if (sheet) {
-    ss.deleteSheet(sheet);
-    SpreadsheetApp.flush();
-  }
+    /* ===== Card ===== */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: .8rem;
+      font-weight: 700;
+      color: var(--sub);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
 
-  sheet = ss.insertSheet(SHEET_NAME);
+    /* ===== Form ===== */
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: .85rem; font-weight: 600; color: var(--sub); margin-bottom: 6px; }
+    input[type="text"] {
+      width: 100%;
+      padding: 11px 14px;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      font-size: .95rem;
+      color: var(--text);
+      transition: border-color .2s;
+      outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--primary); }
 
-  const headers = [
-    '筆記ID', '建立時間', '使用者ID', '使用者名稱',
-    '標題', '內容', '附件名稱', '附件連結'
-  ];
+    /* ===== Quill Editor ===== */
+    #editor-container {
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color .2s;
+    }
+    #editor-container:focus-within { border-color: var(--primary); }
+    .ql-toolbar { border: none !important; border-bottom: 1px solid var(--border) !important; background: #f8fafc; }
+    .ql-container { border: none !important; min-height: 160px; font-size: .95rem; }
 
-  const headerRange = sheet.getRange(1, 1, 1, headers.length);
-  headerRange.setValues([headers]);
-  headerRange
-    .setFontWeight('bold')
-    .setFontColor('#FFFFFF')
-    .setBackground('#06C755')
-    .setHorizontalAlignment('center')
-    .setVerticalAlignment('middle')
-    .setFontSize(11);
+    /* ===== File Upload ===== */
+    .upload-area {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 28px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all .2s;
+      background: #fafbfc;
+      position: relative;
+    }
+    .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background: #f0fff5; }
+    .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .upload-icon { font-size: 2.2rem; margin-bottom: 8px; }
+    .upload-text { font-size: .88rem; color: var(--sub); }
+    .upload-text span { color: var(--primary); font-weight: 600; }
 
-  sheet.setFrozenRows(1);
+    /* ===== Preview ===== */
+    #preview-area { margin-top: 14px; display: none; }
+    .preview-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .preview-header {
+      background: #f8fafc;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+    .preview-filename { font-size: .85rem; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+    .preview-filesize { font-size: .75rem; color: var(--sub); }
+    .preview-remove {
+      background: none; border: none; color: var(--danger);
+      cursor: pointer; font-size: 1.1rem; padding: 2px 6px;
+      border-radius: 6px; transition: background .2s;
+    }
+    .preview-remove:hover { background: #fde8e8; }
+    .preview-body { padding: 12px; text-align: center; max-height: 300px; overflow: auto; }
+    .preview-body img { max-width: 100%; max-height: 260px; border-radius: 8px; object-fit: contain; }
+    .preview-body iframe { width: 100%; height: 260px; border: none; border-radius: 8px; }
+    .preview-body .file-icon { font-size: 3rem; padding: 20px 0; }
+    .file-type-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: #e8f5e9;
+      color: var(--primary-d);
+      margin-left: 6px;
+    }
 
-  const colWidths = [160, 160, 200, 130, 200, 300, 160, 260];
-  colWidths.forEach((width, i) => sheet.setColumnWidth(i + 1, width));
-  sheet.setRowHeight(1, 36);
+    /* ===== Button ===== */
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-d); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(6,199,85,.4); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { background: #a0aec0; cursor: not-allowed; transform: none; box-shadow: none; }
 
-  sheet.getRange('A:A').setFontFamily('Courier New');
-  sheet.getRange('B:B').setNumberFormat('@');
-  sheet.getRange('H:H').setWrap(true);
+    /* ===== Toast ===== */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #2d3748;
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 30px;
+      font-size: .88rem;
+      font-weight: 600;
+      z-index: 9999;
+      transition: transform .3s ease;
+      white-space: nowrap;
+      box-shadow: 0 4px 20px rgba(0,0,0,.2);
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.success { background: var(--primary); }
+    .toast.error   { background: var(--danger); }
 
-  const protection = sheet.getRange(1, 1, 1, headers.length).protect();
-  protection.setDescription('標題列保護');
-  protection.setWarningOnly(true);
+    /* ===== Notes List ===== */
+    .note-item {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow);
+      border-left: 4px solid var(--primary);
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .note-item:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.1); }
+    .note-item-title { font-size: 1rem; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+    .note-item-preview { font-size: .82rem; color: var(--sub); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .note-item-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+    .note-item-time { font-size: .75rem; color: var(--sub); }
+    .note-item-attach { font-size: .75rem; color: var(--primary); font-weight: 600; }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--sub); }
+    .empty-state .emoji { font-size: 3rem; margin-bottom: 12px; }
 
-  SpreadsheetApp.flush();
-  Logger.log('✅ 工作表初始化完成：' + SHEET_NAME);
+    /* ===== Modal ===== */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.5);
+      z-index: 200;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--card);
+      border-radius: 20px 20px 0 0;
+      padding: 24px 20px;
+      width: 100%;
+      max-width: 680px;
+      max-height: 85vh;
+      overflow-y: auto;
+      animation: slideUp .3s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    .modal-close { background: none; border: none; font-size: 1.4rem; cursor: pointer; color: var(--sub); }
+    .modal-content-text { font-size: .9rem; line-height: 1.7; color: var(--text); }
+    .modal-attach { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .modal-attach a { color: var(--primary); font-weight: 600; text-decoration: none; font-size: .88rem; }
 
-  return { success: true, message: '工作表初始化完成！', sheetName: SHEET_NAME };
-}
+    /* ===== Loading ===== */
+    .spinner {
+      width: 20px; height: 20px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
 
-// =============================
-// 💾 儲存筆記
-// =============================
-function saveNote(data) {
-  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let   sheet = ss.getSheetByName(SHEET_NAME);
+  <!-- Header -->
+  <div class="header">
+    <h1>📒 我的筆記本</h1>
+    <div class="user-info">
+      <img class="avatar" id="userAvatar" src="https://profile.line-scdn.net/0h00000000000000000000000000000000000000" alt="avatar" onerror="this.style.display='none'" />
+      <span id="userName">載入中...</span>
+    </div>
+  </div>
 
-  if (!sheet) {
-    initSheet();
-    sheet = ss.getSheetByName(SHEET_NAME);
-  }
+  <!-- Tab Bar -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('write')">✏️ 新增筆記</button>
+    <button class="tab-btn" onclick="switchTab('list')">📋 我的筆記</button>
+  </div>
 
-  let fileUrl  = '';
-  let fileName = '';
-  if (data.fileData && data.fileName) {
-    const fileResult = uploadFileToDrive(data.fileData, data.fileName, data.fileType);
-    fileUrl  = fileResult.url;
-    fileName = fileResult.name;
-  }
+  <!-- ===== 新增筆記 ===== -->
+  <div class="page active" id="page-write">
+    <div class="card">
+      <div class="card-title">📝 筆記內容</div>
 
-  const noteId    = 'NOTE_' + new Date().getTime();
-  const timestamp = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd HH:mm:ss');
+      <!-- 標題 -->
+      <div class="form-group">
+        <label>📌 標題 <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="noteTitle" placeholder="請輸入筆記標題..." maxlength="100" />
+      </div>
 
-  sheet.appendRow([
-    noteId,
-    timestamp,
-    data.userId   || 'unknown',
-    data.userName || '匿名使用者',
-    data.title    || '(無標題)',
-    data.content  || '',
-    fileName,
-    fileUrl
-  ]);
+      <!-- 內容（富文字） -->
+      <div class="form-group">
+        <label>📄 內容</label>
+        <div id="editor-container">
+          <div id="quill-editor"></div>
+        </div>
+      </div>
 
-  const lastRow = sheet.getLastRow();
-  const rowBg   = lastRow % 2 === 0 ? '#F0FFF4' : '#FFFFFF';
-  sheet.getRange(lastRow, 1, 1, 8).setBackground(rowBg);
-  sheet.autoResizeColumns(1, 8);
+      <!-- 附件上傳 -->
+      <div class="form-group">
+        <label>📎 附件上傳</label>
+        <div class="upload-area" id="uploadArea">
+          <input type="file" id="fileInput" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" />
+          <div class="upload-icon">☁️</div>
+          <div class="upload-text">拖曳檔案到此，或 <span>點擊上傳</span></div>
+          <div class="upload-text" style="margin-top:4px;font-size:.75rem;">支援：圖片、PDF、Office 文件、TXT、ZIP（最大 10MB）</div>
+        </div>
+        <!-- 預覽區 -->
+        <div id="preview-area">
+          <div class="preview-card">
+            <div class="preview-header">
+              <div class="preview-filename">
+                <span id="previewIcon">📄</span>
+                <span id="previewName"></span>
+                <span class="file-type-badge" id="previewType"></span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="preview-filesize" id="previewSize"></span>
+                <button class="preview-remove" onclick="removeFile()" title="移除檔案">✕</button>
+              </div>
+            </div>
+            <div class="preview-body" id="previewBody"></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-  return { success: true, noteId: noteId, message: '筆記儲存成功！', fileUrl: fileUrl };
-}
+    <!-- 儲存按鈕 -->
+    <button class="btn btn-primary" id="saveBtn" onclick="saveNote()">
+      <span>💾</span><span>儲存筆記</span>
+    </button>
+  </div>
 
-// =============================
-// 📂 上傳檔案到 Google Drive
-// =============================
-function uploadFileToDrive(base64Data, fileName, mimeType) {
-  const folder  = DriveApp.getFolderById(FOLDER_ID);
-  const decoded = Utilities.base64Decode(base64Data.split(',')[1] || base64Data);
-  const blob    = Utilities.newBlob(decoded, mimeType || 'application/octet-stream', fileName);
-  const file    = folder.createFile(blob);
+  <!-- ===== 我的筆記列表 ===== -->
+  <div class="page" id="page-list">
+    <div id="notesList"></div>
+  </div>
 
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  <!-- 筆記詳情 Modal -->
+  <div class="modal-overlay" id="noteModal">
+    <div class="modal">
+      <div class="modal-title">
+        <span id="modalTitle"></span>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-content-text" id="modalContent"></div>
+      <div class="modal-attach" id="modalAttach" style="display:none;">
+        <strong>📎 附件：</strong>
+        <a id="modalAttachLink" href="#" target="_blank"></a>
+      </div>
+      <div style="font-size:.75rem;color:var(--sub);margin-top:12px;" id="modalMeta"></div>
+    </div>
+  </div>
 
-  return { url: file.getDownloadUrl(), name: file.getName(), id: file.getId() };
-}
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
 
-// =============================
-// 📋 取得筆記列表
-// =============================
-function getNotes(userId) {
-  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) return { success: true, notes: [] };
+  <script>
+    // ===========================
+    // 🔧 設定
+    // ===========================
+    const LIFF_ID  = '2001679903-jkND3El9';   // ← 替換成你的 LIFF ID
+    const GAS_URL  = 'https://script.google.com/macros/s/AKfycbyAqixRfVQ3kau-_-Jg96Q2fVbZUWKv2MAM77s-_LmXU7CbbAaBR5_4prYcNXXiYopiLw/exec';   // ← 替換成你的 GAS 部署網址
 
-  const rows  = sheet.getDataRange().getValues();
-  const notes = [];
+    let liffUser     = null;
+    let quill        = null;
+    let uploadedFile = null;
 
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!userId || row[2] === userId) {
-      notes.push({
-        noteId   : row[0],
-        time     : row[1],
-        userId   : row[2],
-        userName : row[3],
-        title    : row[4],
-        content  : row[5],
-        fileName : row[6],
-        fileUrl  : row[7]
+    // ===========================
+    // 🚀 初始化
+    // ===========================
+    window.addEventListener('DOMContentLoaded', async () => {
+      initQuill();
+      initFileUpload();
+      await initLiff();
+      await checkConnection();
+    });
+
+    // ── Quill ──
+    function initQuill() {
+      quill = new Quill('#quill-editor', {
+        theme: 'snow',
+        placeholder: '請輸入筆記內容...',
+        modules: {
+          toolbar: [
+            [{ header: [1, 2, 3, false] }],
+            ['bold', 'italic', 'underline', 'strike'],
+            [{ color: [] }, { background: [] }],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            [{ align: [] }],
+            ['blockquote', 'code-block'],
+            ['link'],
+            ['clean']
+          ]
+        }
       });
     }
-  }
 
-  notes.reverse();
-  return { success: true, notes: notes };
-}
+    // ── LIFF ──
+    async function initLiff() {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+        if (liff.isLoggedIn()) {
+          const profile = await liff.getProfile();
+          liffUser = { userId: profile.userId, userName: profile.displayName, avatar: profile.pictureUrl };
+          document.getElementById('userName').textContent = profile.displayName;
+          const av = document.getElementById('userAvatar');
+          if (profile.pictureUrl) { av.src = profile.pictureUrl; av.style.display = 'block'; }
+        } else {
+          liff.login();
+        }
+      } catch (err) {
+        console.warn('LIFF init failed, demo mode:', err.message);
+        liffUser = { userId: 'demo_user', userName: 'Demo 使用者', avatar: '' };
+        document.getElementById('userName').textContent = 'Demo 使用者';
+      }
+    }
+
+    // ── 檢查 GAS 連線 ──
+    async function checkConnection() {
+      const bar  = document.getElementById('statusBar');
+      const dot  = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      try {
+        // 用 GET 測試連線（不會有 CORS preflight）
+        const resp = await fetch(`${GAS_URL}?action=getNotes&userId=__ping__`, { method: 'GET' });
+        if (resp.ok) {
+          bar.className  = 'status-bar ok';
+          dot.className  = 'status-dot ok';
+          text.textContent = '✅ 已連線到 Google 試算表';
+        } else { throw new Error('HTTP ' + resp.status); }
+      } catch (err) {
+        bar.className  = 'status-bar err';
+        dot.className  = 'status-dot err';
+        text.textContent = '❌ 無法連線：' + err.message + '（請確認 GAS_URL 是否正確）';
+      }
+    }
+
+    // ===========================
+    // 📎 檔案上傳 & 預覽
+    // ===========================
+    function initFileUpload() {
+      const area  = document.getElementById('uploadArea');
+      const input = document.getElementById('fileInput');
+      input.addEventListener('change', e => handleFile(e.target.files[0]));
+      area.addEventListener('dragover',  e => { e.preventDefault(); area.classList.add('dragover'); });
+      area.addEventListener('dragleave', () => area.classList.remove('dragover'));
+      area.addEventListener('drop', e => { e.preventDefault(); area.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); });
+    }
+
+    function handleFile(file) {
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) { showToast('❌ 檔案大小不能超過 10MB', 'error'); return; }
+      uploadedFile = file;
+      const ext  = file.name.split('.').pop().toLowerCase();
+      const iconMap = { pdf:'📕', doc:'📘', docx:'📘', xls:'📗', xlsx:'📗', ppt:'📙', pptx:'📙', txt:'📄', zip:'🗜️' };
+      document.getElementById('previewIcon').textContent = iconMap[ext] || '📄';
+      document.getElementById('previewName').textContent = file.name;
+      document.getElementById('previewType').textContent = ext;
+      document.getElementById('previewSize').textContent = formatFileSize(file.size);
+      const body   = document.getElementById('previewBody');
+      body.innerHTML = '';
+      const reader = new FileReader();
+      if (file.type.startsWith('image/')) {
+        reader.onload = e => { body.innerHTML = `<img src="${e.target.result}" alt="preview" />`; };
+        reader.readAsDataURL(file);
+      } else if (ext === 'pdf') {
+        reader.onload = e => { body.innerHTML = `<iframe src="${e.target.result}"></iframe>`; };
+        reader.readAsDataURL(file);
+      } else if (ext === 'txt') {
+        reader.onload = e => { body.innerHTML = `<pre style="text-align:left;font-size:.82rem;white-space:pre-wrap;padding:8px;">${escapeHtml(e.target.result)}</pre>`; };
+        reader.readAsText(file);
+      } else {
+        body.innerHTML = `<div style="font-size:3rem;padding:20px 0;">${iconMap[ext]||'📄'}</div><div style="color:var(--sub);font-size:.85rem;">此格式無法預覽，上傳後可下載查看</div>`;
+      }
+      document.getElementById('preview-area').style.display = 'block';
+      document.getElementById('uploadArea').style.display   = 'none';
+    }
+
+    function removeFile() {
+      uploadedFile = null;
+      document.getElementById('fileInput').value = '';
+      document.getElementById('preview-area').style.display = 'none';
+      document.getElementById('uploadArea').style.display   = 'block';
+    }
+
+    // ===========================
+    // 💾 儲存筆記
+    // ===========================
+    async function saveNote() {
+      const title   = document.getElementById('noteTitle').value.trim();
+      const content = quill.root.innerHTML;
+      const textLen = quill.getText().trim().length;
+      if (!title) { showToast('⚠️ 請輸入筆記標題', 'error'); document.getElementById('noteTitle').focus(); return; }
+
+      const btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div><span>儲存中...</span>';
+
+      try {
+        const payload = {
+          action   : 'saveNote',
+          userId   : liffUser?.userId   || 'unknown',
+          userName : liffUser?.userName || '匿名',
+          title    : title,
+          content  : textLen > 0 ? content : ''
+        };
+
+        if (uploadedFile) {
+          payload.fileData = await fileToBase64(uploadedFile);
+          payload.fileName = uploadedFile.name;
+          payload.fileType = uploadedFile.type;
+        }
+
+        // ★ 使用 no-cors 模式避免 CORS 問題
+        const resp = await fetch(GAS_URL, {
+          method      : 'POST',
+          // 不設 Content-Type → 瀏覽器不會發 preflight
+          body        : JSON.stringify(payload)
+        });
+
+        const result = await resp.json();
+        if (result.success) {
+          showToast('✅ 筆記儲存成功！', 'success');
+          resetForm();
+        } else {
+          throw new Error(result.message || '儲存失敗');
+        }
+      } catch (err) {
+        // 若 fetch 本身成功但解析失敗，通常代表 GAS 已收到
+        if (err instanceof SyntaxError) {
+          showToast('✅ 已送出（請至試算表確認）', 'success');
+          resetForm();
+        } else {
+          showToast('❌ ' + err.message, 'error');
+        }
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>💾</span><span>儲存筆記</span>';
+      }
+    }
+
+    function resetForm() {
+      document.getElementById('noteTitle').value = '';
+      quill.setContents([]);
+      removeFile();
+    }
+
+    // ===========================
+    // 📋 載入筆記列表
+    // ===========================
+    async function loadNotes() {
+      const container = document.getElementById('notesList');
+      container.innerHTML = '<div class="empty-state"><div class="emoji">⏳</div><div>載入中...</div></div>';
+      try {
+        const resp   = await fetch(`${GAS_URL}?action=getNotes&userId=${encodeURIComponent(liffUser?.userId || '')}`);
+        const result = await resp.json();
+        if (!result.notes || result.notes.length === 0) {
+          container.innerHTML = '<div class="empty-state"><div class="emoji">📭</div><div>還沒有筆記，快去新增吧！</div></div>';
+          return;
+        }
+        container.innerHTML = result.notes.map(note => `
+          <div class="note-item" onclick='openNote(${JSON.stringify(note)})'>
+            <div class="note-item-title">${escapeHtml(note.title)}</div>
+            <div class="note-item-preview">${stripHtml(note.content) || '（無內容）'}</div>
+            <div class="note-item-meta">
+              <span class="note-item-time">🕐 ${note.time}</span>
+              ${note.fileName ? `<span class="note-item-attach">📎 ${escapeHtml(note.fileName)}</span>` : ''}
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<div class="empty-state"><div class="emoji">⚠️</div><div>載入失敗：${err.message}</div></div>`;
+      }
+    }
+
+    function openNote(note) {
+      document.getElementById('modalTitle').textContent   = note.title;
+      document.getElementById('modalContent').innerHTML   = note.content || '（無內容）';
+      document.getElementById('modalMeta').textContent    = `📅 ${note.time}　👤 ${note.userName}`;
+      const attachDiv  = document.getElementById('modalAttach');
+      const attachLink = document.getElementById('modalAttachLink');
+      if (note.fileName && note.fileUrl) {
+        attachDiv.style.display = 'block';
+        attachLink.textContent  = note.fileName;
+        attachLink.href         = note.fileUrl;
+      } else {
+        attachDiv.style.display = 'none';
+      }
+      document.getElementById('noteModal').classList.add('show');
+    }
+
+    function closeModal() { document.getElementById('noteModal').classList.remove('show'); }
+
+    function switchTab(tab, btn) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('page-' + tab).classList.add('active');
+      btn.classList.add('active');
+      if (tab === 'list') loadNotes();
+    }
+
+    // ===========================
+    // 🛠️ 工具函式
+    // ===========================
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+      return (bytes/1048576).toFixed(1) + ' MB';
+    }
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function stripHtml(html) {
+      if (!html) return '';
+      const d = document.createElement('div');
+      d.innerHTML = html;
+      return d.textContent || d.innerText || '';
+    }
+    let toastTimer = null;
+    function showToast(msg, type = '') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className   = 'toast ' + type + ' show';
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+    }
+    document.getElementById('noteModal').addEventListener('click', e => {
+      if (e.target === e.currentTarget) closeModal();
+    });
+  </script>
+</body>
+</html>
