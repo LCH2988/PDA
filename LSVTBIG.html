@@ -6,7 +6,6 @@
   <title>📒 我的記事本</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
-    /* ===== CSS 變數 ===== */
     :root {
       --primary:       #4CAF50;
       --primary-dark:  #388E3C;
@@ -22,529 +21,165 @@
       --border:        #E0E0E0;
       --shadow:        0 2px 8px rgba(0,0,0,.10);
       --radius:        12px;
-      --font:          'Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC', sans-serif;
+      --font:          'Microsoft JhengHei','PingFang TC','Noto Sans TC',sans-serif;
       --base-fs:       20px;
       --max-w:         600px;
       --header-h:      56px;
       --transition:    .22s cubic-bezier(.4,0,.2,1);
     }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{font-size:var(--base-fs);-webkit-tap-highlight-color:transparent}
+    body{font-family:var(--font);background:var(--bg);color:var(--text-main);min-height:100dvh;overflow-x:hidden}
 
-    /* ===== Reset ===== */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { font-size: var(--base-fs); -webkit-tap-highlight-color: transparent; }
-    body {
-      font-family: var(--font);
-      background: var(--bg);
-      color: var(--text-main);
-      min-height: 100dvh;
-      overflow-x: hidden;
-    }
+    /* Splash */
+    #splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#e8f5e9 0%,#fff 100%);gap:20px;transition:opacity .4s,visibility .4s}
+    #splash.hidden{opacity:0;visibility:hidden}
+    .splash-logo{font-size:3rem;animation:bounce 1.2s infinite ease-in-out}
+    .splash-title{font-size:1.2rem;font-weight:700;color:var(--primary-dark);letter-spacing:.05em}
+    .spinner{width:44px;height:44px;border:4px solid var(--primary-light);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
+    .splash-msg{font-size:.75rem;color:var(--text-sub);letter-spacing:.04em}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
 
-    /* ===== 初始載入畫面 ===== */
-    #splash {
-      position: fixed; inset: 0; z-index: 9999;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      background: linear-gradient(160deg, #e8f5e9 0%, #ffffff 100%);
-      gap: 20px;
-      transition: opacity .4s, visibility .4s;
-    }
-    #splash.hidden { opacity: 0; visibility: hidden; }
-    .splash-logo {
-      font-size: 3rem;
-      animation: bounce 1.2s infinite ease-in-out;
-    }
-    .splash-title {
-      font-size: 1.2rem;
-      font-weight: 700;
-      color: var(--primary-dark);
-      letter-spacing: .05em;
-    }
-    .spinner {
-      width: 44px; height: 44px;
-      border: 4px solid var(--primary-light);
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      animation: spin .8s linear infinite;
-    }
-    .splash-msg {
-      font-size: .75rem;
-      color: var(--text-sub);
-      letter-spacing: .04em;
-    }
-    @keyframes spin  { to { transform: rotate(360deg); } }
-    @keyframes bounce {
-      0%,100% { transform: translateY(0); }
-      50%      { transform: translateY(-10px); }
-    }
+    /* Upload Progress */
+    #upload-progress-wrap{display:none;flex-direction:column;gap:6px;margin-top:8px}
+    #upload-progress-wrap.active{display:flex}
+    .progress-label{font-size:.65rem;color:var(--text-sub)}
+    .progress-bar-bg{height:6px;background:var(--border);border-radius:4px;overflow:hidden}
+    .progress-bar-fill{height:100%;background:var(--primary);border-radius:4px;width:0%;transition:width .3s}
 
-    /* ===== Loading Overlay（不干涉頁面切換）===== */
-    #loading-overlay {
-      position: fixed; inset: 0; z-index: 8000;
-      background: rgba(255,255,255,.72);
-      backdrop-filter: blur(3px);
-      display: flex; align-items: center; justify-content: center;
-      opacity: 0; visibility: hidden;
-      transition: opacity .2s, visibility .2s;
-    }
-    #loading-overlay.active { opacity: 1; visibility: visible; }
-    .overlay-spinner {
-      width: 48px; height: 48px;
-      border: 5px solid var(--primary-light);
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      animation: spin .75s linear infinite;
-    }
+    /* Loading Overlay */
+    #loading-overlay{position:fixed;inset:0;z-index:8000;background:rgba(255,255,255,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s}
+    #loading-overlay.active{opacity:1;visibility:visible}
+    .overlay-spinner{width:48px;height:48px;border:5px solid var(--primary-light);border-top-color:var(--primary);border-radius:50%;animation:spin .75s linear infinite}
 
-    /* ===== Toast ===== */
-    #toast-container {
-      position: fixed; bottom: 28px; left: 50%;
-      transform: translateX(-50%);
-      z-index: 9000;
-      display: flex; flex-direction: column;
-      align-items: center; gap: 8px;
-      pointer-events: none;
-      width: min(calc(var(--max-w) - 32px), calc(100vw - 32px));
-    }
-    .toast {
-      background: #323232;
-      color: #fff;
-      padding: 12px 20px;
-      border-radius: 24px;
-      font-size: .75rem;
-      line-height: 1.4;
-      box-shadow: 0 4px 16px rgba(0,0,0,.25);
-      opacity: 0;
-      transform: translateY(16px);
-      transition: opacity .3s, transform .3s;
-      max-width: 100%;
-      text-align: center;
-      pointer-events: auto;
-    }
-    .toast.show { opacity: 1; transform: translateY(0); }
-    .toast.success { background: var(--primary-dark); }
-    .toast.error   { background: var(--danger); }
-    .toast.warn    { background: var(--warn); }
+    /* Toast */
+    #toast-container{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:9000;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;width:min(calc(var(--max-w) - 32px),calc(100vw - 32px))}
+    .toast{background:#323232;color:#fff;padding:12px 20px;border-radius:24px;font-size:.75rem;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,.25);opacity:0;transform:translateY(16px);transition:opacity .3s,transform .3s;max-width:100%;text-align:center;pointer-events:auto}
+    .toast.show{opacity:1;transform:translateY(0)}
+    .toast.success{background:var(--primary-dark)}
+    .toast.error{background:var(--danger)}
+    .toast.warn{background:var(--warn)}
 
-    /* ===== Modal ===== */
-    #modal-backdrop {
-      position: fixed; inset: 0; z-index: 8500;
-      background: rgba(0,0,0,.45);
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px;
-      opacity: 0; visibility: hidden;
-      transition: opacity .25s, visibility .25s;
-    }
-    #modal-backdrop.active { opacity: 1; visibility: visible; }
-    .modal-box {
-      background: var(--card-bg);
-      border-radius: var(--radius);
-      padding: 28px 24px 20px;
-      width: 100%;
-      max-width: 360px;
-      box-shadow: 0 8px 32px rgba(0,0,0,.18);
-      transform: scale(.92);
-      transition: transform .25s;
-    }
-    #modal-backdrop.active .modal-box { transform: scale(1); }
-    .modal-title {
-      font-size: .9rem;
-      font-weight: 700;
-      color: var(--text-main);
-      margin-bottom: 10px;
-    }
-    .modal-msg {
-      font-size: .75rem;
-      color: var(--text-sub);
-      line-height: 1.6;
-      margin-bottom: 22px;
-    }
-    .modal-actions {
-      display: flex; gap: 10px; justify-content: flex-end;
-    }
-    .modal-actions button {
-      padding: 9px 20px;
-      border: none; border-radius: 8px;
-      font-family: var(--font); font-size: .75rem; font-weight: 600;
-      cursor: pointer; transition: filter var(--transition);
-    }
-    .modal-actions button:hover { filter: brightness(.92); }
-    .btn-modal-cancel { background: var(--border); color: var(--text-main); }
-    .btn-modal-confirm { background: var(--danger); color: #fff; }
+    /* Modal */
+    #modal-backdrop{position:fixed;inset:0;z-index:8500;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;visibility:hidden;transition:opacity .25s,visibility .25s}
+    #modal-backdrop.active{opacity:1;visibility:visible}
+    .modal-box{background:var(--card-bg);border-radius:var(--radius);padding:28px 24px 20px;width:100%;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,.18);transform:scale(.92);transition:transform .25s}
+    #modal-backdrop.active .modal-box{transform:scale(1)}
+    .modal-title{font-size:.9rem;font-weight:700;color:var(--text-main);margin-bottom:10px}
+    .modal-msg{font-size:.75rem;color:var(--text-sub);line-height:1.6;margin-bottom:22px}
+    .modal-actions{display:flex;gap:10px;justify-content:flex-end}
+    .modal-actions button{padding:9px 20px;border:none;border-radius:8px;font-family:var(--font);font-size:.75rem;font-weight:600;cursor:pointer;transition:filter var(--transition)}
+    .modal-actions button:hover{filter:brightness(.92)}
+    .btn-modal-cancel{background:var(--border);color:var(--text-main)}
+    .btn-modal-confirm{background:var(--danger);color:#fff}
 
-    /* ===== 頁面容器 ===== */
-    #app {
-      max-width: var(--max-w);
-      margin: 0 auto;
-      min-height: 100dvh;
-      display: flex; flex-direction: column;
-      position: relative;
-    }
+    /* App */
+    #app{max-width:var(--max-w);margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;position:relative}
 
-    /* ===== Header ===== */
-    .app-header {
-      position: sticky; top: 0; z-index: 100;
-      height: var(--header-h);
-      background: var(--primary);
-      display: flex; align-items: center;
-      padding: 0 16px;
-      box-shadow: 0 2px 8px rgba(76,175,80,.3);
-    }
-    .header-back {
-      background: none; border: none;
-      color: #fff; font-size: 1.3rem;
-      cursor: pointer; padding: 6px 10px 6px 0;
-      display: none; align-items: center;
-      transition: opacity var(--transition);
-    }
-    .header-back:hover { opacity: .75; }
-    .header-back.visible { display: flex; }
-    .header-title {
-      flex: 1;
-      color: #fff;
-      font-size: .95rem;
-      font-weight: 700;
-      letter-spacing: .04em;
-    }
-    .header-avatar {
-      width: 34px; height: 34px;
-      border-radius: 50%;
-      border: 2px solid rgba(255,255,255,.7);
-      object-fit: cover;
-      background: var(--primary-light);
-      display: flex; align-items: center; justify-content: center;
-      font-size: .8rem; color: var(--primary-dark); font-weight: 700;
-      overflow: hidden;
-      flex-shrink: 0;
-    }
+    /* Header */
+    .app-header{position:sticky;top:0;z-index:100;height:var(--header-h);background:var(--primary);display:flex;align-items:center;padding:0 16px;box-shadow:0 2px 8px rgba(76,175,80,.3)}
+    .header-back{background:none;border:none;color:#fff;font-size:1.3rem;cursor:pointer;padding:6px 10px 6px 0;display:none;align-items:center;transition:opacity var(--transition)}
+    .header-back:hover{opacity:.75}
+    .header-back.visible{display:flex}
+    .header-title{flex:1;color:#fff;font-size:.95rem;font-weight:700;letter-spacing:.04em}
+    .header-avatar{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.7);object-fit:cover;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:.8rem;color:var(--primary-dark);font-weight:700;overflow:hidden;flex-shrink:0}
 
-    /* ===== 頁面切換 ===== */
-    .page {
-      flex: 1;
-      display: none;
-      flex-direction: column;
-      animation: fadeIn .2s ease;
-    }
-    .page.active { display: flex; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    /* Pages */
+    .page{flex:1;display:none;flex-direction:column;animation:fadeIn .2s ease}
+    .page.active{display:flex}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    #page-list{padding-bottom:88px}
 
-    /* ===== 列表頁 ===== */
-    #page-list { padding-bottom: 88px; }
+    /* Search */
+    .search-bar{padding:12px 16px 8px;background:var(--card-bg);border-bottom:1px solid var(--border);position:sticky;top:var(--header-h);z-index:90}
+    .search-wrap{display:flex;align-items:center;background:var(--bg);border:1.5px solid var(--border);border-radius:24px;padding:0 14px;gap:8px;transition:border-color var(--transition)}
+    .search-wrap:focus-within{border-color:var(--primary)}
+    .search-wrap span{color:var(--text-hint);font-size:.85rem}
+    #search-input{flex:1;border:none;background:transparent;font-family:var(--font);font-size:.75rem;color:var(--text-main);padding:10px 0;outline:none}
+    #search-input::placeholder{color:var(--text-hint)}
+    .search-clear{background:none;border:none;color:var(--text-hint);font-size:.85rem;cursor:pointer;padding:4px;display:none}
+    .search-clear.visible{display:block}
+    .list-meta{padding:10px 16px 4px;font-size:.65rem;color:var(--text-sub)}
+    .note-list{padding:4px 16px 0;display:flex;flex-direction:column;gap:12px}
 
-    .search-bar {
-      padding: 12px 16px 8px;
-      background: var(--card-bg);
-      border-bottom: 1px solid var(--border);
-      position: sticky; top: var(--header-h); z-index: 90;
-    }
-    .search-wrap {
-      display: flex; align-items: center;
-      background: var(--bg);
-      border: 1.5px solid var(--border);
-      border-radius: 24px;
-      padding: 0 14px;
-      gap: 8px;
-      transition: border-color var(--transition);
-    }
-    .search-wrap:focus-within { border-color: var(--primary); }
-    .search-wrap span { color: var(--text-hint); font-size: .85rem; }
-    #search-input {
-      flex: 1; border: none; background: transparent;
-      font-family: var(--font); font-size: .75rem;
-      color: var(--text-main); padding: 10px 0;
-      outline: none;
-    }
-    #search-input::placeholder { color: var(--text-hint); }
-    .search-clear {
-      background: none; border: none;
-      color: var(--text-hint); font-size: .85rem;
-      cursor: pointer; padding: 4px;
-      display: none;
-    }
-    .search-clear.visible { display: block; }
+    /* Card */
+    .note-card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;display:flex;cursor:pointer;transition:transform var(--transition),box-shadow var(--transition);position:relative}
+    .note-card:active{transform:scale(.985);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+    .note-card-stripe{width:5px;background:var(--primary);flex-shrink:0}
+    .note-card-body{flex:1;padding:14px 14px 12px;min-width:0}
+    .note-card-title{font-size:.85rem;font-weight:700;color:var(--text-main);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .note-card-meta{font-size:.6rem;color:var(--text-sub);display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center}
+    .meta-badge{display:inline-flex;align-items:center;gap:3px;background:var(--bg);border-radius:10px;padding:2px 8px}
+    .note-card-content{font-size:.7rem;color:var(--text-sub);line-height:1.6;white-space:pre-wrap;word-break:break-word;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    .note-card-attachments{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+    .attach-thumb{width:80px;height:80px;border-radius:8px;object-fit:cover;border:1px solid var(--border);cursor:pointer;transition:opacity var(--transition)}
+    .attach-thumb:hover{opacity:.85}
+    .attach-file{display:inline-flex;align-items:center;gap:4px;font-size:.6rem;color:var(--primary-dark);background:var(--primary-light);border-radius:8px;padding:4px 10px;cursor:pointer;text-decoration:none;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .note-card-viewers{margin-top:8px;font-size:.6rem;color:var(--text-hint)}
+    .note-card-actions{display:flex;gap:6px;margin-top:10px;justify-content:flex-end}
+    .btn-edit,.btn-delete{border:none;border-radius:8px;font-family:var(--font);font-size:.65rem;font-weight:600;padding:6px 14px;cursor:pointer;transition:filter var(--transition)}
+    .btn-edit{background:var(--primary-light);color:var(--primary-dark)}
+    .btn-delete{background:var(--danger-light);color:var(--danger)}
+    .btn-edit:hover,.btn-delete:hover{filter:brightness(.93)}
+    .empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;color:var(--text-hint);gap:12px}
+    .empty-state .icon{font-size:3rem}
+    .empty-state p{font-size:.75rem;text-align:center;line-height:1.6}
 
-    .list-meta {
-      padding: 10px 16px 4px;
-      font-size: .65rem;
-      color: var(--text-sub);
-    }
+    /* FAB */
+    #fab-add{position:fixed;bottom:28px;right:calc(50% - min(var(--max-w),100vw)/2 + 20px);width:56px;height:56px;border-radius:50%;background:var(--primary);color:#fff;border:none;font-size:1.6rem;box-shadow:0 4px 16px rgba(76,175,80,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform var(--transition),box-shadow var(--transition);z-index:200}
+    #fab-add:hover{transform:scale(1.08);box-shadow:0 6px 20px rgba(76,175,80,.55)}
+    #fab-add:active{transform:scale(.94)}
+    #fab-add.hidden{display:none}
 
-    .note-list {
-      padding: 4px 16px 0;
-      display: flex; flex-direction: column; gap: 12px;
-    }
+    /* Form */
+    #page-form{padding:16px 16px 100px;gap:16px;overflow-y:auto}
+    .form-group{display:flex;flex-direction:column;gap:6px}
+    .form-label{font-size:.7rem;font-weight:700;color:var(--text-sub);letter-spacing:.04em}
+    .form-label .required{color:var(--danger);margin-left:2px}
+    .form-input,.form-textarea{background:var(--card-bg);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;font-family:var(--font);font-size:.8rem;color:var(--text-main);outline:none;transition:border-color var(--transition);width:100%}
+    .form-input:focus,.form-textarea:focus{border-color:var(--primary)}
+    .form-textarea{resize:vertical;min-height:160px;line-height:1.7}
 
-    /* ===== 記事卡片 ===== */
-    .note-card {
-      background: var(--card-bg);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-      display: flex;
-      cursor: pointer;
-      transition: transform var(--transition), box-shadow var(--transition);
-      position: relative;
-    }
-    .note-card:active { transform: scale(.985); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-    .note-card-stripe {
-      width: 5px;
-      background: var(--primary);
-      flex-shrink: 0;
-    }
-    .note-card-body {
-      flex: 1; padding: 14px 14px 12px;
-      min-width: 0;
-    }
-    .note-card-title {
-      font-size: .85rem;
-      font-weight: 700;
-      color: var(--text-main);
-      margin-bottom: 5px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .note-card-meta {
-      font-size: .6rem;
-      color: var(--text-sub);
-      display: flex; flex-wrap: wrap; gap: 6px;
-      margin-bottom: 8px;
-      align-items: center;
-    }
-    .meta-badge {
-      display: inline-flex; align-items: center; gap: 3px;
-      background: var(--bg);
-      border-radius: 10px;
-      padding: 2px 8px;
-    }
-    .note-card-content {
-      font-size: .7rem;
-      color: var(--text-sub);
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-break: break-word;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    .note-card-attachments {
-      display: flex; flex-wrap: wrap; gap: 6px;
-      margin-top: 10px;
-    }
-    .attach-thumb {
-      width: 80px; height: 80px;
-      border-radius: 8px;
-      object-fit: cover;
-      border: 1px solid var(--border);
-      cursor: pointer;
-      transition: opacity var(--transition);
-    }
-    .attach-thumb:hover { opacity: .85; }
-    .attach-file {
-      display: inline-flex; align-items: center; gap: 4px;
-      font-size: .6rem; color: var(--primary-dark);
-      background: var(--primary-light);
-      border-radius: 8px; padding: 4px 10px;
-      cursor: pointer; text-decoration: none;
-      max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .note-card-viewers {
-      margin-top: 8px;
-      font-size: .6rem; color: var(--text-hint);
-    }
-    .note-card-actions {
-      display: flex; gap: 6px;
-      margin-top: 10px;
-      justify-content: flex-end;
-    }
-    .btn-edit, .btn-delete {
-      border: none; border-radius: 8px;
-      font-family: var(--font); font-size: .65rem; font-weight: 600;
-      padding: 6px 14px; cursor: pointer;
-      transition: filter var(--transition);
-    }
-    .btn-edit   { background: var(--primary-light); color: var(--primary-dark); }
-    .btn-delete { background: var(--danger-light);  color: var(--danger); }
-    .btn-edit:hover   { filter: brightness(.93); }
-    .btn-delete:hover { filter: brightness(.93); }
+    /* Upload */
+    .upload-area{border:2px dashed var(--border);border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:border-color var(--transition),background var(--transition);background:var(--card-bg)}
+    .upload-area:hover{border-color:var(--primary);background:#f9fff9}
+    .upload-area.drag-over{border-color:var(--primary);background:var(--primary-light)}
+    .upload-icon{font-size:1.6rem;margin-bottom:6px}
+    .upload-text{font-size:.7rem;color:var(--text-sub);line-height:1.6}
+    .upload-text strong{color:var(--primary-dark)}
+    #file-input{display:none}
+    .preview-list{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}
+    .preview-item{position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px}
+    .preview-item img{width:100%;height:100%;object-fit:cover}
+    .preview-item .file-icon{font-size:1.4rem}
+    .preview-item .file-name{font-size:.45rem;color:var(--text-sub);padding:0 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
+    .preview-remove{position:absolute;top:3px;right:3px;width:20px;height:20px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:50%;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
 
-    .empty-state {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      padding: 60px 24px;
-      color: var(--text-hint);
-      gap: 12px;
-    }
-    .empty-state .icon { font-size: 3rem; }
-    .empty-state p { font-size: .75rem; text-align: center; line-height: 1.6; }
+    /* Form Footer */
+    .form-footer{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(var(--max-w),100vw);background:var(--card-bg);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:10px;z-index:200}
+    .btn-cancel,.btn-save{flex:1;padding:13px;border:none;border-radius:10px;font-family:var(--font);font-size:.8rem;font-weight:700;cursor:pointer;transition:filter var(--transition),transform var(--transition)}
+    .btn-cancel{background:var(--border);color:var(--text-main)}
+    .btn-save{background:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(76,175,80,.35)}
+    .btn-cancel:hover{filter:brightness(.93)}
+    .btn-save:hover{filter:brightness(.93)}
+    .btn-save:active{transform:scale(.97)}
+    .btn-save:disabled{opacity:.6;cursor:not-allowed}
 
-    /* ===== FAB 新增按鈕 ===== */
-    #fab-add {
-      position: fixed;
-      bottom: 28px; right: calc(50% - min(var(--max-w),100vw)/2 + 20px);
-      width: 56px; height: 56px;
-      border-radius: 50%;
-      background: var(--primary);
-      color: #fff;
-      border: none;
-      font-size: 1.6rem;
-      box-shadow: 0 4px 16px rgba(76,175,80,.45);
-      cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      transition: transform var(--transition), box-shadow var(--transition);
-      z-index: 200;
-    }
-    #fab-add:hover  { transform: scale(1.08); box-shadow: 0 6px 20px rgba(76,175,80,.55); }
-    #fab-add:active { transform: scale(.94); }
-    #fab-add.hidden { display: none; }
-
-    /* ===== 表單頁 ===== */
-    #page-form {
-      padding: 16px 16px 100px;
-      gap: 16px;
-      overflow-y: auto;
-    }
-
-    .form-group { display: flex; flex-direction: column; gap: 6px; }
-    .form-label {
-      font-size: .7rem; font-weight: 700;
-      color: var(--text-sub);
-      letter-spacing: .04em;
-    }
-    .form-label .required { color: var(--danger); margin-left: 2px; }
-    .form-input, .form-textarea {
-      background: var(--card-bg);
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 14px;
-      font-family: var(--font); font-size: .8rem;
-      color: var(--text-main);
-      outline: none;
-      transition: border-color var(--transition);
-      width: 100%;
-    }
-    .form-input:focus, .form-textarea:focus { border-color: var(--primary); }
-    .form-textarea {
-      resize: vertical;
-      min-height: 160px;
-      line-height: 1.7;
-    }
-
-    /* 附件上傳 */
-    .upload-area {
-      border: 2px dashed var(--border);
-      border-radius: 10px;
-      padding: 20px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color var(--transition), background var(--transition);
-      background: var(--card-bg);
-    }
-    .upload-area:hover { border-color: var(--primary); background: #f9fff9; }
-    .upload-area.drag-over { border-color: var(--primary); background: var(--primary-light); }
-    .upload-icon { font-size: 1.6rem; margin-bottom: 6px; }
-    .upload-text { font-size: .7rem; color: var(--text-sub); line-height: 1.6; }
-    .upload-text strong { color: var(--primary-dark); }
-    #file-input { display: none; }
-
-    .preview-list {
-      display: flex; flex-wrap: wrap; gap: 10px;
-      margin-top: 4px;
-    }
-    .preview-item {
-      position: relative;
-      width: 80px; height: 80px;
-      border-radius: 8px;
-      overflow: hidden;
-      border: 1px solid var(--border);
-      background: var(--bg);
-      display: flex; align-items: center; justify-content: center;
-      flex-direction: column; gap: 4px;
-    }
-    .preview-item img {
-      width: 100%; height: 100%;
-      object-fit: cover;
-    }
-    .preview-item .file-icon { font-size: 1.4rem; }
-    .preview-item .file-name {
-      font-size: .45rem; color: var(--text-sub);
-      padding: 0 4px; text-align: center;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      width: 100%;
-    }
-    .preview-remove {
-      position: absolute; top: 3px; right: 3px;
-      width: 20px; height: 20px;
-      background: rgba(0,0,0,.55);
-      color: #fff; border: none; border-radius: 50%;
-      font-size: .65rem; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      line-height: 1;
-    }
-
-    /* 表單底部按鈕 */
-    .form-footer {
-      position: fixed;
-      bottom: 0; left: 50%;
-      transform: translateX(-50%);
-      width: min(var(--max-w), 100vw);
-      background: var(--card-bg);
-      border-top: 1px solid var(--border);
-      padding: 12px 16px;
-      display: flex; gap: 10px;
-      z-index: 200;
-    }
-    .btn-cancel, .btn-save {
-      flex: 1; padding: 13px;
-      border: none; border-radius: 10px;
-      font-family: var(--font); font-size: .8rem; font-weight: 700;
-      cursor: pointer;
-      transition: filter var(--transition), transform var(--transition);
-    }
-    .btn-cancel { background: var(--border); color: var(--text-main); }
-    .btn-save   { background: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(76,175,80,.35); }
-    .btn-cancel:hover { filter: brightness(.93); }
-    .btn-save:hover   { filter: brightness(.93); }
-    .btn-save:active  { transform: scale(.97); }
-    .btn-save:disabled { opacity: .6; cursor: not-allowed; }
-
-    /* ===== 錯誤畫面 ===== */
-    #error-screen {
-      position: fixed; inset: 0; z-index: 9998;
-      background: #fff;
-      display: none;
-      flex-direction: column;
-      align-items: center; justify-content: center;
-      padding: 32px;
-      gap: 16px;
-      text-align: center;
-    }
-    #error-screen.active { display: flex; }
-    .error-icon { font-size: 3rem; }
-    .error-title { font-size: .95rem; font-weight: 700; color: var(--danger); }
-    .error-msg   { font-size: .7rem; color: var(--text-sub); line-height: 1.7; }
-    .btn-retry {
-      background: var(--primary); color: #fff;
-      border: none; border-radius: 10px;
-      padding: 12px 32px;
-      font-family: var(--font); font-size: .8rem; font-weight: 700;
-      cursor: pointer; margin-top: 8px;
-    }
-
-    /* ===== 分隔線 ===== */
-    .divider {
-      height: 1px; background: var(--border);
-      margin: 4px 0;
-    }
-
-    /* ===== Scrollbar ===== */
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    /* Error */
+    #error-screen{position:fixed;inset:0;z-index:9998;background:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;padding:32px;gap:16px;text-align:center}
+    #error-screen.active{display:flex}
+    .error-icon{font-size:3rem}
+    .error-title{font-size:.95rem;font-weight:700;color:var(--danger)}
+    .error-msg{font-size:.7rem;color:var(--text-sub);line-height:1.7}
+    .btn-retry{background:var(--primary);color:#fff;border:none;border-radius:10px;padding:12px 32px;font-family:var(--font);font-size:.8rem;font-weight:700;cursor:pointer;margin-top:8px}
+    ::-webkit-scrollbar{width:4px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
   </style>
 </head>
 <body>
 
-<!-- ===== 初始載入畫面 ===== -->
 <div id="splash">
   <div class="splash-logo">📒</div>
   <div class="splash-title">我的記事本</div>
@@ -552,7 +187,6 @@
   <div class="splash-msg" id="splash-msg">正在驗證身份...</div>
 </div>
 
-<!-- ===== 錯誤畫面 ===== -->
 <div id="error-screen">
   <div class="error-icon">⚠️</div>
   <div class="error-title" id="error-title">初始化失敗</div>
@@ -560,17 +194,13 @@
   <button class="btn-retry" id="btn-retry">重新嘗試</button>
 </div>
 
-<!-- ===== Loading Overlay ===== -->
 <div id="loading-overlay"><div class="overlay-spinner"></div></div>
-
-<!-- ===== Toast ===== -->
 <div id="toast-container"></div>
 
-<!-- ===== Modal ===== -->
 <div id="modal-backdrop">
   <div class="modal-box">
-    <div class="modal-title" id="modal-title">確認刪除</div>
-    <div class="modal-msg"   id="modal-msg">此操作無法復原，確定要繼續嗎？</div>
+    <div class="modal-title" id="modal-title">確認</div>
+    <div class="modal-msg"   id="modal-msg"></div>
     <div class="modal-actions">
       <button class="btn-modal-cancel"  id="modal-cancel">取消</button>
       <button class="btn-modal-confirm" id="modal-confirm">確認</button>
@@ -578,17 +208,13 @@
   </div>
 </div>
 
-<!-- ===== 主應用 ===== -->
 <div id="app">
-
-  <!-- Header -->
   <header class="app-header">
     <button class="header-back" id="header-back" aria-label="返回">&#8592;</button>
     <div class="header-title" id="header-title">📒 我的記事本</div>
     <div class="header-avatar" id="header-avatar">?</div>
   </header>
 
-  <!-- 列表頁 -->
   <div class="page active" id="page-list">
     <div class="search-bar">
       <div class="search-wrap">
@@ -601,7 +227,6 @@
     <div class="note-list" id="note-list"></div>
   </div>
 
-  <!-- 表單頁 -->
   <div class="page" id="page-form">
     <div class="form-group">
       <label class="form-label" for="f-title">標題<span class="required">*</span></label>
@@ -612,15 +237,17 @@
       <textarea class="form-textarea" id="f-content" placeholder="輸入記事內容..."></textarea>
     </div>
     <div class="form-group">
-      <label class="form-label">附件（最多 10 個，單檔 ≤ 50MB）</label>
+      <label class="form-label">附件（最多 10 個，單檔 ≤ 10MB）</label>
       <div class="upload-area" id="upload-area">
         <div class="upload-icon">📎</div>
-        <div class="upload-text">
-          點擊選擇或拖曳檔案<br/>
-          <strong>支援圖片、PDF、文件等</strong>
-        </div>
+        <div class="upload-text">點擊選擇或拖曳檔案<br/><strong>支援圖片、PDF、文件等</strong></div>
       </div>
       <input type="file" id="file-input" multiple accept="*/*" />
+      <!-- 上傳進度 -->
+      <div id="upload-progress-wrap">
+        <div class="progress-label" id="progress-label">上傳中 0 / 0</div>
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-bar"></div></div>
+      </div>
       <div class="preview-list" id="preview-list"></div>
     </div>
     <div class="form-footer">
@@ -628,140 +255,120 @@
       <button class="btn-save"   id="btn-save">💾 儲存</button>
     </div>
   </div>
+</div>
 
-</div><!-- /app -->
-
-<!-- FAB -->
 <button id="fab-add" aria-label="新增記事">＋</button>
 
 <script>
 /* ============================================================
-   設定區 — 請依實際環境修改
+   設定區
 ============================================================ */
 const CONFIG = {
-  LIFF_ID:     '2009456572-AUDE1qmM',          // ← 替換為你的 LIFF ID
-  GAS_URL:     'https://script.google.com/macros/s/AKfycbxLy8_yIDX3i24Dk2jSvNosFB2B7tC6MVqCvcDURcf56mJWVfldkIDmHSvDsZf07nVkdw/exec',  // ← 替換為 GAS Web App URL
-  ADMIN_IDS:   ['Ua334bad3a531232d64480d9730797759'],       // ← 管理員 LINE userID 清單
-  DEV_MODE:    false,                    // ← 正式上線請改為 false
-  DEV_USER: {
-    userId:      'dev_user_001',
-    displayName: '開發測試帳號',
-    pictureUrl:  ''
-  }
+  LIFF_ID   : '2009456572-AUDE1qmM',
+  GAS_URL   : 'https://script.google.com/macros/s/AKfycby7DNSK9y26fA0tJz2kLDcvxSEDAqsrUSc8Vayc6ZuECkmNJWAMrrOCmojBLGp2DPkj-Q/exec',
+  ADMIN_IDS : ['Ua334bad3a531232d64480d9730797759'],
+  DEV_MODE  : true,
+  DEV_USER  : { userId:'dev_user_001', displayName:'開發測試帳號', pictureUrl:'' }
 };
 
 /* ============================================================
    全域狀態
 ============================================================ */
 const State = {
-  user:        null,   // { userId, displayName, pictureUrl }
-  notes:       [],     // 所有記事（已過濾 deleted）
-  filtered:    [],     // 搜尋後的記事
-  editingId:   null,   // 編輯中的 NoteID（null = 新增）
-  pendingFiles:[],     // 待上傳的 File 物件陣列
-  existAttach: [],     // 編輯時已有的附件 URL 陣列
-  page:        'list'  // 'list' | 'form'
+  user        : null,
+  notes       : [],
+  filtered    : [],
+  editingId   : null,
+  pendingFiles: [],
+  existAttach : [],
+  page        : 'list'
 };
 
 /* ============================================================
    工具函式
 ============================================================ */
-/** XSS 防護 */
-function escHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#39;');
-}
+const escHtml = s =>
+  String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
-/** Google Drive URL → thumbnail URL */
-function driveThumb(url) {
+const driveThumb = url => {
   const m = String(url).match(/\/d\/([^/]+)\//);
   return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w200` : null;
-}
+};
 
-/** 判斷是否為圖片 URL */
-function isImageUrl(url) {
-  return /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(url)
-    || url.includes('drive.google.com/thumbnail')
-    || url.includes('drive.google.com/file');
-}
+const isImageUrl = url =>
+  /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(url)
+  || url.includes('drive.google.com/thumbnail')
+  || url.includes('drive.google.com/file');
 
-/** 格式化時間 */
-function fmtTime(ts) {
+const fmtTime = ts => {
   if (!ts) return '—';
   const d = new Date(ts);
   if (isNaN(d)) return ts;
-  const pad = n => String(n).padStart(2,'0');
-  return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} `
-       + `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 
-/** File → base64（去除 header）*/
-function toBase64(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload  = e => res(e.target.result.split(',')[1]);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
-}
-
-/** 產生唯一 ID */
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-}
+/** File → base64 字串（不含 header）*/
+const toBase64 = file => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload  = e => res(e.target.result.split(',')[1]);
+  r.onerror = rej;
+  r.readAsDataURL(file);
+});
 
 /* ============================================================
    UI 工具
 ============================================================ */
-// Loading Overlay
 const Overlay = {
-  show(){ document.getElementById('loading-overlay').classList.add('active'); },
-  hide(){ document.getElementById('loading-overlay').classList.remove('active'); }
+  show(){ document.getElementById('loading-overlay').classList.add('active') },
+  hide(){ document.getElementById('loading-overlay').classList.remove('active') }
 };
 
-// Toast
 function showToast(msg, type='', duration=2800) {
-  const c = document.getElementById('toast-container');
+  const c  = document.getElementById('toast-container');
   const el = document.createElement('div');
   el.className = `toast${type ? ' '+type : ''}`;
   el.textContent = msg;
   c.appendChild(el);
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => el.classList.add('show'));
-  });
-  setTimeout(() => {
-    el.classList.remove('show');
-    setTimeout(() => el.remove(), 350);
-  }, duration);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, duration);
 }
 
-// Modal（取代 confirm）
 function showModal({ title='確認', msg='', confirmText='確認', cancelText='取消', danger=true } = {}) {
   return new Promise(resolve => {
     const bd = document.getElementById('modal-backdrop');
-    document.getElementById('modal-title').textContent  = title;
-    document.getElementById('modal-msg').textContent    = msg;
+    document.getElementById('modal-title').textContent   = title;
+    document.getElementById('modal-msg').textContent     = msg;
     document.getElementById('modal-confirm').textContent = confirmText;
     document.getElementById('modal-cancel').textContent  = cancelText;
-    document.getElementById('modal-confirm').className  =
-      danger ? 'btn-modal-confirm' : 'btn-modal-confirm btn-modal-ok';
     bd.classList.add('active');
-
-    const cleanup = (val) => {
+    const cleanup = val => {
       bd.classList.remove('active');
-      document.getElementById('modal-confirm').replaceWith(
-        document.getElementById('modal-confirm').cloneNode(true));
-      document.getElementById('modal-cancel').replaceWith(
-        document.getElementById('modal-cancel').cloneNode(true));
+      // 重新綁定（移除舊 listener）
+      ['modal-confirm','modal-cancel'].forEach(id => {
+        const el = document.getElementById(id);
+        el.replaceWith(el.cloneNode(true));
+      });
       resolve(val);
     };
     document.getElementById('modal-confirm').addEventListener('click', () => cleanup(true),  { once:true });
     document.getElementById('modal-cancel') .addEventListener('click', () => cleanup(false), { once:true });
   });
+}
+
+/* ============================================================
+   進度條
+============================================================ */
+function setProgress(current, total) {
+  const wrap  = document.getElementById('upload-progress-wrap');
+  const label = document.getElementById('progress-label');
+  const bar   = document.getElementById('progress-bar');
+  if (total === 0) { wrap.classList.remove('active'); return; }
+  wrap.classList.add('active');
+  label.textContent = `上傳附件中 ${current} / ${total}`;
+  bar.style.width   = `${Math.round((current / total) * 100)}%`;
 }
 
 /* ============================================================
@@ -771,67 +378,48 @@ function switchPage(name) {
   State.page = name;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(`page-${name}`).classList.add('active');
-
-  const backBtn = document.getElementById('header-back');
-  const fabAdd  = document.getElementById('fab-add');
-  const hTitle  = document.getElementById('header-title');
-
+  const back  = document.getElementById('header-back');
+  const fab   = document.getElementById('fab-add');
+  const title = document.getElementById('header-title');
   if (name === 'list') {
-    backBtn.classList.remove('visible');
-    fabAdd.classList.remove('hidden');
-    hTitle.textContent = '📒 我的記事本';
+    back.classList.remove('visible');
+    fab.classList.remove('hidden');
+    title.textContent = '📒 我的記事本';
   } else {
-    backBtn.classList.add('visible');
-    fabAdd.classList.add('hidden');
-    hTitle.textContent = State.editingId ? '✏️ 編輯記事' : '➕ 新增記事';
+    back.classList.add('visible');
+    fab.classList.add('hidden');
+    title.textContent = State.editingId ? '✏️ 編輯記事' : '➕ 新增記事';
   }
 }
 
 /* ============================================================
-   LINE LIFF 身份驗證
+   LIFF 身份驗證
 ============================================================ */
 async function initLiff() {
   setSplashMsg('正在初始化 LIFF...');
   try {
     await liff.init({ liffId: CONFIG.LIFF_ID });
-  } catch (err) {
-    console.warn('[LIFF] init failed:', err);
+  } catch(err) {
     if (CONFIG.DEV_MODE) {
-      console.info('[LIFF] DEV_MODE: using mock user');
+      console.warn('[LIFF] DEV_MODE: mock user');
       State.user = CONFIG.DEV_USER;
       return;
     }
-    showErrorScreen('LIFF 初始化失敗', `無法載入 LINE 登入模組。\n${err.message ?? ''}`);
+    showErrorScreen('LIFF 初始化失敗', err.message ?? '請重新開啟應用程式');
     throw err;
   }
-
-  if (!liff.isLoggedIn()) {
-    setSplashMsg('跳轉至 LINE 登入...');
-    liff.login();
-    return; // 頁面將跳轉，後續不執行
-  }
-
+  if (!liff.isLoggedIn()) { liff.login(); return; }
   setSplashMsg('正在取得使用者資料...');
   try {
-    const profile = await liff.getProfile();
-    State.user = {
-      userId:      profile.userId,
-      displayName: profile.displayName,
-      pictureUrl:  profile.pictureUrl ?? ''
-    };
-  } catch (err) {
-    console.error('[LIFF] getProfile failed:', err);
-    showErrorScreen(
-      '無法取得使用者資料',
-      '請確認您已授權此應用程式存取您的 LINE 個人資料，然後點擊重新嘗試。'
-    );
+    const p = await liff.getProfile();
+    State.user = { userId: p.userId, displayName: p.displayName, pictureUrl: p.pictureUrl ?? '' };
+  } catch(err) {
+    showErrorScreen('無法取得使用者資料', '請授權應用程式存取 LINE 個人資料後重試。');
     throw err;
   }
 }
 
-function setSplashMsg(msg) {
-  document.getElementById('splash-msg').textContent = msg;
-}
+const setSplashMsg = msg => { document.getElementById('splash-msg').textContent = msg; };
 
 function showErrorScreen(title, msg) {
   document.getElementById('error-title').textContent = title;
@@ -841,25 +429,65 @@ function showErrorScreen(title, msg) {
 }
 
 /* ============================================================
-   API 呼叫（GAS Web App）
+   ★ 核心修正：純 GET API 呼叫（解決 CORS）
 ============================================================ */
+
+/**
+ * 統一 GET 請求
+ * 使用 mode:'cors' + redirect:'follow'，GAS 會自動帶 CORS header
+ */
 async function gasGet(params) {
   const url = new URL(CONFIG.GAS_URL);
-  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), { redirect:'follow' });
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+  });
+  const res = await fetch(url.toString(), {
+    method  : 'GET',
+    redirect: 'follow'   // ← 必要：跟隨 GAS 302 重定向
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
-async function gasPost(body) {
-  const res = await fetch(CONFIG.GAS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    redirect: 'follow'
+/**
+ * ★ 單檔上傳（GET 方式）
+ * 將 base64 資料以 URL 參數傳送，GAS doGet 處理上傳
+ * 注意：單檔限制降為 10MB（URL 長度限制）
+ */
+async function uploadSingleFile(file) {
+  const MAX_GET_MB = 10;
+  if (file.size > MAX_GET_MB * 1024 * 1024) {
+    throw new Error(`「${file.name}」超過 ${MAX_GET_MB}MB，無法上傳`);
+  }
+  const b64 = await toBase64(file);
+  const result = await gasGet({
+    action  : 'uploadFile',
+    userId  : State.user.userId,
+    fileName: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    data    : b64          // base64 字串（URL encode 由 URLSearchParams 自動處理）
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  if (!result.success) throw new Error(result.error ?? '上傳失敗');
+  return result.url;       // Drive 檔案 URL
+}
+
+/**
+ * ★ 批次上傳附件，帶進度回報
+ */
+async function uploadAllFiles(files) {
+  const urls = [];
+  setProgress(0, files.length);
+  for (let i = 0; i < files.length; i++) {
+    try {
+      const url = await uploadSingleFile(files[i]);
+      urls.push(url);
+      setProgress(i + 1, files.length);
+    } catch(err) {
+      showToast(`⚠️ ${err.message}`, 'warn', 4000);
+    }
+  }
+  setProgress(0, 0); // 隱藏進度條
+  return urls;
 }
 
 /* ============================================================
@@ -869,7 +497,7 @@ async function loadNotes() {
   Overlay.show();
   try {
     const data = await gasGet({ action:'list', userId: State.user.userId });
-    State.notes = (data.notes ?? []).filter(n => n.Status !== 'deleted');
+    State.notes    = (data.notes ?? []).filter(n => n.Status !== 'deleted');
     applySearch();
   } catch(e) {
     showToast('載入記事失敗：' + e.message, 'error');
@@ -884,40 +512,30 @@ async function saveNote() {
   if (!title)   { showToast('請輸入標題', 'warn'); return; }
   if (!content) { showToast('請輸入內容', 'warn'); return; }
 
-  document.getElementById('btn-save').disabled = true;
+  const saveBtn = document.getElementById('btn-save');
+  saveBtn.disabled = true;
   Overlay.show();
 
   try {
-    let result;
+    /* Step 1：逐一上傳新附件（純 GET）*/
+    let newUrls = [];
     if (State.pendingFiles.length > 0) {
-      // 有附件 → POST
-      const filesData = await Promise.all(
-        State.pendingFiles.map(async f => ({
-          name:     f.name,
-          mimeType: f.type || 'application/octet-stream',
-          data:     await toBase64(f)
-        }))
-      );
-      result = await gasPost({
-        action:      State.editingId ? 'update' : 'create',
-        noteId:      State.editingId ?? '',
-        title, content,
-        userId:      State.user.userId,
-        userName:    State.user.displayName,
-        existAttach: JSON.stringify(State.existAttach),
-        files:       filesData
-      });
-    } else {
-      // 無附件 → GET
-      result = await gasGet({
-        action:      State.editingId ? 'update' : 'create',
-        noteId:      State.editingId ?? '',
-        title, content,
-        userId:      State.user.userId,
-        userName:    State.user.displayName,
-        existAttach: JSON.stringify(State.existAttach)
-      });
+      newUrls = await uploadAllFiles(State.pendingFiles);
     }
+
+    /* Step 2：合併附件 URL */
+    const allAttach = [...State.existAttach, ...newUrls];
+
+    /* Step 3：儲存記事（純 GET）*/
+    const result = await gasGet({
+      action     : State.editingId ? 'update' : 'create',
+      noteId     : State.editingId ?? '',
+      title,
+      content,
+      userId     : State.user.userId,
+      userName   : State.user.displayName,
+      attachments: JSON.stringify(allAttach)   // ← 直接傳完整 URL 陣列
+    });
 
     if (result.success) {
       showToast(State.editingId ? '記事已更新 ✓' : '記事已新增 ✓', 'success');
@@ -930,38 +548,25 @@ async function saveNote() {
   } catch(e) {
     showToast('儲存失敗：' + e.message, 'error');
   } finally {
-    document.getElementById('btn-save').disabled = false;
+    saveBtn.disabled = false;
     Overlay.hide();
   }
 }
 
 async function deleteNote(noteId) {
   const ok = await showModal({
-    title: '刪除記事',
-    msg:   '確定要刪除這則記事嗎？此操作無法復原。',
-    confirmText: '刪除',
-    danger: true
+    title:'刪除記事', msg:'確定要刪除這則記事嗎？此操作無法復原。',
+    confirmText:'刪除', danger:true
   });
   if (!ok) return;
-
   Overlay.show();
   try {
-    const result = await gasGet({
-      action: 'delete',
-      noteId,
-      userId: State.user.userId
-    });
-    if (result.success) {
-      showToast('記事已刪除', 'success');
-      await loadNotes();
-    } else {
-      throw new Error(result.error ?? '無權限刪除');
-    }
+    const r = await gasGet({ action:'delete', noteId, userId: State.user.userId });
+    if (r.success) { showToast('記事已刪除', 'success'); await loadNotes(); }
+    else throw new Error(r.error ?? '無權限');
   } catch(e) {
     showToast('刪除失敗：' + e.message, 'error');
-  } finally {
-    Overlay.hide();
-  }
+  } finally { Overlay.hide(); }
 }
 
 /* ============================================================
@@ -971,22 +576,15 @@ function renderNoteList(notes) {
   const container = document.getElementById('note-list');
   const meta      = document.getElementById('list-meta');
   container.innerHTML = '';
-
-  meta.textContent = notes.length
-    ? `共 ${notes.length} 則記事`
-    : '';
-
+  meta.textContent = notes.length ? `共 ${notes.length} 則記事` : '';
   if (!notes.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-state';
-    empty.innerHTML = `
-      <div class="icon">📭</div>
-      <p>目前沒有記事<br/>點擊右下角 ＋ 新增第一則記事</p>`;
-    container.appendChild(empty);
+    const el = document.createElement('div');
+    el.className = 'empty-state';
+    el.innerHTML = `<div class="icon">📭</div><p>目前沒有記事<br/>點擊右下角 ＋ 新增第一則記事</p>`;
+    container.appendChild(el);
     return;
   }
-
-  notes.forEach(note => container.appendChild(buildCard(note)));
+  notes.forEach(n => container.appendChild(buildCard(n)));
 }
 
 function buildCard(note) {
@@ -994,24 +592,13 @@ function buildCard(note) {
   const isAdmin = CONFIG.ADMIN_IDS.includes(State.user.userId);
   const canEdit = isOwner || isAdmin;
 
-  // 附件解析
   let attachUrls = [];
-  try {
-    attachUrls = note.Attachments
-      ? JSON.parse(note.Attachments)
-      : [];
-  } catch { attachUrls = []; }
-
-  // 閱覽者解析
+  try { attachUrls = note.Attachments ? JSON.parse(note.Attachments) : []; } catch {}
   let viewers = [];
-  try {
-    viewers = note.Viewers ? JSON.parse(note.Viewers) : [];
-  } catch { viewers = []; }
+  try { viewers = note.Viewers ? JSON.parse(note.Viewers) : []; } catch {}
 
-  /* 卡片外框 */
   const card = document.createElement('div');
   card.className = 'note-card';
-  card.dataset.noteId = note.NoteID;
 
   const stripe = document.createElement('div');
   stripe.className = 'note-card-stripe';
@@ -1021,32 +608,31 @@ function buildCard(note) {
   body.className = 'note-card-body';
   card.appendChild(body);
 
-  /* 標題 */
+  // 標題
   const titleEl = document.createElement('div');
   titleEl.className = 'note-card-title';
   titleEl.textContent = note.Title;
   body.appendChild(titleEl);
 
-  /* Meta */
+  // Meta
   const metaEl = document.createElement('div');
   metaEl.className = 'note-card-meta';
-  metaEl.innerHTML = `
-    <span class="meta-badge">👤 ${escHtml(note.CreatedByUserName ?? '未知')}</span>
-    <span class="meta-badge">🕐 ${escHtml(fmtTime(note.CreatedAt))}</span>
-    <span class="meta-badge">👁 ${escHtml(String(note.ViewCount ?? 0))} 次</span>`;
+  metaEl.innerHTML =
+    `<span class="meta-badge">👤 ${escHtml(note.CreatedByUserName ?? '未知')}</span>` +
+    `<span class="meta-badge">🕐 ${escHtml(fmtTime(note.CreatedAt))}</span>` +
+    `<span class="meta-badge">👁 ${escHtml(String(note.ViewCount ?? 0))} 次</span>`;
   body.appendChild(metaEl);
 
-  /* 內容 */
+  // 內容
   const contentEl = document.createElement('div');
   contentEl.className = 'note-card-content';
   contentEl.textContent = note.Content;
   body.appendChild(contentEl);
 
-  /* 附件 */
+  // 附件
   if (attachUrls.length) {
-    const attachWrap = document.createElement('div');
-    attachWrap.className = 'note-card-attachments';
-
+    const wrap = document.createElement('div');
+    wrap.className = 'note-card-attachments';
     attachUrls.forEach(url => {
       const thumb = driveThumb(url);
       if (thumb || isImageUrl(url)) {
@@ -1055,63 +641,45 @@ function buildCard(note) {
         img.src = thumb ?? url;
         img.alt = '附件圖片';
         img.dataset.openUrl = url;
-        img.addEventListener('click', e => {
-          e.stopPropagation();
-          window.open(img.dataset.openUrl, '_blank');
-        });
-        attachWrap.appendChild(img);
+        img.addEventListener('click', e => { e.stopPropagation(); window.open(img.dataset.openUrl,'_blank'); });
+        wrap.appendChild(img);
       } else {
-        const link = document.createElement('a');
-        link.className = 'attach-file';
-        link.href = url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = '📎 ' + decodeURIComponent(url.split('/').pop().split('?')[0]);
-        link.addEventListener('click', e => e.stopPropagation());
-        attachWrap.appendChild(link);
+        const a = document.createElement('a');
+        a.className = 'attach-file';
+        a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.textContent = '📎 ' + decodeURIComponent(url.split('/').pop().split('?')[0]);
+        a.addEventListener('click', e => e.stopPropagation());
+        wrap.appendChild(a);
       }
     });
-
-    body.appendChild(attachWrap);
+    body.appendChild(wrap);
   }
 
-  /* 閱覽者 */
+  // 閱覽者
   if (viewers.length) {
-    const viewersEl = document.createElement('div');
-    viewersEl.className = 'note-card-viewers';
-    viewersEl.textContent = `👥 閱覽者：${viewers.slice(0,5).map(v=>escHtml(v)).join('、')}${viewers.length>5?` 等 ${viewers.length} 人`:''}`;
-    body.appendChild(viewersEl);
+    const vEl = document.createElement('div');
+    vEl.className = 'note-card-viewers';
+    const names = viewers.slice(0,5).map(v => escHtml(v)).join('、');
+    vEl.textContent = `👥 閱覽者：${names}${viewers.length > 5 ? ` 等 ${viewers.length} 人` : ''}`;
+    body.appendChild(vEl);
   }
 
-  /* 編輯/刪除按鈕 */
+  // 操作按鈕
   if (canEdit) {
     const actions = document.createElement('div');
     actions.className = 'note-card-actions';
-
     const btnEdit = document.createElement('button');
-    btnEdit.className = 'btn-edit';
-    btnEdit.textContent = '✏️ 編輯';
-    btnEdit.addEventListener('click', e => {
-      e.stopPropagation();
-      openEditForm(note);
-    });
-
+    btnEdit.className = 'btn-edit'; btnEdit.textContent = '✏️ 編輯';
+    btnEdit.addEventListener('click', e => { e.stopPropagation(); openEditForm(note); });
     const btnDel = document.createElement('button');
-    btnDel.className = 'btn-delete';
-    btnDel.textContent = '🗑 刪除';
-    btnDel.addEventListener('click', e => {
-      e.stopPropagation();
-      deleteNote(note.NoteID);
-    });
-
+    btnDel.className = 'btn-delete'; btnDel.textContent = '🗑 刪除';
+    btnDel.addEventListener('click', e => { e.stopPropagation(); deleteNote(note.NoteID); });
     actions.appendChild(btnEdit);
     actions.appendChild(btnDel);
     body.appendChild(actions);
   }
 
-  /* 點擊卡片 → 記錄閱覽 */
   card.addEventListener('click', () => recordView(note.NoteID));
-
   return card;
 }
 
@@ -1120,19 +688,10 @@ function buildCard(note) {
 ============================================================ */
 async function recordView(noteId) {
   try {
-    await gasGet({
-      action: 'view',
-      noteId,
-      userId:   State.user.userId,
-      userName: State.user.displayName
-    });
-    // 靜默更新 ViewCount
+    await gasGet({ action:'view', noteId, userId: State.user.userId, userName: State.user.displayName });
     const idx = State.notes.findIndex(n => n.NoteID === noteId);
-    if (idx >= 0) {
-      State.notes[idx].ViewCount = (parseInt(State.notes[idx].ViewCount) || 0) + 1;
-      applySearch();
-    }
-  } catch { /* 靜默失敗 */ }
+    if (idx >= 0) { State.notes[idx].ViewCount = (parseInt(State.notes[idx].ViewCount)||0)+1; applySearch(); }
+  } catch { /* 靜默 */ }
 }
 
 /* ============================================================
@@ -1153,33 +712,27 @@ function applySearch() {
    表單操作
 ============================================================ */
 function openNewForm() {
-  State.editingId  = null;
-  State.existAttach = [];
-  resetForm();
-  switchPage('form');
+  State.editingId = null; State.existAttach = [];
+  resetForm(); switchPage('form');
 }
 
 function openEditForm(note) {
   State.editingId = note.NoteID;
   document.getElementById('f-title').value   = note.Title   ?? '';
   document.getElementById('f-content').value = note.Content ?? '';
-
-  try {
-    State.existAttach = note.Attachments ? JSON.parse(note.Attachments) : [];
-  } catch { State.existAttach = []; }
-
+  try { State.existAttach = note.Attachments ? JSON.parse(note.Attachments) : []; } catch { State.existAttach = []; }
   State.pendingFiles = [];
   renderExistingAttachPreviews();
   switchPage('form');
 }
 
 function resetForm() {
-  document.getElementById('f-title').value   = '';
-  document.getElementById('f-content').value = '';
+  document.getElementById('f-title').value    = '';
+  document.getElementById('f-content').value  = '';
   document.getElementById('file-input').value = '';
-  State.pendingFiles  = [];
-  State.existAttach   = [];
+  State.pendingFiles = []; State.existAttach = [];
   document.getElementById('preview-list').innerHTML = '';
+  setProgress(0, 0);
 }
 
 function renderExistingAttachPreviews() {
@@ -1188,122 +741,78 @@ function renderExistingAttachPreviews() {
   State.existAttach.forEach((url, i) => {
     const item = document.createElement('div');
     item.className = 'preview-item';
-
     const thumb = driveThumb(url);
     if (thumb || isImageUrl(url)) {
-      const img = document.createElement('img');
-      img.src = thumb ?? url;
-      img.alt = '附件';
+      const img = document.createElement('img'); img.src = thumb ?? url; img.alt = '附件';
       item.appendChild(img);
     } else {
-      const icon = document.createElement('div');
-      icon.className = 'file-icon';
-      icon.textContent = '📎';
-      const name = document.createElement('div');
-      name.className = 'file-name';
+      const icon = document.createElement('div'); icon.className = 'file-icon'; icon.textContent = '📎';
+      const name = document.createElement('div'); name.className = 'file-name';
       name.textContent = decodeURIComponent(url.split('/').pop().split('?')[0]);
-      item.appendChild(icon);
-      item.appendChild(name);
+      item.appendChild(icon); item.appendChild(name);
     }
-
-    const rmBtn = document.createElement('button');
-    rmBtn.className = 'preview-remove';
-    rmBtn.textContent = '✕';
-    rmBtn.dataset.idx = i;
-    rmBtn.dataset.type = 'exist';
-    rmBtn.addEventListener('click', () => {
-      State.existAttach.splice(i, 1);
-      renderExistingAttachPreviews();
-      renderNewFilePreviews();
-    });
-    item.appendChild(rmBtn);
-    list.appendChild(item);
+    const rm = document.createElement('button'); rm.className = 'preview-remove'; rm.textContent = '✕';
+    rm.addEventListener('click', () => { State.existAttach.splice(i,1); renderExistingAttachPreviews(); renderNewFilePreviews(); });
+    item.appendChild(rm); list.appendChild(item);
   });
 }
 
 function renderNewFilePreviews() {
-  // 先移除舊的 new-type 預覽
   document.querySelectorAll('.preview-item[data-new]').forEach(el => el.remove());
   const list = document.getElementById('preview-list');
-
   State.pendingFiles.forEach((file, i) => {
     const item = document.createElement('div');
-    item.className = 'preview-item';
-    item.dataset.new = '1';
-
+    item.className = 'preview-item'; item.dataset.new = '1';
     if (file.type.startsWith('image/')) {
       const img = document.createElement('img');
-      const reader = new FileReader();
-      reader.onload = e => { img.src = e.target.result; };
-      reader.readAsDataURL(file);
+      const r = new FileReader(); r.onload = e => { img.src = e.target.result; }; r.readAsDataURL(file);
       item.appendChild(img);
     } else {
-      const icon = document.createElement('div');
-      icon.className = 'file-icon';
-      icon.textContent = '📎';
-      const name = document.createElement('div');
-      name.className = 'file-name';
-      name.textContent = file.name;
-      item.appendChild(icon);
-      item.appendChild(name);
+      const icon = document.createElement('div'); icon.className = 'file-icon'; icon.textContent = '📎';
+      const name = document.createElement('div'); name.className = 'file-name'; name.textContent = file.name;
+      item.appendChild(icon); item.appendChild(name);
     }
-
-    const rmBtn = document.createElement('button');
-    rmBtn.className = 'preview-remove';
-    rmBtn.textContent = '✕';
-    rmBtn.addEventListener('click', () => {
-      State.pendingFiles.splice(i, 1);
-      renderNewFilePreviews();
-    });
-    item.appendChild(rmBtn);
-    list.appendChild(item);
+    const rm = document.createElement('button'); rm.className = 'preview-remove'; rm.textContent = '✕';
+    rm.addEventListener('click', () => { State.pendingFiles.splice(i,1); renderNewFilePreviews(); });
+    item.appendChild(rm); list.appendChild(item);
   });
 }
 
 /* ============================================================
-   附件上傳處理
+   附件選擇處理
 ============================================================ */
 function handleFileSelect(files) {
-  const MAX_SIZE  = 50 * 1024 * 1024; // 50MB
+  const MAX_MB    = 10;   // GET 方式限制 10MB
   const MAX_COUNT = 10;
-
   const valid = [];
-  let hasErr = false;
-
   Array.from(files).forEach(f => {
-    if (f.size > MAX_SIZE) {
-      showToast(`「${f.name}」超過 50MB 限制`, 'warn');
-      hasErr = true;
-      return;
+    if (f.size > MAX_MB * 1024 * 1024) {
+      showToast(`「${f.name}」超過 ${MAX_MB}MB 限制`, 'warn'); return;
     }
     valid.push(f);
   });
-
   const total = State.existAttach.length + State.pendingFiles.length + valid.length;
   if (total > MAX_COUNT) {
-    showToast(`附件總數不可超過 ${MAX_COUNT} 個`, 'warn');
     const allow = MAX_COUNT - State.existAttach.length - State.pendingFiles.length;
+    showToast(`附件總數不可超過 ${MAX_COUNT} 個，已截斷`, 'warn');
     State.pendingFiles.push(...valid.slice(0, allow));
   } else {
     State.pendingFiles.push(...valid);
   }
-
   document.getElementById('file-input').value = '';
   renderNewFilePreviews();
 }
 
 /* ============================================================
-   Header 頭像
+   頭像渲染
 ============================================================ */
 function renderAvatar() {
   const el = document.getElementById('header-avatar');
   if (State.user.pictureUrl) {
     const img = document.createElement('img');
-    img.src   = State.user.pictureUrl;
-    img.alt   = State.user.displayName;
+    img.src = State.user.pictureUrl; img.alt = State.user.displayName;
     img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
-    el.innerHTML = '';
-    el.appendChild(img);
+    el.innerHTML = ''; el.appendChild(img);
   } else {
     el.textContent = (State.user.displayName ?? '?')[0].toUpperCase();
   }
@@ -1313,60 +822,33 @@ function renderAvatar() {
    事件綁定
 ============================================================ */
 function bindEvents() {
-  // FAB
-  document.getElementById('fab-add').addEventListener('click', openNewForm);
-
-  // Header 返回
-  document.getElementById('header-back').addEventListener('click', () => {
-    switchPage('list');
-  });
-
-  // 表單取消
-  document.getElementById('btn-cancel').addEventListener('click', () => {
-    switchPage('list');
-  });
-
-  // 表單儲存
-  document.getElementById('btn-save').addEventListener('click', saveNote);
-
-  // 搜尋
-  const searchInput = document.getElementById('search-input');
-  const searchClear = document.getElementById('search-clear');
-  let searchTimer;
-  searchInput.addEventListener('input', () => {
-    searchClear.classList.toggle('visible', searchInput.value.length > 0);
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(applySearch, 300);
-  });
-  searchClear.addEventListener('click', () => {
-    searchInput.value = '';
-    searchClear.classList.remove('visible');
-    applySearch();
-  });
-
-  // 附件上傳
-  const uploadArea = document.getElementById('upload-area');
-  const fileInput  = document.getElementById('file-input');
-
-  uploadArea.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', e => handleFileSelect(e.target.files));
-
-  uploadArea.addEventListener('dragover', e => {
-    e.preventDefault();
-    uploadArea.classList.add('drag-over');
-  });
-  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
-  uploadArea.addEventListener('drop', e => {
-    e.preventDefault();
-    uploadArea.classList.remove('drag-over');
-    handleFileSelect(e.dataTransfer.files);
-  });
-
-  // 重試按鈕
-  document.getElementById('btn-retry').addEventListener('click', () => {
+  document.getElementById('fab-add')    .addEventListener('click', openNewForm);
+  document.getElementById('header-back').addEventListener('click', () => switchPage('list'));
+  document.getElementById('btn-cancel') .addEventListener('click', () => switchPage('list'));
+  document.getElementById('btn-save')   .addEventListener('click', saveNote);
+  document.getElementById('btn-retry')  .addEventListener('click', () => {
     document.getElementById('error-screen').classList.remove('active');
     initApp();
   });
+
+  // 搜尋
+  const si = document.getElementById('search-input');
+  const sc = document.getElementById('search-clear');
+  let st;
+  si.addEventListener('input', () => {
+    sc.classList.toggle('visible', si.value.length > 0);
+    clearTimeout(st); st = setTimeout(applySearch, 300);
+  });
+  sc.addEventListener('click', () => { si.value = ''; sc.classList.remove('visible'); applySearch(); });
+
+  // 附件上傳
+  const ua = document.getElementById('upload-area');
+  const fi = document.getElementById('file-input');
+  ua.addEventListener('click', () => fi.click());
+  fi.addEventListener('change', e => handleFileSelect(e.target.files));
+  ua.addEventListener('dragover',  e => { e.preventDefault(); ua.classList.add('drag-over'); });
+  ua.addEventListener('dragleave', () => ua.classList.remove('drag-over'));
+  ua.addEventListener('drop', e => { e.preventDefault(); ua.classList.remove('drag-over'); handleFileSelect(e.dataTransfer.files); });
 }
 
 /* ============================================================
@@ -1374,29 +856,20 @@ function bindEvents() {
 ============================================================ */
 async function initApp() {
   document.getElementById('splash').classList.remove('hidden');
-
   try {
     await initLiff();
-    if (!State.user) return; // 等待 LINE 登入跳轉
-
+    if (!State.user) return;
     renderAvatar();
     setSplashMsg('載入記事中...');
     await loadNotes();
-
-    // 隱藏 Splash
     document.getElementById('splash').classList.add('hidden');
     switchPage('list');
   } catch(e) {
-    console.error('[App] initApp error:', e);
-    // showErrorScreen 已在各步驟中呼叫
+    console.error('[App]', e);
   }
 }
 
-// DOM Ready
-document.addEventListener('DOMContentLoaded', () => {
-  bindEvents();
-  initApp();
-});
+document.addEventListener('DOMContentLoaded', () => { bindEvents(); initApp(); });
 </script>
 </body>
 </html>
