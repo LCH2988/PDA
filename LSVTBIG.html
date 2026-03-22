@@ -1,884 +1,1171 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>📒 我的記事本</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>網路記事本</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
-    :root{--primary:#4CAF50;--primary-dark:#388E3C;--primary-light:#C8E6C9;--danger:#e53935;--danger-light:#ffebee;--warn:#FB8C00;--text-main:#212121;--text-sub:#757575;--text-hint:#BDBDBD;--bg:#F5F5F5;--card-bg:#FFFFFF;--border:#E0E0E0;--shadow:0 2px 8px rgba(0,0,0,.10);--radius:12px;--font:'Microsoft JhengHei','PingFang TC','Noto Sans TC',sans-serif;--base-fs:20px;--max-w:600px;--header-h:56px;--transition:.22s cubic-bezier(.4,0,.2,1)}
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html{font-size:var(--base-fs);-webkit-tap-highlight-color:transparent}
-    body{font-family:var(--font);background:var(--bg);color:var(--text-main);min-height:100dvh;overflow-x:hidden}
-    #splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#e8f5e9 0%,#fff 100%);gap:20px;transition:opacity .4s,visibility .4s}
-    #splash.hidden{opacity:0;visibility:hidden}
-    .splash-logo{font-size:3rem;animation:bounce 1.2s infinite ease-in-out}
-    .splash-title{font-size:1.2rem;font-weight:700;color:var(--primary-dark);letter-spacing:.05em}
-    .spinner{width:44px;height:44px;border:4px solid var(--primary-light);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
-    .splash-msg{font-size:.75rem;color:var(--text-sub);letter-spacing:.04em}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-    #upload-progress-wrap{display:none;flex-direction:column;gap:6px;margin-top:8px}
-    #upload-progress-wrap.active{display:flex}
-    .progress-label{font-size:.65rem;color:var(--text-sub)}
-    .progress-bar-bg{height:6px;background:var(--border);border-radius:4px;overflow:hidden}
-    .progress-bar-fill{height:100%;background:var(--primary);border-radius:4px;width:0%;transition:width .3s}
-    #loading-overlay{position:fixed;inset:0;z-index:8000;background:rgba(255,255,255,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s}
-    #loading-overlay.active{opacity:1;visibility:visible}
-    .overlay-spinner{width:48px;height:48px;border:5px solid var(--primary-light);border-top-color:var(--primary);border-radius:50%;animation:spin .75s linear infinite}
-    #toast-container{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:9000;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;width:min(calc(var(--max-w) - 32px),calc(100vw - 32px))}
-    .toast{background:#323232;color:#fff;padding:12px 20px;border-radius:24px;font-size:.75rem;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,.25);opacity:0;transform:translateY(16px);transition:opacity .3s,transform .3s;max-width:100%;text-align:center;pointer-events:auto}
-    .toast.show{opacity:1;transform:translateY(0)}
-    .toast.success{background:var(--primary-dark)}
-    .toast.error{background:var(--danger)}
-    .toast.warn{background:var(--warn)}
-    #modal-backdrop{position:fixed;inset:0;z-index:8500;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;visibility:hidden;transition:opacity .25s,visibility .25s}
-    #modal-backdrop.active{opacity:1;visibility:visible}
-    .modal-box{background:var(--card-bg);border-radius:var(--radius);padding:28px 24px 20px;width:100%;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,.18);transform:scale(.92);transition:transform .25s}
-    #modal-backdrop.active .modal-box{transform:scale(1)}
-    .modal-title{font-size:.9rem;font-weight:700;color:var(--text-main);margin-bottom:10px}
-    .modal-msg{font-size:.75rem;color:var(--text-sub);line-height:1.6;margin-bottom:22px}
-    .modal-actions{display:flex;gap:10px;justify-content:flex-end}
-    .modal-actions button{padding:9px 20px;border:none;border-radius:8px;font-family:var(--font);font-size:.75rem;font-weight:600;cursor:pointer;transition:filter var(--transition)}
-    .modal-actions button:hover{filter:brightness(.92)}
-    .btn-modal-cancel{background:var(--border);color:var(--text-main)}
-    .btn-modal-confirm{background:var(--danger);color:#fff}
-    #app{max-width:var(--max-w);margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;position:relative}
-    .app-header{position:sticky;top:0;z-index:100;height:var(--header-h);background:var(--primary);display:flex;align-items:center;padding:0 16px;box-shadow:0 2px 8px rgba(76,175,80,.3)}
-    .header-back{background:none;border:none;color:#fff;font-size:1.3rem;cursor:pointer;padding:6px 10px 6px 0;display:none;align-items:center;transition:opacity var(--transition)}
-    .header-back:hover{opacity:.75}
-    .header-back.visible{display:flex}
-    .header-title{flex:1;color:#fff;font-size:.95rem;font-weight:700;letter-spacing:.04em}
-    .header-avatar{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.7);object-fit:cover;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:.8rem;color:var(--primary-dark);font-weight:700;overflow:hidden;flex-shrink:0}
-    .page{flex:1;display:none;flex-direction:column;animation:fadeIn .2s ease}
-    .page.active{display:flex}
-    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-    #page-list{padding-bottom:88px}
-    .search-bar{padding:12px 16px 8px;background:var(--card-bg);border-bottom:1px solid var(--border);position:sticky;top:var(--header-h);z-index:90}
-    .search-wrap{display:flex;align-items:center;background:var(--bg);border:1.5px solid var(--border);border-radius:24px;padding:0 14px;gap:8px;transition:border-color var(--transition)}
-    .search-wrap:focus-within{border-color:var(--primary)}
-    .search-wrap span{color:var(--text-hint);font-size:.85rem}
-    #search-input{flex:1;border:none;background:transparent;font-family:var(--font);font-size:.75rem;color:var(--text-main);padding:10px 0;outline:none}
-    #search-input::placeholder{color:var(--text-hint)}
-    .search-clear{background:none;border:none;color:var(--text-hint);font-size:.85rem;cursor:pointer;padding:4px;display:none}
-    .search-clear.visible{display:block}
-    .list-meta{padding:10px 16px 4px;font-size:.65rem;color:var(--text-sub)}
-    .note-list{padding:4px 16px 0;display:flex;flex-direction:column;gap:12px}
-    .note-card{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;display:flex;cursor:pointer;transition:transform var(--transition),box-shadow var(--transition);position:relative}
-    .note-card:active{transform:scale(.985);box-shadow:0 1px 4px rgba(0,0,0,.08)}
-    .note-card-stripe{width:5px;background:var(--primary);flex-shrink:0}
-    .note-card-body{flex:1;padding:14px 14px 12px;min-width:0}
-    .note-card-title{font-size:.85rem;font-weight:700;color:var(--text-main);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .note-card-meta{font-size:.6rem;color:var(--text-sub);display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center}
-    .meta-badge{display:inline-flex;align-items:center;gap:3px;background:var(--bg);border-radius:10px;padding:2px 8px}
-    .note-card-content{font-size:.7rem;color:var(--text-sub);line-height:1.6;white-space:pre-wrap;word-break:break-word;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-    .note-card-attachments{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-    .attach-thumb{width:80px;height:80px;border-radius:8px;object-fit:cover;border:1px solid var(--border);cursor:pointer;transition:opacity var(--transition)}
-    .attach-thumb:hover{opacity:.85}
-    .attach-file{display:inline-flex;align-items:center;gap:4px;font-size:.6rem;color:var(--primary-dark);background:var(--primary-light);border-radius:8px;padding:4px 10px;cursor:pointer;text-decoration:none;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .note-card-viewers{margin-top:8px;font-size:.6rem;color:var(--text-hint)}
-    .note-card-actions{display:flex;gap:6px;margin-top:10px;justify-content:flex-end}
-    .btn-edit,.btn-delete{border:none;border-radius:8px;font-family:var(--font);font-size:.65rem;font-weight:600;padding:6px 14px;cursor:pointer;transition:filter var(--transition)}
-    .btn-edit{background:var(--primary-light);color:var(--primary-dark)}
-    .btn-delete{background:var(--danger-light);color:var(--danger)}
-    .btn-edit:hover,.btn-delete:hover{filter:brightness(.93)}
-    .empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;color:var(--text-hint);gap:12px}
-    .empty-state .icon{font-size:3rem}
-    .empty-state p{font-size:.75rem;text-align:center;line-height:1.6}
-    #fab-add{position:fixed;bottom:28px;right:calc(50% - min(var(--max-w),100vw)/2 + 20px);width:56px;height:56px;border-radius:50%;background:var(--primary);color:#fff;border:none;font-size:1.6rem;box-shadow:0 4px 16px rgba(76,175,80,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform var(--transition),box-shadow var(--transition);z-index:200}
-    #fab-add:hover{transform:scale(1.08);box-shadow:0 6px 20px rgba(76,175,80,.55)}
-    #fab-add:active{transform:scale(.94)}
-    #fab-add.hidden{display:none}
-    #page-form{padding:16px 16px 100px;gap:16px;overflow-y:auto}
-    .form-group{display:flex;flex-direction:column;gap:6px}
-    .form-label{font-size:.7rem;font-weight:700;color:var(--text-sub);letter-spacing:.04em}
-    .form-label .required{color:var(--danger);margin-left:2px}
-    .form-input,.form-textarea{background:var(--card-bg);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;font-family:var(--font);font-size:.8rem;color:var(--text-main);outline:none;transition:border-color var(--transition);width:100%}
-    .form-input:focus,.form-textarea:focus{border-color:var(--primary)}
-    .form-textarea{resize:vertical;min-height:160px;line-height:1.7}
-    .upload-area{border:2px dashed var(--border);border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:border-color var(--transition),background var(--transition);background:var(--card-bg)}
-    .upload-area:hover{border-color:var(--primary);background:#f9fff9}
-    .upload-area.drag-over{border-color:var(--primary);background:var(--primary-light)}
-    .upload-icon{font-size:1.6rem;margin-bottom:6px}
-    .upload-text{font-size:.7rem;color:var(--text-sub);line-height:1.6}
-    .upload-text strong{color:var(--primary-dark)}
-    #file-input{display:none}
-    .preview-list{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}
-    .preview-item{position:relative;width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px}
-    .preview-item img{width:100%;height:100%;object-fit:cover}
-    .preview-item .file-icon{font-size:1.4rem}
-    .preview-item .file-name{font-size:.45rem;color:var(--text-sub);padding:0 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
-    .preview-remove{position:absolute;top:3px;right:3px;width:20px;height:20px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:50%;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
-    .form-footer{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(var(--max-w),100vw);background:var(--card-bg);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:10px;z-index:200}
-    .btn-cancel,.btn-save{flex:1;padding:13px;border:none;border-radius:10px;font-family:var(--font);font-size:.8rem;font-weight:700;cursor:pointer;transition:filter var(--transition),transform var(--transition)}
-    .btn-cancel{background:var(--border);color:var(--text-main)}
-    .btn-save{background:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(76,175,80,.35)}
-    .btn-cancel:hover{filter:brightness(.93)}
-    .btn-save:hover{filter:brightness(.93)}
-    .btn-save:active{transform:scale(.97)}
-    .btn-save:disabled{opacity:.6;cursor:not-allowed}
-    #error-screen{position:fixed;inset:0;z-index:9998;background:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;padding:32px;gap:16px;text-align:center}
-    #error-screen.active{display:flex}
-    .error-icon{font-size:3rem}
-    .error-title{font-size:.95rem;font-weight:700;color:var(--danger)}
-    .error-msg{font-size:.7rem;color:var(--text-sub);line-height:1.7}
-    .btn-retry{background:var(--primary);color:#fff;border:none;border-radius:10px;padding:12px 32px;font-family:var(--font);font-size:.8rem;font-weight:700;cursor:pointer;margin-top:8px}
-    ::-webkit-scrollbar{width:4px}
-    ::-webkit-scrollbar-track{background:transparent}
-    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+    /* =============================================
+       CSS 變數
+    ============================================= */
+    :root {
+      --primary:   #4CAF50;
+      --secondary: #6c757d;
+      --danger:    #dc3545;
+      --warning:   #fd7e14;
+      --bg:        #f4f4f9;
+      --text:      #333;
+      --fs-base:   20px;
+      --fs-lg:     24px;
+      --fs-xl:     28px;
+      --radius:    10px;
+      --shadow:    0 4px 6px rgba(0,0,0,.1);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: "Microsoft JhengHei", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 15px;
+      font-size: var(--fs-base);
+      line-height: 1.6;
+    }
+
+    h1, h2 { color: var(--primary); text-align: center; margin-bottom: 20px; }
+
+    .container { max-width: 600px; margin: 0 auto; }
+
+    /* ── 按鈕 ── */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 15px;
+      margin: 15px 0;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: var(--fs-lg);
+      font-weight: bold;
+      cursor: pointer;
+      text-align: center;
+      transition: opacity .2s;
+    }
+    .btn-secondary { background: var(--secondary); }
+    .btn-danger    { background: var(--danger); }
+    .btn-warning   { background: var(--warning); }
+    .btn:hover     { opacity: .88; }
+    .btn:disabled  { opacity: .5; cursor: not-allowed; }
+
+    /* ── 表單 ── */
+    .form-group { margin-bottom: 20px; }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+      font-size: var(--fs-lg);
+    }
+    .char-count {
+      font-size: 14px;
+      color: #999;
+      text-align: right;
+      margin-top: 4px;
+    }
+    .char-count.over { color: var(--danger); font-weight: bold; }
+
+    input[type="text"],
+    textarea,
+    input[type="file"] {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      font-size: var(--fs-base);
+      transition: border-color .2s;
+    }
+    input[type="text"]:focus,
+    textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    textarea { height: 200px; resize: vertical; }
+
+    /* ── 標籤 ── */
+    .tag-badge {
+      display: inline-block;
+      background: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #a5d6a7;
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 14px;
+      margin: 2px;
+    }
+    .tag-filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 15px;
+    }
+    .tag-filter-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 2px solid var(--primary);
+      background: #fff;
+      color: var(--primary);
+      font-size: 16px;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .tag-filter-btn.active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    /* ── 記事卡片 ── */
+    .note-card {
+      background: #fff;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      border-left: 8px solid var(--primary);
+      cursor: pointer;
+      transition: box-shadow .2s;
+    }
+    .note-card:hover { box-shadow: 0 6px 16px rgba(0,0,0,.15); }
+    .note-title   { font-size: var(--fs-xl); font-weight: bold; margin-bottom: 10px; color: #222; }
+    .note-meta    { font-size: 16px; color: #777; margin-bottom: 10px; }
+    .note-content { white-space: pre-wrap; margin-bottom: 15px; font-size: var(--fs-base); }
+    .note-tags    { margin-bottom: 10px; }
+
+    /* ── 附件 ── */
+    .attachment-preview { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    .attachment-img {
+      width: 80px; height: 80px;
+      object-fit: cover;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+      cursor: pointer;
+      transition: transform .2s;
+    }
+    .attachment-img:hover { transform: scale(1.05); }
+    .attachment-link {
+      font-size: 16px;
+      padding: 10px;
+      background: #e0e0e0;
+      border-radius: 5px;
+      text-decoration: none;
+      color: #333;
+    }
+
+    /* ── 留言區 ── */
+    .comments-section {
+      margin-top: 15px;
+      border-top: 1px solid #eee;
+      padding-top: 12px;
+    }
+    .comments-toggle {
+      font-size: 16px;
+      color: var(--primary);
+      cursor: pointer;
+      font-weight: bold;
+      user-select: none;
+    }
+    .comments-list { margin-top: 10px; }
+    .comment-item {
+      background: #f9f9f9;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      font-size: 16px;
+      position: relative;
+    }
+    .comment-meta { font-size: 13px; color: #999; margin-bottom: 4px; }
+    .comment-del-btn {
+      position: absolute;
+      top: 8px; right: 10px;
+      background: none;
+      border: none;
+      color: #ccc;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0;
+    }
+    .comment-del-btn:hover { color: var(--danger); }
+    .comment-input-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .comment-input-row input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    .comment-input-row button {
+      padding: 10px 16px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    /* ── 搜尋 ── */
+    .search-box { display: flex; gap: 10px; margin-bottom: 15px; }
+    .search-box input { flex: 1; }
+    .search-box .btn { width: auto; margin: 0; padding: 10px 20px; font-size: var(--fs-base); }
+
+    /* ── 按鈕群組 ── */
+    .button-group { margin-top: 15px; display: flex; gap: 10px; }
+    .button-group .btn { flex: 1; margin: 0; padding: 10px; font-size: 16px; }
+
+    /* ── 閱覽者 ── */
+    .viewers-list {
+      margin-top: 10px;
+      padding: 10px;
+      background: #f0f0f0;
+      border-radius: 5px;
+      font-size: 16px;
+      word-break: break-all;
+    }
+
+    /* ── 分頁 ── */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      margin: 20px 0;
+      font-size: var(--fs-base);
+    }
+    .pagination button {
+      padding: 8px 20px;
+      border: 2px solid var(--primary);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--primary);
+      font-size: var(--fs-base);
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .pagination button:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+    .pagination .page-info { color: #555; }
+
+    /* ── Toast 通知 ── */
+    #toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,.75);
+      color: #fff;
+      padding: 12px 28px;
+      border-radius: 30px;
+      font-size: 18px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s;
+      z-index: 9999;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── 全域載入 Overlay ── */
+    #loadingOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(255,255,255,.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 8888;
+      font-size: var(--fs-lg);
+    }
+    #loadingOverlay.hidden { display: none !important; }
+
+    /* ── 初始載入 ── */
+    #initLoading {
+      text-align: center;
+      font-size: var(--fs-lg);
+      margin-top: 50px;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 40px; height: 40px;
+      border: 5px solid #ccc;
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin-bottom: 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── 自訂 Modal ── */
+    #modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9000;
+    }
+    #modal-overlay.hidden { display: none !important; }
+    #modal-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 30px 24px 20px;
+      max-width: 320px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,.2);
+    }
+    #modal-msg { font-size: var(--fs-lg); margin-bottom: 24px; line-height: 1.5; }
+    .modal-btns { display: flex; gap: 12px; }
+    .modal-btns .btn { margin: 0; flex: 1; padding: 12px; font-size: var(--fs-base); }
+
+    .hidden { display: none !important; }
+
+    /* ── 空狀態 ── */
+    .empty-state {
+      text-align: center;
+      color: #bbb;
+      padding: 40px 0;
+      font-size: var(--fs-lg);
+    }
+    .empty-state .empty-icon { font-size: 60px; display: block; margin-bottom: 10px; }
   </style>
 </head>
 <body>
+<div class="container">
 
-<div id="splash">
-  <div class="splash-logo">📒</div>
-  <div class="splash-title">我的記事本</div>
+  <!-- 首次進入載入畫面 -->
+  <div id="initLoading">
+    <div class="spinner"></div>
+    <p>載入中，請稍候...</p>
+  </div>
+
+  <!-- 主畫面（記事列表） -->
+  <div id="app" class="hidden">
+    <h1>📒 網路記事本</h1>
+
+    <!-- 搜尋列 -->
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="輸入關鍵字搜尋..."
+             onkeydown="if(event.key==='Enter') searchNotes()">
+      <button class="btn" onclick="searchNotes()">搜尋</button>
+    </div>
+
+    <!-- 標籤篩選列 -->
+    <div id="tagFilterBar" class="tag-filter-bar"></div>
+
+    <!-- 操作列 -->
+    <div style="display:flex; gap:10px; margin-bottom:15px;">
+      <button class="btn" style="flex:1; margin:0;" onclick="showAddForm()">＋ 新增記事</button>
+      <button class="btn btn-secondary"
+              style="width:auto; margin:0; padding:10px 18px; font-size:var(--fs-base);"
+              onclick="loadNotes()" title="重新整理">🔄</button>
+    </div>
+
+    <!-- 記事列表 -->
+    <div id="noteList"></div>
+
+    <!-- 分頁 -->
+    <div id="pagination" class="pagination hidden">
+      <button id="prevBtn" onclick="changePage(-1)">◀ 上一頁</button>
+      <span class="page-info" id="pageInfo"></span>
+      <button id="nextBtn" onclick="changePage(1)">下一頁 ▶</button>
+    </div>
+  </div>
+
+  <!-- 新增 / 編輯表單 -->
+  <div id="noteForm" class="hidden">
+    <h2 id="formTitle">新增記事</h2>
+
+    <div class="form-group">
+      <label for="title">標題 <span style="color:red;">*</span></label>
+      <input type="text" id="title" placeholder="請輸入標題（最多 50 字）"
+             maxlength="50" oninput="updateCharCount('title','titleCount',50)">
+      <div class="char-count" id="titleCount">0 / 50</div>
+    </div>
+
+    <div class="form-group">
+      <label for="content">內容 <span style="color:red;">*</span></label>
+      <textarea id="content" placeholder="請輸入內容（最多 2000 字）"
+                maxlength="2000" oninput="updateCharCount('content','contentCount',2000)"></textarea>
+      <div class="char-count" id="contentCount">0 / 2000</div>
+    </div>
+
+    <div class="form-group">
+      <label for="tagInput">標籤（逗號分隔，例如：公告,重要）</label>
+      <input type="text" id="tagInput" placeholder="例如：公告, 重要, 活動">
+    </div>
+
+    <div class="form-group">
+      <label for="attachments">附件（最多 5 個，每個最大 5MB）</label>
+      <input type="file" id="attachments" multiple onchange="previewFiles()">
+      <div id="previewContainer" class="attachment-preview"></div>
+    </div>
+
+    <button class="btn" id="saveBtn" onclick="saveNote()">💾 儲存</button>
+    <button class="btn btn-secondary" id="cancelBtn" onclick="showList()">✕ 取消</button>
+  </div>
+
+</div>
+
+<!-- 全域載入 Overlay -->
+<div id="loadingOverlay" class="hidden">
   <div class="spinner"></div>
-  <div class="splash-msg" id="splash-msg">正在驗證身份...</div>
+  <p id="overlayMsg">處理中，請稍候...</p>
 </div>
 
-<div id="error-screen">
-  <div class="error-icon">⚠️</div>
-  <div class="error-title" id="error-title">初始化失敗</div>
-  <div class="error-msg"  id="error-msg">請關閉後重新開啟應用程式。</div>
-  <button class="btn-retry" id="btn-retry">重新嘗試</button>
-</div>
-
-<div id="loading-overlay"><div class="overlay-spinner"></div></div>
-<div id="toast-container"></div>
-
-<div id="modal-backdrop">
-  <div class="modal-box">
-    <div class="modal-title" id="modal-title">確認</div>
-    <div class="modal-msg"   id="modal-msg"></div>
-    <div class="modal-actions">
-      <button class="btn-modal-cancel"  id="modal-cancel">取消</button>
-      <button class="btn-modal-confirm" id="modal-confirm">確認</button>
+<!-- 自訂確認 Modal -->
+<div id="modal-overlay" class="hidden">
+  <div id="modal-box">
+    <div id="modal-msg">確定要執行此操作嗎？</div>
+    <div class="modal-btns">
+      <button class="btn btn-danger"    id="modal-confirm">確定</button>
+      <button class="btn btn-secondary" id="modal-cancel">取消</button>
     </div>
   </div>
 </div>
 
-<div id="app">
-  <header class="app-header">
-    <button class="header-back" id="header-back" aria-label="返回">&#8592;</button>
-    <div class="header-title" id="header-title">📒 我的記事本</div>
-    <div class="header-avatar" id="header-avatar">?</div>
-  </header>
-
-  <div class="page active" id="page-list">
-    <div class="search-bar">
-      <div class="search-wrap">
-        <span>🔍</span>
-        <input type="search" id="search-input" placeholder="搜尋標題或內容..." autocomplete="off" />
-        <button class="search-clear" id="search-clear" aria-label="清除">✕</button>
-      </div>
-    </div>
-    <div class="list-meta" id="list-meta"></div>
-    <div class="note-list" id="note-list"></div>
-  </div>
-
-  <div class="page" id="page-form">
-    <div class="form-group">
-      <label class="form-label" for="f-title">標題<span class="required">*</span></label>
-      <input type="text" class="form-input" id="f-title" placeholder="輸入記事標題..." maxlength="100" />
-    </div>
-    <div class="form-group">
-      <label class="form-label" for="f-content">內容<span class="required">*</span></label>
-      <textarea class="form-textarea" id="f-content" placeholder="輸入記事內容..."></textarea>
-    </div>
-    <div class="form-group">
-      <label class="form-label">附件（最多 10 個，單檔 ≤ 50MB）</label>
-      <div class="upload-area" id="upload-area">
-        <div class="upload-icon">📎</div>
-        <div class="upload-text">點擊選擇或拖曳檔案<br/><strong>支援圖片、PDF、文件等</strong></div>
-      </div>
-      <input type="file" id="file-input" multiple accept="*/*" />
-      <div id="upload-progress-wrap">
-        <div class="progress-label" id="progress-label">上傳中 0 / 0</div>
-        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-bar"></div></div>
-      </div>
-      <div class="preview-list" id="preview-list"></div>
-    </div>
-    <div class="form-footer">
-      <button class="btn-cancel" id="btn-cancel">取消</button>
-      <button class="btn-save"   id="btn-save">💾 儲存</button>
-    </div>
-  </div>
-</div>
-
-<button id="fab-add" aria-label="新增記事">＋</button>
+<!-- Toast -->
+<div id="toast"></div>
 
 <script>
-/* ============================================================
-   設定區
-============================================================ */
+  // =============================================
+  // ★ 設定區（請依實際情況修改）
+  // =============================================
+  const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyhK8xzpkqINioV1GY8k_9_4pwrXJncDVBhYsDsJNXHHWTsbhOKTRYpYtFkbPhQ71korw/exec';
+  const LIFF_ID         = '2009456572-AUDE1qmM';
+  const PAGE_SIZE       = 10; // 每頁顯示幾筆
 
-const CONFIG = {
-  LIFF_ID   : '2009456572-AUDE1qmM',
-  GAS_URL   : 'https://script.google.com/macros/s/AKfycbwR1AJVJ989TuV6uoHbFcKnbLA2rXYyLMTe2WryAxw1t-mTFIIF6RTkN0dDk5dNKpa2Dg/exec',
-  ADMIN_IDS : ['Ua334bad3a531232d64480d9730797759'],
-  DEV_MODE  : fales, // fales true
-  DEV_USER  : { userId:'dev_user_001', displayName:'開發測試帳號', pictureUrl:'' }
-};
+  // =============================================
+  // 全域狀態
+  // =============================================
+  let currentUser   = { userID: '', userName: '' };
+  let currentNotes  = [];   // 目前頁面顯示的記事
+  let allTags       = [];   // 所有標籤（用於篩選列）
+  let editingNoteID = null;
+  let currentPage   = 'list'; // 'list' | 'form'
+  let currentPageNo = 1;      // 分頁：目前頁碼
+  let totalPages    = 1;      // 分頁：總頁數
+  let activeTag     = '';     // 目前選取的標籤篩選
+  let viewedNotes   = new Set(); // session 內已閱覽的 noteID（節流用）
 
-
-/* ============================================================
-   全域狀態
-============================================================ */
-const State = {
-  user        : null,
-  notes       : [],
-  filtered    : [],
-  editingId   : null,
-  pendingFiles: [],
-  existAttach : [],
-  page        : 'list'
-};
-
-/* ============================================================
-   工具函式
-============================================================ */
-const escHtml = s =>
-  String(s ?? '')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-
-const driveThumb = url => {
-  const m = String(url).match(/\/d\/([^/]+)\//);
-  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w200` : null;
-};
-
-const isImageUrl = url =>
-  /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(url)
-  || url.includes('drive.google.com/thumbnail')
-  || url.includes('drive.google.com/file');
-
-const fmtTime = ts => {
-  if (!ts) return '—';
-  const d = new Date(ts);
-  if (isNaN(d)) return ts;
-  const p = n => String(n).padStart(2,'0');
-  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-};
-
-const toBase64 = file => new Promise((res, rej) => {
-  const r = new FileReader();
-  r.onload  = e => res(e.target.result.split(',')[1]);
-  r.onerror = rej;
-  r.readAsDataURL(file);
-});
-
-/* ============================================================
-   UI 工具
-============================================================ */
-const Overlay = {
-  show(){ document.getElementById('loading-overlay').classList.add('active') },
-  hide(){ document.getElementById('loading-overlay').classList.remove('active') }
-};
-
-function showToast(msg, type='', duration=2800) {
-  const c  = document.getElementById('toast-container');
-  const el = document.createElement('div');
-  el.className = `toast${type ? ' '+type : ''}`;
-  el.textContent = msg;
-  c.appendChild(el);
-  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
-  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, duration);
-}
-
-function showModal({ title='確認', msg='', confirmText='確認', cancelText='取消' } = {}) {
-  return new Promise(resolve => {
-    const bd = document.getElementById('modal-backdrop');
-    document.getElementById('modal-title').textContent   = title;
-    document.getElementById('modal-msg').textContent     = msg;
-    document.getElementById('modal-confirm').textContent = confirmText;
-    document.getElementById('modal-cancel').textContent  = cancelText;
-    bd.classList.add('active');
-    const cleanup = val => {
-      bd.classList.remove('active');
-      ['modal-confirm','modal-cancel'].forEach(id => {
-        const el = document.getElementById(id);
-        el.replaceWith(el.cloneNode(true));
-      });
-      resolve(val);
-    };
-    document.getElementById('modal-confirm').addEventListener('click', () => cleanup(true),  { once:true });
-    document.getElementById('modal-cancel') .addEventListener('click', () => cleanup(false), { once:true });
-  });
-}
-
-function setProgress(current, total) {
-  const wrap  = document.getElementById('upload-progress-wrap');
-  const label = document.getElementById('progress-label');
-  const bar   = document.getElementById('progress-bar');
-  if (total === 0) { wrap.classList.remove('active'); return; }
-  wrap.classList.add('active');
-  label.textContent = `上傳附件中 ${current} / ${total}`;
-  bar.style.width   = `${Math.round((current / total) * 100)}%`;
-}
-
-/* ============================================================
-   頁面狀態管理
-============================================================ */
-function switchPage(name) {
-  State.page = name;
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById(`page-${name}`).classList.add('active');
-  const back  = document.getElementById('header-back');
-  const fab   = document.getElementById('fab-add');
-  const title = document.getElementById('header-title');
-  if (name === 'list') {
-    back.classList.remove('visible');
-    fab.classList.remove('hidden');
-    title.textContent = '📒 我的記事本';
-  } else {
-    back.classList.add('visible');
-    fab.classList.add('hidden');
-    title.textContent = State.editingId ? '✏️ 編輯記事' : '➕ 新增記事';
+  // =============================================
+  // 頁面切換
+  // =============================================
+  function showPage(page) {
+    currentPage = page;
+    document.getElementById('app').classList.toggle('hidden', page !== 'list');
+    document.getElementById('noteForm').classList.toggle('hidden', page !== 'form');
   }
-}
 
-/* ============================================================
-   LIFF 身份驗證
-============================================================ */
-async function initLiff() {
-  setSplashMsg('正在初始化 LIFF...');
-  try {
-    await liff.init({ liffId: CONFIG.LIFF_ID });
-  } catch(err) {
-    if (CONFIG.DEV_MODE) {
-      console.warn('[LIFF] DEV_MODE: mock user');
-      State.user = CONFIG.DEV_USER;
+  // =============================================
+  // 初始化 LIFF
+  // =============================================
+  async function initLiff() {
+    try {
+      await liff.init({ liffId: LIFF_ID });
+    } catch (err) {
+      console.warn('LIFF 初始化失敗，使用測試模式', err);
+      currentUser = { userID: 'test_user_001', userName: '測試使用者' };
+      finishInit();
       return;
     }
-    showErrorScreen('LIFF 初始化失敗', err.message ?? '請重新開啟應用程式');
-    throw err;
-  }
-  if (!liff.isLoggedIn()) { liff.login(); return; }
-  setSplashMsg('正在取得使用者資料...');
-  try {
-    const p = await liff.getProfile();
-    State.user = { userId: p.userId, displayName: p.displayName, pictureUrl: p.pictureUrl ?? '' };
-  } catch(err) {
-    showErrorScreen('無法取得使用者資料', '請授權應用程式存取 LINE 個人資料後重試。');
-    throw err;
-  }
-}
 
-const setSplashMsg = msg => { document.getElementById('splash-msg').textContent = msg; };
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
 
-function showErrorScreen(title, msg) {
-  document.getElementById('error-title').textContent = title;
-  document.getElementById('error-msg').textContent   = msg;
-  document.getElementById('error-screen').classList.add('active');
-  document.getElementById('splash').classList.add('hidden');
-}
-
-/* ============================================================
-   ★★★ 核心 API 呼叫
-   
-   CORS 問題根本解法：
-   - GET：用於小型資料請求（list/delete/view/create無附件）
-   - POST + Content-Type: text/plain：用於大型資料（附件上傳）
-   
-   為什麼 text/plain 可以解決 CORS？
-   - application/json → 非簡單請求 → 觸發 OPTIONS preflight → GAS 不支援 → 失敗
-   - text/plain       → 簡單請求   → 不觸發 preflight      → 直接 POST  → 成功！
-============================================================ */
-
-/** GET 請求（用於不含大型資料的操作） */
-async function gasGet(params) {
-  const url = new URL(CONFIG.GAS_URL);
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-  });
-  const res = await fetch(url.toString(), { method:'GET', redirect:'follow' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-/**
- * ★ POST + text/plain（用於含附件的操作）
- * Content-Type: text/plain 屬於「簡單請求」
- * 不會觸發 CORS preflight，GAS doPost 可正常接收
- */
-async function gasPost(body) {
-  const res = await fetch(CONFIG.GAS_URL, {
-    method : 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-    body   : JSON.stringify(body),
-    redirect: 'follow'
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-/**
- * 單檔上傳（POST + text/plain）
- * 不受 URL 長度限制，可上傳大檔案
- */
-async function uploadSingleFile(file) {
-  const MAX_MB = 50;
-  if (file.size > MAX_MB * 1024 * 1024) {
-    throw new Error(`「${file.name}」超過 ${MAX_MB}MB，無法上傳`);
-  }
-  const b64 = await toBase64(file);
-  const result = await gasPost({
-    action  : 'uploadFile',
-    userId  : State.user.userId,
-    fileName: file.name,
-    mimeType: file.type || 'application/octet-stream',
-    data    : b64
-  });
-  if (!result.success) throw new Error(result.error ?? '上傳失敗');
-  return result.url;
-}
-
-/** 批次上傳附件，帶進度回報 */
-async function uploadAllFiles(files) {
-  const urls = [];
-  setProgress(0, files.length);
-  for (let i = 0; i < files.length; i++) {
     try {
-      const url = await uploadSingleFile(files[i]);
-      urls.push(url);
-      setProgress(i + 1, files.length);
-    } catch(err) {
-      showToast(`⚠️ ${err.message}`, 'warn', 4000);
+      const profile = await liff.getProfile();
+      currentUser.userID   = profile.userId;
+      currentUser.userName = profile.displayName;
+      finishInit();
+    } catch (err) {
+      console.error('取得使用者資料失敗', err);
+      document.getElementById('initLoading').innerHTML = `
+        <p style="color:var(--danger);font-size:var(--fs-lg);">⚠️ 無法取得使用者資料</p>
+        <p style="color:#666;font-size:16px;">請關閉後重新開啟</p>
+        <button class="btn" style="max-width:200px;margin:20px auto;" onclick="initLiff()">🔄 重新嘗試</button>
+      `;
     }
   }
-  setProgress(0, 0);
-  return urls;
-}
 
-/* ============================================================
-   記事 CRUD
-============================================================ */
-async function loadNotes() {
-  Overlay.show();
-  try {
-    const data = await gasGet({ action:'list', userId: State.user.userId });
-    State.notes = (data.notes ?? []).filter(n => n.Status !== 'deleted');
-    applySearch();
-  } catch(e) {
-    showToast('載入記事失敗：' + e.message, 'error');
-  } finally {
-    Overlay.hide();
+  function finishInit() {
+    document.getElementById('initLoading').classList.add('hidden');
+    showPage('list');
+    loadNotes();
   }
-}
 
-async function saveNote() {
-  const title   = document.getElementById('f-title').value.trim();
-  const content = document.getElementById('f-content').value.trim();
-  if (!title)   { showToast('請輸入標題', 'warn'); return; }
-  if (!content) { showToast('請輸入內容', 'warn'); return; }
+  // =============================================
+  // API 呼叫（GET / POST 自動切換）
+  // =============================================
+  async function callGasApi(action, data) {
+    try {
+      const hasAttachments = data && data.attachments && data.attachments.length > 0;
 
-  const saveBtn = document.getElementById('btn-save');
-  saveBtn.disabled = true;
-  Overlay.show();
-
-  try {
-    /* Step 1：上傳新附件（POST + text/plain）*/
-    let newUrls = [];
-    if (State.pendingFiles.length > 0) {
-      newUrls = await uploadAllFiles(State.pendingFiles);
+      if (hasAttachments) {
+        // 有附件 → POST（避免 URL 過長）
+        const response = await fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, data }),
+          redirect: 'follow'
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return await response.json();
+      } else {
+        // 無附件 → GET
+        const params = new URLSearchParams({
+          action: action,
+          data: JSON.stringify(data || {})
+        });
+        const response = await fetch(GAS_WEB_APP_URL + '?' + params.toString(), {
+          method: 'GET',
+          redirect: 'follow'
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return await response.json();
+      }
+    } catch (error) {
+      console.error('API 呼叫失敗:', error);
+      return { success: false, message: error.message };
     }
+  }
 
-    /* Step 2：合併附件 URL */
-    const allAttach = [...State.existAttach, ...newUrls];
+  // =============================================
+  // 記事清單（含分頁）
+  // =============================================
+  async function loadNotes(keyword, tag, page) {
+    currentPageNo = page || 1;
+    const kw = keyword !== undefined ? keyword : document.getElementById('searchInput').value.trim();
+    const filterTag = tag !== undefined ? tag : activeTag;
 
-    /* Step 3：儲存記事（GET，資料量小）*/
-    const result = await gasGet({
-      action     : State.editingId ? 'update' : 'create',
-      noteId     : State.editingId ?? '',
-      title,
-      content,
-      userId     : State.user.userId,
-      userName   : State.user.displayName,
-      attachments: JSON.stringify(allAttach)
+    // 搜尋中先顯示 loading 狀態
+    document.getElementById('noteList').innerHTML =
+      '<p style="text-align:center;color:#bbb;padding:30px 0;">載入中...</p>';
+    showOverlay(true, '載入記事中...');
+
+    const result = await callGasApi('getNotes', {
+      keyword:  kw,
+      tag:      filterTag,
+      page:     currentPageNo,
+      pageSize: PAGE_SIZE
     });
+
+    showOverlay(false);
 
     if (result.success) {
-      showToast(State.editingId ? '記事已更新 ✓' : '記事已新增 ✓', 'success');
-      resetForm();
-      switchPage('list');
-      await loadNotes();
+      currentNotes = result.data;
+      totalPages   = result.totalPages || 1;
+      renderNotes(result.data);
+      renderPagination();
+      renderTagFilterBar(result.allTags || []);
     } else {
-      throw new Error(result.error ?? '未知錯誤');
+      showToast('載入失敗：' + result.message);
+      document.getElementById('noteList').innerHTML =
+        '<p style="text-align:center;color:var(--danger);">載入失敗，請重試</p>';
     }
-  } catch(e) {
-    showToast('儲存失敗：' + e.message, 'error');
-  } finally {
-    saveBtn.disabled = false;
-    Overlay.hide();
-  }
-}
-
-async function deleteNote(noteId) {
-  const ok = await showModal({
-    title:'刪除記事', msg:'確定要刪除這則記事嗎？此操作無法復原。',
-    confirmText:'刪除'
-  });
-  if (!ok) return;
-  Overlay.show();
-  try {
-    const r = await gasGet({ action:'delete', noteId, userId: State.user.userId });
-    if (r.success) { showToast('記事已刪除', 'success'); await loadNotes(); }
-    else throw new Error(r.error ?? '無權限');
-  } catch(e) {
-    showToast('刪除失敗：' + e.message, 'error');
-  } finally { Overlay.hide(); }
-}
-
-/* ============================================================
-   記事卡片渲染
-============================================================ */
-function renderNoteList(notes) {
-  const container = document.getElementById('note-list');
-  const meta      = document.getElementById('list-meta');
-  container.innerHTML = '';
-  meta.textContent = notes.length ? `共 ${notes.length} 則記事` : '';
-  if (!notes.length) {
-    const el = document.createElement('div');
-    el.className = 'empty-state';
-    el.innerHTML = `<div class="icon">📭</div><p>目前沒有記事<br/>點擊右下角 ＋ 新增第一則記事</p>`;
-    container.appendChild(el);
-    return;
-  }
-  notes.forEach(n => container.appendChild(buildCard(n)));
-}
-
-function buildCard(note) {
-  const isOwner = note.CreatedByUserID === State.user.userId;
-  const isAdmin = CONFIG.ADMIN_IDS.includes(State.user.userId);
-  const canEdit = isOwner || isAdmin;
-
-  let attachUrls = [];
-  try { attachUrls = note.Attachments ? JSON.parse(note.Attachments) : []; } catch {}
-  let viewers = [];
-  try { viewers = note.Viewers ? JSON.parse(note.Viewers) : []; } catch {}
-
-  const card = document.createElement('div');
-  card.className = 'note-card';
-
-  const stripe = document.createElement('div');
-  stripe.className = 'note-card-stripe';
-  card.appendChild(stripe);
-
-  const body = document.createElement('div');
-  body.className = 'note-card-body';
-  card.appendChild(body);
-
-  const titleEl = document.createElement('div');
-  titleEl.className = 'note-card-title';
-  titleEl.textContent = note.Title;
-  body.appendChild(titleEl);
-
-  const metaEl = document.createElement('div');
-  metaEl.className = 'note-card-meta';
-  metaEl.innerHTML =
-    `<span class="meta-badge">👤 ${escHtml(note.CreatedByUserName ?? '未知')}</span>` +
-    `<span class="meta-badge">🕐 ${escHtml(fmtTime(note.CreatedAt))}</span>` +
-    `<span class="meta-badge">👁 ${escHtml(String(note.ViewCount ?? 0))} 次</span>`;
-  body.appendChild(metaEl);
-
-  const contentEl = document.createElement('div');
-  contentEl.className = 'note-card-content';
-  contentEl.textContent = note.Content;
-  body.appendChild(contentEl);
-
-  if (attachUrls.length) {
-    const wrap = document.createElement('div');
-    wrap.className = 'note-card-attachments';
-    attachUrls.forEach(url => {
-      const thumb = driveThumb(url);
-      if (thumb || isImageUrl(url)) {
-        const img = document.createElement('img');
-        img.className = 'attach-thumb';
-        img.src = thumb ?? url;
-        img.alt = '附件圖片';
-        img.dataset.openUrl = url;
-        img.addEventListener('click', e => { e.stopPropagation(); window.open(img.dataset.openUrl,'_blank'); });
-        wrap.appendChild(img);
-      } else {
-        const a = document.createElement('a');
-        a.className = 'attach-file';
-        a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-        a.textContent = '📎 ' + decodeURIComponent(url.split('/').pop().split('?')[0]);
-        a.addEventListener('click', e => e.stopPropagation());
-        wrap.appendChild(a);
-      }
-    });
-    body.appendChild(wrap);
   }
 
-  if (viewers.length) {
-    const vEl = document.createElement('div');
-    vEl.className = 'note-card-viewers';
-    const names = viewers.slice(0,5).map(v => escHtml(v)).join('、');
-    vEl.textContent = `👥 閱覽者：${names}${viewers.length > 5 ? ` 等 ${viewers.length} 人` : ''}`;
-    body.appendChild(vEl);
-  }
+  function renderNotes(notes) {
+    const listDiv = document.getElementById('noteList');
+    listDiv.innerHTML = '';
 
-  if (canEdit) {
-    const actions = document.createElement('div');
-    actions.className = 'note-card-actions';
-    const btnEdit = document.createElement('button');
-    btnEdit.className = 'btn-edit'; btnEdit.textContent = '✏️ 編輯';
-    btnEdit.addEventListener('click', e => { e.stopPropagation(); openEditForm(note); });
-    const btnDel = document.createElement('button');
-    btnDel.className = 'btn-delete'; btnDel.textContent = '🗑 刪除';
-    btnDel.addEventListener('click', e => { e.stopPropagation(); deleteNote(note.NoteID); });
-    actions.appendChild(btnEdit);
-    actions.appendChild(btnDel);
-    body.appendChild(actions);
-  }
-
-  card.addEventListener('click', () => recordView(note.NoteID));
-  return card;
-}
-
-/* ============================================================
-   閱覽追蹤
-============================================================ */
-async function recordView(noteId) {
-  try {
-    await gasGet({
-      action  : 'view',
-      noteId,
-      userId  : State.user.userId,
-      userName: State.user.displayName
-    });
-    const idx = State.notes.findIndex(n => n.NoteID === noteId);
-    if (idx >= 0) {
-      State.notes[idx].ViewCount = (parseInt(State.notes[idx].ViewCount) || 0) + 1;
-      applySearch();
-    }
-  } catch { /* 靜默失敗 */ }
-}
-
-/* ============================================================
-   搜尋
-============================================================ */
-function applySearch() {
-  const kw = document.getElementById('search-input').value.trim().toLowerCase();
-  State.filtered = kw
-    ? State.notes.filter(n =>
-        n.Title?.toLowerCase().includes(kw) ||
-        n.Content?.toLowerCase().includes(kw) ||
-        n.CreatedByUserName?.toLowerCase().includes(kw))
-    : [...State.notes];
-  renderNoteList(State.filtered);
-}
-
-/* ============================================================
-   表單操作
-============================================================ */
-function openNewForm() {
-  State.editingId = null;
-  State.existAttach = [];
-  resetForm();
-  switchPage('form');
-}
-
-function openEditForm(note) {
-  State.editingId = note.NoteID;
-  document.getElementById('f-title').value   = note.Title   ?? '';
-  document.getElementById('f-content').value = note.Content ?? '';
-  try { State.existAttach = note.Attachments ? JSON.parse(note.Attachments) : []; }
-  catch { State.existAttach = []; }
-  State.pendingFiles = [];
-  renderExistingAttachPreviews();
-  switchPage('form');
-}
-
-function resetForm() {
-  document.getElementById('f-title').value    = '';
-  document.getElementById('f-content').value  = '';
-  document.getElementById('file-input').value = '';
-  State.pendingFiles = [];
-  State.existAttach  = [];
-  document.getElementById('preview-list').innerHTML = '';
-  setProgress(0, 0);
-}
-
-function renderExistingAttachPreviews() {
-  const list = document.getElementById('preview-list');
-  list.innerHTML = '';
-  State.existAttach.forEach((url, i) => {
-    const item = document.createElement('div');
-    item.className = 'preview-item';
-    const thumb = driveThumb(url);
-    if (thumb || isImageUrl(url)) {
-      const img = document.createElement('img');
-      img.src = thumb ?? url;
-      img.alt = '附件';
-      item.appendChild(img);
-    } else {
-      const icon = document.createElement('div');
-      icon.className = 'file-icon';
-      icon.textContent = '📎';
-      const name = document.createElement('div');
-      name.className = 'file-name';
-      name.textContent = decodeURIComponent(url.split('/').pop().split('?')[0]);
-      item.appendChild(icon);
-      item.appendChild(name);
-    }
-    const rm = document.createElement('button');
-    rm.className = 'preview-remove';
-    rm.textContent = '✕';
-    rm.addEventListener('click', () => {
-      State.existAttach.splice(i, 1);
-      renderExistingAttachPreviews();
-      renderNewFilePreviews();
-    });
-    item.appendChild(rm);
-    list.appendChild(item);
-  });
-}
-
-function renderNewFilePreviews() {
-  document.querySelectorAll('.preview-item[data-new]').forEach(el => el.remove());
-  const list = document.getElementById('preview-list');
-  State.pendingFiles.forEach((file, i) => {
-    const item = document.createElement('div');
-    item.className = 'preview-item';
-    item.dataset.new = '1';
-    if (file.type.startsWith('image/')) {
-      const img = document.createElement('img');
-      const r = new FileReader();
-      r.onload = e => { img.src = e.target.result; };
-      r.readAsDataURL(file);
-      item.appendChild(img);
-    } else {
-      const icon = document.createElement('div');
-      icon.className = 'file-icon';
-      icon.textContent = '📎';
-      const name = document.createElement('div');
-      name.className = 'file-name';
-      name.textContent = file.name;
-      item.appendChild(icon);
-      item.appendChild(name);
-    }
-    const rm = document.createElement('button');
-    rm.className = 'preview-remove';
-    rm.textContent = '✕';
-    rm.addEventListener('click', () => {
-      State.pendingFiles.splice(i, 1);
-      renderNewFilePreviews();
-    });
-    item.appendChild(rm);
-    list.appendChild(item);
-  });
-}
-
-/* ============================================================
-   附件選擇處理
-============================================================ */
-function handleFileSelect(files) {
-  const MAX_MB    = 50;
-  const MAX_COUNT = 10;
-  const valid = [];
-  Array.from(files).forEach(f => {
-    if (f.size > MAX_MB * 1024 * 1024) {
-      showToast(`「${f.name}」超過 ${MAX_MB}MB 限制`, 'warn');
+    if (!notes || notes.length === 0) {
+      listDiv.innerHTML = `
+        <div class="empty-state">
+          <span class="empty-icon">📭</span>
+          目前沒有記事
+        </div>`;
       return;
     }
-    valid.push(f);
-  });
-  const total = State.existAttach.length + State.pendingFiles.length + valid.length;
-  if (total > MAX_COUNT) {
-    const allow = MAX_COUNT - State.existAttach.length - State.pendingFiles.length;
-    showToast(`附件總數不可超過 ${MAX_COUNT} 個，已截斷`, 'warn');
-    State.pendingFiles.push(...valid.slice(0, allow));
-  } else {
-    State.pendingFiles.push(...valid);
+
+    notes.forEach(function(note) {
+      if (note.Status === 'deleted') return;
+
+      const card = document.createElement('div');
+      card.className = 'note-card';
+      card.dataset.noteId = note.NoteID;
+
+      // ── 附件 HTML ──
+      let attachments = [];
+      try { attachments = JSON.parse(note.Attachments || '[]'); } catch(e) {}
+
+      let attachHtml = '';
+      attachments.forEach(function(item) {
+        const url      = (typeof item === 'object') ? (item.url      || '') : String(item);
+        const mimeType = (typeof item === 'object') ? (item.mimeType || '') : '';
+        const name     = (typeof item === 'object') ? (item.name     || '附件') : '附件';
+        const safeUrl  = escHtml(url);
+        const safeName = escHtml(name);
+
+        if (mimeType.startsWith('image/')) {
+          const thumbUrl  = driveViewToThumb(url);
+          const safeThumb = escHtml(thumbUrl);
+          attachHtml += '<img src="' + safeThumb + '" class="attachment-img"'
+            + ' alt="' + safeName + '" data-open-url="' + safeUrl + '">';
+        } else {
+          attachHtml += '<a href="' + safeUrl + '" target="_blank"'
+            + ' rel="noopener noreferrer" class="attachment-link"'
+            + ' onclick="event.stopPropagation()">📎 ' + safeName + '</a>';
+        }
+      });
+
+      // ── 標籤 HTML ──
+      let tags = [];
+      try { tags = JSON.parse(note.Tags || '[]'); } catch(e) {}
+      const tagsHtml = tags.length > 0
+        ? '<div class="note-tags">' + tags.map(t => '<span class="tag-badge">' + escHtml(t) + '</span>').join('') + '</div>'
+        : '';
+
+      // ── 閱覽者 HTML ──
+      let viewers = [];
+      try { viewers = JSON.parse(note.Viewers || '[]'); } catch(e) {}
+      const viewerNames = viewers.map(v => typeof v === 'object' ? v.userName : v);
+      const viewersHtml = viewerNames.length > 0
+        ? '<div class="viewers-list"><strong>閱覽者：</strong>' + escHtml(viewerNames.join(', ')) + '</div>'
+        : '';
+
+      // ── 留言數 ──
+      const commentCount = note.CommentCount || 0;
+
+      // ── 操作按鈕（本人或管理員） ──
+      const isOwner = note.CreatedByUserID === currentUser.userID;
+      const actionHtml = isOwner
+        ? '<div class="button-group">'
+          + '<button class="btn btn-secondary edit-btn">✏️ 編輯</button>'
+          + '<button class="btn btn-danger delete-btn">🗑️ 刪除</button>'
+          + '</div>'
+        : '';
+
+      card.innerHTML =
+        '<div class="note-title">' + escHtml(note.Title) + '</div>'
+        + '<div class="note-meta">'
+        +   '👤 ' + escHtml(note.CreatedByUserName)
+        +   ' ｜ 🕐 ' + fmtDate(note.CreatedAt)
+        +   ' ｜ 👁️ <span class="view-count">' + (note.ViewCount || 0) + '</span> 次'
+        + '</div>'
+        + tagsHtml
+        + '<div class="note-content">' + escHtml(note.Content) + '</div>'
+        + '<div class="attachment-preview">' + attachHtml + '</div>'
+        + viewersHtml
+        + '<div class="comments-section">'
+        +   '<span class="comments-toggle">💬 留言（<span class="comment-count">'
+        +   commentCount + '</span>）▼</span>'
+        +   '<div class="comments-list hidden"></div>'
+        +   '<div class="comment-input-row hidden">'
+        +     '<input type="text" class="comment-input" placeholder="輸入留言...">'
+        +     '<button class="comment-submit-btn">送出</button>'
+        +   '</div>'
+        + '</div>'
+        + actionHtml;
+
+      // ── 事件綁定 ──
+
+      // 卡片點擊 → 閱覽（節流：同 session 同篇只記一次）
+      card.addEventListener('click', function() {
+        if (!viewedNotes.has(note.NoteID)) {
+          viewedNotes.add(note.NoteID);
+          recordView(note.NoteID, card);
+        }
+      });
+
+      // 附件圖片點擊
+      card.querySelectorAll('.attachment-img').forEach(function(img) {
+        img.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const openUrl = img.dataset.openUrl;
+          if (openUrl) window.open(openUrl, '_blank');
+        });
+      });
+
+      // 編輯按鈕
+      const editBtn = card.querySelector('.edit-btn');
+      if (editBtn) {
+        editBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          editNote(note.NoteID);
+        });
+      }
+
+      // 刪除按鈕
+      const deleteBtn = card.querySelector('.delete-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          confirmAction('確定要刪除這筆記事嗎？', function() {
+            doDeleteNote(note.NoteID);
+          });
+        });
+      }
+
+      // 留言展開/收合
+      const commentsToggle = card.querySelector('.comments-toggle');
+      const commentsList   = card.querySelector('.comments-list');
+      const commentInputRow = card.querySelector('.comment-input-row');
+      commentsToggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const isOpen = !commentsList.classList.contains('hidden');
+        if (isOpen) {
+          commentsList.classList.add('hidden');
+          commentInputRow.classList.add('hidden');
+        } else {
+          loadComments(note.NoteID, commentsList, card);
+          commentInputRow.classList.remove('hidden');
+        }
+      });
+
+      // 留言送出
+      const submitBtn   = card.querySelector('.comment-submit-btn');
+      const commentInput = card.querySelector('.comment-input');
+      submitBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        submitComment(note.NoteID, commentInput, card);
+      });
+      commentInput.addEventListener('keydown', function(e) {
+        e.stopPropagation();
+        if (e.key === 'Enter') submitComment(note.NoteID, commentInput, card);
+      });
+
+      listDiv.appendChild(card);
+    });
   }
-  document.getElementById('file-input').value = '';
-  renderNewFilePreviews();
-}
 
-/* ============================================================
-   頭像渲染
-============================================================ */
-function renderAvatar() {
-  const el = document.getElementById('header-avatar');
-  if (State.user.pictureUrl) {
-    const img = document.createElement('img');
-    img.src = State.user.pictureUrl;
-    img.alt = State.user.displayName;
-    img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
-    el.innerHTML = '';
-    el.appendChild(img);
-  } else {
-    el.textContent = (State.user.displayName ?? '?')[0].toUpperCase();
+  // ── 標籤篩選列 ──
+  function renderTagFilterBar(tags) {
+    const bar = document.getElementById('tagFilterBar');
+    bar.innerHTML = '';
+    if (!tags || tags.length === 0) return;
+
+    const allBtn = document.createElement('button');
+    allBtn.className = 'tag-filter-btn' + (activeTag === '' ? ' active' : '');
+    allBtn.textContent = '全部';
+    allBtn.addEventListener('click', function() {
+      activeTag = '';
+      loadNotes('', '', 1);
+    });
+    bar.appendChild(allBtn);
+
+    tags.forEach(function(tag) {
+      const btn = document.createElement('button');
+      btn.className = 'tag-filter-btn' + (activeTag === tag ? ' active' : '');
+      btn.textContent = '#' + tag;
+      btn.addEventListener('click', function() {
+        activeTag = tag;
+        loadNotes('', tag, 1);
+      });
+      bar.appendChild(btn);
+    });
   }
-}
 
-/* ============================================================
-   事件綁定
-============================================================ */
-function bindEvents() {
-  document.getElementById('fab-add')    .addEventListener('click', openNewForm);
-  document.getElementById('header-back').addEventListener('click', () => switchPage('list'));
-  document.getElementById('btn-cancel') .addEventListener('click', () => switchPage('list'));
-  document.getElementById('btn-save')   .addEventListener('click', saveNote);
-  document.getElementById('btn-retry')  .addEventListener('click', () => {
-    document.getElementById('error-screen').classList.remove('active');
-    initApp();
-  });
-
-  // 搜尋
-  const si = document.getElementById('search-input');
-  const sc = document.getElementById('search-clear');
-  let st;
-  si.addEventListener('input', () => {
-    sc.classList.toggle('visible', si.value.length > 0);
-    clearTimeout(st);
-    st = setTimeout(applySearch, 300);
-  });
-  sc.addEventListener('click', () => {
-    si.value = '';
-    sc.classList.remove('visible');
-    applySearch();
-  });
-
-  // 附件上傳
-  const ua = document.getElementById('upload-area');
-  const fi = document.getElementById('file-input');
-  ua.addEventListener('click', () => fi.click());
-  fi.addEventListener('change', e => handleFileSelect(e.target.files));
-  ua.addEventListener('dragover',  e => { e.preventDefault(); ua.classList.add('drag-over'); });
-  ua.addEventListener('dragleave', () => ua.classList.remove('drag-over'));
-  ua.addEventListener('drop', e => {
-    e.preventDefault();
-    ua.classList.remove('drag-over');
-    handleFileSelect(e.dataTransfer.files);
-  });
-}
-
-/* ============================================================
-   主程式入口
-============================================================ */
-async function initApp() {
-  document.getElementById('splash').classList.remove('hidden');
-  try {
-    await initLiff();
-    if (!State.user) return;
-    renderAvatar();
-    setSplashMsg('載入記事中...');
-    await loadNotes();
-    document.getElementById('splash').classList.add('hidden');
-    switchPage('list');
-  } catch(e) {
-    console.error('[App]', e);
+  // ── 分頁 ──
+  function renderPagination() {
+    const pag = document.getElementById('pagination');
+    if (totalPages <= 1) {
+      pag.classList.add('hidden');
+      return;
+    }
+    pag.classList.remove('hidden');
+    document.getElementById('pageInfo').textContent = currentPageNo + ' / ' + totalPages + ' 頁';
+    document.getElementById('prevBtn').disabled = currentPageNo <= 1;
+    document.getElementById('nextBtn').disabled = currentPageNo >= totalPages;
   }
-}
 
-document.addEventListener('DOMContentLoaded', () => {
-  bindEvents();
-  initApp();
-});
+  function changePage(delta) {
+    const newPage = currentPageNo + delta;
+    if (newPage < 1 || newPage > totalPages) return;
+    loadNotes(undefined, undefined, newPage);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function searchNotes() {
+    activeTag = '';
+    loadNotes(document.getElementById('searchInput').value.trim(), '', 1);
+  }
+
+  // =============================================
+  // 新增 / 編輯表單
+  // =============================================
+  function showAddForm() {
+    editingNoteID = null;
+    document.getElementById('formTitle').innerText = '新增記事';
+    document.getElementById('title').value   = '';
+    document.getElementById('content').value = '';
+    document.getElementById('tagInput').value = '';
+    document.getElementById('attachments').value = '';
+    document.getElementById('previewContainer').innerHTML = '';
+    updateCharCount('title',   'titleCount',   50);
+    updateCharCount('content', 'contentCount', 2000);
+    showPage('form');
+  }
+
+  function editNote(noteID) {
+    const note = currentNotes.find(function(n) { return n.NoteID === noteID; });
+    if (!note) return;
+    editingNoteID = noteID;
+    document.getElementById('formTitle').innerText = '編輯記事';
+    document.getElementById('title').value   = note.Title;
+    document.getElementById('content').value = note.Content;
+
+    let tags = [];
+    try { tags = JSON.parse(note.Tags || '[]'); } catch(e) {}
+    document.getElementById('tagInput').value = tags.join(', ');
+
+    document.getElementById('attachments').value = '';
+    document.getElementById('previewContainer').innerHTML =
+      '<p style="font-size:16px;color:#666;">（新上傳的附件將追加至現有附件）</p>';
+    updateCharCount('title',   'titleCount',   50);
+    updateCharCount('content', 'contentCount', 2000);
+    showPage('form');
+  }
+
+  function showList() { showPage('list'); }
+
+  // ── 字數計數 ──
+  function updateCharCount(inputId, countId, max) {
+    const len = document.getElementById(inputId).value.length;
+    const el  = document.getElementById(countId);
+    el.textContent = len + ' / ' + max;
+    el.classList.toggle('over', len >= max);
+  }
+
+  // =============================================
+  // 附件預覽（含限制檢查）
+  // =============================================
+  function previewFiles() {
+    const MAX_SIZE  = 5 * 1024 * 1024; // 5MB
+    const MAX_COUNT = 5;
+    const preview = document.getElementById('previewContainer');
+    const files   = document.getElementById('attachments').files;
+
+    if (files.length > MAX_COUNT) {
+      showToast('最多只能上傳 ' + MAX_COUNT + ' 個附件');
+      document.getElementById('attachments').value = '';
+      preview.innerHTML = '';
+      return;
+    }
+
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].size > MAX_SIZE) {
+        showToast('「' + files[i].name + '」超過 5MB 限制');
+        document.getElementById('attachments').value = '';
+        preview.innerHTML = '';
+        return;
+      }
+    }
+
+    preview.innerHTML = '';
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = document.createElement('img');
+          img.src = e.target.result;
+          img.className = 'attachment-img';
+          img.alt = file.name;
+          preview.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'attachment-link';
+        span.innerText = '📎 ' + file.name;
+        preview.appendChild(span);
+      }
+    }
+  }
+
+  // =============================================
+  // 儲存記事
+  // =============================================
+  async function saveNote() {
+    const title   = document.getElementById('title').value.trim();
+    const content = document.getElementById('content').value.trim();
+    const tagRaw  = document.getElementById('tagInput').value.trim();
+
+    if (!title)   { showToast('請填寫標題'); return; }
+    if (!content) { showToast('請填寫內容'); return; }
+
+    const tags = tagRaw
+      ? tagRaw.split(',').map(t => t.trim()).filter(t => t !== '')
+      : [];
+
+    const saveBtn   = document.getElementById('saveBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    saveBtn.disabled   = true;
+    cancelBtn.disabled = true;
+    saveBtn.innerText  = '儲存中...';
+    showOverlay(true, '儲存中，請稍候...');
+
+    // 附件轉 Base64
+    const files = document.getElementById('attachments').files;
+    const attachments = [];
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const b64 = await toBase64(files[i]);
+        attachments.push({
+          fileName: files[i].name,
+          mimeType: files[i].type,
+          base64:   b64.split(',')[1]
+        });
+      } catch(e) {
+        showToast('附件讀取失敗：' + files[i].name);
+      }
+    }
+
+    const noteData = {
+      title:       title,
+      content:     content,
+      tags:        tags,
+      attachments: attachments,
+      userID:      currentUser.userID,
+      userName:    currentUser.userName
+    };
+
+    let result;
+    if (editingNoteID) {
+      result = await callGasApi('updateNote', {
+        noteID:   editingNoteID,
+        noteData: noteData,
+        userID:   currentUser.userID
+      });
+    } else {
+      result = await callGasApi('addNote', noteData);
+    }
+
+    showOverlay(false);
+    saveBtn.disabled   = false;
+    cancelBtn.disabled = false;
+    saveBtn.innerText  = '💾 儲存';
+
+    if (result.success) {
+      showToast(editingNoteID ? '記事已更新 ✅' : '記事已新增 ✅');
+      showList();
+      loadNotes();
+    } else {
+      showToast('儲存失敗：' + result.message);
+    }
+  }
+
+  // =============================================
+  // 刪除記事
+  // =============================================
+  async function doDeleteNote(noteID) {
+    showOverlay(true, '刪除中...');
+    const result = await callGasApi('deleteNote', {
+      noteID: noteID,
+      userID: currentUser.userID
+    });
+    showOverlay(false);
+
+    if (result.success) {
+      // 樂觀更新：先從畫面移除，背景同步
+      currentNotes = currentNotes.filter(n => n.NoteID !== noteID);
+      renderNotes(currentNotes);
+      showToast('記事已刪除 🗑️');
+      loadNotes(); // 背景同步
+    } else {
+      showToast('刪除失敗：' + result.message);
+    }
+  }
+
+  // =============================================
+  // 閱覽紀錄
+  // =============================================
+  async function recordView(noteID, cardEl) {
+    const result = await callGasApi('recordView', {
+      noteID:   noteID,
+      userID:   currentUser.userID,
+      userName: currentUser.userName
+    });
+    if (result.success && cardEl) {
+      const countEl = cardEl.querySelector('.view-count');
+      if (countEl) countEl.innerText = result.viewCount;
+      const note = currentNotes.find(n => n.NoteID === noteID);
+      if (note) note.ViewCount = result.viewCount;
+    }
+  }
+
+  // =============================================
+  // 留言功能
+  // =============================================
+  async function loadComments(noteID, listEl, cardEl) {
+    listEl.innerHTML = '<p style="color:#bbb;font-size:15px;">載入留言中...</p>';
+    listEl.classList.remove('hidden');
+
+    const result = await callGasApi('getComments', { noteID });
+    listEl.innerHTML = '';
+
+    if (!result.success) {
+      listEl.innerHTML = '<p style="color:var(--danger);font-size:15px;">載入失敗</p>';
+      return;
+    }
+
+    const comments = result.data || [];
+    if (comments.length === 0) {
+      listEl.innerHTML = '<p style="color:#bbb;font-size:15px;text-align:center;">尚無留言</p>';
+    } else {
+      comments.forEach(function(c) {
+        const item = document.createElement('div');
+        item.className = 'comment-item';
+        item.dataset.commentId = c.CommentID;
+
+        const isOwner = c.CreatedByUserID === currentUser.userID;
+        item.innerHTML =
+          '<div class="comment-meta">👤 ' + escHtml(c.CreatedByUserName)
+          + ' ｜ ' + fmtDate(c.CreatedAt) + '</div>'
+          + '<div>' + escHtml(c.Content) + '</div>'
+          + (isOwner ? '<button class="comment-del-btn" title="刪除留言">✕</button>' : '');
+
+        if (isOwner) {
+          item.querySelector('.comment-del-btn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            confirmAction('確定要刪除此留言嗎？', function() {
+              doDeleteComment(c.CommentID, noteID, listEl, cardEl);
+            });
+          });
+        }
+        listEl.appendChild(item);
+      });
+    }
+
+    // 更新留言數
+    const countEl = cardEl.querySelector('.comment-count');
+    if (countEl) countEl.textContent = comments.length;
+  }
+
+  async function submitComment(noteID, inputEl, cardEl) {
+    const content = inputEl.value.trim();
+    if (!content) { showToast('請輸入留言內容'); return; }
+
+    inputEl.disabled = true;
+    const result = await callGasApi('addComment', {
+      noteID:   noteID,
+      content:  content,
+      userID:   currentUser.userID,
+      userName: currentUser.userName
+    });
+    inputEl.disabled = false;
+
+    if (result.success) {
+      inputEl.value = '';
+      const listEl = cardEl.querySelector('.comments-list');
+      loadComments(noteID, listEl, cardEl);
+      showToast('留言已送出 💬');
+    } else {
+      showToast('留言失敗：' + result.message);
+    }
+  }
+
+  async function doDeleteComment(commentID, noteID, listEl, cardEl) {
+    const result = await callGasApi('deleteComment', {
+      commentID: commentID,
+      userID:    currentUser.userID
+    });
+    if (result.success) {
+      showToast('留言已刪除');
+      loadComments(noteID, listEl, cardEl);
+    } else {
+      showToast('刪除失敗：' + result.message);
+    }
+  }
+
+  // =============================================
+  // 輔助函數
+  // =============================================
+
+  /** Drive view URL → thumbnail URL */
+  function driveViewToThumb(url) {
+    if (!url) return '';
+    const match = url.match(/\/file\/d\/([^/]+)\//);
+    if (match && match[1]) {
+      return 'https://drive.google.com/thumbnail?id=' + match[1] + '&sz=w200';
+    }
+    return url;
+  }
+
+  /** File → Base64 Promise */
+  const toBase64 = function(file) {
+    return new Promise(function(resolve, reject) {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload  = function() { resolve(reader.result); };
+      reader.onerror = function(e) { reject(e); };
+    });
+  };
+
+  /** XSS 防護 */
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** 日期格式化 */
+  function fmtDate(val) {
+    if (!val) return '—';
+    const d = new Date(val);
+    return isNaN(d) ? String(val) : d.toLocaleString('zh-TW');
+  }
+
+  /** Loading Overlay */
+  function showOverlay(show, msg) {
+    document.getElementById('loadingOverlay').classList.toggle('hidden', !show);
+    if (msg) document.getElementById('overlayMsg').textContent = msg;
+  }
+
+  /** Toast 通知 */
+  let toastTimer;
+  function showToast(msg) {
+    const el = document.getElementById('toast');
+    el.innerText = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function() { el.classList.remove('show'); }, 2800);
+  }
+
+  /** 自訂確認 Modal */
+  function confirmAction(msg, onConfirm) {
+    const overlay = document.getElementById('modal-overlay');
+    document.getElementById('modal-msg').textContent = msg;
+    overlay.classList.remove('hidden');
+    document.getElementById('modal-confirm').onclick = function() {
+      overlay.classList.add('hidden');
+      onConfirm();
+    };
+    document.getElementById('modal-cancel').onclick = function() {
+      overlay.classList.add('hidden');
+    };
+  }
+
+  // =============================================
+  // 啟動
+  // =============================================
+  window.onload = initLiff;
 </script>
 </body>
 </html>
