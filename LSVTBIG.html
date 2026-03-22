@@ -138,11 +138,31 @@
       pointer-events: none;
       transition: opacity .3s;
       z-index: 9999;
+      white-space: nowrap;
     }
     #toast.show { opacity: 1; }
 
-    /* ── 載入動畫 ── */
-    .loading { text-align: center; font-size: var(--fs-lg); margin-top: 50px; }
+    /* ── 全域載入 Overlay ── */
+    #loadingOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(255,255,255,.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 8888;
+      font-size: var(--fs-lg);
+    }
+    #loadingOverlay.hidden { display: none !important; }
+
+    /* ── 初始載入（首次進入） ── */
+    #initLoading {
+      text-align: center;
+      font-size: var(--fs-lg);
+      margin-top: 50px;
+    }
+
     .spinner {
       display: inline-block;
       width: 40px; height: 40px;
@@ -154,27 +174,59 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── 自訂 Modal（取代 confirm） ── */
+    #modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9000;
+    }
+    #modal-overlay.hidden { display: none !important; }
+    #modal-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 30px 24px 20px;
+      max-width: 320px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,.2);
+    }
+    #modal-msg { font-size: var(--fs-lg); margin-bottom: 24px; line-height: 1.5; }
+    .modal-btns { display: flex; gap: 12px; }
+    .modal-btns .btn { margin: 0; flex: 1; padding: 12px; font-size: var(--fs-base); }
+
     .hidden { display: none !important; }
   </style>
 </head>
 <body>
 <div class="container">
 
-  <!-- 載入中 -->
-  <div id="loading" class="loading">
+  <!-- 首次進入載入畫面 -->
+  <div id="initLoading">
     <div class="spinner"></div>
     <p>載入中，請稍候...</p>
   </div>
 
-  <!-- 主畫面 -->
+  <!-- 主畫面（記事列表） -->
   <div id="app" class="hidden">
     <h1>📒 網路記事本</h1>
 
     <div class="search-box">
-      <input type="text" id="searchInput" placeholder="輸入關鍵字搜尋...">
+      <!-- [修正 #6] 加入 Enter 鍵觸發搜尋 -->
+      <input type="text" id="searchInput" placeholder="輸入關鍵字搜尋..."
+             onkeydown="if(event.key==='Enter') searchNotes()">
       <button class="btn" onclick="searchNotes()">搜尋</button>
     </div>
-    <button class="btn" onclick="showAddForm()">＋ 新增記事</button>
+
+    <div style="display:flex; gap:10px;">
+      <button class="btn" style="flex:1; margin:0 0 15px 0;" onclick="showAddForm()">＋ 新增記事</button>
+      <!-- [修正 #11] 新增重新整理按鈕 -->
+      <button class="btn btn-secondary" style="width:auto; margin:0 0 15px 0; padding:10px 18px; font-size:var(--fs-base);"
+              onclick="loadNotes()" title="重新整理">🔄</button>
+    </div>
 
     <div id="noteList"></div>
   </div>
@@ -196,9 +248,26 @@
       <div id="previewContainer" class="attachment-preview"></div>
     </div>
     <button class="btn" id="saveBtn" onclick="saveNote()">儲存</button>
-    <button class="btn btn-secondary" onclick="showList()">取消</button>
+    <button class="btn btn-secondary" id="cancelBtn" onclick="showList()">取消</button>
   </div>
 
+</div>
+
+<!-- 全域載入 Overlay（[修正 #1][#10] 不干涉頁面切換，覆蓋在上層） -->
+<div id="loadingOverlay" class="hidden">
+  <div class="spinner"></div>
+  <p>處理中，請稍候...</p>
+</div>
+
+<!-- 自訂刪除確認 Modal（[修正 #9]） -->
+<div id="modal-overlay" class="hidden">
+  <div id="modal-box">
+    <div id="modal-msg">確定要刪除這筆記事嗎？</div>
+    <div class="modal-btns">
+      <button class="btn btn-danger"    id="modal-confirm">確定刪除</button>
+      <button class="btn btn-secondary" id="modal-cancel" >取消</button>
+    </div>
+  </div>
 </div>
 
 <!-- Toast -->
@@ -206,9 +275,9 @@
 
 <script>
   // =============================================
-  // 設定區（請依實際情況修改）
+  // 設定區
   // =============================================
-  const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbw4ByTzyp27aS4Rm7_X_dxquGjvAO7067FqCuzH1PKDn0HwyXNjpClkmIvrv7hQUQlaJQ/exec';
+  const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxNeyzcBzf3Vqf-kg1CdIp1D4iHPUX11gXry4PY_YmEZJ7L0Og0hLc3WNhbpmGH1lt8fQ/exec';
   const LIFF_ID = '2009456572-AUDE1qmM';
 
   // =============================================
@@ -218,28 +287,59 @@
   let currentNotes  = [];
   let editingNoteID = null;
 
+  // 目前顯示的頁面：'list' | 'form'
+  // [修正 #1][#7][#12] 用狀態變數管理頁面，showLoading 不再強制切換頁面
+  let currentPage = 'list';
+
+  // =============================================
+  // 頁面切換（統一管理，避免 showLoading 干涉）
+  // =============================================
+  function showPage(page) {
+    currentPage = page;
+    document.getElementById('app').classList.toggle('hidden', page !== 'list');
+    document.getElementById('noteForm').classList.toggle('hidden', page !== 'form');
+  }
+
   // =============================================
   // 初始化
   // =============================================
   async function initLiff() {
+    // [修正 #8] 區分 LIFF 初始化失敗 與 getProfile 失敗
     try {
       await liff.init({ liffId: LIFF_ID });
-      if (!liff.isLoggedIn()) {
-        liff.login();
-        return;
-      }
+    } catch (err) {
+      console.warn('LIFF 初始化失敗，使用測試模式', err);
+      currentUser = { userID: 'test_user', userName: '測試使用者' };
+      document.getElementById('initLoading').classList.add('hidden');
+      showPage('list');
+      loadNotes();
+      return;
+    }
+
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
+    }
+
+    try {
       const profile = await liff.getProfile();
       currentUser.userID   = profile.userId;
       currentUser.userName = profile.displayName;
     } catch (err) {
-      console.warn('LIFF 初始化失敗，使用測試模式', err);
-      currentUser = { userID: 'test_user', userName: '測試使用者' };
+      // getProfile 失敗：顯示錯誤，不 fallback 測試帳號（避免誤用真實環境）
+      console.error('取得使用者資料失敗', err);
+      showToast('無法取得使用者資料，請重新開啟');
+      document.getElementById('initLoading').classList.add('hidden');
+      return;
     }
+
+    document.getElementById('initLoading').classList.add('hidden');
+    showPage('list');
     loadNotes();
   }
 
   // =============================================
-  // API 呼叫（GET + URLSearchParams，解決 CORS）
+  // API 呼叫
   // =============================================
   async function callGasApi(action, data) {
     try {
@@ -248,15 +348,9 @@
         data: JSON.stringify(data)
       });
       const url = GAS_WEB_APP_URL + '?' + params.toString();
-
-      const response = await fetch(url, {
-        method: 'GET',
-        redirect: 'follow'   // GAS 會 302 redirect，必須加
-      });
-
+      const response = await fetch(url, { method: 'GET', redirect: 'follow' });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       return await response.json();
-
     } catch (error) {
       console.error('API 呼叫失敗:', error);
       return { success: false, message: error.message };
@@ -267,9 +361,9 @@
   // 記事清單
   // =============================================
   async function loadNotes(keyword) {
-    showLoading(true);
+    showOverlay(true);
     const result = await callGasApi('getNotes', { keyword: keyword || '' });
-    showLoading(false);
+    showOverlay(false);
 
     if (result.success) {
       currentNotes = result.data;
@@ -289,47 +383,53 @@
     }
 
     notes.forEach(function(note) {
-      // 後端已過濾，但保留防呆
       if (note.Status === 'deleted') return;
 
       const card = document.createElement('div');
       card.className = 'note-card';
-      card.onclick = function() { recordView(note.NoteID); };
+      // [修正 #5] 改用 data-* 屬性，不在 HTML 字串內拼接 noteID
+      card.dataset.noteId = note.NoteID;
 
-      // 附件處理（支援物件格式與舊版字串格式）
+      // ── 附件 HTML（[修正 #4][#7]）──
       let attachments = [];
       try { attachments = JSON.parse(note.Attachments || '[]'); } catch(e) {}
 
       let attachHtml = '';
       attachments.forEach(function(item) {
-        // 新格式：{ url, mimeType, name }；舊格式：字串 URL
-        const url      = (typeof item === 'object') ? item.url      : item;
-        const mimeType = (typeof item === 'object') ? item.mimeType : '';
-        const name     = (typeof item === 'object') ? item.name     : '附件';
+        const url      = (typeof item === 'object') ? (item.url      || '') : String(item);
+        const mimeType = (typeof item === 'object') ? (item.mimeType || '') : '';
+        const name     = (typeof item === 'object') ? (item.name     || '附件') : '附件';
+        const safeUrl  = escHtml(url);
+        const safeName = escHtml(name);
 
         if (mimeType.startsWith('image/')) {
-          // 圖片：顯示縮圖，點擊開新分頁
-          attachHtml += '<img src="' + url + '" class="attachment-img" '
-            + 'alt="' + name + '" onclick="event.stopPropagation();window.open(\'' + url + '\',\'_blank\')">';
+          // [修正 #7] 將 Drive view URL 轉為 thumbnail URL 才能嵌入 <img>
+          const thumbUrl = driveViewToThumb(url);
+          const safeThumb = escHtml(thumbUrl);
+          attachHtml += '<img src="' + safeThumb + '" class="attachment-img"'
+            + ' alt="' + safeName + '"'
+            + ' data-open-url="' + safeUrl + '">';
         } else {
-          attachHtml += '<a href="' + url + '" target="_blank" '
-            + 'class="attachment-link" onclick="event.stopPropagation()">📎 ' + name + '</a>';
+          attachHtml += '<a href="' + safeUrl + '" target="_blank"'
+            + ' rel="noopener noreferrer"'
+            + ' class="attachment-link"'
+            + ' onclick="event.stopPropagation()">📎 ' + safeName + '</a>';
         }
       });
 
-      // 閱覽者
+      // ── 閱覽者 ──
       let viewers = [];
       try { viewers = JSON.parse(note.Viewers || '[]'); } catch(e) {}
       const viewersHtml = viewers.length > 0
-        ? '<div class="viewers-list"><strong>閱覽者：</strong>' + viewers.join(', ') + '</div>'
+        ? '<div class="viewers-list"><strong>閱覽者：</strong>' + escHtml(viewers.join(', ')) + '</div>'
         : '';
 
-      // 本人才顯示編輯/刪除按鈕
+      // ── 本人才顯示編輯/刪除（[修正 #5] 按鈕不拼 noteID，改用 data-*）──
       const isOwner = note.CreatedByUserID === currentUser.userID;
       const actionHtml = isOwner
         ? '<div class="button-group">'
-          + '<button class="btn btn-secondary" onclick="event.stopPropagation();editNote(\'' + note.NoteID + '\')">✏️ 編輯</button>'
-          + '<button class="btn btn-danger"    onclick="event.stopPropagation();confirmDelete(\'' + note.NoteID + '\')">🗑️ 刪除</button>'
+          + '<button class="btn btn-secondary edit-btn">✏️ 編輯</button>'
+          + '<button class="btn btn-danger delete-btn">🗑️ 刪除</button>'
           + '</div>'
         : '';
 
@@ -338,12 +438,45 @@
         + '<div class="note-meta">'
         +   '發言者：' + escHtml(note.CreatedByUserName)
         +   ' ｜ 時間：' + fmtDate(note.CreatedAt)
-        +   ' ｜ 閱覽：' + (note.ViewCount || 0) + ' 次'
+        +   ' ｜ 閱覽：<span class="view-count">' + (note.ViewCount || 0) + '</span> 次'
         + '</div>'
         + '<div class="note-content">' + escHtml(note.Content) + '</div>'
         + '<div class="attachment-preview">' + attachHtml + '</div>'
         + viewersHtml
         + actionHtml;
+
+      // ── 事件綁定（[修正 #5] 全部用 addEventListener）──
+      // 卡片點擊 → 記錄閱覽
+      card.addEventListener('click', function() {
+        recordView(note.NoteID, card);
+      });
+
+      // 附件圖片點擊 → 開新分頁
+      card.querySelectorAll('.attachment-img').forEach(function(img) {
+        img.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const openUrl = img.dataset.openUrl;
+          if (openUrl) window.open(openUrl, '_blank');
+        });
+      });
+
+      // 編輯按鈕
+      const editBtn = card.querySelector('.edit-btn');
+      if (editBtn) {
+        editBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          editNote(note.NoteID);
+        });
+      }
+
+      // 刪除按鈕
+      const deleteBtn = card.querySelector('.delete-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          confirmDelete(note.NoteID);
+        });
+      }
 
       listDiv.appendChild(card);
     });
@@ -364,8 +497,7 @@
     document.getElementById('content').value = '';
     document.getElementById('attachments').value = '';
     document.getElementById('previewContainer').innerHTML = '';
-    document.getElementById('app').classList.add('hidden');
-    document.getElementById('noteForm').classList.remove('hidden');
+    showPage('form');
   }
 
   function editNote(noteID) {
@@ -378,13 +510,11 @@
     document.getElementById('attachments').value = '';
     document.getElementById('previewContainer').innerHTML =
       '<p style="font-size:16px;color:#666;">（新上傳的附件將追加至現有附件）</p>';
-    document.getElementById('app').classList.add('hidden');
-    document.getElementById('noteForm').classList.remove('hidden');
+    showPage('form');
   }
 
   function showList() {
-    document.getElementById('noteForm').classList.add('hidden');
-    document.getElementById('app').classList.remove('hidden');
+    showPage('list');
   }
 
   // =============================================
@@ -394,6 +524,7 @@
     const preview = document.getElementById('previewContainer');
     preview.innerHTML = '';
     const files = document.getElementById('attachments').files;
+    // [確認 #9] 使用 let 宣告 i，閉包安全
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (file.type.startsWith('image/')) {
@@ -416,7 +547,7 @@
   }
 
   // =============================================
-  // 儲存記事
+  // 儲存記事（[修正 #2][#10] 改用 overlay，不隱藏表單）
   // =============================================
   async function saveNote() {
     const title   = document.getElementById('title').value.trim();
@@ -426,11 +557,12 @@
       return;
     }
 
-    const saveBtn = document.getElementById('saveBtn');
-    saveBtn.disabled = true;
-    saveBtn.innerText = '儲存中...';
-    showLoading(true);
-    document.getElementById('noteForm').classList.add('hidden');
+    const saveBtn   = document.getElementById('saveBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    saveBtn.disabled   = true;
+    cancelBtn.disabled = true;
+    saveBtn.innerText  = '儲存中...';
+    showOverlay(true);  // [修正 #10] 用 overlay 覆蓋，不隱藏表單
 
     // 附件轉 Base64
     const files = document.getElementById('attachments').files;
@@ -463,36 +595,46 @@
       result = await callGasApi('addNote', noteData);
     }
 
-    saveBtn.disabled = false;
-    saveBtn.innerText = '儲存';
+    showOverlay(false);
+    saveBtn.disabled   = false;
+    cancelBtn.disabled = false;
+    saveBtn.innerText  = '儲存';
 
     if (result.success) {
       showToast(editingNoteID ? '記事已更新 ✅' : '記事已新增 ✅');
       showList();
       loadNotes();
     } else {
+      // [修正 #2] 失敗時保持在表單頁，不閃爍
       showToast('儲存失敗：' + result.message);
-      showLoading(false);
-      document.getElementById('noteForm').classList.remove('hidden');
     }
   }
 
   // =============================================
-  // 刪除記事
+  // 刪除記事（[修正 #9] 自訂 Modal）
   // =============================================
   function confirmDelete(noteID) {
-    if (confirm('確定要刪除這筆記事嗎？')) {
+    const overlay = document.getElementById('modal-overlay');
+    overlay.classList.remove('hidden');
+
+    // 確定刪除
+    document.getElementById('modal-confirm').onclick = function() {
+      overlay.classList.add('hidden');
       doDeleteNote(noteID);
-    }
+    };
+    // 取消
+    document.getElementById('modal-cancel').onclick = function() {
+      overlay.classList.add('hidden');
+    };
   }
 
   async function doDeleteNote(noteID) {
-    showLoading(true);
+    showOverlay(true);
     const result = await callGasApi('deleteNote', {
       noteID: noteID,
       userID: currentUser.userID
     });
-    showLoading(false);
+    showOverlay(false);
 
     if (result.success) {
       showToast('記事已刪除 🗑️');
@@ -503,18 +645,41 @@
   }
 
   // =============================================
-  // 閱覽紀錄
+  // 閱覽紀錄（[修正 #3] 即時更新卡片上的閱覽數）
   // =============================================
-  async function recordView(noteID) {
-    await callGasApi('recordView', {
+  async function recordView(noteID, cardEl) {
+    const result = await callGasApi('recordView', {
       noteID: noteID,
       userID: currentUser.userID
     });
+    if (result.success && cardEl) {
+      // 即時更新卡片上的閱覽數，不需重新載入整頁
+      const countEl = cardEl.querySelector('.view-count');
+      if (countEl) countEl.innerText = result.viewCount;
+      // 同步更新 currentNotes 快取
+      const note = currentNotes.find(function(n) { return n.NoteID === noteID; });
+      if (note) note.ViewCount = result.viewCount;
+    }
   }
 
   // =============================================
   // 輔助函數
   // =============================================
+
+  /**
+   * [修正 #7] 將 Google Drive view URL 轉為可嵌入的 thumbnail URL
+   * 輸入：https://drive.google.com/file/d/FILE_ID/view?usp=...
+   * 輸出：https://drive.google.com/thumbnail?id=FILE_ID&sz=w200
+   */
+  function driveViewToThumb(url) {
+    if (!url) return '';
+    const match = url.match(/\/file\/d\/([^/]+)\//);
+    if (match && match[1]) {
+      return 'https://drive.google.com/thumbnail?id=' + match[1] + '&sz=w200';
+    }
+    return url; // 非 Drive URL 原樣回傳
+  }
+
   const toBase64 = function(file) {
     return new Promise(function(resolve, reject) {
       const reader = new FileReader();
@@ -538,9 +703,11 @@
     return isNaN(d) ? String(val) : d.toLocaleString('zh-TW');
   }
 
-  function showLoading(show) {
-    document.getElementById('loading').classList.toggle('hidden', !show);
-    document.getElementById('app').classList.toggle('hidden',  show);
+  /**
+   * [修正 #1][#7][#12] 全域 overlay loading，完全不干涉頁面切換狀態
+   */
+  function showOverlay(show) {
+    document.getElementById('loadingOverlay').classList.toggle('hidden', !show);
   }
 
   let toastTimer;
