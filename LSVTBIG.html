@@ -335,7 +335,7 @@
 // ============================================================
 // 設定
 // ============================================================
-const API_URL = 'https://script.google.com/macros/s/AKfycbzq1H-00p7WlMeC0-qeM29NIshXt985-8BhN-Uw5reXbUKV3tmgJ76Ojmm8ajUHUBhOHQ/exec'; // 替換為 GAS 部署 URL
+const API_URL = 'https://script.google.com/macros/s/AKfycbwIZOEnlPbu06NFWOk9hNKadtItXgTQCgIDJ78fZgQrP8ngqhLOllmmP1QBmnb1XD4kXQ/exec'; // 替換為 GAS 部署 URL
 let currentView = 'all';
 let currentFolderId = '';
 let currentNoteId = '';
@@ -346,41 +346,109 @@ let allFolders = [];
 let allNotes = [];
 let allFiles = [];
 
+
 // ============================================================
-// API 呼叫
+// ★ JSONP API 模組 — 解決 GAS CORS 問題
+//   取代原本的 fetch，所有請求改走 GET + JSONP
 // ============================================================
-async function api(action, params = {}) {
-  try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...params })
-    });
-    return await res.json();
-  } catch (e) {
-    // Demo 模式：回傳假資料
-    return demoData(action, params);
-  }
+
+/**
+ * JSONP 呼叫 GAS
+ * @param {string} action  - GAS action 名稱
+ * @param {object} params  - 參數物件（會序列化為 payload）
+ * @returns {Promise<object>}
+ */
+function api(action, params = {}) {
+  return new Promise((resolve, reject) => {
+    // 產生唯一 callback 名稱
+    const cbName = '_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+
+    // 設定 timeout（15 秒）
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('API 請求逾時'));
+    }, 15000);
+
+    // 清理函式
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      const el = document.getElementById(cbName);
+      if (el) el.remove();
+    }
+
+    // 掛載 callback
+    window[cbName] = function(data) {
+      cleanup();
+      resolve(data);
+    };
+
+    // 組合 URL
+    const payload    = encodeURIComponent(JSON.stringify(params));
+    const url        = `${API_URL}?action=${action}&payload=${payload}&callback=${cbName}`;
+
+    // 動態插入 <script>
+    const script     = document.createElement('script');
+    script.id        = cbName;
+    script.src       = url;
+    script.onerror   = () => {
+      cleanup();
+      // 降級：回傳 demo 資料
+      resolve(demoData(action, params));
+    };
+    document.head.appendChild(script);
+  });
 }
 
-// Demo 資料（無 API 時展示）
+// ============================================================
+// Demo 資料（API 不通時展示用）
+// ============================================================
 function demoData(action, params) {
-  if (action === 'getFolders') return { success: true, data: [
-    { id: 'f1', name: '📁 我的筆記', color: '#4285f4', noteCount: 3, fileCount: 2 },
-    { id: 'f2', name: '🖼️ 相簿',   color: '#ea4335', noteCount: 1, fileCount: 8 },
-    { id: 'f3', name: '💼 工作',    color: '#34a853', noteCount: 5, fileCount: 3 }
-  ]};
-  if (action === 'getNotes') return { success: true, data: [
-    { id: 'n1', title: '歡迎使用網頁筆記本', content: '這是一個功能完整的筆記本系統，支援附件上傳、資料夾管理、批量操作等功能。', folderId: 'f1', tags: '歡迎,教學', updatedAt: new Date().toISOString(), fileIds: [] },
-    { id: 'n2', title: '相簿使用說明', content: '上傳圖片到相簿資料夾，可以直接預覽縮圖，點擊可放大檢視。', folderId: 'f2', tags: '相簿,圖片', updatedAt: new Date().toISOString(), fileIds: [] },
-    { id: 'n3', title: '批量上傳功能', content: '點擊右上角「批量上傳」按鈕，可以一次上傳多個檔案到指定資料夾。', folderId: 'f1', tags: '功能,上傳', updatedAt: new Date().toISOString(), fileIds: [] }
-  ]};
-  if (action === 'getFiles') return { success: true, data: [] };
-  if (action === 'createNote') return { success: true, data: { id: 'n_' + Date.now(), createdAt: new Date().toISOString() } };
-  if (action === 'createFolder') return { success: true, data: { id: 'f_' + Date.now() } };
-  if (action === 'deleteNote') return { success: true };
-  if (action === 'deleteFolder') return { success: true };
-  return { success: true, data: [] };
+  const now = new Date().toISOString();
+  switch(action) {
+    case 'getFolders':
+      return { success: true, data: [
+        { id:'f1', name:'📁 我的筆記', color:'#4285f4', noteCount:'3', fileCount:'2' },
+        { id:'f2', name:'🖼️ 相簿',    color:'#ea4335', noteCount:'1', fileCount:'8' },
+        { id:'f3', name:'💼 工作',     color:'#34a853', noteCount:'5', fileCount:'3' }
+      ]};
+    case 'getNotes':
+      return { success: true, data: [
+        { id:'n1', title:'歡迎使用網頁筆記本',
+          content:'這是功能完整的筆記本系統，支援附件上傳、資料夾管理、批量操作。',
+          folderId:'f1', tags:'歡迎,教學', updatedAt: now, fileIds:[] },
+        { id:'n2', title:'相簿使用說明',
+          content:'上傳圖片到相簿資料夾，可直接預覽縮圖，點擊可放大檢視。',
+          folderId:'f2', tags:'相簿,圖片', updatedAt: now, fileIds:[] },
+        { id:'n3', title:'批量上傳功能',
+          content:'點擊右上角「批量上傳」，可一次上傳多個檔案到指定資料夾。',
+          folderId:'f1', tags:'功能,上傳', updatedAt: now, fileIds:[] }
+      ]};
+    case 'getNote':
+      return { success: true, data: {
+        id: params.id, title:'Demo 筆記', content:'這是 Demo 模式的筆記內容。',
+        folderId:'f1', tags:'demo', updatedAt: now, fileIds:[], files:[]
+      }};
+    case 'getFiles':
+      return { success: true, data: [], total: 0 };
+    case 'createNote':
+    case 'updateNote':
+      return { success: true, data: { id: 'n_' + Date.now(), createdAt: now } };
+    case 'deleteNote':
+    case 'deleteFile':
+    case 'deleteFolder':
+      return { success: true };
+    case 'createFolder':
+      return { success: true, data: { id: 'f_' + Date.now() } };
+    case 'uploadFile':
+      return { success: true, data: {
+        id: 'file_' + Date.now(), driveId: 'demo',
+        name: params.name, mimeType: params.mimeType, size: params.size,
+        thumbnail: '', viewUrl: '#', downloadUrl: '#'
+      }};
+    default:
+      return { success: false, error: 'Unknown action: ' + action };
+  }
 }
 
 // ============================================================
