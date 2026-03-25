@@ -4,843 +4,770 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>📓 網路記事本</title>
-
-  <!-- LIFF SDK -->
   <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-
-  <!-- DOMPurify（防 XSS） -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-
   <style>
-    /* ── CSS Reset & 基礎 ── */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     :root {
-      --primary      : #4CAF50;
-      --primary-dark : #388E3C;
-      --primary-light: #C8E6C9;
-      --bg           : #F5F5F5;
-      --card-bg      : #FFFFFF;
-      --text-main    : #333333;
-      --text-sub     : #888888;
-      --danger       : #F44336;
-      --warning      : #FF9800;
-      --info         : #2196F3;
-      --border       : #E0E0E0;
-      --shadow       : 0 2px 8px rgba(0,0,0,0.10);
-      --radius       : 12px;
-      --transition   : 0.2s ease;
+      --primary:#4CAF50; --primary-dark:#388E3C; --primary-light:#C8E6C9;
+      --bg:#F5F5F5; --card-bg:#FFFFFF; --text-main:#333; --text-sub:#888;
+      --danger:#F44336; --warning:#FF9800; --info:#2196F3;
+      --border:#E0E0E0; --shadow:0 2px 8px rgba(0,0,0,.10);
+      --radius:12px; --transition:.2s ease;
     }
-    html, body { height: 100%; font-family: 'Segoe UI', 'Noto Sans TC', sans-serif;
-                 background: var(--bg); color: var(--text-main); }
-
-    /* ── 頂部標題列 ── */
-    .header {
-      position: sticky; top: 0; z-index: 100;
-      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-      color: #fff; padding: 12px 16px;
-      display: flex; align-items: center; gap: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    }
-    .header-title { font-size: 1.2rem; font-weight: 700; flex: 1; }
-    .user-avatar  { width: 36px; height: 36px; border-radius: 50%;
-                    border: 2px solid rgba(255,255,255,0.7); object-fit: cover; }
-    .user-name    { font-size: 0.85rem; opacity: 0.9; max-width: 100px;
-                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .perm-badge   { font-size: 0.7rem; background: rgba(255,255,255,0.25);
-                    padding: 2px 8px; border-radius: 20px; }
-
-    /* ── 主容器 ── */
-    .container { max-width: 800px; margin: 0 auto; padding: 16px; }
-
-    /* ── 搜尋列 ── */
-    .search-bar { display: flex; gap: 8px; margin-bottom: 12px; }
-    .search-bar input {
-      flex: 1; padding: 10px 14px; border: 1px solid var(--border);
-      border-radius: 8px; font-size: 0.95rem; outline: none;
-      transition: border-color var(--transition);
-    }
-    .search-bar input:focus { border-color: var(--primary); }
-    .btn-search {
-      padding: 10px 18px; background: var(--primary); color: #fff;
-      border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem;
-      transition: background var(--transition);
-    }
-    .btn-search:hover { background: var(--primary-dark); }
-
-    /* ── 操作列 ── */
-    .action-bar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
-    .btn-add {
-      flex: 1; padding: 11px; background: var(--primary); color: #fff;
-      border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem;
-      font-weight: 600; transition: background var(--transition);
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-    }
-    .btn-add:hover { background: var(--primary-dark); }
-    .btn-add:disabled { background: #ccc; cursor: not-allowed; }
-    .btn-refresh {
-      padding: 11px 14px; background: var(--card-bg); border: 1px solid var(--border);
-      border-radius: 8px; cursor: pointer; font-size: 1rem;
-      transition: all var(--transition);
-    }
-    .btn-refresh:hover { background: var(--primary-light); border-color: var(--primary); }
-    .btn-admin {
-      padding: 11px 14px; background: var(--warning); color: #fff;
-      border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem;
-      transition: background var(--transition);
-    }
-    .btn-admin:hover { background: #e65100; }
-
-    /* ── 記事卡片 ── */
-    .notes-list { display: flex; flex-direction: column; gap: 12px; }
-    .note-card {
-      background: var(--card-bg); border-radius: var(--radius);
-      box-shadow: var(--shadow); padding: 16px;
-      cursor: pointer; transition: transform var(--transition), box-shadow var(--transition);
-      border-left: 4px solid var(--primary);
-    }
-    .note-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
-    .note-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-    .note-title { font-size: 1rem; font-weight: 600; color: var(--text-main); flex: 1; }
-    .note-meta  { font-size: 0.75rem; color: var(--text-sub); white-space: nowrap; }
-    .note-summary { font-size: 0.88rem; color: var(--text-sub); margin: 6px 0;
-                    line-height: 1.5; display: -webkit-box;
-                    -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .note-footer { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
-    .note-author { font-size: 0.78rem; color: var(--text-sub); }
-    .note-views  { font-size: 0.78rem; color: var(--text-sub); }
-    .note-attach { font-size: 0.78rem; color: var(--info); }
-    .note-actions { margin-left: auto; display: flex; gap: 6px; }
-    .btn-edit, .btn-delete {
-      padding: 4px 10px; border: none; border-radius: 6px;
-      cursor: pointer; font-size: 0.78rem; transition: all var(--transition);
-    }
-    .btn-edit   { background: var(--primary-light); color: var(--primary-dark); }
-    .btn-edit:hover   { background: var(--primary); color: #fff; }
-    .btn-delete { background: #FFEBEE; color: var(--danger); }
-    .btn-delete:hover { background: var(--danger); color: #fff; }
-
-    /* ── 空狀態 ── */
-    .empty-state {
-      text-align: center; padding: 60px 20px; color: var(--text-sub);
-    }
-    .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
-    .empty-state p { font-size: 1rem; }
-
-    /* ── 載入中 ── */
-    .loading {
-      text-align: center; padding: 40px;
-      color: var(--text-sub); font-size: 0.95rem;
-    }
-    .spinner {
-      display: inline-block; width: 28px; height: 28px;
-      border: 3px solid var(--primary-light);
-      border-top-color: var(--primary);
-      border-radius: 50%; animation: spin 0.8s linear infinite;
-      margin-bottom: 8px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Modal 基礎 ── */
-    .modal-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.5); z-index: 200;
-      align-items: center; justify-content: center; padding: 16px;
-    }
-    .modal-overlay.active { display: flex; }
-    .modal {
-      background: var(--card-bg); border-radius: var(--radius);
-      width: 100%; max-width: 600px; max-height: 90vh;
-      overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-      animation: slideUp 0.25s ease;
-    }
-    @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    .modal-header {
-      display: flex; align-items: center; padding: 16px 20px;
-      border-bottom: 1px solid var(--border); gap: 10px;
-    }
-    .modal-title { font-size: 1.05rem; font-weight: 700; flex: 1; }
-    .modal-close {
-      background: none; border: none; font-size: 1.4rem;
-      cursor: pointer; color: var(--text-sub); line-height: 1;
-      padding: 2px 6px; border-radius: 4px;
-    }
-    .modal-close:hover { background: var(--bg); }
-    .modal-body  { padding: 20px; }
-    .modal-footer { padding: 12px 20px; border-top: 1px solid var(--border);
-                    display: flex; gap: 8px; justify-content: flex-end; }
-
-    /* ── 表單 ── */
-    .form-group { margin-bottom: 16px; }
-    .form-group label { display: block; font-size: 0.88rem; font-weight: 600;
-                        margin-bottom: 6px; color: var(--text-main); }
-    .form-group input, .form-group textarea {
-      width: 100%; padding: 10px 12px; border: 1px solid var(--border);
-      border-radius: 8px; font-size: 0.95rem; outline: none;
-      transition: border-color var(--transition); font-family: inherit;
-    }
-    .form-group input:focus, .form-group textarea:focus { border-color: var(--primary); }
-    .form-group textarea { min-height: 140px; resize: vertical; }
-
-    /* ── 按鈕通用 ── */
-    .btn-primary {
-      padding: 10px 20px; background: var(--primary); color: #fff;
-      border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem;
-      font-weight: 600; transition: background var(--transition);
-    }
-    .btn-primary:hover { background: var(--primary-dark); }
-    .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
-    .btn-secondary {
-      padding: 10px 20px; background: var(--bg); color: var(--text-main);
-      border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
-      font-size: 0.95rem; transition: all var(--transition);
-    }
-    .btn-secondary:hover { background: var(--border); }
-    .btn-danger {
-      padding: 10px 20px; background: var(--danger); color: #fff;
-      border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem;
-      transition: background var(--transition);
-    }
-    .btn-danger:hover { background: #c62828; }
-
-    /* ── 記事詳情 ── */
-    .detail-content { line-height: 1.8; font-size: 0.95rem; word-break: break-word; }
-    .detail-content img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
-    .detail-meta { font-size: 0.82rem; color: var(--text-sub); margin-bottom: 16px;
-                   display: flex; flex-wrap: wrap; gap: 12px; }
-    .attachments-section { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 16px; }
-    .attachments-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 10px; }
-    .attachment-item {
-      display: flex; align-items: center; gap: 10px; padding: 8px 12px;
-      background: var(--bg); border-radius: 8px; margin-bottom: 8px;
-    }
-    .attachment-icon { font-size: 1.4rem; }
-    .attachment-name { flex: 1; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .attachment-actions { display: flex; gap: 6px; }
-    .btn-preview, .btn-download {
-      padding: 4px 10px; border: none; border-radius: 6px;
-      cursor: pointer; font-size: 0.78rem; transition: all var(--transition);
-    }
-    .btn-preview  { background: var(--primary-light); color: var(--primary-dark); }
-    .btn-preview:hover  { background: var(--primary); color: #fff; }
-    .btn-download { background: #E3F2FD; color: var(--info); }
-    .btn-download:hover { background: var(--info); color: #fff; }
-
-    /* ── 上傳區域 ── */
-    .upload-zone {
-      border: 2px dashed var(--border); border-radius: 8px;
-      padding: 24px; text-align: center; cursor: pointer;
-      transition: all var(--transition); color: var(--text-sub);
-    }
-    .upload-zone:hover, .upload-zone.drag-over {
-      border-color: var(--primary); background: var(--primary-light); color: var(--primary-dark);
-    }
-    .upload-zone input[type="file"] { display: none; }
-    .upload-progress { margin-top: 8px; }
-    .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
-    .progress-fill { height: 100%; background: var(--primary); transition: width 0.3s ease; }
-
-    /* ── Toast 通知 ── */
-    .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 999;
-                       display: flex; flex-direction: column; gap: 8px; }
-    .toast {
-      padding: 12px 18px; border-radius: 8px; color: #fff; font-size: 0.9rem;
-      box-shadow: var(--shadow); animation: toastIn 0.3s ease;
-      max-width: 300px; word-break: break-word;
-    }
-    .toast.success { background: var(--primary-dark); }
-    .toast.error   { background: var(--danger); }
-    .toast.info    { background: var(--info); }
-    @keyframes toastIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-    /* ── 無權限頁面 ── */
-    .no-access {
-      text-align: center; padding: 80px 20px; color: var(--text-sub);
-    }
-    .no-access .icon { font-size: 4rem; margin-bottom: 16px; }
-    .no-access h2 { color: var(--danger); margin-bottom: 8px; }
-
-    /* ── 響應式 ── */
-    @media (max-width: 480px) {
-      .container { padding: 10px; }
-      .note-actions { width: 100%; justify-content: flex-end; }
-      .modal { max-height: 95vh; }
+    html,body { height:100%; font-family:'Segoe UI','Noto Sans TC',sans-serif;
+                background:var(--bg); color:var(--text-main); }
+    /* ── Header ── */
+    .header { position:sticky; top:0; z-index:100;
+      background:linear-gradient(135deg,var(--primary-dark),var(--primary));
+      color:#fff; padding:12px 16px; display:flex; align-items:center; gap:10px;
+      box-shadow:0 2px 8px rgba(0,0,0,.2); }
+    .header-title { font-size:1.2rem; font-weight:700; flex:1; }
+    .user-avatar  { width:36px; height:36px; border-radius:50%;
+                    border:2px solid rgba(255,255,255,.7); object-fit:cover; }
+    .user-name    { font-size:.85rem; opacity:.9; max-width:100px;
+                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .perm-badge   { font-size:.7rem; background:rgba(255,255,255,.25);
+                    padding:2px 8px; border-radius:20px; }
+    /* ── Layout ── */
+    .container  { max-width:800px; margin:0 auto; padding:16px; }
+    .search-bar { display:flex; gap:8px; margin-bottom:12px; }
+    .search-bar input { flex:1; padding:10px 14px; border:1px solid var(--border);
+      border-radius:8px; font-size:.95rem; outline:none;
+      transition:border-color var(--transition); }
+    .search-bar input:focus { border-color:var(--primary); }
+    .btn-search { padding:10px 18px; background:var(--primary); color:#fff;
+      border:none; border-radius:8px; cursor:pointer; font-size:.9rem;
+      transition:background var(--transition); }
+    .btn-search:hover { background:var(--primary-dark); }
+    .action-bar { display:flex; gap:8px; margin-bottom:16px; align-items:center; }
+    .btn-add { flex:1; padding:11px; background:var(--primary); color:#fff;
+      border:none; border-radius:8px; cursor:pointer; font-size:.95rem;
+      font-weight:600; transition:background var(--transition);
+      display:flex; align-items:center; justify-content:center; gap:6px; }
+    .btn-add:hover    { background:var(--primary-dark); }
+    .btn-add:disabled { background:#ccc; cursor:not-allowed; }
+    .btn-refresh { padding:11px 14px; background:var(--card-bg);
+      border:1px solid var(--border); border-radius:8px; cursor:pointer;
+      font-size:1rem; transition:all var(--transition); }
+    .btn-refresh:hover { background:var(--primary-light); border-color:var(--primary); }
+    .btn-admin { padding:11px 14px; background:var(--warning); color:#fff;
+      border:none; border-radius:8px; cursor:pointer; font-size:.85rem;
+      transition:background var(--transition); }
+    .btn-admin:hover { background:#e65100; }
+    /* ── Note Card ── */
+    .notes-list { display:flex; flex-direction:column; gap:12px; }
+    .note-card { background:var(--card-bg); border-radius:var(--radius);
+      box-shadow:var(--shadow); padding:16px; cursor:pointer;
+      transition:transform var(--transition),box-shadow var(--transition);
+      border-left:4px solid var(--primary); }
+    .note-card:hover { transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,.15); }
+    .note-card-header { display:flex; justify-content:space-between;
+                        align-items:flex-start; gap:8px; }
+    .note-title   { font-size:1rem; font-weight:600; flex:1; }
+    .note-meta    { font-size:.75rem; color:var(--text-sub); white-space:nowrap; }
+    .note-summary { font-size:.88rem; color:var(--text-sub); margin:6px 0;
+      line-height:1.5; display:-webkit-box;
+      -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .note-footer  { display:flex; align-items:center; gap:10px;
+                    margin-top:8px; flex-wrap:wrap; }
+    .note-author,.note-views { font-size:.78rem; color:var(--text-sub); }
+    .note-attach  { font-size:.78rem; color:var(--info); }
+    .note-actions { margin-left:auto; display:flex; gap:6px; }
+    .btn-edit,.btn-delete { padding:4px 10px; border:none; border-radius:6px;
+      cursor:pointer; font-size:.78rem; transition:all var(--transition); }
+    .btn-edit         { background:var(--primary-light); color:var(--primary-dark); }
+    .btn-edit:hover   { background:var(--primary); color:#fff; }
+    .btn-delete       { background:#FFEBEE; color:var(--danger); }
+    .btn-delete:hover { background:var(--danger); color:#fff; }
+    /* ── States ── */
+    .empty-state { text-align:center; padding:60px 20px; color:var(--text-sub); }
+    .empty-state .icon { font-size:3rem; margin-bottom:12px; }
+    .loading { text-align:center; padding:40px; color:var(--text-sub); font-size:.95rem; }
+    .spinner { display:inline-block; width:28px; height:28px;
+      border:3px solid var(--primary-light); border-top-color:var(--primary);
+      border-radius:50%; animation:spin .8s linear infinite; margin-bottom:8px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .no-access { text-align:center; padding:80px 20px; color:var(--text-sub); }
+    .no-access .icon { font-size:4rem; margin-bottom:16px; }
+    .no-access h2    { color:var(--danger); margin-bottom:8px; }
+    /* ── Modal ── */
+    .modal-overlay { display:none; position:fixed; inset:0;
+      background:rgba(0,0,0,.5); z-index:200;
+      align-items:center; justify-content:center; padding:16px; }
+    .modal-overlay.active { display:flex; }
+    .modal { background:var(--card-bg); border-radius:var(--radius);
+      width:100%; max-width:600px; max-height:90vh; overflow-y:auto;
+      box-shadow:0 8px 32px rgba(0,0,0,.2); animation:slideUp .25s ease; }
+    @keyframes slideUp { from{transform:translateY(30px);opacity:0}
+                         to  {transform:translateY(0);   opacity:1} }
+    .modal-header { display:flex; align-items:center; padding:16px 20px;
+      border-bottom:1px solid var(--border); gap:10px;
+      position:sticky; top:0; background:var(--card-bg); z-index:1; }
+    .modal-title { font-size:1.05rem; font-weight:700; flex:1; }
+    .modal-close { background:none; border:none; font-size:1.4rem;
+      cursor:pointer; color:var(--text-sub); padding:2px 6px; border-radius:4px; }
+    .modal-close:hover { background:var(--bg); }
+    .modal-body   { padding:20px; }
+    .modal-footer { padding:12px 20px; border-top:1px solid var(--border);
+      display:flex; gap:8px; justify-content:flex-end;
+      position:sticky; bottom:0; background:var(--card-bg); }
+    /* ── Form ── */
+    .form-group { margin-bottom:16px; }
+    .form-group label { display:block; font-size:.88rem; font-weight:600;
+                        margin-bottom:6px; }
+    .form-group input,.form-group textarea { width:100%; padding:10px 12px;
+      border:1px solid var(--border); border-radius:8px; font-size:.95rem;
+      outline:none; transition:border-color var(--transition); font-family:inherit; }
+    .form-group input:focus,.form-group textarea:focus { border-color:var(--primary); }
+    .form-group textarea { min-height:140px; resize:vertical; }
+    /* ── Buttons ── */
+    .btn-primary { padding:10px 20px; background:var(--primary); color:#fff;
+      border:none; border-radius:8px; cursor:pointer; font-size:.95rem;
+      font-weight:600; transition:background var(--transition); }
+    .btn-primary:hover    { background:var(--primary-dark); }
+    .btn-primary:disabled { background:#ccc; cursor:not-allowed; }
+    .btn-secondary { padding:10px 20px; background:var(--bg); color:var(--text-main);
+      border:1px solid var(--border); border-radius:8px; cursor:pointer;
+      font-size:.95rem; transition:all var(--transition); }
+    .btn-secondary:hover { background:var(--border); }
+    .btn-danger { padding:10px 20px; background:var(--danger); color:#fff;
+      border:none; border-radius:8px; cursor:pointer; font-size:.95rem;
+      transition:background var(--transition); }
+    .btn-danger:hover { background:#c62828; }
+    /* ── Detail ── */
+    .detail-content { line-height:1.8; font-size:.95rem;
+                      word-break:break-word; white-space:pre-wrap; }
+    .detail-meta { font-size:.82rem; color:var(--text-sub); margin-bottom:16px;
+                   display:flex; flex-wrap:wrap; gap:12px; }
+    /* ── Attachments ── */
+    .attachments-section { margin-top:20px; border-top:1px solid var(--border); padding-top:16px; }
+    .attachments-title   { font-size:.9rem; font-weight:600; margin-bottom:10px; }
+    .attachment-item { display:flex; align-items:center; gap:10px; padding:8px 12px;
+      background:var(--bg); border-radius:8px; margin-bottom:8px; }
+    .attachment-icon { font-size:1.4rem; }
+    .attachment-name { flex:1; font-size:.88rem; overflow:hidden;
+                       text-overflow:ellipsis; white-space:nowrap; }
+    .attachment-actions { display:flex; gap:6px; }
+    .btn-preview,.btn-download { padding:4px 10px; border:none; border-radius:6px;
+      cursor:pointer; font-size:.78rem; transition:all var(--transition); }
+    .btn-preview        { background:var(--primary-light); color:var(--primary-dark); }
+    .btn-preview:hover  { background:var(--primary); color:#fff; }
+    .btn-download       { background:#E3F2FD; color:var(--info); }
+    .btn-download:hover { background:var(--info); color:#fff; }
+    /* ── Upload ── */
+    .upload-zone { border:2px dashed var(--border); border-radius:8px; padding:24px;
+      text-align:center; cursor:pointer; transition:all var(--transition); color:var(--text-sub); }
+    .upload-zone:hover,.upload-zone.drag-over {
+      border-color:var(--primary); background:var(--primary-light); color:var(--primary-dark); }
+    .upload-zone input[type="file"] { display:none; }
+    .progress-bar  { height:6px; background:var(--border); border-radius:3px; overflow:hidden; margin-top:6px; }
+    .progress-fill { height:100%; background:var(--primary); transition:width .3s ease; }
+    /* ── Toast ── */
+    .toast-container { position:fixed; bottom:20px; right:20px; z-index:999;
+                       display:flex; flex-direction:column; gap:8px; }
+    .toast { padding:12px 18px; border-radius:8px; color:#fff; font-size:.9rem;
+      box-shadow:var(--shadow); animation:toastIn .3s ease;
+      max-width:300px; word-break:break-word; }
+    .toast.success { background:var(--primary-dark); }
+    .toast.error   { background:var(--danger); }
+    .toast.info    { background:var(--info); }
+    @keyframes toastIn { from{transform:translateX(100%);opacity:0}
+                         to  {transform:translateX(0);   opacity:1} }
+    /* ── Admin ── */
+    .admin-tab { padding:8px 16px; border:none; background:none; cursor:pointer;
+      font-size:.9rem; color:var(--text-sub);
+      border-bottom:3px solid transparent; transition:all var(--transition); }
+    .admin-tab.active { color:var(--primary); border-bottom-color:var(--primary); font-weight:600; }
+    .admin-tab:hover  { color:var(--primary-dark); }
+    .user-row { display:flex; align-items:center; gap:10px; padding:10px 12px;
+      border-radius:8px; border:1px solid var(--border); margin-bottom:8px; background:var(--card-bg); }
+    .user-row-info { flex:1; }
+    .user-row-name { font-size:.9rem; font-weight:600; }
+    .user-row-id   { font-size:.75rem; color:var(--text-sub); word-break:break-all; }
+    .perm-select { padding:4px 8px; border:1px solid var(--border);
+      border-radius:6px; font-size:.82rem; outline:none; cursor:pointer; }
+    .btn-save-perm { padding:4px 10px; background:var(--primary); color:#fff;
+      border:none; border-radius:6px; cursor:pointer; font-size:.78rem;
+      transition:background var(--transition); }
+    .btn-save-perm:hover { background:var(--primary-dark); }
+    .deleted-card { padding:12px; border-radius:8px; border:1px dashed var(--border);
+      margin-bottom:8px; background:#FFF8F8; }
+    .deleted-card-title { font-size:.9rem; font-weight:600; color:var(--danger); }
+    .deleted-card-meta  { font-size:.78rem; color:var(--text-sub); margin:4px 0 8px; }
+    .btn-restore { padding:4px 12px; background:var(--primary-light); color:var(--primary-dark);
+      border:none; border-radius:6px; cursor:pointer; font-size:.82rem;
+      transition:all var(--transition); }
+    .btn-restore:hover { background:var(--primary); color:#fff; }
+    /* ── View Log ── */
+    .view-log-item { display:flex; align-items:center; gap:10px;
+      padding:8px 0; border-bottom:1px solid var(--border); }
+    .view-log-item:last-child { border-bottom:none; }
+    .view-log-name { font-size:.9rem; font-weight:600; flex:1; }
+    .view-log-time { font-size:.78rem; color:var(--text-sub); }
+    /* ── Preview ── */
+    .preview-iframe { width:100%; height:480px; border:none;
+                      border-radius:0 0 var(--radius) var(--radius); }
+    .preview-img    { width:100%; max-height:480px; object-fit:contain;
+                      display:block; padding:12px; }
+    .preview-video  { width:100%; max-height:480px; display:block; background:#000; }
+    @media(max-width:480px) {
+      .container    { padding:10px; }
+      .note-actions { width:100%; justify-content:flex-end; }
+      .modal        { max-height:95vh; }
     }
   </style>
 </head>
 <body>
 
-  <!-- 頂部標題列 -->
-  <header class="header">
-    <span style="font-size:1.4rem;">📓</span>
-    <span class="header-title">網路記事本</span>
-    <span class="perm-badge" id="permBadge" style="display:none;"></span>
-    <span class="user-name" id="userName"></span>
-    <img class="user-avatar" id="userAvatar" src="https://via.placeholder.com/36" alt="avatar">
-  </header>
+<header class="header">
+  <span style="font-size:1.4rem">📓</span>
+  <span class="header-title">網路記事本</span>
+  <span class="perm-badge" id="permBadge" style="display:none"></span>
+  <span class="user-name"  id="userName"></span>
+  <img  class="user-avatar" id="userAvatar" alt="avatar">
+</header>
 
-  <!-- 主容器 -->
-  <div class="container">
-
-    <!-- 搜尋列 -->
-    <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="🔍 搜尋記事標題或內容..." autocomplete="off">
-      <button class="btn-search" onclick="App.searchNotes()">搜尋</button>
-    </div>
-
-    <!-- 操作列 -->
-    <div class="action-bar">
-      <button class="btn-add" id="btnAddNote" onclick="App.openCreateModal()" disabled>
-        ＋ 新增記事
-      </button>
-      <button class="btn-refresh" onclick="App.loadNotes()" title="重新整理">🔄</button>
-      <button class="btn-admin" id="btnAdmin" onclick="App.openAdminModal()" style="display:none;">⚙️ 管理</button>
-    </div>
-
-    <!-- 記事列表 -->
-    <div id="notesList">
-      <div class="loading"><div class="spinner"></div><br>載入中...</div>
-    </div>
-
+<div class="container">
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="🔍 搜尋記事標題或內容..." autocomplete="off"
+           onkeydown="if(event.key==='Enter')App.searchNotes()">
+    <button class="btn-search" onclick="App.searchNotes()">搜尋</button>
   </div>
+  <div class="action-bar">
+    <button class="btn-add" id="btnAddNote" onclick="App.openCreateModal()" disabled>＋ 新增記事</button>
+    <button class="btn-refresh" onclick="App.loadNotes()" title="重新整理">🔄</button>
+    <button class="btn-admin" id="btnAdmin" onclick="App.openAdminModal()" style="display:none">⚙️ 管理</button>
+  </div>
+  <div id="notesList">
+    <div class="loading"><div class="spinner"></div><br>初始化中...</div>
+  </div>
+</div>
 
-  <!-- Toast 容器 -->
-  <div class="toast-container" id="toastContainer"></div>
+<div class="toast-container" id="toastContainer"></div>
 
-  <!-- ===== Modal：新增/編輯記事 ===== -->
-  <div class="modal-overlay" id="noteModal">
-    <div class="modal">
-      <div class="modal-header">
-        <span class="modal-title" id="noteModalTitle">新增記事</span>
-        <button class="modal-close" onclick="App.closeModal('noteModal')">✕</button>
+<!-- Modal：新增/編輯記事 -->
+<div class="modal-overlay" id="noteModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="noteModalTitle">📝 新增記事</span>
+      <button class="modal-close" onclick="App.closeModal('noteModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>標題 <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="noteTitle" placeholder="請輸入記事標題..." maxlength="100">
       </div>
-      <div class="modal-body">
+      <div class="form-group">
+        <label>內容</label>
+        <textarea id="noteContent" placeholder="請輸入記事內容..."></textarea>
+      </div>
+      <div id="uploadSection" style="display:none">
         <div class="form-group">
-          <label>標題 <span style="color:var(--danger)">*</span></label>
-          <input type="text" id="noteTitle" placeholder="請輸入記事標題" maxlength="100">
-        </div>
-        <div class="form-group">
-          <label>內容</label>
-          <textarea id="noteContent" placeholder="請輸入記事內容..."></textarea>
-        </div>
-        <div class="form-group" id="uploadSection" style="display:none;">
           <label>附件上傳</label>
-          <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-            <input type="file" id="fileInput" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.mp4" onchange="App.handleFileSelect(event)">
-            <div>📎 點擊或拖曳檔案至此處上傳</div>
-            <div style="font-size:0.8rem;margin-top:4px;">支援 JPG/PNG/GIF/WebP/PDF/Word/Excel/MP4，單檔限 10MB</div>
-          </div>
-          <div id="uploadProgress" class="upload-progress" style="display:none;">
-            <div style="font-size:0.82rem;margin-bottom:4px;" id="uploadFileName"></div>
-            <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
-          </div>
-          <div id="pendingFiles" style="margin-top:8px;"></div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-secondary" onclick="App.closeModal('noteModal')">取消</button>
-        <button class="btn-primary" id="btnSaveNote" onclick="App.saveNote()">儲存</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== Modal：記事詳情 ===== -->
-  <div class="modal-overlay" id="detailModal">
-    <div class="modal">
-      <div class="modal-header">
-        <span class="modal-title" id="detailTitle">記事詳情</span>
-        <button class="modal-close" onclick="App.closeModal('detailModal')">✕</button>
-      </div>
-      <div class="modal-body" id="detailBody">
-        <div class="loading"><div class="spinner"></div></div>
-      </div>
-      <div class="modal-footer" id="detailFooter"></div>
-    </div>
-  </div>
-
-  <!-- ===== Modal：觀看名單 ===== -->
-  <div class="modal-overlay" id="viewLogModal">
-    <div class="modal">
-      <div class="modal-header">
-        <span class="modal-title">👁 觀看名單</span>
-        <button class="modal-close" onclick="App.closeModal('viewLogModal')">✕</button>
-      </div>
-      <div class="modal-body" id="viewLogBody">
-        <div class="loading"><div class="spinner"></div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== Modal：管理員後台 ===== -->
-  <div class="modal-overlay" id="adminModal">
-    <div class="modal" style="max-width:700px;">
-      <div class="modal-header">
-        <span class="modal-title">⚙️ 管理員後台</span>
-        <button class="modal-close" onclick="App.closeModal('adminModal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <!-- Tab 切換 -->
-        <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:0;">
-          <button class="admin-tab active" data-tab="users"   onclick="App.switchAdminTab('users')">👥 使用者權限</button>
-          <button class="admin-tab"        data-tab="deleted" onclick="App.switchAdminTab('deleted')">🗑 已刪除記事</button>
-        </div>
-
-        <!-- 使用者權限管理 -->
-        <div id="adminTabUsers">
-          <div style="display:flex;gap:8px;margin-bottom:12px;">
-            <input type="text" id="adminSearchUser" placeholder="搜尋使用者 ID 或名稱..."
-              style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:0.9rem;">
-            <button class="btn-primary" style="padding:8px 14px;" onclick="App.adminSearchUser()">搜尋</button>
-          </div>
-          <div id="adminUserList">
-            <div class="loading"><div class="spinner"></div></div>
-          </div>
-
-          <!-- 新增/修改使用者 -->
-          <div style="margin-top:16px;padding:14px;background:var(--bg);border-radius:8px;">
-            <div style="font-size:0.9rem;font-weight:600;margin-bottom:10px;">➕ 新增 / 修改使用者權限</div>
-            <div style="display:flex;flex-direction:column;gap:8px;">
-              <input type="text" id="adminUserId"      placeholder="LINE userId"    style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:0.88rem;">
-              <input type="text" id="adminDisplayName" placeholder="顯示名稱（選填）" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:0.88rem;">
-              <select id="adminPermLevel" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:0.88rem;">
-                <option value="0">0 — 禁止存取</option>
-                <option value="1">1 — 檢視</option>
-                <option value="2" selected>2 — 編輯</option>
-                <option value="3">3 — 下載</option>
-                <option value="4">4 — 上傳（最高）</option>
-              </select>
-              <input type="text" id="adminNote" placeholder="備註（選填）" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:0.88rem;">
-              <button class="btn-primary" onclick="App.adminUpdatePermission()">✅ 儲存權限</button>
-            </div>
+          <div class="upload-zone" id="uploadZone"
+               onclick="document.getElementById('fileInput').click()"
+               ondragover="event.preventDefault();this.classList.add('drag-over')"
+               ondragleave="this.classList.remove('drag-over')"
+               ondrop="App.handleFileDrop(event)">
+            <div style="font-size:2rem;margin-bottom:8px">📎</div>
+            <div>點擊或拖曳檔案至此處</div>
+            <div style="font-size:.78rem;margin-top:4px">支援圖片、PDF、Word、Excel、MP4，單檔最大 10MB</div>
+            <input type="file" id="fileInput" multiple
+                   accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.mp4"
+                   onchange="App.handleFileSelect(event)">
           </div>
         </div>
-
-        <!-- 已刪除記事 -->
-        <div id="adminTabDeleted" style="display:none;">
-          <div id="adminDeletedList">
-            <div class="loading"><div class="spinner"></div></div>
-          </div>
+        <div id="pendingFiles"></div>
+        <div id="uploadProgress" style="display:none;margin-top:8px">
+          <div id="uploadFileName" style="font-size:.82rem;color:var(--text-sub);margin-bottom:4px"></div>
+          <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- ===== Modal：檔案預覽 ===== -->
-  <div class="modal-overlay" id="previewModal">
-    <div class="modal" style="max-width:700px;">
-      <div class="modal-header">
-        <span class="modal-title" id="previewTitle">檔案預覽</span>
-        <button class="modal-close" onclick="App.closeModal('previewModal')">✕</button>
-      </div>
-      <div class="modal-body" id="previewBody" style="padding:0;min-height:300px;"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="App.closeModal('noteModal')">取消</button>
+      <button class="btn-primary" id="btnSaveNote" onclick="App.saveNote()">儲存</button>
     </div>
   </div>
+</div>
 
-  <!-- ===== Modal：確認刪除 ===== -->
-  <div class="modal-overlay" id="confirmModal">
-    <div class="modal" style="max-width:360px;">
-      <div class="modal-header">
-        <span class="modal-title">⚠️ 確認刪除</span>
-        <button class="modal-close" onclick="App.closeModal('confirmModal')">✕</button>
+<!-- Modal：記事詳情 -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <span class="modal-title" id="detailTitle">載入中...</span>
+      <button class="modal-close" onclick="App.closeModal('detailModal')">✕</button>
+    </div>
+    <div class="modal-body"   id="detailBody"></div>
+    <div class="modal-footer" id="detailFooter"></div>
+  </div>
+</div>
+
+<!-- Modal：觀看名單 -->
+<div class="modal-overlay" id="viewLogModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title">👁 觀看名單</span>
+      <button class="modal-close" onclick="App.closeModal('viewLogModal')">✕</button>
+    </div>
+    <div class="modal-body" id="viewLogBody">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal：管理員後台 -->
+<div class="modal-overlay" id="adminModal">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-header">
+      <span class="modal-title">⚙️ 管理員後台</span>
+      <button class="modal-close" onclick="App.closeModal('adminModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--border)">
+        <button class="admin-tab active" data-tab="users"   onclick="App.switchAdminTab('users')">👥 使用者權限</button>
+        <button class="admin-tab"        data-tab="deleted" onclick="App.switchAdminTab('deleted')">🗑 已刪除記事</button>
       </div>
-      <div class="modal-body">
-        <p id="confirmMsg" style="font-size:0.95rem;line-height:1.6;"></p>
+      <div id="adminTabUsers">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input type="text" id="adminSearchUser" placeholder="搜尋使用者 ID 或名稱..."
+            style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:.9rem"
+            oninput="App.adminFilterUsers()">
+        </div>
+        <div id="adminUserList">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+        <div style="margin-top:16px;padding:14px;background:var(--bg);border-radius:8px">
+          <div style="font-size:.9rem;font-weight:600;margin-bottom:10px">➕ 新增 / 修改使用者權限</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <input type="text" id="adminUserId"      placeholder="LINE userId（必填）"
+              style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:.88rem">
+            <input type="text" id="adminDisplayName" placeholder="顯示名稱（選填）"
+              style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:.88rem">
+            <select id="adminPermLevel"
+              style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:.88rem">
+              <option value="0">0 — 禁止存取</option>
+              <option value="1">1 — 檢視</option>
+              <option value="2" selected>2 — 編輯</option>
+              <option value="3">3 — 下載</option>
+              <option value="4">4 — 上傳（管理員）</option>
+            </select>
+            <input type="text" id="adminNote" placeholder="備註（選填）"
+              style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:.88rem">
+            <button class="btn-primary" onclick="App.adminUpdatePermission()">✅ 儲存權限</button>
+          </div>
+        </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn-secondary" onclick="App.closeModal('confirmModal')">取消</button>
-        <button class="btn-danger"    id="btnConfirmOk">確認刪除</button>
+      <div id="adminTabDeleted" style="display:none">
+        <div id="adminDeletedList">
+          <div class="loading"><div class="spinner"></div>
+        </div>
+       </div>
       </div>
     </div>
   </div>
+</div>
 
-  <style>
-    /* ── 管理員 Tab ── */
-    .admin-tab {
-      padding: 8px 16px; border: none; background: none;
-      cursor: pointer; font-size: 0.9rem; color: var(--text-sub);
-      border-bottom: 3px solid transparent; margin-bottom: -2px;
-      transition: all var(--transition);
-    }
-    .admin-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
-    .admin-tab:hover  { color: var(--primary-dark); }
+<!-- Modal：檔案預覽 -->
+<div class="modal-overlay" id="previewModal">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-header">
+      <span class="modal-title" id="previewTitle">檔案預覽</span>
+      <button class="modal-close" onclick="App.closeModal('previewModal')">✕</button>
+    </div>
+    <div class="modal-body" id="previewBody" style="padding:0;min-height:300px"></div>
+  </div>
+</div>
 
-    /* ── 使用者列表 ── */
-    .user-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 12px; border-radius: 8px;
-      border: 1px solid var(--border); margin-bottom: 8px;
-      background: var(--card-bg);
-    }
-    .user-row-info { flex: 1; }
-    .user-row-name { font-size: 0.9rem; font-weight: 600; }
-    .user-row-id   { font-size: 0.75rem; color: var(--text-sub); word-break: break-all; }
-    .perm-select {
-      padding: 4px 8px; border: 1px solid var(--border);
-      border-radius: 6px; font-size: 0.82rem; outline: none;
-      cursor: pointer;
-    }
-    .btn-save-perm {
-      padding: 4px 10px; background: var(--primary); color: #fff;
-      border: none; border-radius: 6px; cursor: pointer;
-      font-size: 0.78rem; transition: background var(--transition);
-    }
-    .btn-save-perm:hover { background: var(--primary-dark); }
+<!-- Modal：確認刪除 -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-header">
+      <span class="modal-title">⚠️ 確認刪除</span>
+      <button class="modal-close" onclick="App.closeModal('confirmModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirmMsg" style="font-size:.95rem;line-height:1.6"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="App.closeModal('confirmModal')">取消</button>
+      <button class="btn-danger"    id="btnConfirmOk">確認刪除</button>
+    </div>
+  </div>
+</div>
 
-    /* ── 已刪除記事列表 ── */
-    .deleted-card {
-      padding: 12px; border-radius: 8px;
-      border: 1px dashed var(--border); margin-bottom: 8px;
-      background: #FFF8F8;
-    }
-    .deleted-card-title { font-size: 0.9rem; font-weight: 600; color: var(--danger); }
-    .deleted-card-meta  { font-size: 0.78rem; color: var(--text-sub); margin: 4px 0 8px; }
-    .btn-restore {
-      padding: 4px 12px; background: var(--primary-light);
-      color: var(--primary-dark); border: none;
-      border-radius: 6px; cursor: pointer; font-size: 0.82rem;
-      transition: all var(--transition);
-    }
-    .btn-restore:hover { background: var(--primary); color: #fff; }
-
-    /* ── 觀看名單 ── */
-    .view-log-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 0; border-bottom: 1px solid var(--border);
-    }
-    .view-log-item:last-child { border-bottom: none; }
-    .view-log-name { font-size: 0.9rem; font-weight: 600; flex: 1; }
-    .view-log-time { font-size: 0.78rem; color: var(--text-sub); }
-
-    /* ── 附件預覽 iframe ── */
-    .preview-iframe {
-      width: 100%; height: 480px; border: none;
-      border-radius: 0 0 var(--radius) var(--radius);
-    }
-    .preview-img {
-      width: 100%; max-height: 480px; object-fit: contain;
-      display: block; padding: 12px;
-    }
-    .preview-video {
-      width: 100%; max-height: 480px;
-      display: block; background: #000;
-    }
-  </style>
-  <script>
-    // ============================================================
-// index.html — Part 2: JavaScript 核心邏輯
-// 請將此段放在 </body> 前的 <script> 標籤內
-// ============================================================
-
+<!-- ════════════════════════════════════════════════════════
+     JavaScript — 完整修正版
+     CORS 修正：一般請求用 GET，檔案上傳用 text/plain POST
+════════════════════════════════════════════════════════ -->
+<script>
 const App = (() => {
 
-  // ── 狀態 ─────────────────────────────────────────────────
-  const state = {
-    liffId     : '2009456572-AUDE1qmM',        // ← 請填入您的 LIFF ID
-    gasUrl     : 'https://script.google.com/macros/s/AKfycbxwWBpa4XehKZCNdDcJwEM_rcB08RH7kai2B7h6roLDFND4m3A98z8otsFiw-32_F3xUw/exec', // ← 請填入 GAS 部署 URL
-    userId     : null,
-    displayName: null,
-    pictureUrl : null,
-    accessToken: null,
-    userPerm   : 0,
-    notes      : [],
-    editingNoteId : null,
-    pendingFiles  : [],    // 待上傳檔案佇列
+  // ── 設定（請修改這兩個值）────────────────────────────────
+  const CFG = {
+    liffId: '2009456572-AUDE1qmM',          // ← 填入您的 LIFF ID
+    gasUrl: 'https://script.google.com/macros/s/AKfycbxzgiIQMbAjLDopiAgd8nH0NIjY9e_rCoMHO8oFOuRo5fSDdNnaEpvchc6VXjsBBWQxJQ/exec',  // ← 填入 GAS 部署 URL
   };
 
-  // ── 權限名稱對照 ─────────────────────────────────────────
-  const PERM_LABEL = ['🚫 禁止', '👁 檢視', '✏️ 編輯', '⬇️ 下載', '⬆️ 上傳'];
+  // ── 狀態 ─────────────────────────────────────────────────
+  const S = {
+    userId      : null,
+    displayName : null,
+    pictureUrl  : null,
+    accessToken : null,
+    userPerm    : 0,
+    notes       : [],
+    editingNoteId: null,
+    pendingFiles : [],
+    allUsers     : [],
+  };
+
+  // ── 常數 ─────────────────────────────────────────────────
+  const PERM_LABEL = ['🚫 禁止','👁 檢視','✏️ 編輯','⬇️ 下載','⬆️ 上傳'];
   const PERM_COLOR = ['#F44336','#888888','#2196F3','#FF9800','#4CAF50'];
 
-  // ── 工具函式 ─────────────────────────────────────────────
+  // 預設頭像（inline SVG，不依賴外部服務，修正 via.placeholder.com 錯誤）
+  const DEFAULT_AVATAR = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">' +
+    '<circle cx="18" cy="18" r="18" fill="#4CAF50"/>' +
+    '<circle cx="18" cy="14" r="7" fill="white" opacity="0.9"/>' +
+    '<ellipse cx="18" cy="32" rx="11" ry="8" fill="white" opacity="0.9"/>' +
+    '</svg>'
+  )));
 
-  /** 顯示 Toast 通知 */
-  function toast(msg, type = 'success', duration = 3000) {
-    const container = document.getElementById('toastContainer');
+  // ══════════════════════════════════════════════════════════
+  // 工具函式
+  // ══════════════════════════════════════════════════════════
+
+  function toast(msg, type, duration) {
+    type     = type     || 'success';
+    duration = duration || 3000;
     const el = document.createElement('div');
-    el.className = `toast ${type}`;
+    el.className   = 'toast ' + type;
     el.textContent = msg;
-    container.appendChild(el);
-    setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.4s';
-      setTimeout(() => el.remove(), 400); }, duration);
+    document.getElementById('toastContainer').appendChild(el);
+    setTimeout(function() {
+      el.style.opacity    = '0';
+      el.style.transition = 'opacity .4s';
+      setTimeout(function() { el.remove(); }, 400);
+    }, duration);
   }
 
-  /** 格式化時間 */
   function fmtDate(iso) {
     if (!iso) return '';
     const d = new Date(iso);
-    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ` +
-           `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    if (isNaN(d)) return '';
+    return d.getFullYear() + '/' +
+      String(d.getMonth()+1).padStart(2,'0') + '/' +
+      String(d.getDate()).padStart(2,'0') + ' ' +
+      String(d.getHours()).padStart(2,'0') + ':' +
+      String(d.getMinutes()).padStart(2,'0');
   }
 
-  /** 取得附件圖示 */
   function fileIcon(type) {
     if (!type) return '📄';
-    if (type.startsWith('image/')) return '🖼️';
+    if (type.startsWith('image/'))  return '🖼️';
     if (type === 'application/pdf') return '📕';
-    if (type.includes('word'))  return '📘';
+    if (type.includes('word'))      return '📘';
     if (type.includes('excel') || type.includes('spreadsheet')) return '📗';
-    if (type.startsWith('video/')) return '🎬';
+    if (type.startsWith('video/'))  return '🎬';
     return '📄';
   }
 
-  /** 格式化檔案大小 */
   function fmtSize(bytes) {
     if (!bytes) return '';
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    if (bytes < 1024)        return bytes + ' B';
+    if (bytes < 1024*1024)   return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1024/1024).toFixed(1) + ' MB';
   }
 
-  /** GAS GET 請求 */
-  async function gasGet(params) {
-    const qs = new URLSearchParams({ ...params, userId: state.userId }).toString();
-    const res = await fetch(`${state.gasUrl}?${qs}`);
-    return res.json();
-  }
-
-  /** GAS POST 請求 */
-  async function gasPost(payload) {
-    const res = await fetch(state.gasUrl, {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({ ...payload, userId: state.userId, token: state.accessToken }),
-    });
-    return res.json();
-  }
-
-  /** 開啟 Modal */
   function openModal(id) {
     document.getElementById(id).classList.add('active');
     document.body.style.overflow = 'hidden';
   }
 
-  /** 關閉 Modal */
   function closeModal(id) {
     document.getElementById(id).classList.remove('active');
     document.body.style.overflow = '';
   }
 
-  // ── LIFF 初始化 ─────────────────────────────────────────
+  function setLoading(elId, msg) {
+    document.getElementById(elId).innerHTML =
+      '<div class="loading"><div class="spinner"></div><br>' + (msg||'載入中...') + '</div>';
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // CORS 修正版 API 請求
+  // ══════════════════════════════════════════════════════════
+
+  /**
+   * gasGet — 所有一般請求統一使用 GET + URLSearchParams
+   * 避免 POST application/json 觸發 CORS Preflight
+   */
+  async function gasGet(params) {
+    const p = Object.assign({}, params, { userId: S.userId });
+    Object.keys(p).forEach(function(k) {
+      if (p[k] === undefined || p[k] === null) delete p[k];
+    });
+    const qs  = new URLSearchParams(p).toString();
+    const res = await fetch(CFG.gasUrl + '?' + qs, {
+      method  : 'GET',
+      redirect: 'follow',
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
+    return res.json();
+  }
+
+  /**
+   * gasPostFile — 僅用於檔案上傳
+   * Content-Type: text/plain 不觸發 CORS Preflight
+   * GAS doPost 可正常接收並 JSON.parse
+   */
+  async function gasPostFile(payload) {
+    const body = JSON.stringify(
+      Object.assign({}, payload, { userId: S.userId, token: S.accessToken })
+    );
+    const res = await fetch(CFG.gasUrl, {
+      method  : 'POST',
+      headers : { 'Content-Type': 'text/plain;charset=utf-8' },
+      body    : body,
+      redirect: 'follow',
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
+    return res.json();
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // LIFF 初始化
+  // ══════════════════════════════════════════════════════════
 
   async function initLiff() {
     try {
-      await liff.init({ liffId: state.liffId });
+      await liff.init({ liffId: CFG.liffId });
       if (!liff.isLoggedIn()) {
         liff.login({ redirectUri: location.href });
         return;
       }
-      const profile = await liff.getProfile();
-      state.userId      = profile.userId;
-      state.displayName = profile.displayName;
-      state.pictureUrl  = profile.pictureUrl;
-      state.accessToken = liff.getAccessToken();
+      const profile   = await liff.getProfile();
+      S.userId        = profile.userId;
+      S.displayName   = profile.displayName;
+      S.pictureUrl    = profile.pictureUrl;
+      S.accessToken   = liff.getAccessToken();
 
-      // 更新 Header UI
-      document.getElementById('userName').textContent   = state.displayName;
-      document.getElementById('userAvatar').src         = state.pictureUrl || 'https://via.placeholder.com/36';
-      document.getElementById('userAvatar').alt         = state.displayName;
+      // 更新 Header
+      document.getElementById('userName').textContent = S.displayName;
+      const avatar = document.getElementById('userAvatar');
+      avatar.alt = S.displayName;
+      if (S.pictureUrl) {
+        avatar.src     = S.pictureUrl;
+        avatar.onerror = function() { avatar.src = DEFAULT_AVATAR; };
+      } else {
+        avatar.src = DEFAULT_AVATAR;
+      }
 
-      // 載入記事（同時取得權限）
       await loadNotes();
-
     } catch(err) {
       console.error('LIFF init error:', err);
       document.getElementById('notesList').innerHTML =
-        `<div class="no-access"><div class="icon">⚠️</div>
-         <h2>初始化失敗</h2><p>${err.message}</p></div>`;
+        '<div class="no-access"><div class="icon">⚠️</div>' +
+        '<h2>初始化失敗</h2><p>' + err.message + '</p>' +
+        '<p style="margin-top:12px;font-size:.82rem;color:var(--text-sub)">' +
+        '請確認 LIFF ID 與 GAS URL 設定是否正確</p></div>';
     }
   }
 
-  // ── 記事列表 ─────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 記事列表
+  // ══════════════════════════════════════════════════════════
 
   async function loadNotes(keyword) {
-    document.getElementById('notesList').innerHTML =
-      '<div class="loading"><div class="spinner"></div><br>載入中...</div>';
+    setLoading('notesList', '載入中...');
     try {
-      const res = await gasGet({ action: 'getNotes', keyword: keyword || '' });
+      const res = await gasGet({ action:'getNotes', keyword: keyword||'' });
       if (!res.success) {
         if (res.errorCode === 'NO_PERMISSION') return renderNoAccess();
         return toast(res.message, 'error');
       }
-      state.notes    = res.data.notes || [];
-      state.userPerm = res.data.userPerm || 0;
+      S.notes    = res.data.notes    || [];
+      S.userPerm = res.data.userPerm || 0;
       updatePermUI();
-      renderNotesList(state.notes);
+      renderNotesList(S.notes);
     } catch(err) {
       document.getElementById('notesList').innerHTML =
-        `<div class="empty-state"><div class="icon">⚠️</div><p>載入失敗：${err.message}</p></div>`;
+        '<div class="empty-state"><div class="icon">⚠️</div>' +
+        '<p>載入失敗：' + err.message + '</p></div>';
     }
   }
 
   function searchNotes() {
-    const kw = document.getElementById('searchInput').value.trim();
-    loadNotes(kw);
+    loadNotes(document.getElementById('searchInput').value.trim());
   }
 
-  /** 根據權限更新 UI 元素 */
   function updatePermUI() {
-    const perm = state.userPerm;
-    // 權限徽章
+    const perm  = S.userPerm;
     const badge = document.getElementById('permBadge');
-    badge.textContent = PERM_LABEL[perm] || '未知';
-    badge.style.background = PERM_COLOR[perm] + '55';
-    badge.style.display = 'inline-block';
-
-    // 新增按鈕
-    const btnAdd = document.getElementById('btnAddNote');
-    btnAdd.disabled = perm < 2;
-    btnAdd.title    = perm < 2 ? '您的權限不足以新增記事' : '';
-
-    // 管理員按鈕
+    badge.textContent      = PERM_LABEL[perm] || '未知';
+    badge.style.background = (PERM_COLOR[perm]||'#888') + '55';
+    badge.style.display    = 'inline-block';
+    const btnAdd           = document.getElementById('btnAddNote');
+    btnAdd.disabled        = perm < 2;
+    btnAdd.title           = perm < 2 ? '您的權限不足以新增記事' : '';
     document.getElementById('btnAdmin').style.display = perm >= 4 ? 'inline-flex' : 'none';
   }
 
-  /** 渲染記事列表 */
   function renderNotesList(notes) {
     const container = document.getElementById('notesList');
-    if (!notes || notes.length === 0) {
+    if (!notes || !notes.length) {
       container.innerHTML =
-        `<div class="empty-state">
-           <div class="icon">📭</div>
-           <p>目前沒有記事</p>
-           ${state.userPerm >= 2 ? '<p style="margin-top:8px;font-size:0.85rem;">點擊「＋ 新增記事」開始建立</p>' : ''}
-         </div>`;
+        '<div class="empty-state"><div class="icon">📭</div><p>目前沒有記事</p>' +
+        (S.userPerm >= 2 ? '<p style="margin-top:8px;font-size:.85rem">點擊「＋ 新增記事」開始建立</p>' : '') +
+        '</div>';
       return;
     }
-
-    container.innerHTML = '';
     const list = document.createElement('div');
     list.className = 'notes-list';
-
-    notes.forEach(note => {
+    notes.forEach(function(note) {
       const card = document.createElement('div');
       card.className = 'note-card';
-      card.innerHTML = `
-        <div class="note-card-header">
-          <span class="note-title">${note.title}</span>
-          <span class="note-meta">${fmtDate(note.updatedAt)}</span>
-        </div>
-        <div class="note-summary">${note.summary || '（無內容摘要）'}</div>
-        <div class="note-footer">
-          <span class="note-author">✍️ ${note.authorName}</span>
-          <span class="note-views">👁 ${note.viewCount || 0} 次</span>
-          ${note.attachments && note.attachments.length
-            ? `<span class="note-attach">📎 ${note.attachments.length} 個附件</span>` : ''}
-          ${note.canEdit ? `
-            <div class="note-actions" onclick="event.stopPropagation()">
-              <button class="btn-edit"   onclick="App.openEditModal('${note.noteId}')">✏️ 編輯</button>
-              <button class="btn-delete" onclick="App.confirmDelete('${note.noteId}','${note.title}')">🗑 刪除</button>
-            </div>` : ''}
-        </div>`;
-      card.addEventListener('click', () => openDetailModal(note.noteId));
+      const attachBadge = (note.attachments && note.attachments.length)
+        ? '<span class="note-attach">📎 ' + note.attachments.length + ' 個附件</span>' : '';
+      const actionBtns = note.canEdit
+        ? '<div class="note-actions" onclick="event.stopPropagation()">' +
+            '<button class="btn-edit"   onclick="App.openEditModal(\'' + note.noteId + '\')">✏️ 編輯</button>' +
+            '<button class="btn-delete" onclick="App.confirmDelete(\'' + note.noteId + '\',\'' +
+              note.title.replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\')">🗑 刪除</button>' +
+          '</div>' : '';
+      card.innerHTML =
+        '<div class="note-card-header">' +
+          '<span class="note-title">' + note.title + '</span>' +
+          '<span class="note-meta">'  + fmtDate(note.updatedAt) + '</span>' +
+        '</div>' +
+        '<div class="note-summary">'  + (note.summary || '（無內容摘要）') + '</div>' +
+        '<div class="note-footer">' +
+          '<span class="note-author">✍️ ' + note.authorName + '</span>' +
+          '<span class="note-views">👁 '  + (note.viewCount||0) + ' 次</span>' +
+          attachBadge + actionBtns +
+        '</div>';
+      card.addEventListener('click', function() { openDetailModal(note.noteId); });
       list.appendChild(card);
     });
-
+    container.innerHTML = '';
     container.appendChild(list);
   }
 
   function renderNoAccess() {
     document.getElementById('notesList').innerHTML =
-      `<div class="no-access">
-         <div class="icon">🔒</div>
-         <h2>無存取權限</h2>
-         <p>您的帳號尚未獲得存取授權，請聯絡管理員。</p>
-         <p style="margin-top:8px;font-size:0.82rem;color:var(--text-sub);">userId: ${state.userId}</p>
-       </div>`;
+      '<div class="no-access"><div class="icon">🔒</div>' +
+      '<h2>無存取權限</h2><p>您的帳號尚未獲得存取授權，請聯絡管理員。</p>' +
+      '<p style="margin-top:8px;font-size:.82rem;color:var(--text-sub)">userId：' + S.userId + '</p></div>';
     document.getElementById('btnAddNote').disabled = true;
   }
 
-  // ── 新增 / 編輯記事 ──────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 新增 / 編輯記事
+  // ══════════════════════════════════════════════════════════
 
   function openCreateModal() {
-    state.editingNoteId = null;
-    state.pendingFiles  = [];
-    document.getElementById('noteModalTitle').textContent = '📝 新增記事';
-    document.getElementById('noteTitle').value   = '';
-    document.getElementById('noteContent').value = '';
-    document.getElementById('pendingFiles').innerHTML = '';
-    document.getElementById('uploadProgress').style.display = 'none';
-    // 上傳區域只在有上傳權限時顯示
-    document.getElementById('uploadSection').style.display = state.userPerm >= 4 ? 'block' : 'none';
+    S.editingNoteId = null;
+    S.pendingFiles  = [];
+    document.getElementById('noteModalTitle').textContent       = '📝 新增記事';
+    document.getElementById('noteTitle').value                  = '';
+    document.getElementById('noteContent').value                = '';
+    document.getElementById('pendingFiles').innerHTML           = '';
+    document.getElementById('uploadProgress').style.display     = 'none';
+    document.getElementById('uploadSection').style.display      = S.userPerm >= 4 ? 'block' : 'none';
+    document.getElementById('btnSaveNote').disabled             = false;
+    document.getElementById('btnSaveNote').textContent          = '儲存';
     openModal('noteModal');
-    setTimeout(() => document.getElementById('noteTitle').focus(), 100);
+    setTimeout(function() { document.getElementById('noteTitle').focus(); }, 100);
   }
 
   async function openEditModal(noteId) {
-    state.editingNoteId = noteId;
-    state.pendingFiles  = [];
-    document.getElementById('noteModalTitle').textContent = '✏️ 編輯記事';
-    document.getElementById('btnSaveNote').disabled = true;
+    S.editingNoteId = noteId;
+    S.pendingFiles  = [];
+    document.getElementById('noteModalTitle').textContent       = '✏️ 編輯記事';
+    document.getElementById('noteTitle').value                  = '';
+    document.getElementById('noteContent').value                = '';
+    document.getElementById('pendingFiles').innerHTML           = '';
+    document.getElementById('uploadProgress').style.display     = 'none';
+    document.getElementById('uploadSection').style.display      = S.userPerm >= 4 ? 'block' : 'none';
+    document.getElementById('btnSaveNote').disabled             = true;
+    document.getElementById('btnSaveNote').textContent          = '載入中...';
     openModal('noteModal');
-
     try {
-      const res = await gasGet({ action: 'getNoteDetail', noteId });
-      if (!res.success) { toast(res.message, 'error'); closeModal('noteModal'); return; }
-      const note = res.data;
-      document.getElementById('noteTitle').value   = note.title.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
-      document.getElementById('noteContent').value = note.content || '';
-      document.getElementById('uploadSection').style.display = state.userPerm >= 4 ? 'block' : 'none';
-      document.getElementById('pendingFiles').innerHTML = '';
+      const res = await gasGet({ action:'getNoteDetail', noteId:noteId });
+      if (!res.success) {
+        toast(res.message, 'error');
+        closeModal('noteModal');
+        return;
+      }
+      document.getElementById('noteTitle').value   =
+        res.data.title.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+      document.getElementById('noteContent').value = res.data.content || '';
     } catch(err) {
       toast('載入記事失敗：' + err.message, 'error');
       closeModal('noteModal');
     } finally {
-      document.getElementById('btnSaveNote').disabled = false;
+      document.getElementById('btnSaveNote').disabled    = false;
+      document.getElementById('btnSaveNote').textContent = '儲存';
     }
   }
 
   async function saveNote() {
     const title   = document.getElementById('noteTitle').value.trim();
     const content = document.getElementById('noteContent').value.trim();
-    if (!title) { toast('請輸入標題', 'error'); document.getElementById('noteTitle').focus(); return; }
-
+    if (!title) {
+      toast('請輸入標題', 'error');
+      document.getElementById('noteTitle').focus();
+      return;
+    }
     const btn = document.getElementById('btnSaveNote');
-    btn.disabled = true;
+    btn.disabled    = true;
     btn.textContent = '儲存中...';
-
     try {
-      let noteId = state.editingNoteId;
-
+      let noteId = S.editingNoteId;
       if (!noteId) {
-        // 新增
-        const res = await gasPost({ action: 'createNote', title, content });
+        const res = await gasGet({
+          action: 'createNote', token: S.accessToken, title: title, content: content,
+        });
         if (!res.success) { toast(res.message, 'error'); return; }
         noteId = res.data.noteId;
         toast('記事新增成功 🎉');
       } else {
-        // 更新
-        const res = await gasPost({ action: 'updateNote', noteId, title, content });
+        const res = await gasGet({
+          action: 'updateNote', token: S.accessToken,
+          noteId: noteId, title: title, content: content,
+        });
         if (!res.success) { toast(res.message, 'error'); return; }
         toast('記事更新成功 ✅');
       }
-
-      // 上傳待傳檔案
-      if (state.pendingFiles.length > 0) {
-        await uploadPendingFiles(noteId);
-      }
-
+      if (S.pendingFiles.length > 0) await uploadPendingFiles(noteId);
       closeModal('noteModal');
       await loadNotes();
     } catch(err) {
       toast('操作失敗：' + err.message, 'error');
     } finally {
-      btn.disabled = false;
+      btn.disabled    = false;
       btn.textContent = '儲存';
     }
   }
 
-  // ── 刪除記事 ─────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 刪除記事
+  // ══════════════════════════════════════════════════════════
 
   function confirmDelete(noteId, title) {
-    document.getElementById('confirmMsg').textContent = `確定要刪除記事「${title}」嗎？此操作可由管理員還原。`;
-    const btn = document.getElementById('btnConfirmOk');
-    btn.onclick = () => deleteNote(noteId);
+    document.getElementById('confirmMsg').textContent =
+      '確定要刪除記事「' + title + '」嗎？此操作可由管理員還原。';
+    document.getElementById('btnConfirmOk').onclick = function() { deleteNote(noteId); };
     openModal('confirmModal');
   }
 
   async function deleteNote(noteId) {
     closeModal('confirmModal');
     try {
-      const res = await gasPost({ action: 'deleteNote', noteId });
+      const res = await gasGet({ action:'deleteNote', token:S.accessToken, noteId:noteId });
       if (!res.success) { toast(res.message, 'error'); return; }
       toast('記事已刪除 🗑');
       await loadNotes();
@@ -849,146 +776,184 @@ const App = (() => {
     }
   }
 
-  // ── 記事詳情 ─────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 記事詳情
+  // ══════════════════════════════════════════════════════════
 
   async function openDetailModal(noteId) {
     document.getElementById('detailTitle').textContent = '載入中...';
-    document.getElementById('detailBody').innerHTML    = '<div class="loading"><div class="spinner"></div></div>';
+    document.getElementById('detailBody').innerHTML    =
+      '<div class="loading"><div class="spinner"></div></div>';
     document.getElementById('detailFooter').innerHTML  = '';
     openModal('detailModal');
-
     try {
       const res = await gasGet({
         action    : 'getNoteDetail',
-        noteId,
+        noteId    : noteId,
         deviceInfo: navigator.userAgent.slice(0, 80),
       });
       if (!res.success) {
-        document.getElementById('detailBody').innerHTML = `<p style="color:var(--danger)">${res.message}</p>`;
+        document.getElementById('detailBody').innerHTML =
+          '<p style="color:var(--danger)">' + res.message + '</p>';
         return;
       }
       renderDetailModal(res.data);
     } catch(err) {
-      document.getElementById('detailBody').innerHTML = `<p style="color:var(--danger)">載入失敗：${err.message}</p>`;
+      document.getElementById('detailBody').innerHTML =
+        '<p style="color:var(--danger)">載入失敗：' + err.message + '</p>';
     }
   }
 
   function renderDetailModal(note) {
     document.getElementById('detailTitle').textContent = note.title;
 
-    // 使用 DOMPurify 清理 HTML 內容（防 XSS）
-    const safeContent = typeof DOMPurify !== 'undefined'
+    const safeContent = (typeof DOMPurify !== 'undefined')
       ? DOMPurify.sanitize(note.content || '（無內容）')
-      : (note.content || '（無內容）').replace(/</g,'&lt;');
+      : (note.content || '（無內容）').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    // 附件列表
     const attachHtml = (note.attachments && note.attachments.length)
-      ? `<div class="attachments-section">
-           <div class="attachments-title">📎 附件（${note.attachments.length} 個）</div>
-           ${note.attachments.map(a => `
-             <div class="attachment-item">
-               <span class="attachment-icon">${fileIcon(a.fileType)}</span>
-               <span class="attachment-name" title="${a.fileName}">${a.fileName}</span>
-               <div class="attachment-actions">
-                 <button class="btn-preview"
-                   onclick="App.previewFile('${a.fileId}','${a.fileName}','${a.fileType}','${a.driveFileId}')">
-                   👁 預覽
-                 </button>
-                 ${note.canDownload ? `
-                 <button class="btn-download" onclick="App.downloadFile('${a.fileId}')">
-                   ⬇️ 下載
-                 </button>` : ''}
-               </div>
-             </div>`).join('')}
-         </div>` : '';
+      ? '<div class="attachments-section">' +
+          '<div class="attachments-title">📎 附件（' + note.attachments.length + ' 個）</div>' +
+          note.attachments.map(function(a) {
+            return '<div class="attachment-item">' +
+              '<span class="attachment-icon">' + fileIcon(a.fileType) + '</span>' +
+              '<span class="attachment-name" title="' + a.fileName + '">' + a.fileName + '</span>' +
+              '<div class="attachment-actions">' +
+                '<button class="btn-preview" onclick="App.previewFile(\'' +
+                  a.fileId + '\',\'' + a.fileName.replace(/'/g,"\\'") + '\',\'' +
+                  a.fileType + '\',\'' + a.driveFileId + '\')">' +
+                  '👁 預覽</button>' +
+                (note.canDownload
+                  ? '<button class="btn-download" onclick="App.downloadFile(\'' +
+                      a.fileId + '\')">⬇️ 下載</button>' : '') +
+              '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>'
+      : '';
 
-    document.getElementById('detailBody').innerHTML = `
-      <div class="detail-meta">
-        <span>✍️ ${note.authorName}</span>
-        <span>📅 建立：${fmtDate(note.createdAt)}</span>
-        <span>🔄 更新：${fmtDate(note.updatedAt)}</span>
-        <span>👁 ${note.viewCount || 0} 次觀看</span>
-      </div>
-      <div class="detail-content">${safeContent}</div>
-      ${attachHtml}`;
+    document.getElementById('detailBody').innerHTML =
+      '<div class="detail-meta">' +
+        '<span>✍️ ' + note.authorName + '</span>' +
+        '<span>📅 建立：' + fmtDate(note.createdAt) + '</span>' +
+        '<span>🔄 更新：' + fmtDate(note.updatedAt) + '</span>' +
+        '<span>👁 ' + (note.viewCount||0) + ' 次觀看</span>' +
+      '</div>' +
+      '<div class="detail-content">' + safeContent + '</div>' +
+      attachHtml;
 
-    // Footer 按鈕
     const footer = document.getElementById('detailFooter');
     footer.innerHTML = '';
     if (note.canViewLog) {
       const btnLog = document.createElement('button');
       btnLog.className   = 'btn-secondary';
       btnLog.textContent = '👥 觀看名單';
-      btnLog.onclick     = () => openViewLogModal(note.noteId);
+      btnLog.onclick     = function() { openViewLogModal(note.noteId); };
       footer.appendChild(btnLog);
     }
     if (note.canEdit) {
       const btnEdit = document.createElement('button');
       btnEdit.className   = 'btn-primary';
       btnEdit.textContent = '✏️ 編輯';
-      btnEdit.onclick     = () => { closeModal('detailModal'); openEditModal(note.noteId); };
+      btnEdit.onclick     = function() {
+        closeModal('detailModal');
+        openEditModal(note.noteId);
+      };
       footer.appendChild(btnEdit);
     }
   }
 
-  // ── 觀看名單 ─────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 觀看名單
+  // ══════════════════════════════════════════════════════════
 
   async function openViewLogModal(noteId) {
-    document.getElementById('viewLogBody').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    setLoading('viewLogBody');
     openModal('viewLogModal');
     try {
-      const res = await gasGet({ action: 'getViewLog', noteId });
+      const res = await gasGet({ action:'getViewLog', noteId:noteId });
       if (!res.success) {
-        document.getElementById('viewLogBody').innerHTML = `<p style="color:var(--danger)">${res.message}</p>`;
+        document.getElementById('viewLogBody').innerHTML =
+          '<p style="color:var(--danger)">' + res.message + '</p>';
         return;
       }
-      const { viewCount, logs } = res.data;
-      if (!logs || logs.length === 0) {
-        document.getElementById('viewLogBody').innerHTML = '<p style="color:var(--text-sub);text-align:center;padding:20px;">尚無觀看記錄</p>';
+      const logs = res.data.logs || [];
+      if (!logs.length) {
+        document.getElementById('viewLogBody').innerHTML =
+          '<p style="color:var(--text-sub);text-align:center;padding:20px">尚無觀看記錄</p>';
         return;
       }
-      document.getElementById('viewLogBody').innerHTML = `
-        <p style="font-size:0.88rem;color:var(--text-sub);margin-bottom:12px;">共 <strong>${viewCount}</strong> 次觀看（每人每日計一次）</p>
-        ${logs.map(l => `
-          <div class="view-log-item">
-            <span style="font-size:1.4rem;">👤</span>
-            <span class="view-log-name">${l.viewerName || l.viewerId}</span>
-            <span class="view-log-time">${fmtDate(l.viewedAt)}</span>
-          </div>`).join('')}`;
+      document.getElementById('viewLogBody').innerHTML =
+        '<p style="font-size:.88rem;color:var(--text-sub);margin-bottom:12px">共 <strong>' +
+        res.data.viewCount + '</strong> 次觀看（每人每日計一次）</p>' +
+        logs.map(function(l) {
+          return '<div class="view-log-item">' +
+            '<span style="font-size:1.4rem">👤</span>' +
+            '<span class="view-log-name">' + (l.viewerName||l.viewerId) + '</span>' +
+            '<span class="view-log-time">' + fmtDate(l.viewedAt) + '</span>' +
+          '</div>';
+        }).join('');
     } catch(err) {
-      document.getElementById('viewLogBody').innerHTML = `<p style="color:var(--danger)">載入失敗：${err.message}</p>`;
+      document.getElementById('viewLogBody').innerHTML =
+        '<p style="color:var(--danger)">載入失敗：' + err.message + '</p>';
     }
   }
 
-  // ── 檔案上傳 ─────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 檔案上傳
+  // ══════════════════════════════════════════════════════════
 
   function handleFileSelect(event) {
-    const files = Array.from(event.target.files);
-    files.forEach(file => {
-      if (file.size > 10 * 1024 * 1024) {
-        toast(`${file.name} 超過 10MB 限制`, 'error'); return;
+    Array.from(event.target.files).forEach(function(file) {
+      if (file.size > 10*1024*1024) {
+        toast(file.name + ' 超過 10MB 限制', 'error');
+        return;
       }
-      state.pendingFiles.push(file);
+      S.pendingFiles.push(file);
     });
     renderPendingFiles();
-    event.target.value = ''; // 清空 input 以便重複選擇
+    event.target.value = '';
+  }
+
+  function handleFileDrop(event) {
+    event.preventDefault();
+    document.getElementById('uploadZone').classList.remove('drag-over');
+    Array.from(event.dataTransfer.files).forEach(function(file) {
+      if (file.size > 10*1024*1024) {
+        toast(file.name + ' 超過 10MB 限制', 'error');
+        return;
+      }
+      S.pendingFiles.push(file);
+    });
+    renderPendingFiles();
   }
 
   function renderPendingFiles() {
-    const container = document.getElementById('pendingFiles');
-    if (!state.pendingFiles.length) { container.innerHTML = ''; return; }
-    container.innerHTML = state.pendingFiles.map((f, i) => `
-      <div class="attachment-item">
-        <span class="attachment-icon">${fileIcon(f.type)}</span>
-        <span class="attachment-name">${f.name} <span style="color:var(--text-sub)">(${fmtSize(f.size)})</span></span>
-        <button onclick="App.removePendingFile(${i})"
-          style="padding:2px 8px;border:none;background:#FFEBEE;color:var(--danger);border-radius:4px;cursor:pointer;">✕</button>
-      </div>`).join('');
+    document.getElementById('pendingFiles').innerHTML =
+      S.pendingFiles.map(function(f, i) {
+        return '<div class="attachment-item">' +
+          '<span class="attachment-icon">' + fileIcon(f.type) + '</span>' +
+          '<span class="attachment-name">' + f.name +
+            ' <span style="color:var(--text-sub)">(' + fmtSize(f.size) + ')</span></span>' +
+          '<button onclick="App.removePendingFile(' + i + ')" ' +
+            'style="padding:2px 8px;border:none;background:#FFEBEE;' +
+            'color:var(--danger);border-radius:4px;cursor:pointer">✕</button>' +
+        '</div>';
+      }).join('');
   }
 
   function removePendingFile(index) {
-    state.pendingFiles.splice(index, 1);
+    S.pendingFiles.splice(index, 1);
     renderPendingFiles();
+  }
+
+  function fileToBase64(file) {
+    return new Promise(function(resolve, reject) {
+      const reader   = new FileReader();
+      reader.onload  = function(e) { resolve(e.target.result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   }
 
   async function uploadPendingFiles(noteId) {
@@ -997,75 +962,68 @@ const App = (() => {
     const fileNameEl   = document.getElementById('uploadFileName');
     progressDiv.style.display = 'block';
 
-    for (let i = 0; i < state.pendingFiles.length; i++) {
-      const file = state.pendingFiles[i];
-      fileNameEl.textContent = `上傳中：${file.name} (${i+1}/${state.pendingFiles.length})`;
+    for (let i = 0; i < S.pendingFiles.length; i++) {
+      const file = S.pendingFiles[i];
+      fileNameEl.textContent   = '上傳中：' + file.name +
+        ' (' + (i+1) + '/' + S.pendingFiles.length + ')';
       progressFill.style.width = '0%';
-
       try {
         const base64 = await fileToBase64(file);
         progressFill.style.width = '50%';
-
-        const res = await gasPost({
-          action  : 'uploadFile',
-          noteId,
-          fileName: file.name,
-          fileType: file.type,
+        const res = await gasPostFile({
+          action    : 'uploadFile',
+          noteId    : noteId,
+          fileName  : file.name,
+          fileType  : file.type,
           fileBase64: base64,
         });
-
         progressFill.style.width = '100%';
-        if (!res.success) {
-          toast(`${file.name} 上傳失敗：${res.message}`, 'error');
-        } else {
-          toast(`${file.name} 上傳成功 ✅`);
-        }
+        toast(
+          res.success ? file.name + ' 上傳成功 ✅' : file.name + ' 上傳失敗：' + res.message,
+          res.success ? 'success' : 'error'
+        );
       } catch(err) {
-        toast(`${file.name} 上傳失敗：${err.message}`, 'error');
+        toast(file.name + ' 上傳失敗：' + err.message, 'error');
       }
     }
-
-    state.pendingFiles = [];
+    S.pendingFiles = [];
+    renderPendingFiles();
     progressDiv.style.display = 'none';
   }
 
-  function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload  = e => resolve(e.target.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  // ── 檔案預覽 / 下載 ──────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 檔案預覽 / 下載
+  // ══════════════════════════════════════════════════════════
 
   async function previewFile(fileId, fileName, fileType, driveFileId) {
     document.getElementById('previewTitle').textContent = fileName;
-    const body = document.getElementById('previewBody');
-    body.innerHTML = '<div class="loading" style="padding:40px;"><div class="spinner"></div></div>';
+    document.getElementById('previewBody').innerHTML    =
+      '<div class="loading" style="padding:40px"><div class="spinner"></div></div>';
     openModal('previewModal');
+    try { await gasGet({ action:'getFilePreview', fileId:fileId }); } catch(e) {}
 
-    // 記錄預覽（呼叫 getFilePreview API）
-    try {
-      await gasGet({ action: 'getFilePreview', fileId });
-    } catch(e) { /* 忽略統計錯誤 */ }
-
-    const previewUrl = `https://drive.google.com/file/d/${driveFileId}/preview`;
-
+    const previewUrl = 'https://drive.google.com/file/d/' + driveFileId + '/preview';
     if (fileType && fileType.startsWith('image/')) {
-      const imgUrl = `https://drive.google.com/uc?export=view&id=${driveFileId}`;
-      body.innerHTML = `<img class="preview-img" src="${imgUrl}" alt="${fileName}" onerror="this.src='https://via.placeholder.com/400x300?text=圖片載入失敗'">`;
+      const imgUrl = 'https://drive.google.com/uc?export=view&id=' + driveFileId;
+      document.getElementById('previewBody').innerHTML =
+        '<img class="preview-img" src="' + imgUrl + '" alt="' + fileName + '" ' +
+        'onerror="this.style.display=\'none\';' +
+        'document.getElementById(\'previewFallback\').style.display=\'block\'">' +
+        '<iframe id="previewFallback" class="preview-iframe" src="' +
+        previewUrl + '" style="display:none"></iframe>';
     } else if (fileType && fileType.startsWith('video/')) {
-      body.innerHTML = `<video class="preview-video" controls><source src="${previewUrl}">您的瀏覽器不支援影片播放</video>`;
+      document.getElementById('previewBody').innerHTML =
+        '<video class="preview-video" controls>' +
+        '<source src="' + previewUrl + '">您的瀏覽器不支援影片播放</video>';
     } else {
-      body.innerHTML = `<iframe class="preview-iframe" src="${previewUrl}" allowfullscreen></iframe>`;
+      document.getElementById('previewBody').innerHTML =
+        '<iframe class="preview-iframe" src="' + previewUrl + '" allowfullscreen></iframe>';
     }
   }
 
   async function downloadFile(fileId) {
     try {
-      const res = await gasGet({ action: 'downloadFile', fileId });
+      const res = await gasGet({ action:'downloadFile', fileId:fileId });
       if (!res.success) { toast(res.message, 'error'); return; }
       window.open(res.data.downloadUrl, '_blank');
     } catch(err) {
@@ -1073,7 +1031,9 @@ const App = (() => {
     }
   }
 
-  // ── 管理員後台 ────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 管理員後台
+  // ══════════════════════════════════════════════════════════
 
   async function openAdminModal() {
     openModal('adminModal');
@@ -1081,78 +1041,110 @@ const App = (() => {
   }
 
   function switchAdminTab(tab) {
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+    document.querySelectorAll('.admin-tab').forEach(function(t) {
+      t.classList.remove('active');
+    });
+    document.querySelector('[data-tab="' + tab + '"]').classList.add('active');
     document.getElementById('adminTabUsers').style.display   = tab === 'users'   ? 'block' : 'none';
     document.getElementById('adminTabDeleted').style.display = tab === 'deleted' ? 'block' : 'none';
     if (tab === 'deleted') adminLoadDeleted();
   }
 
   async function adminLoadUsers() {
-    document.getElementById('adminUserList').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    setLoading('adminUserList');
     try {
-      const res = await gasGet({ action: 'getAllUsers' });
-      if (!res.success) { document.getElementById('adminUserList').innerHTML = `<p style="color:var(--danger)">${res.message}</p>`; return; }
-      renderAdminUserList(res.data.users || []);
+      const res = await gasGet({ action:'getAllUsers' });
+      if (!res.success) {
+        document.getElementById('adminUserList').innerHTML =
+          '<p style="color:var(--danger)">' + res.message + '</p>';
+        return;
+      }
+      S.allUsers = res.data.users || [];
+      renderAdminUserList(S.allUsers);
     } catch(err) {
-      document.getElementById('adminUserList').innerHTML = `<p style="color:var(--danger)">載入失敗：${err.message}</p>`;
+      document.getElementById('adminUserList').innerHTML =
+        '<p style="color:var(--danger)">載入失敗：' + err.message + '</p>';
     }
   }
 
-  function adminSearchUser() {
+  function adminFilterUsers() {
     const kw = document.getElementById('adminSearchUser').value.trim().toLowerCase();
-    const allRows = document.querySelectorAll('.user-row');
-    allRows.forEach(row => {
-      const text = row.textContent.toLowerCase();
-      row.style.display = text.includes(kw) ? 'flex' : 'none';
-    });
+    const filtered = kw
+      ? S.allUsers.filter(function(u) {
+          return (u.displayName||'').toLowerCase().includes(kw) ||
+                 (u.userId||'').toLowerCase().includes(kw);
+        })
+      : S.allUsers;
+    renderAdminUserList(filtered);
   }
 
   function renderAdminUserList(users) {
     const container = document.getElementById('adminUserList');
-    if (!users.length) { container.innerHTML = '<p style="color:var(--text-sub);text-align:center;padding:16px;">尚無使用者資料</p>'; return; }
-    container.innerHTML = users.map(u => `
-      <div class="user-row">
-        <div class="user-row-info">
-          <div class="user-row-name">${u.displayName || '（未知）'}</div>
-          <div class="user-row-id">${u.userId}</div>
-        </div>
-        <select class="perm-select" id="perm_${u.userId}">
-          ${[0,1,2,3,4].map(p => `<option value="${p}" ${Number(u.permissionLevel)===p?'selected':''}>${p} — ${['禁止','檢視','編輯','下載','上傳'][p]}</option>`).join('')}
-        </select>
-        <button class="btn-save-perm"
-          onclick="App.adminSaveUserPerm('${u.userId}','${u.displayName || ''}')">
-          儲存
-        </button>
-      </div>`).join('');
+    if (!users || !users.length) {
+      container.innerHTML =
+        '<p style="color:var(--text-sub);text-align:center;padding:16px">尚無使用者資料</p>';
+      return;
+    }
+    container.innerHTML = users.map(function(u) {
+      const perm = Number(u.permissionLevel) || 0;
+      return '<div class="user-row">' +
+        '<div style="font-size:1.5rem">' + ['🚫','👁','✏️','⬇️','⬆️'][perm] + '</div>' +
+        '<div class="user-row-info">' +
+          '<div class="user-row-name">' + (u.displayName || '未命名') + '</div>' +
+          '<div class="user-row-id">'   + u.userId + '</div>' +
+        '</div>' +
+        '<select class="perm-select" id="perm_' + u.userId + '">' +
+          [0,1,2,3,4].map(function(v) {
+            return '<option value="' + v + '"' + (v === perm ? ' selected' : '') + '>' +
+              v + ' — ' + ['禁止','檢視','編輯','下載','上傳'][v] + '</option>';
+          }).join('') +
+        '</select>' +
+        '<button class="btn-save-perm" onclick="App.adminSaveUserPerm(\'' +
+          u.userId + '\',\'' + (u.displayName||'').replace(/'/g,"\\'") + '\')">儲存</button>' +
+      '</div>';
+    }).join('');
   }
 
-  async function adminSaveUserPerm(targetUserId, targetDisplayName) {
-    const perm = document.getElementById(`perm_${targetUserId}`).value;
+  async function adminSaveUserPerm(targetUserId, displayName) {
+    const sel  = document.getElementById('perm_' + targetUserId);
+    const perm = sel ? sel.value : '1';
     try {
-      const res = await gasPost({ action: 'updatePermission', targetUserId, targetDisplayName, permissionLevel: perm });
-      toast(res.success ? `${targetDisplayName || targetUserId} 權限已更新` : res.message, res.success ? 'success' : 'error');
+      const res = await gasGet({
+        action          : 'updatePermission',
+        token           : S.accessToken,
+        targetUserId    : targetUserId,
+        targetDisplayName: displayName,
+        permissionLevel : perm,
+      });
+      toast(res.success ? '權限已更新 ✅' : res.message, res.success ? 'success' : 'error');
+      if (res.success) await adminLoadUsers();
     } catch(err) {
       toast('更新失敗：' + err.message, 'error');
     }
   }
 
   async function adminUpdatePermission() {
-    const targetUserId      = document.getElementById('adminUserId').value.trim();
-    const targetDisplayName = document.getElementById('adminDisplayName').value.trim();
-    const permissionLevel   = document.getElementById('adminPermLevel').value;
-    const note              = document.getElementById('adminNote').value.trim();
-    if (!targetUserId) { toast('請輸入 userId', 'error'); return; }
+    const targetUserId  = document.getElementById('adminUserId').value.trim();
+    const displayName   = document.getElementById('adminDisplayName').value.trim();
+    const permLevel     = document.getElementById('adminPermLevel').value;
+    const note          = document.getElementById('adminNote').value.trim();
+    if (!targetUserId) { toast('請輸入 LINE userId', 'error'); return; }
     try {
-      const res = await gasPost({ action: 'updatePermission', targetUserId, targetDisplayName, permissionLevel, note });
+      const res = await gasGet({
+        action           : 'updatePermission',
+        token            : S.accessToken,
+        targetUserId     : targetUserId,
+        targetDisplayName: displayName,
+        permissionLevel  : permLevel,
+        note             : note,
+      });
+      toast(res.success ? '權限設定成功 ✅' : res.message, res.success ? 'success' : 'error');
       if (res.success) {
-        toast('權限設定成功 ✅');
         document.getElementById('adminUserId').value      = '';
         document.getElementById('adminDisplayName').value = '';
         document.getElementById('adminNote').value        = '';
+        document.getElementById('adminPermLevel').value   = '2';
         await adminLoadUsers();
-      } else {
-        toast(res.message, 'error');
       }
     } catch(err) {
       toast('操作失敗：' + err.message, 'error');
@@ -1160,113 +1152,80 @@ const App = (() => {
   }
 
   async function adminLoadDeleted() {
-    document.getElementById('adminDeletedList').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    setLoading('adminDeletedList');
     try {
-      // 取得所有記事（含已刪除）需要特殊 API，這裡透過 getAllNotes 管理員版本
-      const res = await gasGet({ action: 'getNotes', keyword: '', includeDeleted: 'true' });
-      if (!res.success) { document.getElementById('adminDeletedList').innerHTML = `<p style="color:var(--danger)">${res.message}</p>`; return; }
-      const deleted = (res.data.notes || []).filter(n => n.isDeleted);
-      if (!deleted.length) {
-        document.getElementById('adminDeletedList').innerHTML = '<p style="color:var(--text-sub);text-align:center;padding:20px;">沒有已刪除的記事</p>';
+      const res = await gasGet({ action:'getNotes', includeDeleted:'true' });
+      if (!res.success) {
+        document.getElementById('adminDeletedList').innerHTML =
+          '<p style="color:var(--danger)">' + res.message + '</p>';
         return;
       }
-      document.getElementById('adminDeletedList').innerHTML = deleted.map(n => `
-        <div class="deleted-card">
-          <div class="deleted-card-title">${n.title}</div>
-          <div class="deleted-card-meta">✍️ ${n.authorName} ｜ 🔄 ${fmtDate(n.updatedAt)}</div>
-          <button class="btn-restore" onclick="App.adminRestoreNote('${n.noteId}')">♻️ 還原</button>
-        </div>`).join('');
+      const notes = res.data.notes || [];
+      if (!notes.length) {
+        document.getElementById('adminDeletedList').innerHTML =
+          '<p style="color:var(--text-sub);text-align:center;padding:20px">沒有已刪除的記事</p>';
+        return;
+      }
+      document.getElementById('adminDeletedList').innerHTML =
+        notes.map(function(n) {
+          return '<div class="deleted-card">' +
+            '<div class="deleted-card-title">🗑 ' + n.title + '</div>' +
+            '<div class="deleted-card-meta">' +
+              '✍️ ' + n.authorName + '　📅 ' + fmtDate(n.updatedAt) +
+            '</div>' +
+            '<button class="btn-restore" onclick="App.adminRestoreNote(\'' +
+              n.noteId + '\')">♻️ 還原</button>' +
+          '</div>';
+        }).join('');
     } catch(err) {
-      document.getElementById('adminDeletedList').innerHTML = `<p style="color:var(--danger)">載入失敗：${err.message}</p>`;
+      document.getElementById('adminDeletedList').innerHTML =
+        '<p style="color:var(--danger)">載入失敗：' + err.message + '</p>';
     }
   }
 
   async function adminRestoreNote(noteId) {
     try {
-      const res = await gasPost({ action: 'restoreNote', noteId });
-      if (res.success) { toast('記事已還原 ✅'); adminLoadDeleted(); }
-      else toast(res.message, 'error');
+      const res = await gasGet({ action:'restoreNote', token:S.accessToken, noteId:noteId });
+      toast(res.success ? '記事已還原 ♻️' : res.message, res.success ? 'success' : 'error');
+      if (res.success) adminLoadDeleted();
     } catch(err) {
       toast('還原失敗：' + err.message, 'error');
     }
   }
 
-  // ── 拖曳上傳 ─────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════
+  // 初始化
+  // ══════════════════════════════════════════════════════════
 
-  function initDragDrop() {
-    const zone = document.getElementById('uploadZone');
-    if (!zone) return;
-    zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
-    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-    zone.addEventListener('drop', e => {
-      e.preventDefault();
-      zone.classList.remove('drag-over');
-      const files = Array.from(e.dataTransfer.files);
-      files.forEach(file => {
-        if (file.size > 10 * 1024 * 1024) { toast(`${file.name} 超過 10MB 限制`, 'error'); return; }
-        state.pendingFiles.push(file);
-      });
-      renderPendingFiles();
-    });
-  }
-
-  // ── 搜尋 Enter 鍵 ────────────────────────────────────────
-
-  function initSearchEnter() {
-    document.getElementById('searchInput').addEventListener('keydown', e => {
-      if (e.key === 'Enter') searchNotes();
-    });
-  }
-
-  // ── 點擊 Overlay 關閉 Modal ──────────────────────────────
-
-  function initModalClose() {
-    document.querySelectorAll('.modal-overlay').forEach(overlay => {
-      overlay.addEventListener('click', e => {
-        if (e.target === overlay) {
-          overlay.classList.remove('active');
-          document.body.style.overflow = '';
-        }
-      });
-    });
-  }
-
-  // ── 初始化入口 ────────────────────────────────────────────
-
-  function init() {
-    initSearchEnter();
-    initModalClose();
-    initDragDrop();
+  document.addEventListener('DOMContentLoaded', function() {
     initLiff();
-  }
+  });
 
   // ── 公開 API ─────────────────────────────────────────────
   return {
-    init,
-    loadNotes,
-    searchNotes,
-    openCreateModal,
-    openEditModal,
-    saveNote,
-    confirmDelete,
-    openDetailModal,
-    openViewLogModal,
-    openAdminModal,
-    switchAdminTab,
-    adminSearchUser,
-    adminSaveUserPerm,
-    adminUpdatePermission,
-    adminRestoreNote,
-    previewFile,
-    downloadFile,
-    handleFileSelect,
-    removePendingFile,
-    closeModal,
+    loadNotes        : loadNotes,
+    searchNotes      : searchNotes,
+    openCreateModal  : openCreateModal,
+    openEditModal    : openEditModal,
+    saveNote         : saveNote,
+    confirmDelete    : confirmDelete,
+    openDetailModal  : openDetailModal,
+    openViewLogModal : openViewLogModal,
+    handleFileSelect : handleFileSelect,
+    handleFileDrop   : handleFileDrop,
+    removePendingFile: removePendingFile,
+    previewFile      : previewFile,
+    downloadFile     : downloadFile,
+    openAdminModal   : openAdminModal,
+    switchAdminTab   : switchAdminTab,
+    adminFilterUsers : adminFilterUsers,
+    adminSaveUserPerm: adminSaveUserPerm,
+    adminUpdatePermission: adminUpdatePermission,
+    adminRestoreNote : adminRestoreNote,
+    closeModal       : closeModal,
   };
 })();
-
-// 頁面載入完成後初始化
-document.addEventListener('DOMContentLoaded', App.init);
-    </script>
+</script>
 </body>
 </html>
+        
