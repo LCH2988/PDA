@@ -2,543 +2,1356 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>網路記事本</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title><?= APP_NAME ?></title>
+
+  <!-- LIFF SDK -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- Font Awesome -->
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <!-- ★ GAS Template 注入變數 -->
+  <script>
+    const LIFF_ID  = '<?= LIFF_ID ?>';
+    const GAS_URL  = '<?= GAS_URL ?>';
+    const APP_NAME = '<?= APP_NAME ?>';
+    const VERSION  = '<?= VERSION ?>';
+  </script>
+
   <style>
-    :root {
-      --primary:#06C755;--primary-dark:#05a847;--secondary:#1a1a2e;
-      --accent:#e94560;--bg:#f0f2f5;--card:#ffffff;--text:#2d3436;
-      --text-muted:#636e72;--border:#dfe6e9;--shadow:0 2px 12px rgba(0,0,0,0.08);
-      --radius:12px;--admin-color:#e74c3c;--mod-color:#e67e22;
-      --vip-color:#9b59b6;--user-color:#3498db;--guest-color:#95a5a6;
+  /* ============================================================
+     CSS Reset & 全域變數
+  ============================================================ */
+  :root {
+    --primary:    #06C755;
+    --primary-dk: #05a847;
+    --secondary:  #1a1a2e;
+    --accent:     #e94560;
+    --bg:         #f0f2f5;
+    --card:       #ffffff;
+    --text:       #2d3436;
+    --muted:      #636e72;
+    --border:     #dfe6e9;
+    --radius:     12px;
+    --radius-sm:  8px;
+    --shadow:     0 2px 12px rgba(0,0,0,0.08);
+    --shadow-md:  0 4px 20px rgba(0,0,0,0.12);
+    --transition: all 0.2s ease;
+    --nav-h:      60px;
+    --header-h:   56px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: -apple-system, 'Noto Sans TC', 'Microsoft JhengHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  /* ============================================================
+     App 容器
+  ============================================================ */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-width: 480px;
+    margin: 0 auto;
+    background: var(--card);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ============================================================
+     頂部 Header
+  ============================================================ */
+  #header {
+    height: var(--header-h);
+    background: linear-gradient(135deg, var(--secondary), #16213e);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    flex-shrink: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  #header .app-title {
+    color: white;
+    font-size: 17px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #header .app-title .logo { font-size: 22px; }
+  #userBar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #userBar .avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--primary);
+    cursor: pointer;
+  }
+  #userBar .user-name {
+    color: rgba(255,255,255,0.9);
+    font-size: 13px;
+    font-weight: 600;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .role-badge {
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .rb-admin  { background: #e74c3c; color: white; }
+  .rb-mod    { background: #e67e22; color: white; }
+  .rb-vip    { background: #9b59b6; color: white; }
+  .rb-user   { background: var(--primary); color: white; }
+  .rb-guest  { background: #95a5a6; color: white; }
+
+  /* ============================================================
+     頁面容器
+  ============================================================ */
+  #pages {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+  .page {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: none;
+    padding-bottom: calc(var(--nav-h) + 16px);
+    -webkit-overflow-scrolling: touch;
+  }
+  .page.active { display: block; }
+
+  /* ============================================================
+     底部導覽列
+  ============================================================ */
+  #nav {
+    height: var(--nav-h);
+    background: white;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: stretch;
+    flex-shrink: 0;
+    z-index: 100;
+  }
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    transition: var(--transition);
+    border: none;
+    background: none;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .nav-item i { font-size: 20px; transition: var(--transition); }
+  .nav-item.active { color: var(--primary); }
+  .nav-item.active i { transform: scale(1.15); }
+  .nav-item:active { background: var(--bg); }
+
+  /* ============================================================
+     登入頁
+  ============================================================ */
+  #page-login {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 32px 24px;
+    background: linear-gradient(160deg, var(--secondary) 0%, #16213e 50%, #0f3460 100%);
+  }
+  .login-logo { font-size: 80px; margin-bottom: 16px; animation: float 3s ease-in-out infinite; }
+  @keyframes float {
+    0%,100% { transform: translateY(0); }
+    50%      { transform: translateY(-10px); }
+  }
+  .login-title {
+    color: white;
+    font-size: 26px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  .login-sub {
+    color: rgba(255,255,255,0.7);
+    font-size: 14px;
+    margin-bottom: 40px;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .btn-line {
+    width: 100%;
+    max-width: 280px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    padding: 14px 24px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: var(--transition);
+    margin-bottom: 12px;
+  }
+  .btn-line:hover  { background: var(--primary-dk); transform: translateY(-1px); }
+  .btn-line:active { transform: translateY(0); }
+  .btn-guest {
+    width: 100%;
+    max-width: 280px;
+    background: transparent;
+    color: rgba(255,255,255,0.7);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: var(--radius);
+    padding: 12px 24px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .btn-guest:hover { background: rgba(255,255,255,0.1); color: white; }
+
+  /* ============================================================
+     實名制登記頁
+  ============================================================ */
+  #page-register {
+    padding: 24px 20px;
+    background: var(--bg);
+  }
+  .register-card {
+    background: white;
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+  }
+  .register-card h2 {
+    font-size: 18px;
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+  .register-card .sub {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 20px;
+    line-height: 1.6;
+  }
+
+  /* ============================================================
+     表單元件
+  ============================================================ */
+  .form-group { margin-bottom: 16px; }
+  .form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .form-label .required { color: var(--accent); margin-left: 2px; }
+  .form-control {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    color: var(--text);
+    background: white;
+    transition: var(--transition);
+    outline: none;
+    font-family: inherit;
+  }
+  .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(6,199,85,0.15); }
+  .form-control:disabled { background: var(--bg); color: var(--muted); cursor: not-allowed; }
+  .form-control.error { border-color: var(--accent); }
+  textarea.form-control { resize: vertical; min-height: 120px; line-height: 1.6; }
+  select.form-control { cursor: pointer; }
+
+  /* ============================================================
+     按鈕
+  ============================================================ */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 18px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: var(--transition);
+    font-family: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-primary  { background: var(--primary); color: white; }
+  .btn-primary:hover:not(:disabled)  { background: var(--primary-dk); }
+  .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover:not(:disabled) { background: var(--border); }
+  .btn-danger   { background: #fce4ec; color: #c62828; }
+  .btn-danger:hover:not(:disabled)   { background: #f48fb1; }
+  .btn-full     { width: 100%; }
+  .btn-sm       { padding: 6px 12px; font-size: 12px; }
+
+  /* ============================================================
+     文章列表頁
+  ============================================================ */
+  .page-header {
+    padding: 16px 16px 0;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  .search-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .search-input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    outline: none;
+    background: white;
+    transition: var(--transition);
+  }
+  .search-input:focus { border-color: var(--primary); }
+  .search-btn {
+    padding: 10px 14px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 16px;
+  }
+  .cat-scroll {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+    scrollbar-width: none;
+  }
+  .cat-scroll::-webkit-scrollbar { display: none; }
+  .cat-btn {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1.5px solid var(--border);
+    background: white;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--muted);
+    transition: var(--transition);
+    white-space: nowrap;
+  }
+  .cat-btn.active, .cat-btn:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+  }
+
+  /* 文章卡片 */
+  .article-list { padding: 8px 16px 0; }
+  .article-card {
+    background: white;
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    transition: var(--transition);
+    border: 1.5px solid transparent;
+  }
+  .article-card:hover  { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .article-card:active { transform: translateY(0); }
+  .card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.4;
+    flex: 1;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .vis-badge {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .vb-public  { background: #e8f5e9; color: #2e7d32; }
+  .vb-vip     { background: #f3e5f5; color: #7b1fa2; }
+  .vb-private { background: #fce4ec; color: #c62828; }
+  .card-summary {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin-bottom: 10px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .card-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .card-meta-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .cat-tag {
+    padding: 2px 8px;
+    background: var(--bg);
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .author-name { font-size: 12px; color: var(--muted); }
+  .read-count  { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 3px; }
+  .tag-list    { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .tag-item    { padding: 1px 7px; background: #e3f2fd; color: #1565c0; border-radius: 10px; font-size: 10px; font-weight: 600; }
+
+  /* 分頁 */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+  }
+  .page-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: white;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+  }
+  .page-btn.active { background: var(--primary); border-color: var(--primary); color: white; }
+  .page-btn:hover:not(.active) { border-color: var(--primary); color: var(--primary); }
+  .page-info { font-size: 13px; color: var(--muted); }
+
+  /* 空狀態 */
+  .empty-state {
+    text-align: center;
+    padding: 60px 24px;
+    color: var(--muted);
+  }
+  .empty-state .empty-icon { font-size: 56px; margin-bottom: 16px; opacity: 0.5; }
+  .empty-state h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+  .empty-state p  { font-size: 13px; line-height: 1.6; }
+
+  /* ============================================================
+     撰寫文章頁
+  ============================================================ */
+  #page-write { padding: 16px; background: var(--bg); }
+  .write-card {
+    background: white;
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+    margin-bottom: 12px;
+  }
+  .write-card h3 {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--secondary);
+  }
+  .char-count {
+    text-align: right;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .char-count.warn { color: #e67e22; }
+  .char-count.over { color: var(--accent); }
+
+  /* 上傳區 */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--transition);
+    background: var(--bg);
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--primary);
+    background: rgba(6,199,85,0.05);
+  }
+  .upload-zone .upload-icon { font-size: 36px; margin-bottom: 8px; }
+  .upload-zone p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .upload-zone strong { color: var(--primary); }
+  .file-preview-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+  }
+  .file-item .file-info { flex: 1; min-width: 0; }
+  .file-item .file-name {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .file-item .file-size { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .file-progress {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+  .file-progress-bar {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+  .file-status { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .file-status.error { color: var(--accent); }
+  .file-status.success { color: var(--primary); }
+
+  /* ============================================================
+     統計頁
+  ============================================================ */
+  #page-stats { padding: 16px; background: var(--bg); }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .stat-card {
+    background: white;
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+    text-align: center;
+  }
+  .stat-card .stat-icon { font-size: 28px; margin-bottom: 8px; }
+  .stat-card .stat-num  { font-size: 28px; font-weight: 800; color: var(--primary); line-height: 1; }
+  .stat-card .stat-lbl  { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .top-list { background: white; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+  .top-list-header {
+    padding: 14px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .top-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: var(--transition);
+  }
+  .top-item:last-child { border-bottom: none; }
+  .top-item:hover { background: var(--bg); }
+  .top-rank {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .top-rank.r1 { background: #ffd700; color: #7d6608; }
+  .top-rank.r2 { background: #c0c0c0; color: #555; }
+  .top-rank.r3 { background: #cd7f32; color: white; }
+  .top-title { flex: 1; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top-count { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+
+  /* ============================================================
+     管理頁
+  ============================================================ */
+  #page-admin { padding: 16px; background: var(--bg); }
+  .user-item {
+    background: white;
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 10px;
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .user-item .u-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--border);
+    flex-shrink: 0;
+  }
+  .user-item .u-info { flex: 1; min-width: 0; }
+  .user-item .u-name { font-size: 14px; font-weight: 700; }
+  .user-item .u-real { font-size: 12px; color: var(--muted); }
+  .user-item .u-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .status-badge {
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .sb-active   { background: #e8f5e9; color: #2e7d32; }
+  .sb-inactive { background: #fff3e0; color: #e65100; }
+  .sb-banned   { background: #fce4ec; color: #c62828; }
+
+  /* ============================================================
+     個人資料頁
+  ============================================================ */
+  #page-profile { padding: 16px; background: var(--bg); }
+  .profile-card {
+    background: white;
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .profile-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid var(--primary);
+    margin-bottom: 12px;
+  }
+  .profile-name { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+  .profile-role { margin-bottom: 16px; }
+
+  /* ============================================================
+     文章詳情 Modal
+  ============================================================ */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 1000;
+    display: none;
+    align-items: flex-end;
+    backdrop-filter: blur(2px);
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-sheet {
+    background: white;
+    border-radius: 20px 20px 0 0;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.3s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+  .modal-handle {
+    width: 40px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 12px auto 0;
+    flex-shrink: 0;
+  }
+  .modal-header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .modal-title { font-size: 17px; font-weight: 800; line-height: 1.4; flex: 1; }
+  .modal-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: var(--bg);
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: var(--transition);
+  }
+  .modal-close:hover { background: var(--border); }
+  .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .modal-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-content {
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .modal-footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  /* 附件列表 */
+  .attach-section { margin-top: 20px; }
+  .attach-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .attach-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+  }
+  .attach-icon { font-size: 24px; flex-shrink: 0; }
+  .attach-info { flex: 1; min-width: 0; }
+  .attach-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attach-size { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .attach-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+  /* 圖片預覽 Modal */
+  .preview-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.9);
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+  }
+  .preview-modal.active { display: flex; }
+  .preview-modal img {
+    max-width: 95vw;
+    max-height: 80vh;
+    object-fit: contain;
+    border-radius: 8px;
+  }
+  .preview-modal iframe {
+    width: 95vw;
+    height: 80vh;
+    border: none;
+    border-radius: 8px;
+    background: white;
+  }
+  .preview-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ============================================================
+     Toast 通知
+  ============================================================ */
+  #toastContainer {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+    width: calc(100% - 32px);
+    max-width: 440px;
+  }
+  .toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: var(--shadow-md);
+    animation: toastIn 0.3s ease;
+    pointer-events: auto;
+  }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .toast.success { background: #e8f5e9; color: #2e7d32; border-left: 4px solid var(--primary); }
+  .toast.error   { background: #fce4ec; color: #c62828; border-left: 4px solid var(--accent); }
+  .toast.info    { background: #e3f2fd; color: #1565c0; border-left: 4px solid #3498db; }
+  .toast.warning { background: #fff3e0; color: #e65100; border-left: 4px solid #f39c12; }
+
+  /* ============================================================
+     Loading 遮罩
+  ============================================================ */
+  #loadingOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(255,255,255,0.85);
+    z-index: 5000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+  #loadingOverlay.active { display: flex; }
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 14px; color: var(--muted); font-weight: 600; }
+
+  /* ============================================================
+     角色編輯 Modal
+  ============================================================ */
+  .edit-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .edit-modal.active { display: flex; }
+  .edit-modal-box {
+    background: white;
+    border-radius: var(--radius);
+    padding: 24px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: var(--shadow-md);
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .edit-modal-box h3 { font-size: 16px; font-weight: 800; margin-bottom: 16px; }
+
+  /* ============================================================
+     RWD：桌面版置中顯示
+  ============================================================ */
+  @media (min-width: 520px) {
+    #app {
+      box-shadow: 0 0 40px rgba(0,0,0,0.15);
+      border-radius: 0;
     }
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:-apple-system,'Noto Sans TC',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
-    .navbar{background:linear-gradient(135deg,var(--secondary),#16213e);color:white;padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,0.3);}
-    .navbar-brand{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px;}
-    .navbar-brand i{color:var(--primary);}
-    .navbar-actions{display:flex;align-items:center;gap:8px;}
-    .btn-icon{background:none;border:none;color:white;cursor:pointer;padding:8px;border-radius:8px;font-size:18px;transition:background 0.2s;}
-    .btn-icon:hover{background:rgba(255,255,255,0.1);}
-    .user-bar{background:var(--card);padding:12px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);}
-    .user-avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--primary);}
-    .user-info{flex:1;}
-    .user-name{font-weight:600;font-size:14px;}
-    .user-role-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;color:white;margin-top:2px;}
-    .role-admin{background:var(--admin-color);}.role-mod{background:var(--mod-color);}
-    .role-vip{background:var(--vip-color);}.role-user{background:var(--user-color);}.role-guest{background:var(--guest-color);}
-    .tabs{display:flex;background:var(--card);border-bottom:2px solid var(--border);overflow-x:auto;}
-    .tab-btn{flex:1;min-width:70px;padding:12px 8px;background:none;border:none;cursor:pointer;font-size:12px;color:var(--text-muted);display:flex;flex-direction:column;align-items:center;gap:4px;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all 0.2s;}
-    .tab-btn i{font-size:18px;}
-    .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:600;}
-    .main-content{padding:16px;max-width:800px;margin:0 auto;}
-    .page{display:none;}.page.active{display:block;}
-    .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden;}
-    .card-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;font-weight:600;}
-    .card-body{padding:16px;}
-    .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;transition:all 0.2s;text-decoration:none;}
-    .btn-primary{background:var(--primary);color:white;}.btn-primary:hover{background:var(--primary-dark);transform:translateY(-1px);}
-    .btn-danger{background:var(--accent);color:white;}
-    .btn-warning{background:#f39c12;color:white;}
-    .btn-info{background:#3498db;color:white;}
-    .btn-outline{background:none;border:2px solid var(--border);color:var(--text);}
-    .btn-outline:hover{border-color:var(--primary);color:var(--primary);}
-    .btn-sm{padding:6px 12px;font-size:12px;}
-    .btn-full{width:100%;justify-content:center;}
-    .form-group{margin-bottom:16px;}
-    .form-label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-muted);}
-    .form-control{width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-size:14px;transition:border 0.2s;background:var(--bg);}
-    .form-control:focus{outline:none;border-color:var(--primary);background:white;}
-    textarea.form-control{resize:vertical;min-height:120px;}
-    select.form-control{cursor:pointer;}
-    .article-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden;transition:transform 0.2s;cursor:pointer;}
-    .article-card:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(0,0,0,0.12);}
-    .article-card-body{padding:14px 16px;}
-    .article-title{font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text);}
-    .article-summary{font-size:13px;color:var(--text-muted);line-height:1.5;margin-bottom:10px;}
-    .article-meta{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text-muted);flex-wrap:wrap;}
-    .article-tag{display:inline-block;padding:2px 8px;background:#e8f5e9;color:var(--primary);border-radius:20px;font-size:11px;margin-right:4px;}
-    .visibility-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;}
-    .vis-public{background:#e8f5e9;color:#27ae60;}.vis-private{background:#fce4ec;color:#e91e63;}.vis-vip{background:#f3e5f5;color:#9c27b0;}
-    .search-bar{display:flex;gap:8px;margin-bottom:16px;}
-    .search-bar .form-control{flex:1;}
-    .loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--text-muted);flex-direction:column;gap:12px;}
-    .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;}
-    @keyframes spin{to{transform:rotate(360deg);}}
-    .toast-container{position:fixed;top:70px;right:16px;z-index:9999;}
-    .toast{background:var(--secondary);color:white;padding:12px 18px;border-radius:10px;margin-bottom:8px;font-size:14px;display:flex;align-items:center;gap:8px;animation:slideIn 0.3s ease;box-shadow:var(--shadow);max-width:280px;}
-    .toast.success{border-left:4px solid var(--primary);}.toast.error{border-left:4px solid var(--accent);}.toast.info{border-left:4px solid #3498db;}
-    @keyframes slideIn{from{transform:translateX(100%);opacity:0;}to{transform:translateX(0);opacity:1;}}
-    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:none;align-items:flex-end;justify-content:center;}
-    .modal-overlay.active{display:flex;}
-    .modal{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:800px;max-height:90vh;overflow-y:auto;padding:20px;animation:slideUp 0.3s ease;}
-    @keyframes slideUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
-    .modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);}
-    .modal-title{font-size:18px;font-weight:700;}
-    .modal-close{background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-muted);}
-    .stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
-    .stat-card{background:var(--card);border-radius:var(--radius);padding:16px;text-align:center;box-shadow:var(--shadow);}
-    .stat-number{font-size:28px;font-weight:800;color:var(--primary);}
-    .stat-label{font-size:12px;color:var(--text-muted);margin-top:4px;}
-    .file-item{display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg);border-radius:8px;margin-bottom:8px;}
-    .file-icon{font-size:24px;width:32px;text-align:center;}
-    .file-info{flex:1;}
-    .file-name{font-size:13px;font-weight:600;}
-    .file-size{font-size:11px;color:var(--text-muted);}
-    .file-actions{display:flex;gap:6px;}
-    .login-page{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;padding:32px;text-align:center;}
-    .login-logo{font-size:64px;margin-bottom:16px;}
-    .login-title{font-size:24px;font-weight:800;margin-bottom:8px;}
-    .login-subtitle{color:var(--text-muted);margin-bottom:32px;line-height:1.6;}
-    .empty-state{text-align:center;padding:40px 20px;color:var(--text-muted);}
-    .empty-state i{font-size:48px;margin-bottom:12px;display:block;}
-    .pagination{display:flex;justify-content:center;gap:8px;margin-top:16px;}
-    .page-btn{width:36px;height:36px;border-radius:8px;border:2px solid var(--border);background:var(--card);cursor:pointer;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;transition:all 0.2s;}
-    .page-btn.active{background:var(--primary);color:white;border-color:var(--primary);}
-    .page-btn:hover:not(.active){border-color:var(--primary);color:var(--primary);}
-    .article-content{line-height:1.8;font-size:15px;white-space:pre-wrap;}
-    .article-detail-title{font-size:22px;font-weight:800;margin-bottom:8px;}
-    .article-detail-meta{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:var(--text-muted);margin-bottom:16px;}
-    .upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg);}
-    .upload-zone:hover,.upload-zone.dragover{border-color:var(--primary);background:#e8f5e9;}
-    .upload-zone i{font-size:32px;color:var(--text-muted);margin-bottom:8px;display:block;}
-    .user-row{display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--border);}
-    .user-row:last-child{border-bottom:none;}
-    .user-row-avatar{width:36px;height:36px;border-radius:50%;object-fit:cover;}
-    .user-row-info{flex:1;}
-    .user-row-name{font-size:13px;font-weight:600;}
-    .user-row-real{font-size:11px;color:var(--text-muted);}
-    .preview-frame{width:100%;height:400px;border:none;border-radius:8px;background:#f8f9fa;}
-    .preview-img{max-width:100%;border-radius:8px;display:block;margin:0 auto;}
-    .top-article-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
-    .top-article-item:last-child{border-bottom:none;}
-    .top-rank{width:28px;height:28px;border-radius:50%;background:var(--primary);color:white;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
-    .top-rank.rank-1{background:#f1c40f;}.top-rank.rank-2{background:#95a5a6;}.top-rank.rank-3{background:#cd7f32;}
-    .category-filter{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:16px;}
-    .cat-btn{padding:6px 14px;border-radius:20px;border:2px solid var(--border);background:var(--card);cursor:pointer;font-size:12px;white-space:nowrap;transition:all 0.2s;}
-    .cat-btn.active{background:var(--primary);color:white;border-color:var(--primary);}
-    .divider{height:1px;background:var(--border);margin:16px 0;}
-    .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;}
-    .badge-success{background:#e8f5e9;color:#27ae60;}
-    .badge-warning{background:#fff3cd;color:#856404;}
-    .badge-danger{background:#fce4ec;color:#c0392b;}
-    .read-count-bar{height:4px;background:var(--border);border-radius:2px;margin-top:4px;}
-    .read-count-fill{height:100%;background:var(--primary);border-radius:2px;transition:width 0.5s;}
+  }
   </style>
 </head>
 <body>
+<div id="app">
 
-<div class="toast-container" id="toastContainer"></div>
-
-<!-- ===== 導覽列 ===== -->
-<nav class="navbar" id="navbar" style="display:none">
-  <div class="navbar-brand">
-    <i class="fas fa-book-open"></i>
-    <span id="appName">網路記事本</span>
-  </div>
-  <div class="navbar-actions">
-    <button class="btn-icon" onclick="switchTab('write')" id="btnWrite" style="display:none" title="寫文章">
-      <i class="fas fa-pen"></i>
-    </button>
-    <button class="btn-icon" onclick="switchTab('admin')" id="btnAdmin" style="display:none" title="管理">
-      <i class="fas fa-cog"></i>
-    </button>
-  </div>
-</nav>
-
-<!-- ===== 使用者資訊列 ===== -->
-<div class="user-bar" id="userBar" style="display:none">
-  <img id="userAvatar" class="user-avatar" src="https://via.placeholder.com/40" alt="avatar">
-  <div class="user-info">
-    <div class="user-name" id="userName">載入中...</div>
-    <span class="user-role-badge role-guest" id="userRoleBadge">遊客</span>
-  </div>
-  <button class="btn btn-outline btn-sm" onclick="switchTab('profile')">
-    <i class="fas fa-user-edit"></i> 資料
-  </button>
-</div>
-
-<!-- ===== 頁籤列 ===== -->
-<div class="tabs" id="mainTabs" style="display:none">
-  <button class="tab-btn active" onclick="switchTab('home')" id="tab-home">
-    <i class="fas fa-home"></i><span>首頁</span>
-  </button>
-  <button class="tab-btn" onclick="switchTab('articles')" id="tab-articles">
-    <i class="fas fa-newspaper"></i><span>文章</span>
-  </button>
-  <button class="tab-btn" onclick="switchTab('write')" id="tab-write">
-    <i class="fas fa-pen-nib"></i><span>撰寫</span>
-  </button>
-  <button class="tab-btn" onclick="switchTab('stats')" id="tab-stats">
-    <i class="fas fa-chart-bar"></i><span>統計</span>
-  </button>
-  <button class="tab-btn" onclick="switchTab('admin')" id="tab-admin" style="display:none">
-    <i class="fas fa-shield-alt"></i><span>管理</span>
-  </button>
-</div>
-
-<!-- ===== 主內容 ===== -->
-<div class="main-content">
-
-  <!-- ① 登入頁 -->
-  <div id="page-login" class="page active">
-    <div class="login-page">
-      <div class="login-logo">📓</div>
-      <h1 class="login-title">網路記事本</h1>
-      <p class="login-subtitle">
-        使用 LINE 帳號登入<br>享受完整記事本功能<br>
-        <small style="font-size:11px">支援文章發布・檔案上傳・閱讀統計</small>
-      </p>
-      <button class="btn btn-primary btn-full" onclick="initLiff()" style="max-width:280px">
-        <i class="fab fa-line"></i> 使用 LINE 登入
-      </button>
-      <button class="btn btn-outline btn-full" onclick="guestMode()" style="max-width:280px;margin-top:12px">
-        <i class="fas fa-eye"></i> 以遊客身份瀏覽
-      </button>
+  <!-- ===== 頂部 Header ===== -->
+  <div id="header">
+    <div class="app-title">
+      <span class="logo">📓</span>
+      <span id="appName">網路記事本</span>
+    </div>
+    <div id="userBar">
+      <!-- 登入後動態填入 -->
     </div>
   </div>
 
-  <!-- ② 實名制註冊頁 -->
-  <div id="page-register" class="page">
-    <div class="card">
-      <div class="card-header">
-        <span><i class="fas fa-id-card" style="color:var(--primary)"></i> 實名制登記</span>
-        <span class="badge badge-warning"><i class="fas fa-lock"></i> 首次登入</span>
-      </div>
-      <div class="card-body">
-        <p style="color:var(--text-muted);font-size:13px;margin-bottom:20px;line-height:1.6;background:#fff3cd;padding:10px;border-radius:8px;">
-          <i class="fas fa-info-circle"></i>
-          首次使用需完成實名登記，資料僅供系統識別使用，不對外公開。
-        </p>
+  <!-- ===== 頁面容器 ===== -->
+  <div id="pages">
+
+    <!-- 登入頁 -->
+    <div class="page active" id="page-login">
+      <div class="login-logo">📓</div>
+      <h1 class="login-title">網路記事本</h1>
+      <p class="login-sub">用 LINE 登入，隨時記錄你的想法<br>支援文章、附件、多人協作</p>
+      <button class="btn-line" onclick="initLiff()">
+        <i class="fab fa-line" style="font-size:20px"></i>
+        使用 LINE 登入
+      </button>
+      <button class="btn-guest" onclick="guestMode()">
+        <i class="fas fa-eye"></i> 以遊客身份瀏覽
+      </button>
+      <p style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:32px">
+        v<?= VERSION ?> · Powered by Google Apps Script
+      </p>
+    </div>
+
+    <!-- 實名制登記頁 -->
+    <div class="page" id="page-register">
+      <div class="register-card">
+        <h2>📋 實名制登記</h2>
+        <p class="sub">首次使用需完成登記，資料僅供系統識別，不對外公開。</p>
         <div class="form-group">
-          <label class="form-label"><i class="fab fa-line"></i> LINE 顯示名稱</label>
-          <input type="text" class="form-control" id="regDisplayName" readonly style="background:#f8f9fa">
+          <label class="form-label">LINE 顯示名稱</label>
+          <input class="form-control" id="regDisplayName" disabled placeholder="由 LINE 自動帶入">
         </div>
         <div class="form-group">
-          <label class="form-label"><i class="fas fa-user"></i> 真實姓名 <span style="color:red">*</span></label>
-          <input type="text" class="form-control" id="regRealName" placeholder="請輸入您的真實姓名">
+          <label class="form-label">真實姓名 <span class="required">*</span></label>
+          <input class="form-control" id="regRealName" placeholder="請輸入真實姓名" maxlength="20">
         </div>
         <div class="form-group">
-          <label class="form-label"><i class="fas fa-envelope"></i> 電子郵件</label>
-          <input type="email" class="form-control" id="regEmail" placeholder="example@email.com">
+          <label class="form-label">電子郵件</label>
+          <input class="form-control" id="regEmail" type="email" placeholder="example@gmail.com">
         </div>
         <div class="form-group">
-          <label class="form-label"><i class="fas fa-phone"></i> 手機號碼</label>
-          <input type="tel" class="form-control" id="regPhone" placeholder="09xx-xxxxxx">
+          <label class="form-label">手機號碼</label>
+          <input class="form-control" id="regPhone" type="tel" placeholder="0912-345-678">
         </div>
         <button class="btn btn-primary btn-full" onclick="submitRegister()">
           <i class="fas fa-check-circle"></i> 完成登記並進入
         </button>
       </div>
     </div>
-  </div>
 
-  <!-- ③ 首頁 -->
-  <div id="page-home" class="page">
-    <!-- 歡迎橫幅 -->
-    <div class="card" style="background:linear-gradient(135deg,var(--secondary),#16213e);color:white;margin-bottom:16px">
-      <div class="card-body" style="padding:20px">
-        <div style="display:flex;align-items:center;gap:12px">
-          <div style="font-size:40px">📓</div>
-          <div>
-            <div style="font-size:18px;font-weight:800" id="homeWelcome">歡迎回來！</div>
-            <div style="font-size:13px;opacity:0.8;margin-top:4px" id="homeSubtitle">今天想記錄什麼？</div>
-          </div>
+    <!-- 文章列表頁 -->
+    <div class="page" id="page-articles">
+      <div class="page-header">
+        <div class="search-bar">
+          <input class="search-input" id="searchInput"
+            placeholder="搜尋標題、作者、標籤..."
+            onkeydown="if(event.key==='Enter') doSearch()">
+          <button class="search-btn" onclick="doSearch()">
+            <i class="fas fa-search"></i>
+          </button>
+        </div>
+        <div class="cat-scroll" id="catScroll">
+          <button class="cat-btn active" onclick="filterCategory('',this)">全部</button>
+          <button class="cat-btn" onclick="filterCategory('技術',this)">💻 技術</button>
+          <button class="cat-btn" onclick="filterCategory('生活',this)">🌿 生活</button>
+          <button class="cat-btn" onclick="filterCategory('學習',this)">📚 學習</button>
+          <button class="cat-btn" onclick="filterCategory('工作',this)">💼 工作</button>
+          <button class="cat-btn" onclick="filterCategory('公告',this)">📢 公告</button>
+          <button class="cat-btn" onclick="filterCategory('其他',this)">📌 其他</button>
         </div>
       </div>
+      <div class="article-list" id="articleList">
+        <div class="empty-state">
+          <div class="empty-icon">📄</div>
+          <h3>載入中...</h3>
+        </div>
+      </div>
+      <div class="pagination" id="pagination"></div>
     </div>
 
-    <!-- 快速統計 -->
-    <div class="stats-grid" style="margin-bottom:16px">
-      <div class="stat-card">
-        <div class="stat-number" id="homeStatArticles">-</div>
-        <div class="stat-label"><i class="fas fa-newspaper"></i> 篇文章</div>
+    <!-- 撰寫文章頁 -->
+    <div class="page" id="page-write">
+      <div class="write-card">
+        <h3><i class="fas fa-pen-nib" style="color:var(--primary)"></i>
+          <span id="writePageTitle">撰寫文章</span>
+        </h3>
+        <div class="form-group">
+          <label class="form-label">標題 <span class="required">*</span></label>
+          <input class="form-control" id="articleTitle"
+            placeholder="請輸入文章標題（最多 100 字）"
+            maxlength="100"
+            oninput="updateCharCount('articleTitle','titleCount',100)">
+          <div class="char-count" id="titleCount">0 / 100</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">分類</label>
+          <select class="form-control" id="articleCategory">
+            <option value="技術">💻 技術</option>
+            <option value="生活">🌿 生活</option>
+            <option value="學習">📚 學習</option>
+            <option value="工作">💼 工作</option>
+            <option value="公告">📢 公告</option>
+            <option value="其他">📌 其他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">可見度</label>
+          <select class="form-control" id="articleVisibility">
+            <option value="public">🌐 公開（所有人可見）</option>
+            <option value="vip">👑 VIP 限定</option>
+            <option value="private">🔒 私人（僅自己可見）</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">標籤</label>
+          <input class="form-control" id="articleTags"
+            placeholder="用逗號分隔，例如：GAS, LINE, 教學">
+        </div>
+        <div class="form-group">
+          <label class="form-label">內容 <span class="required">*</span></label>
+          <textarea class="form-control" id="articleContent"
+            placeholder="請輸入文章內容..."
+            rows="8"
+            oninput="updateCharCount('articleContent','contentCount',5000)"></textarea>
+          <div class="char-count" id="contentCount">0 / 5000</div>
+        </div>
       </div>
-      <div class="stat-card">
-        <div class="stat-number" id="homeStatReads">-</div>
-        <div class="stat-label"><i class="fas fa-eye"></i> 總閱讀數</div>
-      </div>
-    </div>
 
-    <!-- 最新文章 -->
-    <div class="card">
-      <div class="card-header">
-        <span><i class="fas fa-fire" style="color:#e74c3c"></i> 最新文章</span>
-        <button class="btn btn-outline btn-sm" onclick="switchTab('articles')">
-          查看全部 <i class="fas fa-arrow-right"></i>
+      <!-- 附件上傳 -->
+      <div class="write-card">
+        <h3><i class="fas fa-paperclip" style="color:var(--primary)"></i> 上傳附件</h3>
+        <div class="upload-zone" id="uploadZone"
+          onclick="document.getElementById('fileInput').click()"
+          ondragover="handleDragOver(event)"
+          ondragleave="handleDragLeave(event)"
+          ondrop="handleDrop(event)">
+          <div class="upload-icon">📎</div>
+          <p>
+            <strong>點擊選擇</strong>或拖曳檔案至此<br>
+            支援圖片、PDF、Word、Excel、MP4<br>
+            <span style="font-size:11px">單檔最大 10MB</span>
+          </p>
+        </div>
+        <input type="file" id="fileInput" multiple hidden
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.mp4,.mov,.mp3,.wav"
+          onchange="handleFileSelect(event)">
+        <div class="file-preview-list" id="filePreviewList"></div>
+      </div>
+
+      <div style="display:flex;gap:8px;padding:0 0 8px">
+        <button class="btn btn-secondary" style="flex:1" onclick="clearWriteForm()">
+          <i class="fas fa-trash-alt"></i> 清除
+        </button>
+        <button class="btn btn-primary" style="flex:2" id="submitBtn" onclick="submitArticle()">
+          <i class="fas fa-paper-plane"></i> 發布文章
         </button>
       </div>
-      <div class="card-body" id="homeLatestArticles">
-        <div class="loading"><div class="spinner"></div><span>載入中...</span></div>
+    </div>
+
+    <!-- 統計頁 -->
+    <div class="page" id="page-stats">
+      <div id="statsContent">
+        <div class="empty-state">
+          <div class="empty-icon">📊</div>
+          <h3>載入統計中...</h3>
+        </div>
       </div>
     </div>
 
-    <!-- 熱門文章 -->
-    <div class="card" id="homeHotCard" style="display:none">
-      <div class="card-header">
-        <span><i class="fas fa-trophy" style="color:#f1c40f"></i> 熱門排行</span>
-      </div>
-      <div class="card-body" id="homeHotArticles"></div>
-    </div>
-  </div>
-
-  <!-- ④ 文章列表頁 -->
-  <div id="page-articles" class="page">
-    <!-- 搜尋列 -->
-    <div class="search-bar">
-      <input type="text" class="form-control" id="searchInput" placeholder="🔍 搜尋文章標題、作者、標籤...">
-      <button class="btn btn-primary btn-sm" onclick="doSearch()">
-        <i class="fas fa-search"></i>
-      </button>
-    </div>
-
-    <!-- 分類篩選 -->
-    <div class="category-filter" id="categoryFilter">
-      <button class="cat-btn active" onclick="filterCategory('',this)">全部</button>
-      <button class="cat-btn" onclick="filterCategory('技術',this)">技術</button>
-      <button class="cat-btn" onclick="filterCategory('生活',this)">生活</button>
-      <button class="cat-btn" onclick="filterCategory('學習',this)">學習</button>
-      <button class="cat-btn" onclick="filterCategory('工作',this)">工作</button>
-      <button class="cat-btn" onclick="filterCategory('其他',this)">其他</button>
-    </div>
-
-    <!-- 文章列表容器 -->
-    <div id="articleList">
-      <div class="loading"><div class="spinner"></div><span>載入文章中...</span></div>
-    </div>
-
-    <!-- 分頁 -->
-    <div class="pagination" id="articlePagination"></div>
-  </div>
-
-  <!-- ⑤ 撰寫文章頁 -->
-  <div id="page-write" class="page">
-    <div class="card">
-      <div class="card-header">
-        <span><i class="fas fa-pen-nib" style="color:var(--primary)"></i> <span id="writePageTitle">撰寫新文章</span></span>
-        <span class="badge badge-success" id="writeDraftBadge" style="display:none">草稿已儲存</span>
-      </div>
-      <div class="card-body">
-        <input type="hidden" id="editArticleId">
-
-        <div class="form-group">
-          <label class="form-label"><i class="fas fa-heading"></i> 文章標題 *</label>
-          <input type="text" class="form-control" id="articleTitle" placeholder="請輸入文章標題（最多 100 字）" maxlength="100">
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div class="form-group">
-            <label class="form-label"><i class="fas fa-folder"></i> 分類</label>
-            <select class="form-control" id="articleCategory">
-              <option value="未分類">未分類</option>
-              <option value="技術">技術</option>
-              <option value="生活">生活</option>
-              <option value="學習">學習</option>
-              <option value="工作">工作</option>
-              <option value="其他">其他</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label"><i class="fas fa-eye"></i> 可見度</label>
-            <select class="form-control" id="articleVisibility">
-              <option value="public">🌐 公開</option>
-              <option value="vip">👑 VIP 限定</option>
-              <option value="private">🔒 私人</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label"><i class="fas fa-tags"></i> 標籤（逗號分隔）</label>
-          <input type="text" class="form-control" id="articleTags" placeholder="例：技術, GAS, LINE">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label"><i class="fas fa-align-left"></i> 文章內容 *</label>
-          <textarea class="form-control" id="articleContent" placeholder="請輸入文章內容..." style="min-height:200px"></textarea>
-          <div style="text-align:right;font-size:11px;color:var(--text-muted);margin-top:4px">
-            <span id="contentCharCount">0</span> 字
-          </div>
-        </div>
-
-        <!-- 附件上傳區 -->
-        <div class="form-group">
-          <label class="form-label"><i class="fas fa-paperclip"></i> 附加檔案</label>
-          <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"
-               ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragleave="handleDragLeave(event)">
-            <i class="fas fa-cloud-upload-alt"></i>
-            <div style="font-weight:600;margin-bottom:4px">點擊或拖曳上傳檔案</div>
-            <div style="font-size:12px;color:var(--text-muted)">支援圖片、PDF、Word、Excel、影片（最大 10MB）</div>
-          </div>
-          <input type="file" id="fileInput" style="display:none" multiple
-                 accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.mp4,.mp3"
-                 onchange="handleFileSelect(event)">
-          <div id="filePreviewList" style="margin-top:12px"></div>
-        </div>
-
-        <div style="display:flex;gap:10px">
-          <button class="btn btn-primary" style="flex:1" onclick="submitArticle()">
-            <i class="fas fa-paper-plane"></i> <span id="submitBtnText">發布文章</span>
-          </button>
-          <button class="btn btn-outline" onclick="clearWriteForm()">
-            <i class="fas fa-times"></i> 清除
+    <!-- 管理頁 -->
+    <div class="page" id="page-admin">
+      <div style="padding:0 0 8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h2 style="font-size:16px;font-weight:800">
+            <i class="fas fa-users-cog" style="color:var(--primary)"></i> 使用者管理
+          </h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadUsers()">
+            <i class="fas fa-sync-alt"></i> 重新整理
           </button>
         </div>
+        <div id="userList">
+          <div class="empty-state">
+            <div class="empty-icon">👥</div>
+            <h3>載入中...</h3>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- ⑥ 統計頁 -->
-  <div id="page-stats" class="page">
-    <div id="statsContent">
-      <div class="loading"><div class="spinner"></div><span>載入統計中...</span></div>
-    </div>
-  </div>
-
-  <!-- ⑦ 個人資料頁 -->
-  <div id="page-profile" class="page">
-    <div class="card">
-      <div class="card-header">
-        <span><i class="fas fa-user-circle" style="color:var(--primary)"></i> 個人資料</span>
+    <!-- 個人資料頁 -->
+    <div class="page" id="page-profile">
+      <div class="profile-card">
+        <img class="profile-avatar" id="profileAvatar" src="" alt="">
+        <div class="profile-name" id="profileName"></div>
+        <div class="profile-role" id="profileRole"></div>
       </div>
-      <div class="card-body" style="text-align:center;padding-top:24px">
-        <img id="profileAvatar" src="" style="width:80px;height:80px;border-radius:50%;border:3px solid var(--primary);margin-bottom:12px">
-        <div style="font-size:18px;font-weight:700" id="profileDisplayName"></div>
-        <span class="user-role-badge" id="profileRoleBadge" style="margin-top:6px;display:inline-block"></span>
-      </div>
-      <div class="divider" style="margin:0"></div>
-      <div class="card-body">
+      <div class="write-card">
+        <h3><i class="fas fa-edit" style="color:var(--primary)"></i> 編輯資料</h3>
         <div class="form-group">
-          <label class="form-label"><i class="fas fa-user"></i> 真實姓名</label>
-          <input type="text" class="form-control" id="profileRealName">
+          <label class="form-label">真實姓名 <span class="required">*</span></label>
+          <input class="form-control" id="profileRealName" placeholder="真實姓名">
         </div>
         <div class="form-group">
-          <label class="form-label"><i class="fas fa-envelope"></i> 電子郵件</label>
-          <input type="email" class="form-control" id="profileEmail">
+          <label class="form-label">電子郵件</label>
+          <input class="form-control" id="profileEmail" type="email" placeholder="Email">
         </div>
         <div class="form-group">
-          <label class="form-label"><i class="fas fa-phone"></i> 手機號碼</label>
-          <input type="tel" class="form-control" id="profilePhone">
+          <label class="form-label">手機號碼</label>
+          <input class="form-control" id="profilePhone" type="tel" placeholder="手機號碼">
         </div>
         <button class="btn btn-primary btn-full" onclick="saveProfile()">
           <i class="fas fa-save"></i> 儲存變更
         </button>
-        <button class="btn btn-outline btn-full" onclick="logout()" style="margin-top:10px">
+      </div>
+      <div class="write-card">
+        <button class="btn btn-danger btn-full" onclick="logout()">
           <i class="fas fa-sign-out-alt"></i> 登出
         </button>
       </div>
     </div>
-  </div>
 
-  <!-- ⑧ 管理頁 -->
-  <div id="page-admin" class="page">
-    <div class="card">
-      <div class="card-header">
-        <span><i class="fas fa-users-cog" style="color:var(--primary)"></i> 使用者管理</span>
-        <button class="btn btn-outline btn-sm" onclick="loadAdminUsers()">
-          <i class="fas fa-sync"></i> 重新整理
-        </button>
-      </div>
-      <div class="card-body" id="adminUserList">
-        <div class="loading"><div class="spinner"></div><span>載入中...</span></div>
-      </div>
-    </div>
-  </div>
+  </div><!-- /pages -->
 
-</div><!-- /main-content -->
+  <!-- ===== 底部導覽列 ===== -->
+  <nav id="nav" style="display:none">
+    <button class="nav-item active" id="nav-articles" onclick="switchTab('articles')">
+      <i class="fas fa-newspaper"></i><span>文章</span>
+    </button>
+    <button class="nav-item" id="nav-write" onclick="switchTab('write')">
+      <i class="fas fa-pen-nib"></i><span>撰寫</span>
+    </button>
+    <button class="nav-item" id="nav-stats" onclick="switchTab('stats')">
+      <i class="fas fa-chart-bar"></i><span>統計</span>
+    </button>
+    <button class="nav-item" id="nav-admin" onclick="switchTab('admin')" style="display:none">
+      <i class="fas fa-cog"></i><span>管理</span>
+    </button>
+    <button class="nav-item" id="nav-profile" onclick="switchTab('profile')">
+      <i class="fas fa-user-circle"></i><span>我的</span>
+    </button>
+  </nav>
+
+</div><!-- /app -->
 
 <!-- ===== 文章詳情 Modal ===== -->
-<div class="modal-overlay" id="articleModal">
-  <div class="modal">
+<div class="modal-overlay" id="articleModal" onclick="closeArticleModal(event)">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
     <div class="modal-header">
-      <span class="modal-title" id="modalArticleTitle">文章標題</span>
-      <button class="modal-close" onclick="closeModal('articleModal')">×</button>
+      <div class="modal-title" id="modalTitle"></div>
+      <button class="modal-close" onclick="closeArticleModal()">
+        <i class="fas fa-times"></i>
+      </button>
     </div>
-    <div id="modalArticleMeta" class="article-detail-meta"></div>
-    <div id="modalArticleContent" class="article-content"></div>
-    <div class="divider"></div>
-    <div id="modalArticleFiles"></div>
-    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap" id="modalArticleActions"></div>
+    <div class="modal-body">
+      <div class="modal-meta" id="modalMeta"></div>
+      <div class="modal-content" id="modalContent"></div>
+      <div class="attach-section" id="modalAttach"></div>
+    </div>
+    <div class="modal-footer" id="modalFooter"></div>
   </div>
 </div>
 
 <!-- ===== 檔案預覽 Modal ===== -->
-<div class="modal-overlay" id="filePreviewModal">
-  <div class="modal">
-    <div class="modal-header">
-      <span class="modal-title" id="previewFileName">檔案預覽</span>
-      <button class="modal-close" onclick="closeModal('filePreviewModal')">×</button>
-    </div>
-    <div id="previewContent"></div>
-    <div style="margin-top:12px">
-      <a id="previewDownloadBtn" href="#" target="_blank" class="btn btn-primary btn-full">
-        <i class="fas fa-download"></i> 開啟 / 下載
-      </a>
-    </div>
-  </div>
+<div class="preview-modal" id="previewModal" onclick="closePreview()">
+  <button class="preview-close" onclick="closePreview()">
+    <i class="fas fa-times"></i>
+  </button>
+  <div id="previewContent"></div>
 </div>
 
 <!-- ===== 角色編輯 Modal ===== -->
-<div class="modal-overlay" id="roleModal">
-  <div class="modal">
-    <div class="modal-header">
-      <span class="modal-title">編輯使用者角色</span>
-      <button class="modal-close" onclick="closeModal('roleModal')">×</button>
+<div class="edit-modal" id="editUserModal">
+  <div class="edit-modal-box">
+    <h3><i class="fas fa-user-edit" style="color:var(--primary)"></i> 編輯使用者</h3>
+    <input type="hidden" id="editUserId">
+    <div class="form-group">
+      <label class="form-label">使用者</label>
+      <input class="form-control" id="editUserName" disabled>
     </div>
-    <div id="roleModalContent"></div>
+    <div class="form-group">
+      <label class="form-label">角色</label>
+      <select class="form-control" id="editUserRole">
+        <option value="admin">👑 管理者</option>
+        <option value="mod">🛡️ 版主</option>
+        <option value="vip">⭐ VIP</option>
+        <option value="user">👤 一般使用者</option>
+        <option value="guest">👁️ 遊客</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">帳號狀態</label>
+      <select class="form-control" id="editUserStatus">
+        <option value="active">✅ 啟用</option>
+        <option value="inactive">⏸️ 停用</option>
+        <option value="banned">🚫 封禁</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-secondary" style="flex:1" onclick="closeEditModal()">取消</button>
+      <button class="btn btn-primary" style="flex:1" onclick="saveUserRole()">
+        <i class="fas fa-save"></i> 儲存
+      </button>
+    </div>
   </div>
 </div>
 
+<!-- ===== Toast 通知容器 ===== -->
+<div id="toastContainer"></div>
+
+<!-- ===== Loading 遮罩 ===== -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">載入中...</div>
+</div>
+
+<!-- ★ JavaScript 將在第八段提供 -->
 <script>
 // ============================================================
 // 全域變數
 // ============================================================
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwGU5xHRCpY3RpFwtSh540zud0V45FDHR3yi7WC8PIx1c-sUNd9cbGQ1Taydy0lgxSnpg/exec'; // ← 替換為你的 GAS 部署網址
-let APP_CONFIG = {};
-let currentUser = null;
-let currentToken = localStorage.getItem('nb_token') || null;
-let currentPage = 1;
+let currentUser     = null;
+let currentToken    = localStorage.getItem('nb_token') || null;
+let currentPage     = 1;
 let currentCategory = '';
-let currentSearchKeyword = '';
-let pendingFiles = []; // 待上傳的檔案列表
+let currentKeyword  = '';
+let pendingFiles    = [];
 let editingArticleId = null;
+let draftTimer      = null;
 
 // ============================================================
 // 初始化
 // ============================================================
-window.onload = function() {
-  try {
-    APP_CONFIG = JSON.parse('<?= config ?>');
-  } catch(e) {
-    APP_CONFIG = { liffId: '2009456572-AUDE1qmM', appName: '網路記事本' };
-  }
-  document.getElementById('appName').textContent = APP_CONFIG.appName || '網路記事本';
+window.onload = async function () {
+  document.getElementById('appName').textContent = APP_NAME;
 
-  // 若有 token 嘗試自動登入
-  if (currentToken) {
-    autoLogin();
+  // 設定檢查
+  if (!LIFF_ID || LIFF_ID === '2009456572-AUDE1qmM') {
+    showConfigError('LIFF_ID 尚未設定，請在 Code.gs 填入正確的 LIFF_ID');
+    return;
   }
+  if (!GAS_URL || GAS_URL.trim() === 'https://script.google.com/macros/s/AKfycbxPzGRE7nYA3pQjgkX-LjUa6AG3kO13a1zOlZGAy7FL3AKsReNUrZFsKZHhdZJitJ8rzA/exec') {
+    showConfigError('GAS_URL 無法取得，請確認已正確部署');
+    return;
+  }
+
+  // 有 Token → 嘗試自動登入
+  if (currentToken) {
+    showLoading('自動登入中...');
+    await autoLogin();
+    hideLoading();
+  }
+  // 否則停在登入頁
 };
 
 // ============================================================
-// LIFF 初始化
+// LIFF 初始化與登入
 // ============================================================
 async function initLiff() {
+  showLoading('連接 LINE 中...');
   try {
-    await liff.init({ liffId: APP_CONFIG.liffId });
+    await liff.init({ liffId: LIFF_ID });
+
     if (!liff.isLoggedIn()) {
-      liff.login();
+      liff.login({ redirectUri: location.href });
       return;
     }
+
     const profile = await liff.getProfile();
-    const idToken  = liff.getIDToken();
-    // 進入實名制登記流程
+    const idToken = liff.getIDToken();
+    hideLoading();
+    showToast('LINE 授權成功！', 'success');
     showRegisterPage(profile, idToken);
-  } catch(err) {
-    showToast('LIFF 初始化失敗：' + err.message, 'error');
-    console.error(err);
+
+  } catch (err) {
+    hideLoading();
+    let msg = 'LIFF 初始化失敗';
+    if (err.message && err.message.includes('liffId is necessary')) {
+      msg = 'LIFF ID 為空，請確認 Code.gs 設定';
+    } else if (err.message && err.message.includes('Invalid liffId')) {
+      msg = 'LIFF ID 格式錯誤（應為 1234567890-xxxxxxxx）';
+    } else if (err.message) {
+      msg = 'LIFF 錯誤：' + err.message;
+    }
+    showToast(msg, 'error');
+    console.error('LIFF Error:', err);
   }
 }
 
@@ -548,7 +1361,8 @@ async function initLiff() {
 function showRegisterPage(profile, idToken) {
   window._pendingProfile = profile;
   window._pendingIdToken = idToken;
-  document.getElementById('regDisplayName').value = profile.displayName || '';
+  const el = document.getElementById('regDisplayName');
+  if (el) el.value = profile.displayName || '';
   showPage('register');
 }
 
@@ -556,23 +1370,28 @@ function showRegisterPage(profile, idToken) {
 // 提交實名制登記
 // ============================================================
 async function submitRegister() {
-  const realName = document.getElementById('regRealName').value.trim();
+  const realName = (document.getElementById('regRealName').value || '').trim();
   if (!realName) { showToast('請輸入真實姓名', 'error'); return; }
 
   const profile = window._pendingProfile;
-  const payload = {
-    action: 'registerUser',
-    lineUserId:   profile.userId,
-    displayName:  profile.displayName,
-    pictureUrl:   profile.pictureUrl,
-    realName:     realName,
-    email:        document.getElementById('regEmail').value.trim(),
-    phone:        document.getElementById('regPhone').value.trim(),
-    idToken:      window._pendingIdToken
-  };
+  if (!profile)  { showToast('請重新登入', 'error'); return; }
 
-  showToast('登記中...', 'info');
-  const res = await apiPost(payload);
+  const btn = document.querySelector('#page-register .btn-primary');
+  setButtonLoading(btn, true, '登記中...');
+
+  const res = await apiPost({
+    action:      'registerUser',
+    lineUserId:  profile.userId,
+    displayName: profile.displayName,
+    pictureUrl:  profile.pictureUrl || '',
+    realName,
+    email: (document.getElementById('regEmail')?.value || '').trim(),
+    phone: (document.getElementById('regPhone')?.value || '').trim(),
+    idToken: window._pendingIdToken || ''
+  });
+
+  setButtonLoading(btn, false, '完成登記並進入');
+
   if (res.success) {
     currentToken = res.token;
     currentUser  = res.user;
@@ -580,7 +1399,7 @@ async function submitRegister() {
     showToast(res.isNewUser ? '🎉 歡迎加入！' : '✅ 登入成功！', 'success');
     enterApp();
   } else {
-    showToast(res.message, 'error');
+    showToast('登記失敗：' + res.message, 'error');
   }
 }
 
@@ -588,62 +1407,83 @@ async function submitRegister() {
 // 遊客模式
 // ============================================================
 function guestMode() {
-  currentUser = { role: 'guest', displayName: '遊客', pictureUrl: '' };
+  currentUser  = { role: 'guest', displayName: '遊客', pictureUrl: '' };
   currentToken = null;
   enterApp();
 }
 
 // ============================================================
-// 自動登入（Token 驗證）
+// 自動登入
 // ============================================================
 async function autoLogin() {
-  const res = await apiPost({ action: 'getUserProfile', token: currentToken });
-  if (res.success) {
-    currentUser = res.user;
-    enterApp();
-  } else {
+  try {
+    const res = await apiPost({ action: 'getUserProfile', token: currentToken });
+    if (res.success) {
+      currentUser = res.user;
+      enterApp();
+    } else {
+      currentToken = null;
+      localStorage.removeItem('nb_token');
+    }
+  } catch (e) {
     currentToken = null;
     localStorage.removeItem('nb_token');
   }
 }
 
 // ============================================================
-// 進入應用程式
+// 進入 App 主介面
 // ============================================================
 function enterApp() {
-  // 顯示導覽
-  document.getElementById('navbar').style.display = 'flex';
-  document.getElementById('userBar').style.display = 'flex';
-  document.getElementById('mainTabs').style.display = 'flex';
+  // 更新 Header 使用者資訊
+  renderUserBar();
 
-  // 更新使用者資訊列
-  const u = currentUser;
-  document.getElementById('userName').textContent = u.displayName || '遊客';
-  if (u.pictureUrl) document.getElementById('userAvatar').src = u.pictureUrl;
+  // 顯示底部導覽列
+  document.getElementById('nav').style.display = 'flex';
+
+  // 管理頁籤（管理者 / 版主才顯示）
+  const adminNav = document.getElementById('nav-admin');
+  if (adminNav) {
+    const role = currentUser ? currentUser.role : 'guest';
+    adminNav.style.display =
+      ['admin','mod'].includes(role) ? 'flex' : 'none';
+  }
+
+  // 遊客隱藏撰寫頁籤
+  const writeNav = document.getElementById('nav-write');
+  if (writeNav) {
+    writeNav.style.display =
+      currentUser && currentUser.role !== 'guest' ? 'flex' : 'none';
+  }
+
+  // 切換至文章列表
+  switchTab('articles');
+}
+
+// ============================================================
+// 渲染 Header 使用者資訊
+// ============================================================
+function renderUserBar() {
+  const bar  = document.getElementById('userBar');
+  if (!bar || !currentUser) return;
 
   const roleMap = {
-    admin: { label:'管理者', cls:'role-admin' },
-    mod:   { label:'版主',   cls:'role-mod'   },
-    vip:   { label:'VIP',    cls:'role-vip'   },
-    user:  { label:'一般使用者', cls:'role-user' },
-    guest: { label:'遊客',   cls:'role-guest' }
+    admin: { label: '管理者', cls: 'rb-admin' },
+    mod:   { label: '版主',   cls: 'rb-mod'   },
+    vip:   { label: 'VIP',    cls: 'rb-vip'   },
+    user:  { label: '會員',   cls: 'rb-user'  },
+    guest: { label: '遊客',   cls: 'rb-guest' }
   };
-  const rm = roleMap[u.role] || roleMap.guest;
-  const badge = document.getElementById('userRoleBadge');
-  badge.textContent = rm.label;
-  badge.className = 'user-role-badge ' + rm.cls;
+  const r = roleMap[currentUser.role] || roleMap.guest;
 
-  // 管理者/版主顯示管理頁籤
-  if (['admin','mod'].includes(u.role)) {
-    document.getElementById('tab-admin').style.display = 'flex';
-    document.getElementById('btnAdmin').style.display = 'flex';
-  }
-  // 非遊客顯示撰寫按鈕
-  if (u.role !== 'guest') {
-    document.getElementById('btnWrite').style.display = 'flex';
-  }
-
-  switchTab('home');
+  bar.innerHTML = `
+    <span class="role-badge ${r.cls}">${r.label}</span>
+    <span class="user-name">${escHtml(currentUser.displayName || '使用者')}</span>
+    <img class="avatar"
+      src="${escHtml(currentUser.pictureUrl || 'https://i.pravatar.cc/150?img=0')}"
+      alt="avatar"
+      onerror="this.src='https://i.pravatar.cc/150?img=0'"
+      onclick="switchTab('profile')">`;
 }
 
 // ============================================================
@@ -651,403 +1491,826 @@ function enterApp() {
 // ============================================================
 function switchTab(tab) {
   // 隱藏所有頁面
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#pages .page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
-  const pageEl = document.getElementById('page-' + tab);
-  const tabEl  = document.getElementById('tab-' + tab);
-  if (pageEl) pageEl.classList.add('active');
-  if (tabEl)  tabEl.classList.add('active');
+  // 顯示目標頁面
+  const page = document.getElementById('page-' + tab);
+  const nav  = document.getElementById('nav-' + tab);
+  if (page) page.classList.add('active');
+  if (nav)  nav.classList.add('active');
 
-  // 各頁面載入邏輯
-  if (tab === 'home')     loadHome();
-  if (tab === 'articles') loadArticles();
-  if (tab === 'stats')    loadStats();
-  if (tab === 'profile')  loadProfile();
-  if (tab === 'admin')    loadAdminUsers();
-  if (tab === 'write') {
-    if (!currentUser || currentUser.role === 'guest') {
-      showToast('請先登入才能撰寫文章', 'error');
-      switchTab('home');
-      return;
-    }
-  }
-}
-
-function showPage(page) { switchTab(page); }
-
-// ============================================================
-// 載入首頁
-// ============================================================
-async function loadHome() {
-  const u = currentUser;
-  if (u) {
-    document.getElementById('homeWelcome').textContent =
-      '歡迎回來，' + (u.displayName || '朋友') + '！';
-    document.getElementById('homeSubtitle').textContent =
-      u.role === 'guest' ? '登入後可發布文章' : '今天想記錄什麼？';
-  }
-
-  // 載入最新文章
-  const res = await apiPost({ action:'listArticles', page:1, pageSize:5, token:currentToken });
-  const container = document.getElementById('homeLatestArticles');
-  if (res.success && res.articles.length > 0) {
-    document.getElementById('homeStatArticles').textContent = res.pagination.total;
-    container.innerHTML = res.articles.map(a => renderArticleCard(a, true)).join('');
-  } else {
-    container.innerHTML = '<div class="empty-state"><i class="fas fa-inbox"></i>目前還沒有文章</div>';
-  }
-
-  // 統計（管理者/版主）
-  if (currentUser && ['admin','mod'].includes(currentUser.role)) {
-    const sr = await apiPost({ action:'getStats', token:currentToken });
-    if (sr.success) {
-      document.getElementById('homeStatReads').textContent = sr.stats.totalReadCount;
-      if (sr.stats.topArticles && sr.stats.topArticles.length > 0) {
-        document.getElementById('homeHotCard').style.display = 'block';
-        const maxRead = sr.stats.topArticles[0].readCount || 1;
-        document.getElementById('homeHotArticles').innerHTML =
-          sr.stats.topArticles.map((a, i) => `
-            <div class="top-article-item">
-              <div class="top-rank rank-${i+1}">${i+1}</div>
-              <div style="flex:1">
-                <div style="font-size:13px;font-weight:600">${escHtml(a.title)}</div>
-                <div class="read-count-bar">
-                  <div class="read-count-fill" style="width:${Math.round(a.readCount/maxRead*100)}%"></div>
-                </div>
-              </div>
-              <div style="font-size:12px;color:var(--text-muted)">${a.readCount} 次</div>
-            </div>`).join('');
-      }
-    }
-  } else {
-    document.getElementById('homeStatReads').textContent = '-';
+  // 各頁初始化
+  switch (tab) {
+    case 'articles': loadArticles();  break;
+    case 'write':    initWritePage(); break;
+    case 'stats':    loadStats();     break;
+    case 'admin':    loadUsers();     break;
+    case 'profile':  loadProfile();   break;
   }
 }
 
 // ============================================================
-// 載入文章列表
+// 顯示指定頁面（登入流程用）
+// ============================================================
+function showPage(name) {
+  document.querySelectorAll('#pages .page').forEach(p => p.classList.remove('active'));
+  const p = document.getElementById('page-' + name);
+  if (p) p.classList.add('active');
+}
+
+// ============================================================
+// 文章列表
 // ============================================================
 async function loadArticles(page) {
   currentPage = page || 1;
-  const container = document.getElementById('articleList');
-  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>載入中...</span></div>';
+  const list  = document.getElementById('articleList');
+  list.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><h3>載入中...</h3></div>';
 
-  const payload = {
-    action: currentSearchKeyword ? 'searchArticles' : 'listArticles',
-    page: currentPage, pageSize: 8,
+  const res = await apiPost({
+    action:   currentKeyword ? 'searchArticles' : 'listArticles',
+    token:    currentToken,
+    page:     currentPage,
+    pageSize: 8,
     category: currentCategory,
-    keyword: currentSearchKeyword,
-    token: currentToken
-  };
-  const res = await apiPost(payload);
+    keyword:  currentKeyword
+  });
 
   if (!res.success) {
-    container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i>' + res.message + '</div>';
-    return;
-  }
-  if (res.articles.length === 0) {
-    container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i>沒有找到相關文章</div>';
-    document.getElementById('articlePagination').innerHTML = '';
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">❌</div>
+      <h3>載入失敗</h3><p>${escHtml(res.message)}</p></div>`;
     return;
   }
 
-  container.innerHTML = res.articles.map(a => renderArticleCard(a, false)).join('');
-  renderPagination(res.pagination);
+  const { articles, pagination } = res;
+
+  if (!articles || articles.length === 0) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📭</div>
+      <h3>${currentKeyword ? '找不到相關文章' : '目前沒有文章'}</h3>
+      <p>${currentKeyword ? '請嘗試其他關鍵字' : '成為第一個發文的人吧！'}</p></div>`;
+    renderPagination(pagination);
+    return;
+  }
+
+  list.innerHTML = articles.map(a => renderArticleCard(a)).join('');
+  renderPagination(pagination);
 }
 
 // ============================================================
 // 渲染文章卡片
 // ============================================================
-function renderArticleCard(a, compact) {
-  const visMap = { public:'vis-public', private:'vis-private', vip:'vis-vip' };
-  const visLabel = { public:'🌐 公開', private:'🔒 私人', vip:'👑 VIP' };
-  const tags = (a.tags || []).filter(t=>t).map(t=>`<span class="article-tag">${escHtml(t)}</span>`).join('');
+function renderArticleCard(a) {
+  const visMap = {
+    public:  { label: '🌐 公開',  cls: 'vb-public'  },
+    vip:     { label: '👑 VIP',   cls: 'vb-vip'     },
+    private: { label: '🔒 私人',  cls: 'vb-private' }
+  };
+  const vis  = visMap[a.visibility] || visMap.public;
+  const tags = (a.tags || []).slice(0, 3)
+    .map(t => `<span class="tag-item">${escHtml(t)}</span>`).join('');
+  const date = a.createdAt ? String(a.createdAt).substr(0, 10) : '';
+
   return `
-    <div class="article-card" onclick="openArticle('${a.articleId}')">
-      <div class="article-card-body">
-        <div class="article-title">${escHtml(a.title)}</div>
-        <div class="article-summary">${escHtml(a.summary || '')}</div>
-        <div style="margin-bottom:8px">${tags}</div>
-        <div class="article-meta">
-          <span><i class="fas fa-user"></i> ${escHtml(a.authorName)}</span>
-          <span><i class="fas fa-folder"></i> ${escHtml(a.category)}</span>
-          <span><i class="fas fa-eye"></i> ${a.readCount} 次</span>
-          <span><i class="fas fa-clock"></i> ${formatRelTime(a.createdAt)}</span>
-          <span class="visibility-badge ${visMap[a.visibility]||'vis-public'}">${visLabel[a.visibility]||'公開'}</span>
+    <div class="article-card" onclick="openArticle('${escHtml(a.articleId)}')">
+      <div class="card-top">
+        <div class="card-title">${escHtml(a.title)}</div>
+        <span class="vis-badge ${vis.cls}">${vis.label}</span>
+      </div>
+      <div class="card-summary">${escHtml(a.summary || '')}</div>
+      <div class="card-meta">
+        <div class="card-meta-left">
+          <span class="cat-tag">${escHtml(a.category || '未分類')}</span>
+          <span class="author-name">
+            <i class="fas fa-user" style="font-size:10px"></i>
+            ${escHtml(a.authorName || '')}
+          </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="read-count">
+            <i class="fas fa-eye"></i> ${a.readCount || 0}
+          </span>
+          <span style="font-size:11px;color:var(--muted)">${date}</span>
         </div>
       </div>
+      ${tags ? `<div class="tag-list">${tags}</div>` : ''}
     </div>`;
-}
-
-// ============================================================
-// 開啟文章詳情
-// ============================================================
-async function openArticle(articleId) {
-  const res = await apiPost({ action:'getArticle', articleId, token:currentToken });
-  if (!res.success) { showToast(res.message, 'error'); return; }
-
-  const a = res.article;
-  document.getElementById('modalArticleTitle').textContent = a.title;
-  document.getElementById('modalArticleMeta').innerHTML = `
-    <span><i class="fas fa-user"></i> ${escHtml(a.authorName)}</span>
-    <span><i class="fas fa-folder"></i> ${escHtml(a.category)}</span>
-    <span><i class="fas fa-eye"></i> ${a.readCount} 次閱讀</span>
-    <span><i class="fas fa-clock"></i> ${a.createdAt}</span>
-    ${(a.tags||[]).filter(t=>t).map(t=>`<span class="article-tag">${escHtml(t)}</span>`).join('')}
-  `;
-  document.getElementById('modalArticleContent').textContent = a.content;
-
-  // 附件
-  const filesHtml = (a.files && a.files.length > 0)
-    ? `<div style="font-weight:600;margin-bottom:10px"><i class="fas fa-paperclip"></i> 附件（${a.files.length}）</div>` +
-      a.files.map(f => renderFileItem(f, false)).join('')
-    : '';
-  document.getElementById('modalArticleFiles').innerHTML = filesHtml;
-
-  // 操作按鈕
-  let actions = '';
-  if (currentUser && (currentUser.userId === a.authorId || ['admin','mod'].includes(currentUser.role))) {
-    actions += `<button class="btn btn-warning btn-sm" onclick="editArticle('${a.articleId}')"><i class="fas fa-edit"></i> 編輯</button>`;
-    actions += `<button class="btn btn-danger btn-sm" onclick="confirmDeleteArticle('${a.articleId}')"><i class="fas fa-trash"></i> 刪除</button>`;
-  }
-  document.getElementById('modalArticleActions').innerHTML = actions;
-
-  openModal('articleModal');
-}
-
-// ============================================================
-// 渲染檔案項目
-// ============================================================
-function renderFileItem(f, canDelete) {
-  const iconMap = {
-    'image': 'fa-image', 'pdf': 'fa-file-pdf',
-    'word': 'fa-file-word', 'excel': 'fa-file-excel',
-    'video': 'fa-file-video', 'audio': 'fa-file-audio',
-    'default': 'fa-file'
-  };
-  let iconKey = 'default';
-  if (f.fileType) {
-    if (f.fileType.startsWith('image/')) iconKey = 'image';
-    else if (f.fileType === 'application/pdf') iconKey = 'pdf';
-    else if (f.fileType.includes('word')) iconKey = 'word';
-    else if (f.fileType.includes('excel') || f.fileType.includes('sheet')) iconKey = 'excel';
-    else if (f.fileType.startsWith('video/')) iconKey = 'video';
-    else if (f.fileType.startsWith('audio/')) iconKey = 'audio';
-  }
-  const sizeStr = formatFileSize(f.fileSize || 0);
-  return `
-    <div class="file-item">
-      <div class="file-icon"><i class="fas ${iconMap[iconKey]}" style="color:var(--primary)"></i></div>
-      <div class="file-info">
-        <div class="file-name">${escHtml(f.fileName)}</div>
-        <div class="file-size">${sizeStr}</div>
-      </div>
-      <div class="file-actions">
-        <button class="btn btn-info btn-sm" onclick="previewFile('${f.fileId}','${escHtml(f.fileName)}','${f.fileType}','${f.previewUrl}','${f.driveUrl}')">
-          <i class="fas fa-eye"></i>
-        </button>
-        ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="deleteFile('${f.fileId}')"><i class="fas fa-trash"></i></button>` : ''}
-      </div>
-    </div>`;
-}
-
-// ============================================================
-// 檔案預覽
-// ============================================================
-function previewFile(fileId, fileName, fileType, previewUrl, driveUrl) {
-  document.getElementById('previewFileName').textContent = fileName;
-  document.getElementById('previewDownloadBtn').href = driveUrl;
-  let html = '';
-  if (fileType && fileType.startsWith('image/')) {
-    html = `<img src="${previewUrl}" class="preview-img" alt="${escHtml(fileName)}">`;
-  } else if (fileType === 'application/pdf' || (fileType && fileType.startsWith('video/'))) {
-    html = `<iframe src="${previewUrl}" class="preview-frame"></iframe>`;
-  } else {
-    html = `<iframe src="${previewUrl}" class="preview-frame"></iframe>`;
-  }
-  document.getElementById('previewContent').innerHTML = html;
-  openModal('filePreviewModal');
-}
-
-// ============================================================
-// 搜尋 & 分類
-// ============================================================
-function doSearch() {
-  currentSearchKeyword = document.getElementById('searchInput').value.trim();
-  currentPage = 1;
-  loadArticles();
-}
-document.addEventListener('DOMContentLoaded', () => {
-  const si = document.getElementById('searchInput');
-  if (si) si.addEventListener('keypress', e => { if (e.key === 'Enter') doSearch(); });
-});
-function filterCategory(cat, btn) {
-  currentCategory = cat;
-  currentPage = 1;
-  document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  loadArticles();
 }
 
 // ============================================================
 // 分頁渲染
 // ============================================================
 function renderPagination(p) {
-  const container = document.getElementById('articlePagination');
-  if (p.totalPages <= 1) { container.innerHTML = ''; return; }
+  const el = document.getElementById('pagination');
+  if (!p || p.totalPages <= 1) { el.innerHTML = ''; return; }
+
   let html = '';
-  if (p.page > 1) html += `<button class="page-btn" onclick="loadArticles(${p.page-1})"><i class="fas fa-chevron-left"></i></button>`;
-  for (let i = Math.max(1,p.page-2); i <= Math.min(p.totalPages,p.page+2); i++) {
-    html += `<button class="page-btn ${i===p.page?'active':''}" onclick="loadArticles(${i})">${i}</button>`;
+  // 上一頁
+  html += `<button class="page-btn" ${p.page <= 1 ? 'disabled' : ''}
+    onclick="loadArticles(${p.page - 1})">
+    <i class="fas fa-chevron-left"></i></button>`;
+
+  // 頁碼（最多顯示 5 個）
+  const start = Math.max(1, p.page - 2);
+  const end   = Math.min(p.totalPages, start + 4);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="page-btn ${i === p.page ? 'active' : ''}"
+      onclick="loadArticles(${i})">${i}</button>`;
   }
-  if (p.page < p.totalPages) html += `<button class="page-btn" onclick="loadArticles(${p.page+1})"><i class="fas fa-chevron-right"></i></button>`;
-  container.innerHTML = html;
+
+  // 下一頁
+  html += `<button class="page-btn" ${p.page >= p.totalPages ? 'disabled' : ''}
+    onclick="loadArticles(${p.page + 1})">
+    <i class="fas fa-chevron-right"></i></button>`;
+
+  html += `<span class="page-info">${p.page} / ${p.totalPages} 頁・共 ${p.total} 篇</span>`;
+  el.innerHTML = html;
 }
 
 // ============================================================
-// 撰寫 & 編輯文章
+// 搜尋 & 分類篩選
 // ============================================================
-document.addEventListener('DOMContentLoaded', () => {
-  const ac = document.getElementById('articleContent');
-  if (ac) ac.addEventListener('input', () => {
-    document.getElementById('contentCharCount').textContent = ac.value.length;
+function doSearch() {
+  currentKeyword = (document.getElementById('searchInput').value || '').trim();
+  currentPage    = 1;
+  loadArticles(1);
+}
+
+function filterCategory(cat, btn) {
+  currentCategory = cat;
+  currentPage     = 1;
+  document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadArticles(1);
+}
+
+// ============================================================
+// 開啟文章詳情
+// ============================================================
+async function openArticle(articleId) {
+  showLoading('載入文章...');
+  const res = await apiPost({
+    action: 'getArticle', token: currentToken, articleId
   });
-});
+  hideLoading();
 
-async function submitArticle() {
-  const title   = document.getElementById('articleTitle').value.trim();
-  const content = document.getElementById('articleContent').value.trim();
-  if (!title)   { showToast('請輸入文章標題', 'error'); return; }
-  if (!content) { showToast('請輸入文章內容', 'error'); return; }
-
-  const tagsRaw = document.getElementById('articleTags').value;
-  const tags = tagsRaw ? tagsRaw.split(',').map(t=>t.trim()).filter(t=>t) : [];
-  const isEdit = !!editingArticleId;
-
-  const payload = {
-    action:     isEdit ? 'updateArticle' : 'createArticle',
-    token:      currentToken,
-    articleId:  editingArticleId,
-    title, content,
-    category:   document.getElementById('articleCategory').value,
-    tags,
-    visibility: document.getElementById('articleVisibility').value
-  };
-
-  showToast(isEdit ? '更新中...' : '發布中...', 'info');
-  const res = await apiPost(payload);
   if (!res.success) { showToast(res.message, 'error'); return; }
 
-  // 上傳待傳檔案
-  const targetId = isEdit ? editingArticleId : res.articleId;
-  if (pendingFiles.length > 0) {
-    showToast('上傳附件中...', 'info');
-    for (const pf of pendingFiles) {
-      await uploadPendingFile(pf, targetId);
-    }
+  const a    = res.article;
+  const role = currentUser ? currentUser.role : 'guest';
+  const uid  = currentUser ? currentUser.userId : null;
+
+  // 填入 Modal
+  document.getElementById('modalTitle').textContent = a.title || '';
+
+  // Meta 資訊
+  const visMap = {
+    public:  '<span class="vis-badge vb-public">🌐 公開</span>',
+    vip:     '<span class="vis-badge vb-vip">👑 VIP</span>',
+    private: '<span class="vis-badge vb-private">🔒 私人</span>'
+  };
+  document.getElementById('modalMeta').innerHTML = `
+    ${visMap[a.visibility] || visMap.public}
+    <span class="cat-tag">${escHtml(a.category || '')}</span>
+    <span class="author-name">
+      <i class="fas fa-user" style="font-size:10px"></i>
+      ${escHtml(a.authorName || '')}
+    </span>
+    <span class="read-count">
+      <i class="fas fa-eye"></i> ${a.readCount || 0}
+    </span>
+    <span style="font-size:12px;color:var(--muted)">
+      ${String(a.createdAt || '').substr(0, 16)}
+    </span>`;
+
+  // 文章內容
+  document.getElementById('modalContent').textContent = a.content || '';
+
+  // 附件
+  renderAttachments(a.files || [], a.articleId);
+
+  // Footer 按鈕
+  const isOwner  = a.authorId === uid;
+  const canEdit  = ['admin','mod'].includes(role) || isOwner;
+  let footerHtml = '';
+  if (canEdit) {
+    footerHtml += `
+      <button class="btn btn-secondary" style="flex:1"
+        onclick="editArticle('${escHtml(a.articleId)}')">
+        <i class="fas fa-edit"></i> 編輯
+      </button>
+      <button class="btn btn-danger" style="flex:1"
+        onclick="confirmDeleteArticle('${escHtml(a.articleId)}')">
+        <i class="fas fa-trash"></i> 刪除
+      </button>`;
+  }
+  document.getElementById('modalFooter').innerHTML = footerHtml;
+
+  // 顯示 Modal
+  document.getElementById('articleModal').classList.add('active');
+}
+
+// ============================================================
+// 渲染附件列表
+// ============================================================
+function renderAttachments(files, articleId) {
+  const el = document.getElementById('modalAttach');
+  if (!files || files.length === 0) { el.innerHTML = ''; return; }
+
+  const items = files.map(f => {
+    const emoji = getFileEmoji(f.fileType);
+    return `
+      <div class="attach-item">
+        <span class="attach-icon">${emoji}</span>
+        <div class="attach-info">
+          <div class="attach-name" title="${escHtml(f.fileName)}">${escHtml(f.fileName)}</div>
+          <div class="attach-size">${f.fileSizeStr || ''} · ${escHtml(f.uploaderName || '')}</div>
+        </div>
+        <div class="attach-actions">
+          <button class="btn btn-secondary btn-sm"
+            onclick="previewFile('${escHtml(f.previewUrl)}','${escHtml(f.fileType)}','${escHtml(f.fileName)}')"
+            title="預覽">
+            <i class="fas fa-eye"></i>
+          </button>
+          <a class="btn btn-secondary btn-sm"
+            href="${escHtml(f.downloadUrl)}" target="_blank" title="下載">
+            <i class="fas fa-download"></i>
+          </a>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="attach-title">
+      <i class="fas fa-paperclip"></i> 附件（${files.length} 個）
+    </div>
+    ${items}`;
+}
+
+// ============================================================
+// 關閉文章 Modal
+// ============================================================
+function closeArticleModal(e) {
+  if (e && e.target !== document.getElementById('articleModal')) return;
+  document.getElementById('articleModal').classList.remove('active');
+}
+
+// ============================================================
+// 預覽檔案
+// ============================================================
+function previewFile(url, mimeType, fileName) {
+  if (!url) { showToast('預覽連結無效', 'error'); return; }
+
+  const modal   = document.getElementById('previewModal');
+  const content = document.getElementById('previewContent');
+
+  if (mimeType && mimeType.startsWith('image/')) {
+    content.innerHTML = `<img src="${escHtml(url)}" alt="${escHtml(fileName)}"
+      onerror="showToast('圖片載入失敗','error');closePreview()">`;
+  } else {
+    content.innerHTML = `<iframe src="${escHtml(url)}"
+      title="${escHtml(fileName)}" allowfullscreen></iframe>`;
   }
 
-  showToast(isEdit ? '✅ 文章更新成功！' : '🎉 文章發布成功！', 'success');
-  clearWriteForm();
-  switchTab('articles');
+  modal.classList.add('active');
 }
 
-function editArticle(articleId) {
-  closeModal('articleModal');
-  apiPost({ action:'getArticle', articleId, token:currentToken }).then(res => {
-    if (!res.success) return;
-    const a = res.article;
-    editingArticleId = articleId;
-    document.getElementById('editArticleId').value = articleId;
-    document.getElementById('articleTitle').value = a.title;
-    document.getElementById('articleContent').value = a.content;
-    document.getElementById('articleCategory').value = a.category;
-    document.getElementById('articleVisibility').value = a.visibility;
-    document.getElementById('articleTags').value = (a.tags||[]).join(', ');
-    document.getElementById('writePageTitle').textContent = '編輯文章';
-    document.getElementById('submitBtnText').textContent = '更新文章';
-    document.getElementById('contentCharCount').textContent = a.content.length;
-    switchTab('write');
-  });
+function closePreview() {
+  document.getElementById('previewModal').classList.remove('active');
+  document.getElementById('previewContent').innerHTML = '';
 }
 
+// ============================================================
+// 撰寫頁初始化
+// ============================================================
+function initWritePage() {
+  if (!currentUser || currentUser.role === 'guest') {
+    showToast('請先登入才能發文', 'warning');
+    switchTab('articles');
+    return;
+  }
+
+  // 若非編輯模式，嘗試恢復草稿
+  if (!editingArticleId) {
+    restoreDraft();
+  }
+
+  // 啟動自動儲存草稿
+  startDraftTimer();
+}
+
+// ============================================================
+// 字數計數
+// ============================================================
+function updateCharCount(inputId, countId, max) {
+  const val = document.getElementById(inputId)?.value || '';
+  const len = val.length;
+  const el  = document.getElementById(countId);
+  if (!el) return;
+  el.textContent = len + ' / ' + max;
+  el.className   = 'char-count' +
+    (len > max ? ' over' : len > max * 0.9 ? ' warn' : '');
+}
+
+// ============================================================
+// 草稿自動儲存
+// ============================================================
+function startDraftTimer() {
+  if (draftTimer) clearInterval(draftTimer);
+  draftTimer = setInterval(saveDraft, 30000); // 每 30 秒
+}
+
+function saveDraft() {
+  const title   = document.getElementById('articleTitle')?.value   || '';
+  const content = document.getElementById('articleContent')?.value || '';
+  if (!title && !content) return;
+  const draft = {
+    title,
+    content,
+    category:   document.getElementById('articleCategory')?.value   || '',
+    visibility: document.getElementById('articleVisibility')?.value || 'public',
+    tags:       document.getElementById('articleTags')?.value       || '',
+    savedAt:    new Date().toISOString()
+  };
+  localStorage.setItem('nb_draft', JSON.stringify(draft));
+}
+
+function restoreDraft() {
+  try {
+    const raw = localStorage.getItem('nb_draft');
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    if (!draft.title && !draft.content) return;
+
+    const savedAt = draft.savedAt
+      ? new Date(draft.savedAt).toLocaleString('zh-TW') : '';
+
+    // 詢問是否恢復
+    const el = document.getElementById('page-write');
+    const notice = document.createElement('div');
+    notice.style.cssText =
+      'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;' +
+      'padding:12px;margin-bottom:12px;font-size:13px;display:flex;' +
+      'align-items:center;justify-content:space-between;gap:8px';
+    notice.innerHTML = `
+      <span>📝 發現未完成草稿（${savedAt}），是否恢復？</span>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-secondary btn-sm" onclick="discardDraft(this.closest('div[style]'))">
+          捨棄
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="applyDraft(${JSON.stringify(draft).replace(/"/g,'&quot;')},this.closest('div[style]'))">
+          恢復
+        </button>
+      </div>`;
+    el.insertBefore(notice, el.firstChild);
+  } catch(e) {}
+}
+
+function applyDraft(draft, noticeEl) {
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val || '';
+  };
+  set('articleTitle',      draft.title);
+  set('articleContent',    draft.content);
+  set('articleCategory',   draft.category);
+  set('articleVisibility', draft.visibility);
+  set('articleTags',       draft.tags);
+  updateCharCount('articleTitle',   'titleCount',   100);
+  updateCharCount('articleContent', 'contentCount', 5000);
+  if (noticeEl) noticeEl.remove();
+  showToast('草稿已恢復', 'success');
+}
+
+function discardDraft(noticeEl) {
+  localStorage.removeItem('nb_draft');
+  if (noticeEl) noticeEl.remove();
+  showToast('草稿已捨棄', 'info');
+}
+
+// ============================================================
+// 清除撰寫表單
+// ============================================================
 function clearWriteForm() {
-  editingArticleId = null;
-  document.getElementById('editArticleId').value = '';
-  document.getElementById('articleTitle').value = '';
-  document.getElementById('articleContent').value = '';
-  document.getElementById('articleTags').value = '';
-  document.getElementById('articleCategory').value = '未分類';
-  document.getElementById('articleVisibility').value = 'public';
-  document.getElementById('contentCharCount').textContent = '0';
-  document.getElementById('filePreviewList').innerHTML = '';
-  document.getElementById('writePageTitle').textContent = '撰寫新文章';
-  document.getElementById('submitBtnText').textContent = '發布文章';
+  ['articleTitle','articleContent','articleTags'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const cat = document.getElementById('articleCategory');
+  const vis = document.getElementById('articleVisibility');
+  if (cat) cat.value = '技術';
+  if (vis) vis.value = 'public';
   pendingFiles = [];
+  renderPendingFiles();
+  editingArticleId = null;
+  updateCharCount('articleTitle',   'titleCount',   100);
+  updateCharCount('articleContent', 'contentCount', 5000);
+  const title = document.getElementById('writePageTitle');
+  if (title) title.textContent = '撰寫文章';
+  const btn = document.getElementById('submitBtn');
+  if (btn) btn.innerHTML = '<i class="fas fa-paper-plane"></i> 發布文章';
+  localStorage.removeItem('nb_draft');
+  if (draftTimer) clearInterval(draftTimer);
 }
 
+// ============================================================
+// 發布 / 更新文章
+// ============================================================
+async function submitArticle() {
+  const title   = (document.getElementById('articleTitle')?.value   || '').trim();
+  const content = (document.getElementById('articleContent')?.value || '').trim();
+
+  if (!title)   { showToast('請輸入文章標題', 'error'); return; }
+  if (!content) { showToast('請輸入文章內容', 'error'); return; }
+  if (!currentToken) { showToast('請先登入', 'error'); return; }
+
+  const tagsRaw = (document.getElementById('articleTags')?.value || '');
+  const tags    = tagsRaw
+    ? tagsRaw.split(',').map(t => t.trim()).filter(t => t)
+    : [];
+  const isEdit  = !!editingArticleId;
+
+  const btn = document.getElementById('submitBtn');
+  setButtonLoading(btn, true, isEdit ? '更新中...' : '發布中...');
+
+  try {
+    const res = await apiPost({
+      action:     isEdit ? 'updateArticle' : 'createArticle',
+      token:      currentToken,
+      articleId:  editingArticleId || undefined,
+      title, content,
+      category:   document.getElementById('articleCategory')?.value   || '未分類',
+      visibility: document.getElementById('articleVisibility')?.value || 'public',
+      tags
+    });
+
+    if (!res.success) {
+      showToast('❌ ' + res.message, 'error');
+      return;
+    }
+
+    const targetId = isEdit ? editingArticleId : res.articleId;
+
+    // 上傳附件
+    if (pendingFiles.length > 0) {
+      showToast('📤 上傳附件中...', 'info');
+      await uploadAllPendingFiles(targetId);
+    }
+
+    showToast(isEdit ? '✅ 文章更新成功！' : '🎉 文章發布成功！', 'success');
+    localStorage.removeItem('nb_draft');
+    clearWriteForm();
+    setTimeout(() => switchTab('articles'), 800);
+
+  } finally {
+    setButtonLoading(btn, false, isEdit ? '更新文章' : '發布文章');
+  }
+}
+
+// ============================================================
+// 編輯文章
+// ============================================================
+async function editArticle(articleId) {
+  showLoading('載入文章...');
+  const res = await apiPost({
+    action: 'getArticle', token: currentToken, articleId
+  });
+  hideLoading();
+
+  if (!res.success) { showToast(res.message, 'error'); return; }
+
+  const a = res.article;
+  editingArticleId = articleId;
+
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val || '';
+  };
+  set('articleTitle',      a.title);
+  set('articleContent',    a.content);
+  set('articleCategory',   a.category);
+  set('articleVisibility', a.visibility);
+  set('articleTags',       (a.tags || []).join(', '));
+
+  updateCharCount('articleTitle',   'titleCount',   100);
+  updateCharCount('articleContent', 'contentCount', 5000);
+
+  const title = document.getElementById('writePageTitle');
+  if (title) title.textContent = '編輯文章';
+  const btn = document.getElementById('submitBtn');
+  if (btn) btn.innerHTML = '<i class="fas fa-save"></i> 更新文章';
+
+  document.getElementById('articleModal').classList.remove('active');
+  switchTab('write');
+  showToast('已載入文章，請修改後更新', 'info');
+}
+
+// ============================================================
+// 刪除文章確認
+// ============================================================
 async function confirmDeleteArticle(articleId) {
-  if (!confirm('確定要刪除這篇文章嗎？此操作無法復原。')) return;
-  const res = await apiPost({ action:'deleteArticle', articleId, token:currentToken });
+  if (!confirm('確定要刪除此文章嗎？\n此操作無法復原。')) return;
+  showLoading('刪除中...');
+  const res = await apiPost({
+    action: 'deleteArticle', token: currentToken, articleId
+  });
+  hideLoading();
+
   if (res.success) {
     showToast('✅ 文章已刪除', 'success');
-    closeModal('articleModal');
-    loadArticles();
+    document.getElementById('articleModal').classList.remove('active');
+    loadArticles(currentPage);
   } else {
-    showToast(res.message, 'error');
+    showToast('❌ ' + res.message, 'error');
   }
 }
 
 // ============================================================
-// 檔案上傳 - 拖曳事件
+// 統計頁
 // ============================================================
+async function loadStats() {
+  const el = document.getElementById('statsContent');
+  el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><h3>載入中...</h3></div>';
+
+  const res = await apiPost({ action: 'getStats', token: currentToken });
+
+  if (!res.success) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🔒</div>
+      <h3>無法取得統計</h3>
+      <p>${escHtml(res.message)}</p></div>`;
+    return;
+  }
+
+  const s = res.stats;
+  const topHtml = (s.topArticles || []).map((a, i) => `
+    <div class="top-item">
+      <div class="top-rank ${['r1','r2','r3'][i] || ''}">${i + 1}</div>
+      <div class="top-title">${escHtml(a.title)}</div>
+      <div class="top-count"><i class="fas fa-eye"></i> ${a.readCount}</div>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">📰</div>
+        <div class="stat-num">${s.totalArticles || 0}</div>
+        <div class="stat-lbl">文章總數</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">👁️</div>
+        <div class="stat-num">${s.totalReadCount || 0}</div>
+        <div class="stat-lbl">總閱讀次數</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <div class="stat-num">${s.totalUsers || 0}</div>
+        <div class="stat-lbl">使用者人數</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📋</div>
+        <div class="stat-num">${s.totalReadLogs || 0}</div>
+        <div class="stat-lbl">閱讀記錄筆數</div>
+      </div>
+    </div>
+    <div class="top-list">
+      <div class="top-list-header">
+        <i class="fas fa-trophy" style="color:#ffd700"></i> 熱門文章 Top 5
+      </div>
+      ${topHtml || '<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px">暫無資料</div>'}
+    </div>`;
+}
+
+// ============================================================
+// 管理頁：使用者列表
+// ============================================================
+async function loadUsers() {
+  const el = document.getElementById('userList');
+  el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><h3>載入中...</h3></div>';
+
+  const res = await apiPost({ action: 'listUsers', token: currentToken });
+
+  if (!res.success) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">❌</div>
+      <h3>載入失敗</h3><p>${escHtml(res.message)}</p></div>`;
+    return;
+  }
+
+  const roleMap = {
+    admin: { label: '👑 管理者', cls: 'rb-admin' },
+    mod:   { label: '🛡️ 版主',  cls: 'rb-mod'   },
+    vip:   { label: '⭐ VIP',   cls: 'rb-vip'   },
+    user:  { label: '👤 一般',  cls: 'rb-user'  },
+    guest: { label: '👁️ 遊客', cls: 'rb-guest' }
+  };
+  const statusMap = {
+    active:   { label: '✅ 啟用', cls: 'sb-active'   },
+    inactive: { label: '⏸️ 停用', cls: 'sb-inactive' },
+    banned:   { label: '🚫 封禁', cls: 'sb-banned'   }
+  };
+
+  const isAdmin = currentUser && currentUser.role === 'admin';
+
+  el.innerHTML = res.users.map(u => {
+    const r = roleMap[u.role]     || roleMap.user;
+    const s = statusMap[u.status] || statusMap.active;
+    return `
+      <div class="user-item">
+        <img class="u-avatar"
+          src="${escHtml(u.pictureUrl || 'https://i.pravatar.cc/150?img=0')}"
+          alt=""
+          onerror="this.src='https://i.pravatar.cc/150?img=0'">
+        <div class="u-info">
+          <div class="u-name">${escHtml(u.displayName)}</div>
+          <div class="u-real">${escHtml(u.realName || '')}</div>
+          <div class="u-meta">
+            <span class="role-badge ${r.cls}">${r.label}</span>
+            <span class="status-badge ${s.cls}" style="margin-left:4px">${s.label}</span>
+          </div>
+        </div>
+        ${isAdmin ? `
+          <button class="btn btn-secondary btn-sm"
+            onclick="openEditModal('${escHtml(u.userId)}','${escHtml(u.displayName)}','${u.role}','${u.status}')">
+            <i class="fas fa-edit"></i>
+          </button>` : ''}
+      </div>`;
+  }).join('') || '<div class="empty-state"><div class="empty-icon">👥</div><h3>目前沒有使用者</h3></div>';
+}
+
+// ============================================================
+// 角色編輯 Modal
+// ============================================================
+function openEditModal(userId, displayName, role, status) {
+  document.getElementById('editUserId').value     = userId;
+  document.getElementById('editUserName').value   = displayName;
+  document.getElementById('editUserRole').value   = role;
+  document.getElementById('editUserStatus').value = status;
+  document.getElementById('editUserModal').classList.add('active');
+}
+
+function closeEditModal() {
+  document.getElementById('editUserModal').classList.remove('active');
+}
+
+async function saveUserRole() {
+  const targetUserId = document.getElementById('editUserId').value;
+  const newRole      = document.getElementById('editUserRole').value;
+  const newStatus    = document.getElementById('editUserStatus').value;
+
+  showLoading('儲存中...');
+  const res = await apiPost({
+    action: 'updateUserRole', token: currentToken,
+    targetUserId, newRole, status: newStatus
+  });
+  hideLoading();
+
+  if (res.success) {
+    showToast('✅ ' + res.message, 'success');
+    closeEditModal();
+    loadUsers();
+  } else {
+    showToast('❌ ' + res.message, 'error');
+  }
+}
+
+// ============================================================
+// 個人資料頁
+// ============================================================
+function loadProfile() {
+  if (!currentUser) return;
+
+  const roleMap = {
+    admin: { label: '👑 管理者', cls: 'rb-admin' },
+    mod:   { label: '🛡️ 版主',  cls: 'rb-mod'   },
+    vip:   { label: '⭐ VIP',   cls: 'rb-vip'   },
+    user:  { label: '👤 一般會員', cls: 'rb-user' },
+    guest: { label: '👁️ 遊客',  cls: 'rb-guest' }
+  };
+  const r = roleMap[currentUser.role] || roleMap.guest;
+
+  const avatar = document.getElementById('profileAvatar');
+  const name   = document.getElementById('profileName');
+  const role   = document.getElementById('profileRole');
+
+  if (avatar) {
+    avatar.src     = currentUser.pictureUrl || 'https://i.pravatar.cc/150?img=0';
+    avatar.onerror = () => { avatar.src = 'https://i.pravatar.cc/150?img=0'; };
+  }
+  if (name) name.textContent = currentUser.displayName || '';
+  if (role) role.innerHTML   =
+    `<span class="role-badge ${r.cls}" style="font-size:13px;padding:4px 14px">${r.label}</span>`;
+
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val || '';
+  };
+  set('profileRealName', currentUser.realName);
+  set('profileEmail',    currentUser.email);
+  set('profilePhone',    currentUser.phone);
+}
+
+async function saveProfile() {
+  const realName = (document.getElementById('profileRealName')?.value || '').trim();
+  if (!realName) { showToast('真實姓名不可為空', 'error'); return; }
+
+  const btn = document.querySelector('#page-profile .btn-primary');
+  setButtonLoading(btn, true, '儲存中...');
+
+  const res = await apiPost({
+    action: 'updateUserProfile', token: currentToken,
+    realName,
+    email: (document.getElementById('profileEmail')?.value || '').trim(),
+    phone: (document.getElementById('profilePhone')?.value || '').trim()
+  });
+
+  setButtonLoading(btn, false, '儲存變更');
+
+  if (res.success) {
+    currentUser.realName = realName;
+    showToast('✅ 個人資料已更新', 'success');
+  } else {
+    showToast('❌ ' + res.message, 'error');
+  }
+}
+
+// ============================================================
+// 登出
+// ============================================================
+async function logout() {
+  if (!confirm('確定要登出嗎？')) return;
+  currentToken = null;
+  currentUser  = null;
+  localStorage.removeItem('nb_token');
+  localStorage.removeItem('nb_draft');
+  if (draftTimer) clearInterval(draftTimer);
+
+  try {
+    if (typeof liff !== 'undefined' && liff.isLoggedIn()) {
+      liff.logout();
+    }
+  } catch(e) {}
+
+  // 重置 UI
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('userBar').innerHTML = '';
+  document.querySelectorAll('#pages .page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-login').classList.add('active');
+  showToast('已登出', 'info');
+}
+
+// ============================================================
+// 附件上傳模組
+// ============================================================
+const ALLOWED_TYPES = [
+  'image/jpeg','image/jpg','image/png','image/gif','image/webp',
+  'image/svg+xml','image/bmp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain','text/csv',
+  'application/zip','application/x-zip-compressed',
+  'video/mp4','video/quicktime',
+  'audio/mpeg','audio/wav'
+];
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 function handleDragOver(e) {
   e.preventDefault();
   document.getElementById('uploadZone').classList.add('dragover');
 }
 function handleDragLeave(e) {
+  e.preventDefault();
   document.getElementById('uploadZone').classList.remove('dragover');
 }
 function handleDrop(e) {
   e.preventDefault();
   document.getElementById('uploadZone').classList.remove('dragover');
-  const files = Array.from(e.dataTransfer.files);
-  processFiles(files);
+  processFiles(Array.from(e.dataTransfer.files));
 }
 function handleFileSelect(e) {
-  const files = Array.from(e.target.files);
-  processFiles(files);
-  e.target.value = ''; // 重置 input
+  processFiles(Array.from(e.target.files));
+  e.target.value = '';
 }
 
-// ============================================================
-// 處理選取的檔案（加入待上傳佇列）
-// ============================================================
 function processFiles(files) {
-  const maxSize = 10 * 1024 * 1024; // 10MB
-  const allowedTypes = [
-    'image/jpeg','image/png','image/gif','image/webp',
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'text/plain','text/csv','video/mp4','audio/mpeg'
-  ];
-
   files.forEach(file => {
-    if (file.size > maxSize) {
-      showToast(`${file.name} 超過 10MB 限制`, 'error');
+    if (file.size > MAX_FILE_SIZE) {
+      showToast(`❌ ${file.name}：超過 10MB 限制`, 'error');
       return;
     }
-    if (!allowedTypes.includes(file.type)) {
-      showToast(`${file.name} 不支援的檔案類型`, 'error');
+    const mime = file.type || getMimeByExt(file.name);
+    if (!ALLOWED_TYPES.includes(mime)) {
+      showToast(`❌ ${file.name}：不支援的檔案類型`, 'error');
       return;
     }
-    // 避免重複加入
     if (pendingFiles.find(f => f.name === file.name && f.size === file.size)) {
-      showToast(`${file.name} 已在列表中`, 'info');
+      showToast(`⚠️ ${file.name} 已在列表中`, 'warning');
       return;
     }
     pendingFiles.push(file);
@@ -1055,565 +2318,273 @@ function processFiles(files) {
   renderPendingFiles();
 }
 
-// ============================================================
-// 渲染待上傳檔案預覽列表
-// ============================================================
+function getMimeByExt(name) {
+  const ext = (name || '').split('.').pop().toLowerCase();
+  const map = {
+    jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png',
+    gif:'image/gif',  webp:'image/webp', svg:'image/svg+xml',
+    pdf:'application/pdf',
+    doc:'application/msword',
+    docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls:'application/vnd.ms-excel',
+    xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt:'application/vnd.ms-powerpoint',
+    pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    txt:'text/plain', csv:'text/csv',
+    zip:'application/zip',
+    mp4:'video/mp4', mov:'video/quicktime',
+    mp3:'audio/mpeg', wav:'audio/wav'
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+function getFileEmoji(mime) {
+  if (!mime)                          return '📎';
+  if (mime.startsWith('image/'))      return '🖼️';
+  if (mime === 'application/pdf')     return '📄';
+  if (mime.includes('word'))          return '📝';
+  if (mime.includes('excel') || mime.includes('sheet')) return '📊';
+  if (mime.includes('powerpoint') || mime.includes('presentation')) return '📑';
+  if (mime.startsWith('video/'))      return '🎬';
+  if (mime.startsWith('audio/'))      return '🎵';
+  if (mime.includes('zip'))           return '🗜️';
+  if (mime === 'text/plain')          return '📃';
+  if (mime === 'text/csv')            return '📊';
+  return '📎';
+}
+
 function renderPendingFiles() {
   const container = document.getElementById('filePreviewList');
-  if (pendingFiles.length === 0) {
-    container.innerHTML = '';
-    return;
-  }
-  container.innerHTML = pendingFiles.map((f, idx) => {
-    const isImage = f.type.startsWith('image/');
-    const iconMap = {
-      'application/pdf': '📄',
-      'application/msword': '📝',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '📝',
-      'application/vnd.ms-excel': '📊',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '📊',
-      'text/plain': '📃', 'text/csv': '📊',
-      'video/mp4': '🎬', 'audio/mpeg': '🎵'
-    };
-    const icon = isImage ? '' : (iconMap[f.type] || '📎');
+  if (!container) return;
+  if (pendingFiles.length === 0) { container.innerHTML = ''; return; }
+
+  container.innerHTML = pendingFiles.map((f, i) => {
+    const mime    = f.type || getMimeByExt(f.name);
+    const isImage = mime.startsWith('image/');
     return `
-      <div class="file-item" id="pendingFile_${idx}">
-        <div class="file-icon">
+      <div class="file-item" id="pf_${i}">
+        <div style="width:44px;height:44px;border-radius:8px;background:var(--bg);
+                    display:flex;align-items:center;justify-content:center;flex-shrink:0">
           ${isImage
-            ? `<img id="thumb_${idx}" src="" style="width:40px;height:40px;object-fit:cover;border-radius:6px">`
-            : `<span style="font-size:24px">${icon}</span>`}
+            ? `<img id="thumb_${i}" src="" style="width:44px;height:44px;object-fit:cover;border-radius:8px">`
+            : `<span style="font-size:22px">${getFileEmoji(mime)}</span>`}
         </div>
         <div class="file-info">
           <div class="file-name">${escHtml(f.name)}</div>
           <div class="file-size">${formatFileSize(f.size)}</div>
-          <div style="height:4px;background:var(--border);border-radius:2px;margin-top:4px">
-            <div id="progress_${idx}" style="height:100%;width:0%;background:var(--primary);border-radius:2px;transition:width 0.3s"></div>
+          <div class="file-progress">
+            <div class="file-progress-bar" id="fpb_${i}" style="width:0%"></div>
           </div>
+          <div class="file-status" id="fps_${i}">等待上傳</div>
         </div>
-        <button class="btn btn-danger btn-sm" onclick="removePendingFile(${idx})">
+        <button class="btn btn-danger btn-sm" onclick="removePendingFile(${i})">
           <i class="fas fa-times"></i>
         </button>
       </div>`;
   }).join('');
 
-  // 產生圖片縮圖
-  pendingFiles.forEach((f, idx) => {
-    if (f.type.startsWith('image/')) {
+  // 產生縮圖
+  pendingFiles.forEach((f, i) => {
+    if (f.type && f.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = e => {
-        const thumb = document.getElementById('thumb_' + idx);
-        if (thumb) thumb.src = e.target.result;
+        const el = document.getElementById('thumb_' + i);
+        if (el) el.src = e.target.result;
       };
       reader.readAsDataURL(f);
     }
   });
 }
 
-// ============================================================
-// 移除待上傳檔案
-// ============================================================
 function removePendingFile(idx) {
   pendingFiles.splice(idx, 1);
   renderPendingFiles();
 }
 
-// ============================================================
-// 上傳單一待傳檔案（Base64 轉換後送出）
-// ============================================================
-async function uploadPendingFile(file, articleId) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const payload = {
-          action:    'uploadFile',
-          token:     currentToken,
-          articleId: articleId,
-          fileName:  file.name,
-          fileType:  file.type,
-          fileData:  e.target.result  // base64 data URL
-        };
-        const res = await apiPost(payload);
-        if (res.success) {
-          showToast(`✅ ${file.name} 上傳成功`, 'success');
-        } else {
-          showToast(`❌ ${file.name} 上傳失敗：${res.message}`, 'error');
-        }
-        resolve(res);
-      } catch(err) {
-        showToast(`❌ ${file.name} 上傳錯誤`, 'error');
-        resolve({ success: false });
-      }
-    };
+function updateFileProgress(idx, pct, text, isError) {
+  const bar = document.getElementById('fpb_' + idx);
+  const txt = document.getElementById('fps_' + idx);
+  if (bar) {
+    bar.style.width      = pct + '%';
+    bar.style.background = isError ? '#e74c3c' : 'var(--primary)';
+  }
+  if (txt) {
+    txt.textContent  = text;
+    txt.className    = 'file-status' + (isError ? ' error' : pct === 100 ? ' success' : '');
+  }
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader  = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = e => reject(new Error('檔案讀取失敗：' + (e.target.error?.message || '未知')));
     reader.readAsDataURL(file);
   });
 }
 
-// ============================================================
-// 刪除已上傳檔案
-// ============================================================
-async function deleteFile(fileId) {
-  if (!confirm('確定要刪除此檔案？')) return;
-  const res = await apiPost({ action:'deleteFile', fileId, token:currentToken });
-  if (res.success) {
-    showToast('✅ 檔案已刪除', 'success');
-    // 重新整理文章 Modal（若開著）
-    const modal = document.getElementById('articleModal');
-    if (modal.classList.contains('active')) {
-      // 移除該檔案 DOM
-      const el = document.querySelector(`[data-file-id="${fileId}"]`);
-      if (el) el.remove();
+async function uploadSingleFile(file, articleId, idx) {
+  const MAX_RETRY = 2;
+  for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+    try {
+      updateFileProgress(idx, 10, attempt > 1 ? `重試第 ${attempt} 次...` : '讀取中...', false);
+      const dataUrl = await readFileAsBase64(file);
+      if (!dataUrl || !dataUrl.includes(',')) throw new Error('Base64 轉換失敗');
+
+      updateFileProgress(idx, 50, '上傳中...', false);
+
+      const res = await apiPost({
+        action:    'uploadFile',
+        token:     currentToken,
+        articleId,
+        fileName:  file.name,
+        fileType:  file.type || getMimeByExt(file.name),
+        fileData:  dataUrl
+      });
+
+      if (res.success) {
+        updateFileProgress(idx, 100, '✅ 上傳成功', false);
+        return res;
+      } else {
+        updateFileProgress(idx, 100, '❌ ' + res.message, true);
+        return res;
+      }
+    } catch(err) {
+      if (attempt < MAX_RETRY) {
+        updateFileProgress(idx, 0, '失敗，準備重試...', true);
+        await sleep(1500);
+      } else {
+        updateFileProgress(idx, 100, '❌ ' + err.message, true);
+        return { success: false, message: err.message };
+      }
     }
+  }
+}
+
+async function uploadAllPendingFiles(articleId) {
+  if (!pendingFiles.length) return [];
+  const results = [];
+  for (let i = 0; i < pendingFiles.length; i++) {
+    const res = await uploadSingleFile(pendingFiles[i], articleId, i);
+    results.push(res);
+  }
+  const ok   = results.filter(r => r && r.success).length;
+  const fail = results.length - ok;
+  if (fail === 0) {
+    showToast(`✅ ${ok} 個附件上傳成功`, 'success');
   } else {
-    showToast(res.message, 'error');
+    showToast(`⚠️ ${ok} 個成功，${fail} 個失敗`, fail === results.length ? 'error' : 'warning');
   }
+  return results;
 }
 
 // ============================================================
-// 載入統計頁
-// ============================================================
-async function loadStats() {
-  const container = document.getElementById('statsContent');
-
-  // 遊客或一般使用者只看個人統計
-  if (!currentUser || currentUser.role === 'guest') {
-    container.innerHTML = `
-      <div class="card">
-        <div class="card-body">
-          <div class="empty-state">
-            <i class="fas fa-lock"></i>
-            <p>請登入後查看統計資料</p>
-          </div>
-        </div>
-      </div>`;
-    return;
-  }
-
-  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>統計載入中...</span></div>';
-
-  // 一般使用者：顯示個人文章統計
-  if (currentUser.role === 'user' || currentUser.role === 'vip') {
-    const res = await apiPost({ action:'listArticles', page:1, pageSize:100, token:currentToken });
-    if (!res.success) { container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation"></i>載入失敗</div>'; return; }
-
-    const myArticles = res.articles.filter(a => a.authorId === currentUser.userId);
-    const totalReads = myArticles.reduce((s, a) => s + (a.readCount||0), 0);
-
-    container.innerHTML = `
-      <div class="stats-grid" style="margin-bottom:16px">
-        <div class="stat-card">
-          <div class="stat-number">${myArticles.length}</div>
-          <div class="stat-label"><i class="fas fa-newspaper"></i> 我的文章</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number">${totalReads}</div>
-          <div class="stat-label"><i class="fas fa-eye"></i> 總被閱讀</div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header"><span><i class="fas fa-list"></i> 我的文章閱讀排行</span></div>
-        <div class="card-body">
-          ${myArticles.length === 0
-            ? '<div class="empty-state"><i class="fas fa-inbox"></i>尚未發布任何文章</div>'
-            : myArticles.sort((a,b)=>b.readCount-a.readCount).map((a,i) => `
-                <div class="top-article-item">
-                  <div class="top-rank rank-${i+1}" style="background:${i===0?'#f1c40f':i===1?'#95a5a6':i===2?'#cd7f32':'var(--primary)'}">${i+1}</div>
-                  <div style="flex:1">
-                    <div style="font-size:13px;font-weight:600">${escHtml(a.title)}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">${a.createdAt}</div>
-                  </div>
-                  <div style="font-size:13px;font-weight:700;color:var(--primary)">${a.readCount} 次</div>
-                </div>`).join('')
-          }
-        </div>
-      </div>`;
-    return;
-  }
-
-  // 管理者 / 版主：顯示全站統計
-  const res = await apiPost({ action:'getStats', token:currentToken });
-  if (!res.success) {
-    container.innerHTML = `<div class="card"><div class="card-body"><div class="empty-state"><i class="fas fa-exclamation-circle"></i>${res.message}</div></div></div>`;
-    return;
-  }
-  const s = res.stats;
-
-  container.innerHTML = `
-    <!-- 全站數字 -->
-    <div class="stats-grid" style="margin-bottom:16px">
-      <div class="stat-card">
-        <div class="stat-number">${s.totalArticles}</div>
-        <div class="stat-label"><i class="fas fa-newspaper"></i> 總文章數</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number">${s.totalUsers}</div>
-        <div class="stat-label"><i class="fas fa-users"></i> 總使用者</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number">${s.totalReadCount}</div>
-        <div class="stat-label"><i class="fas fa-eye"></i> 總閱讀數</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number">${s.totalReadLogs}</div>
-        <div class="stat-label"><i class="fas fa-history"></i> 閱讀記錄</div>
-      </div>
-    </div>
-
-    <!-- 熱門文章 Top 5 -->
-    <div class="card">
-      <div class="card-header">
-        <span><i class="fas fa-trophy" style="color:#f1c40f"></i> 熱門文章 Top 5</span>
-      </div>
-      <div class="card-body">
-        ${s.topArticles && s.topArticles.length > 0
-          ? (() => {
-              const maxRead = s.topArticles[0].readCount || 1;
-              return s.topArticles.map((a, i) => `
-                <div class="top-article-item">
-                  <div class="top-rank rank-${i+1}" style="background:${
-                    i===0?'#f1c40f':i===1?'#95a5a6':i===2?'#cd7f32':'var(--primary)'}">${i+1}</div>
-                  <div style="flex:1">
-                    <div style="font-size:13px;font-weight:600">${escHtml(a.title)}</div>
-                    <div class="read-count-bar">
-                      <div class="read-count-fill" style="width:${Math.round(a.readCount/maxRead*100)}%"></div>
-                    </div>
-                  </div>
-                  <div style="font-size:13px;font-weight:700;color:var(--primary);min-width:50px;text-align:right">
-                    ${a.readCount} 次
-                  </div>
-                </div>`).join('');
-            })()
-          : '<div class="empty-state"><i class="fas fa-inbox"></i>尚無資料</div>'
-        }
-      </div>
-    </div>
-
-    <!-- 角色分佈（管理者限定）-->
-    ${currentUser.role === 'admin' ? `
-    <div class="card" id="roleDistCard">
-      <div class="card-header"><span><i class="fas fa-users"></i> 角色分佈</span></div>
-      <div class="card-body" id="roleDistContent">
-        <div class="loading"><div class="spinner"></div></div>
-      </div>
-    </div>` : ''}
-  `;
-
-  // 載入角色分佈（管理者）
-  if (currentUser.role === 'admin') {
-    loadRoleDistribution();
-  }
-}
-
-// ============================================================
-// 載入角色分佈
-// ============================================================
-async function loadRoleDistribution() {
-  const res = await apiPost({ action:'listUsers', token:currentToken });
-  if (!res.success) return;
-
-  const roleCount = { admin:0, mod:0, vip:0, user:0, guest:0 };
-  res.users.forEach(u => { if (roleCount[u.role] !== undefined) roleCount[u.role]++; });
-
-  const roleInfo = {
-    admin: { label:'管理者', color:'#e74c3c' },
-    mod:   { label:'版主',   color:'#e67e22' },
-    vip:   { label:'VIP',    color:'#9b59b6' },
-    user:  { label:'一般',   color:'#3498db' },
-    guest: { label:'遊客',   color:'#95a5a6' }
-  };
-  const total = res.users.length || 1;
-
-  document.getElementById('roleDistContent').innerHTML =
-    Object.entries(roleCount).map(([role, count]) => `
-      <div style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-          <span style="font-weight:600">${roleInfo[role].label}</span>
-          <span style="color:var(--text-muted)">${count} 人（${Math.round(count/total*100)}%）</span>
-        </div>
-        <div style="height:8px;background:var(--border);border-radius:4px">
-          <div style="height:100%;width:${Math.round(count/total*100)}%;background:${roleInfo[role].color};border-radius:4px;transition:width 0.5s"></div>
-        </div>
-      </div>`).join('');
-}
-
-// ============================================================
-// 載入個人資料頁
-// ============================================================
-async function loadProfile() {
-  if (!currentUser || currentUser.role === 'guest') {
-    document.getElementById('page-profile').innerHTML = `
-      <div class="card">
-        <div class="card-body">
-          <div class="empty-state">
-            <i class="fas fa-user-slash"></i>
-            <p>請先登入才能查看個人資料</p>
-            <button class="btn btn-primary" onclick="switchTab('home');showPage('login')">
-              <i class="fab fa-line"></i> 前往登入
-            </button>
-          </div>
-        </div>
-      </div>`;
-    return;
-  }
-
-  const res = await apiPost({ action:'getUserProfile', token:currentToken });
-  if (!res.success) return;
-
-  const u = res.user;
-  const roleMap = {
-    admin:{ label:'管理者', cls:'role-admin' },
-    mod:  { label:'版主',   cls:'role-mod'   },
-    vip:  { label:'VIP',    cls:'role-vip'   },
-    user: { label:'一般使用者', cls:'role-user' },
-    guest:{ label:'遊客',   cls:'role-guest' }
-  };
-  const rm = roleMap[u.role] || roleMap.guest;
-
-  document.getElementById('profileAvatar').src = u.pictureUrl || 'https://via.placeholder.com/80';
-  document.getElementById('profileDisplayName').textContent = u.displayName || '';
-  const pb = document.getElementById('profileRoleBadge');
-  pb.textContent = rm.label;
-  pb.className = 'user-role-badge ' + rm.cls;
-  document.getElementById('profileRealName').value = u.realName || '';
-  document.getElementById('profileEmail').value    = u.email    || '';
-  document.getElementById('profilePhone').value    = u.phone    || '';
-}
-
-// ============================================================
-// 儲存個人資料
-// ============================================================
-async function saveProfile() {
-  const payload = {
-    action:    'updateUserProfile',
-    token:     currentToken,
-    realName:  document.getElementById('profileRealName').value.trim(),
-    email:     document.getElementById('profileEmail').value.trim(),
-    phone:     document.getElementById('profilePhone').value.trim()
-  };
-  if (!payload.realName) { showToast('真實姓名不可為空', 'error'); return; }
-  const res = await apiPost(payload);
-  if (res.success) {
-    showToast('✅ 資料更新成功', 'success');
-  } else {
-    showToast(res.message, 'error');
-  }
-}
-
-// ============================================================
-// 載入管理頁 - 使用者列表
-// ============================================================
-async function loadAdminUsers() {
-  if (!currentUser || !['admin','mod'].includes(currentUser.role)) {
-    document.getElementById('adminUserList').innerHTML =
-      '<div class="empty-state"><i class="fas fa-ban"></i>權限不足</div>';
-    return;
-  }
-
-  document.getElementById('adminUserList').innerHTML =
-    '<div class="loading"><div class="spinner"></div><span>載入中...</span></div>';
-
-  const res = await apiPost({ action:'listUsers', token:currentToken });
-  if (!res.success) {
-    document.getElementById('adminUserList').innerHTML =
-      `<div class="empty-state"><i class="fas fa-exclamation-circle"></i>${res.message}</div>`;
-    return;
-  }
-
-  const roleMap = {
-    admin:{ label:'管理者', cls:'role-admin' },
-    mod:  { label:'版主',   cls:'role-mod'   },
-    vip:  { label:'VIP',    cls:'role-vip'   },
-    user: { label:'一般',   cls:'role-user'  },
-    guest:{ label:'遊客',   cls:'role-guest' }
-  };
-  const statusMap = {
-    active:   '<span class="badge badge-success">啟用</span>',
-    inactive: '<span class="badge badge-warning">停用</span>',
-    banned:   '<span class="badge badge-danger">封禁</span>'
-  };
-
-  document.getElementById('adminUserList').innerHTML =
-    res.users.map(u => `
-      <div class="user-row">
-        <img class="user-row-avatar" src="${u.pictureUrl || 'https://via.placeholder.com/36'}" alt="">
-        <div class="user-row-info">
-          <div class="user-row-name">${escHtml(u.displayName)}</div>
-          <div class="user-row-real">
-            ${escHtml(u.realName || '未登記')} ・ ${escHtml(u.email || '無郵件')}
-          </div>
-          <div style="margin-top:3px">
-            <span class="user-role-badge ${roleMap[u.role]?.cls||'role-guest'}">
-              ${roleMap[u.role]?.label||'遊客'}
-            </span>
-            ${statusMap[u.status] || statusMap.active}
-          </div>
-        </div>
-        ${currentUser.role === 'admin' ? `
-        <button class="btn btn-outline btn-sm" onclick="openRoleModal('${u.userId}','${u.displayName}','${u.role}','${u.status||'active'}')">
-          <i class="fas fa-user-edit"></i>
-        </button>` : ''}
-      </div>`).join('');
-}
-
-// ============================================================
-// 開啟角色編輯 Modal
-// ============================================================
-function openRoleModal(userId, displayName, currentRole, currentStatus) {
-  document.getElementById('roleModalContent').innerHTML = `
-    <p style="margin-bottom:16px;color:var(--text-muted)">
-      <i class="fas fa-user"></i> 編輯：<strong>${escHtml(displayName)}</strong>
-    </p>
-    <div class="form-group">
-      <label class="form-label">角色設定</label>
-      <select class="form-control" id="editRole">
-        <option value="admin"  ${currentRole==='admin' ?'selected':''}>👑 管理者</option>
-        <option value="mod"    ${currentRole==='mod'   ?'selected':''}>🛡️ 版主</option>
-        <option value="vip"    ${currentRole==='vip'   ?'selected':''}>⭐ VIP</option>
-        <option value="user"   ${currentRole==='user'  ?'selected':''}>👤 一般使用者</option>
-        <option value="guest"  ${currentRole==='guest' ?'selected':''}>👁️ 遊客</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label class="form-label">帳號狀態</label>
-      <select class="form-control" id="editStatus">
-        <option value="active"   ${currentStatus==='active'  ?'selected':''}>✅ 啟用</option>
-        <option value="inactive" ${currentStatus==='inactive'?'selected':''}>⏸️ 停用</option>
-        <option value="banned"   ${currentStatus==='banned'  ?'selected':''}>🚫 封禁</option>
-      </select>
-    </div>
-    <button class="btn btn-primary btn-full" onclick="saveUserRole('${userId}')">
-      <i class="fas fa-save"></i> 儲存變更
-    </button>
-  `;
-  openModal('roleModal');
-}
-
-// ============================================================
-// 儲存使用者角色
-// ============================================================
-async function saveUserRole(targetUserId) {
-  const newRole   = document.getElementById('editRole').value;
-  const newStatus = document.getElementById('editStatus').value;
-  const res = await apiPost({
-    action: 'updateUserRole',
-    token:  currentToken,
-    targetUserId,
-    newRole,
-    status: newStatus
-  });
-  if (res.success) {
-    showToast('✅ 角色更新成功', 'success');
-    closeModal('roleModal');
-    loadAdminUsers();
-  } else {
-    showToast(res.message, 'error');
-  }
-}
-
-// ============================================================
-// 登出
-// ============================================================
-function logout() {
-  if (!confirm('確定要登出嗎？')) return;
-  currentToken = null;
-  currentUser  = null;
-  localStorage.removeItem('nb_token');
-  // 嘗試登出 LIFF
-  try { if (liff.isLoggedIn()) liff.logout(); } catch(e) {}
-  // 重置 UI
-  document.getElementById('navbar').style.display   = 'none';
-  document.getElementById('userBar').style.display  = 'none';
-  document.getElementById('mainTabs').style.display = 'none';
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-login').classList.add('active');
-  showToast('已登出', 'info');
-}
-
-// ============================================================
-// Modal 開關
-// ============================================================
-function openModal(id) {
-  document.getElementById(id).classList.add('active');
-  document.body.style.overflow = 'hidden';
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('active');
-  document.body.style.overflow = '';
-}
-// 點擊遮罩關閉
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  overlay.addEventListener('click', function(e) {
-    if (e.target === this) closeModal(this.id);
-  });
-});
-
-// ============================================================
-// API 呼叫（POST）
+// API 呼叫
 // ============================================================
 async function apiPost(payload) {
   try {
     const res = await fetch(GAS_URL, {
       method:  'POST',
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body:    JSON.stringify(payload)
     });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     return await res.json();
   } catch(err) {
     console.error('API Error:', err);
-    return { success: false, message: '網路連線錯誤，請稍後再試' };
+    return { success: false, message: '網路錯誤：' + err.message };
   }
 }
 
 // ============================================================
-// Toast 通知
+// UI 工具函式
 // ============================================================
-function showToast(msg, type = 'info') {
-  const icons = { success:'✅', error:'❌', info:'ℹ️' };
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${escHtml(msg)}</span>`;
-  document.getElementById('toastContainer').appendChild(toast);
+
+// Toast 通知
+function showToast(msg, type) {
+  const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' };
+  const c     = document.getElementById('toastContainer');
+  if (!c) return;
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type || 'info');
+  t.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${escHtml(String(msg))}</span>`;
+  c.appendChild(t);
   setTimeout(() => {
-    toast.style.animation = 'slideIn 0.3s ease reverse';
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
+    t.style.opacity    = '0';
+    t.style.transition = 'opacity 0.3s';
+    setTimeout(() => t.remove(), 300);
+  }, 3500);
 }
 
-// ============================================================
-// 工具函式
-// ============================================================
+// Loading 遮罩
+function showLoading(text) {
+  const el = document.getElementById('loadingOverlay');
+  const tx = document.getElementById('loadingText');
+  if (el) el.classList.add('active');
+  if (tx) tx.textContent = text || '載入中...';
+}
+function hideLoading() {
+  const el = document.getElementById('loadingOverlay');
+  if (el) el.classList.remove('active');
+}
 
-// HTML 跳脫（防 XSS）
+// 按鈕 Loading 狀態
+function setButtonLoading(btn, loading, text) {
+  if (!btn) return;
+  btn.disabled   = loading;
+  btn.innerHTML  = loading
+    ? `<i class="fas fa-spinner fa-spin"></i> ${escHtml(text)}`
+    : `<i class="fas fa-check"></i> ${escHtml(text)}`;
+}
+
+// 顯示設定錯誤
+function showConfigError(msg) {
+  const p = document.getElementById('page-login');
+  if (!p) return;
+  p.innerHTML = `
+    <div style="text-align:center;padding:40px 24px">
+      <div style="font-size:64px;margin-bottom:16px">⚙️</div>
+      <h2 style="color:#e74c3c;margin-bottom:12px">系統設定不完整</h2>
+      <div style="background:#fce4ec;border-radius:12px;padding:16px;
+                  max-width:320px;margin:0 auto 20px;text-align:left">
+        <p style="font-size:13px;color:#c62828;line-height:1.8">
+          <i class="fas fa-exclamation-circle"></i> ${escHtml(msg)}
+        </p>
+      </div>
+      <div style="background:#f8f9fa;border-radius:12px;padding:16px;
+                  max-width:320px;margin:0 auto;text-align:left">
+        <p style="font-size:13px;font-weight:700;margin-bottom:8px">🔧 修正步驟：</p>
+        <ol style="font-size:12px;color:#636e72;line-height:2;padding-left:16px">
+          <li>開啟 GAS 編輯器</li>
+          <li>在 Code.gs 填入正確的 LIFF_ID</li>
+          <li>重新部署（選「新版本」）</li>
+          <li>使用新的部署網址開啟</li>
+        </ol>
+      </div>
+    </div>`;
+  p.classList.add('active');
+}
+
+// HTML 跳脫
 function escHtml(str) {
   if (!str) return '';
   return String(str)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#39;');
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // 格式化檔案大小
 function formatFileSize(bytes) {
-  if (!bytes || bytes === 0) return '0 B';
-  if (bytes < 1024)        return bytes + ' B';
-  if (bytes < 1024*1024)   return (bytes/1024).toFixed(1) + ' KB';
-  return (bytes/(1024*1024)).toFixed(1) + ' MB';
+  if (!bytes || bytes <= 0)           return '0 B';
+  if (bytes < 1024)                   return bytes + ' B';
+  if (bytes < 1024 * 1024)            return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024)     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
 }
 
-// 相對時間格式化
-function formatRelTime(dateStr) {
-  if (!dateStr) return '';
-  const now  = new Date();
-  const date = new Date(dateStr);
-  const diff = Math.floor((now - date) / 1000);
-  if (diff < 60)           return '剛剛';
-  if (diff < 3600)         return Math.floor(diff/60) + ' 分鐘前';
-  if (diff < 86400)        return Math.floor(diff/3600) + ' 小時前';
-  if (diff < 86400*30)     return Math.floor(diff/86400) + ' 天前';
-  if (diff < 86400*365)    return Math.floor(diff/86400/30) + ' 個月前';
-  return Math.floor(diff/86400/365) + ' 年前';
+// 等待
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
 }
 
 // ============================================================
@@ -1621,61 +2592,10 @@ function formatRelTime(dateStr) {
 // ============================================================
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    document.querySelectorAll('.modal-overlay.active').forEach(m => closeModal(m.id));
+    document.getElementById('articleModal')?.classList.remove('active');
+    document.getElementById('previewModal')?.classList.remove('active');
+    document.getElementById('editUserModal')?.classList.remove('active');
   }
 });
-
-// ============================================================
-// 初始化事件監聽（DOMContentLoaded）
-// ============================================================
-document.addEventListener('DOMContentLoaded', () => {
-  // 搜尋框 Enter 鍵
-  const si = document.getElementById('searchInput');
-  if (si) si.addEventListener('keypress', e => { if (e.key==='Enter') doSearch(); });
-
-  // 文章內容字數統計
-  const ac = document.getElementById('articleContent');
-  if (ac) ac.addEventListener('input', () => {
-    document.getElementById('contentCharCount').textContent = ac.value.length;
-  });
-
-  // 自動儲存草稿（每 30 秒）
-  setInterval(() => {
-    const title   = document.getElementById('articleTitle');
-    const content = document.getElementById('articleContent');
-    if (title && content && (title.value || content.value)) {
-      localStorage.setItem('nb_draft', JSON.stringify({
-        title:   title.value,
-        content: content.value,
-        tags:    document.getElementById('articleTags')?.value || '',
-        savedAt: new Date().toISOString()
-      }));
-      const badge = document.getElementById('writeDraftBadge');
-      if (badge) {
-        badge.style.display = 'inline-flex';
-        setTimeout(() => { badge.style.display = 'none'; }, 2000);
-      }
-    }
-  }, 30000);
-
-  // 恢復草稿提示
-  const draft = localStorage.getItem('nb_draft');
-  if (draft) {
-    try {
-      const d = JSON.parse(draft);
-      const savedTime = formatRelTime(d.savedAt);
-      const restore = confirm(`發現 ${savedTime} 的草稿：「${d.title}」\n是否恢復？`);
-      if (restore) {
-        document.getElementById('articleTitle').value   = d.title   || '';
-        document.getElementById('articleContent').value = d.content || '';
-        document.getElementById('articleTags').value    = d.tags    || '';
-        document.getElementById('contentCharCount').textContent = (d.content||'').length;
-        showToast('草稿已恢復', 'success');
-      }
-      localStorage.removeItem('nb_draft');
-    } catch(e) { localStorage.removeItem('nb_draft'); }
-  }
-});
-</script>
 </body>
 </html>
