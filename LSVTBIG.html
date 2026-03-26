@@ -1287,14 +1287,14 @@
 // ============================================================
 // 全域變數
 // ============================================================
-let currentUser     = null;
-let currentToken    = localStorage.getItem('nb_token') || null;
-let currentPage     = 1;
-let currentCategory = '';
-let currentKeyword  = '';
-let pendingFiles    = [];
+let currentUser      = null;
+let currentToken     = localStorage.getItem('nb_token') || null;
+let currentPage      = 1;
+let currentCategory  = '';
+let currentKeyword   = '';
+let pendingFiles     = [];
 let editingArticleId = null;
-let draftTimer      = null;
+let draftTimer       = null;
 
 // ============================================================
 // 初始化
@@ -1302,44 +1302,40 @@ let draftTimer      = null;
 window.onload = async function () {
   document.getElementById('appName').textContent = APP_NAME;
 
-  // 設定檢查
-  if (!LIFF_ID || LIFF_ID === '2009456572-AUDE1qmM') {
+  if (!LIFF_ID || LIFF_ID === 'YOUR_LIFF_ID') {
     showConfigError('LIFF_ID 尚未設定，請在 Code.gs 填入正確的 LIFF_ID');
     return;
   }
-  if (!GAS_URL || GAS_URL.trim() === 'https://script.google.com/macros/s/AKfycbxPzGRE7nYA3pQjgkX-LjUa6AG3kO13a1zOlZGAy7FL3AKsReNUrZFsKZHhdZJitJ8rzA/exec') {
+  if (!GAS_URL || GAS_URL.trim() === '') {
     showConfigError('GAS_URL 無法取得，請確認已正確部署');
     return;
   }
 
-  // 有 Token → 嘗試自動登入
   if (currentToken) {
     showLoading('自動登入中...');
     await autoLogin();
     hideLoading();
   }
-  // 否則停在登入頁
 };
 
 // ============================================================
-// LIFF 初始化與登入
+// ★ 核心修正：將所有需要被 onclick 呼叫的函式掛載到 window
 // ============================================================
-async function initLiff() {
+
+// ── LIFF 登入 ──
+window.initLiff = async function () {
   showLoading('連接 LINE 中...');
   try {
     await liff.init({ liffId: LIFF_ID });
-
     if (!liff.isLoggedIn()) {
       liff.login({ redirectUri: location.href });
       return;
     }
-
     const profile = await liff.getProfile();
     const idToken = liff.getIDToken();
     hideLoading();
     showToast('LINE 授權成功！', 'success');
     showRegisterPage(profile, idToken);
-
   } catch (err) {
     hideLoading();
     let msg = 'LIFF 初始化失敗';
@@ -1353,23 +1349,17 @@ async function initLiff() {
     showToast(msg, 'error');
     console.error('LIFF Error:', err);
   }
-}
+};
 
-// ============================================================
-// 顯示實名制登記頁
-// ============================================================
-function showRegisterPage(profile, idToken) {
-  window._pendingProfile = profile;
-  window._pendingIdToken = idToken;
-  const el = document.getElementById('regDisplayName');
-  if (el) el.value = profile.displayName || '';
-  showPage('register');
-}
+// ── 遊客模式 ──
+window.guestMode = function () {
+  currentUser  = { role: 'guest', displayName: '遊客', pictureUrl: '' };
+  currentToken = null;
+  enterApp();
+};
 
-// ============================================================
-// 提交實名制登記
-// ============================================================
-async function submitRegister() {
+// ── 實名制登記 ──
+window.submitRegister = async function () {
   const realName = (document.getElementById('regRealName').value || '').trim();
   if (!realName) { showToast('請輸入真實姓名', 'error'); return; }
 
@@ -1385,8 +1375,8 @@ async function submitRegister() {
     displayName: profile.displayName,
     pictureUrl:  profile.pictureUrl || '',
     realName,
-    email: (document.getElementById('regEmail')?.value || '').trim(),
-    phone: (document.getElementById('regPhone')?.value || '').trim(),
+    email:   (document.getElementById('regEmail')?.value   || '').trim(),
+    phone:   (document.getElementById('regPhone')?.value   || '').trim(),
     idToken: window._pendingIdToken || ''
   });
 
@@ -1401,106 +1391,18 @@ async function submitRegister() {
   } else {
     showToast('登記失敗：' + res.message, 'error');
   }
-}
+};
 
-// ============================================================
-// 遊客模式
-// ============================================================
-function guestMode() {
-  currentUser  = { role: 'guest', displayName: '遊客', pictureUrl: '' };
-  currentToken = null;
-  enterApp();
-}
-
-// ============================================================
-// 自動登入
-// ============================================================
-async function autoLogin() {
-  try {
-    const res = await apiPost({ action: 'getUserProfile', token: currentToken });
-    if (res.success) {
-      currentUser = res.user;
-      enterApp();
-    } else {
-      currentToken = null;
-      localStorage.removeItem('nb_token');
-    }
-  } catch (e) {
-    currentToken = null;
-    localStorage.removeItem('nb_token');
-  }
-}
-
-// ============================================================
-// 進入 App 主介面
-// ============================================================
-function enterApp() {
-  // 更新 Header 使用者資訊
-  renderUserBar();
-
-  // 顯示底部導覽列
-  document.getElementById('nav').style.display = 'flex';
-
-  // 管理頁籤（管理者 / 版主才顯示）
-  const adminNav = document.getElementById('nav-admin');
-  if (adminNav) {
-    const role = currentUser ? currentUser.role : 'guest';
-    adminNav.style.display =
-      ['admin','mod'].includes(role) ? 'flex' : 'none';
-  }
-
-  // 遊客隱藏撰寫頁籤
-  const writeNav = document.getElementById('nav-write');
-  if (writeNav) {
-    writeNav.style.display =
-      currentUser && currentUser.role !== 'guest' ? 'flex' : 'none';
-  }
-
-  // 切換至文章列表
-  switchTab('articles');
-}
-
-// ============================================================
-// 渲染 Header 使用者資訊
-// ============================================================
-function renderUserBar() {
-  const bar  = document.getElementById('userBar');
-  if (!bar || !currentUser) return;
-
-  const roleMap = {
-    admin: { label: '管理者', cls: 'rb-admin' },
-    mod:   { label: '版主',   cls: 'rb-mod'   },
-    vip:   { label: 'VIP',    cls: 'rb-vip'   },
-    user:  { label: '會員',   cls: 'rb-user'  },
-    guest: { label: '遊客',   cls: 'rb-guest' }
-  };
-  const r = roleMap[currentUser.role] || roleMap.guest;
-
-  bar.innerHTML = `
-    <span class="role-badge ${r.cls}">${r.label}</span>
-    <span class="user-name">${escHtml(currentUser.displayName || '使用者')}</span>
-    <img class="avatar"
-      src="${escHtml(currentUser.pictureUrl || 'https://i.pravatar.cc/150?img=0')}"
-      alt="avatar"
-      onerror="this.src='https://i.pravatar.cc/150?img=0'"
-      onclick="switchTab('profile')">`;
-}
-
-// ============================================================
-// 頁籤切換
-// ============================================================
-function switchTab(tab) {
-  // 隱藏所有頁面
+// ── 頁籤切換 ──
+window.switchTab = function (tab) {
   document.querySelectorAll('#pages .page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
-  // 顯示目標頁面
   const page = document.getElementById('page-' + tab);
   const nav  = document.getElementById('nav-' + tab);
   if (page) page.classList.add('active');
   if (nav)  nav.classList.add('active');
 
-  // 各頁初始化
   switch (tab) {
     case 'articles': loadArticles();  break;
     case 'write':    initWritePage(); break;
@@ -1508,147 +1410,31 @@ function switchTab(tab) {
     case 'admin':    loadUsers();     break;
     case 'profile':  loadProfile();   break;
   }
-}
+};
 
-// ============================================================
-// 顯示指定頁面（登入流程用）
-// ============================================================
-function showPage(name) {
-  document.querySelectorAll('#pages .page').forEach(p => p.classList.remove('active'));
-  const p = document.getElementById('page-' + name);
-  if (p) p.classList.add('active');
-}
-
-// ============================================================
-// 文章列表
-// ============================================================
-async function loadArticles(page) {
-  currentPage = page || 1;
-  const list  = document.getElementById('articleList');
-  list.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><h3>載入中...</h3></div>';
-
-  const res = await apiPost({
-    action:   currentKeyword ? 'searchArticles' : 'listArticles',
-    token:    currentToken,
-    page:     currentPage,
-    pageSize: 8,
-    category: currentCategory,
-    keyword:  currentKeyword
-  });
-
-  if (!res.success) {
-    list.innerHTML = `<div class="empty-state">
-      <div class="empty-icon">❌</div>
-      <h3>載入失敗</h3><p>${escHtml(res.message)}</p></div>`;
-    return;
-  }
-
-  const { articles, pagination } = res;
-
-  if (!articles || articles.length === 0) {
-    list.innerHTML = `<div class="empty-state">
-      <div class="empty-icon">📭</div>
-      <h3>${currentKeyword ? '找不到相關文章' : '目前沒有文章'}</h3>
-      <p>${currentKeyword ? '請嘗試其他關鍵字' : '成為第一個發文的人吧！'}</p></div>`;
-    renderPagination(pagination);
-    return;
-  }
-
-  list.innerHTML = articles.map(a => renderArticleCard(a)).join('');
-  renderPagination(pagination);
-}
-
-// ============================================================
-// 渲染文章卡片
-// ============================================================
-function renderArticleCard(a) {
-  const visMap = {
-    public:  { label: '🌐 公開',  cls: 'vb-public'  },
-    vip:     { label: '👑 VIP',   cls: 'vb-vip'     },
-    private: { label: '🔒 私人',  cls: 'vb-private' }
-  };
-  const vis  = visMap[a.visibility] || visMap.public;
-  const tags = (a.tags || []).slice(0, 3)
-    .map(t => `<span class="tag-item">${escHtml(t)}</span>`).join('');
-  const date = a.createdAt ? String(a.createdAt).substr(0, 10) : '';
-
-  return `
-    <div class="article-card" onclick="openArticle('${escHtml(a.articleId)}')">
-      <div class="card-top">
-        <div class="card-title">${escHtml(a.title)}</div>
-        <span class="vis-badge ${vis.cls}">${vis.label}</span>
-      </div>
-      <div class="card-summary">${escHtml(a.summary || '')}</div>
-      <div class="card-meta">
-        <div class="card-meta-left">
-          <span class="cat-tag">${escHtml(a.category || '未分類')}</span>
-          <span class="author-name">
-            <i class="fas fa-user" style="font-size:10px"></i>
-            ${escHtml(a.authorName || '')}
-          </span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="read-count">
-            <i class="fas fa-eye"></i> ${a.readCount || 0}
-          </span>
-          <span style="font-size:11px;color:var(--muted)">${date}</span>
-        </div>
-      </div>
-      ${tags ? `<div class="tag-list">${tags}</div>` : ''}
-    </div>`;
-}
-
-// ============================================================
-// 分頁渲染
-// ============================================================
-function renderPagination(p) {
-  const el = document.getElementById('pagination');
-  if (!p || p.totalPages <= 1) { el.innerHTML = ''; return; }
-
-  let html = '';
-  // 上一頁
-  html += `<button class="page-btn" ${p.page <= 1 ? 'disabled' : ''}
-    onclick="loadArticles(${p.page - 1})">
-    <i class="fas fa-chevron-left"></i></button>`;
-
-  // 頁碼（最多顯示 5 個）
-  const start = Math.max(1, p.page - 2);
-  const end   = Math.min(p.totalPages, start + 4);
-  for (let i = start; i <= end; i++) {
-    html += `<button class="page-btn ${i === p.page ? 'active' : ''}"
-      onclick="loadArticles(${i})">${i}</button>`;
-  }
-
-  // 下一頁
-  html += `<button class="page-btn" ${p.page >= p.totalPages ? 'disabled' : ''}
-    onclick="loadArticles(${p.page + 1})">
-    <i class="fas fa-chevron-right"></i></button>`;
-
-  html += `<span class="page-info">${p.page} / ${p.totalPages} 頁・共 ${p.total} 篇</span>`;
-  el.innerHTML = html;
-}
-
-// ============================================================
-// 搜尋 & 分類篩選
-// ============================================================
-function doSearch() {
+// ── 搜尋 ──
+window.doSearch = function () {
   currentKeyword = (document.getElementById('searchInput').value || '').trim();
   currentPage    = 1;
   loadArticles(1);
-}
+};
 
-function filterCategory(cat, btn) {
+// ── 分類篩選 ──
+window.filterCategory = function (cat, btn) {
   currentCategory = cat;
   currentPage     = 1;
   document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   loadArticles(1);
-}
+};
 
-// ============================================================
-// 開啟文章詳情
-// ============================================================
-async function openArticle(articleId) {
+// ── 文章分頁 ──
+window.loadArticles = function (page) {
+  return loadArticles(page);
+};
+
+// ── 開啟文章 ──
+window.openArticle = async function (articleId) {
   showLoading('載入文章...');
   const res = await apiPost({
     action: 'getArticle', token: currentToken, articleId
@@ -1658,13 +1444,11 @@ async function openArticle(articleId) {
   if (!res.success) { showToast(res.message, 'error'); return; }
 
   const a    = res.article;
-  const role = currentUser ? currentUser.role : 'guest';
+  const role = currentUser ? currentUser.role   : 'guest';
   const uid  = currentUser ? currentUser.userId : null;
 
-  // 填入 Modal
   document.getElementById('modalTitle').textContent = a.title || '';
 
-  // Meta 資訊
   const visMap = {
     public:  '<span class="vis-badge vb-public">🌐 公開</span>',
     vip:     '<span class="vis-badge vb-vip">👑 VIP</span>',
@@ -1684,294 +1468,32 @@ async function openArticle(articleId) {
       ${String(a.createdAt || '').substr(0, 16)}
     </span>`;
 
-  // 文章內容
   document.getElementById('modalContent').textContent = a.content || '';
-
-  // 附件
   renderAttachments(a.files || [], a.articleId);
 
-  // Footer 按鈕
-  const isOwner  = a.authorId === uid;
-  const canEdit  = ['admin','mod'].includes(role) || isOwner;
-  let footerHtml = '';
-  if (canEdit) {
-    footerHtml += `
-      <button class="btn btn-secondary" style="flex:1"
-        onclick="editArticle('${escHtml(a.articleId)}')">
-        <i class="fas fa-edit"></i> 編輯
-      </button>
-      <button class="btn btn-danger" style="flex:1"
-        onclick="confirmDeleteArticle('${escHtml(a.articleId)}')">
-        <i class="fas fa-trash"></i> 刪除
-      </button>`;
-  }
-  document.getElementById('modalFooter').innerHTML = footerHtml;
+  const isOwner = a.authorId === uid;
+  const canEdit = ['admin','mod'].includes(role) || isOwner;
+  document.getElementById('modalFooter').innerHTML = canEdit ? `
+    <button class="btn btn-secondary" style="flex:1"
+      onclick="window.editArticle('${escHtml(a.articleId)}')">
+      <i class="fas fa-edit"></i> 編輯
+    </button>
+    <button class="btn btn-danger" style="flex:1"
+      onclick="window.confirmDeleteArticle('${escHtml(a.articleId)}')">
+      <i class="fas fa-trash"></i> 刪除
+    </button>` : '';
 
-  // 顯示 Modal
   document.getElementById('articleModal').classList.add('active');
-}
+};
 
-// ============================================================
-// 渲染附件列表
-// ============================================================
-function renderAttachments(files, articleId) {
-  const el = document.getElementById('modalAttach');
-  if (!files || files.length === 0) { el.innerHTML = ''; return; }
-
-  const items = files.map(f => {
-    const emoji = getFileEmoji(f.fileType);
-    return `
-      <div class="attach-item">
-        <span class="attach-icon">${emoji}</span>
-        <div class="attach-info">
-          <div class="attach-name" title="${escHtml(f.fileName)}">${escHtml(f.fileName)}</div>
-          <div class="attach-size">${f.fileSizeStr || ''} · ${escHtml(f.uploaderName || '')}</div>
-        </div>
-        <div class="attach-actions">
-          <button class="btn btn-secondary btn-sm"
-            onclick="previewFile('${escHtml(f.previewUrl)}','${escHtml(f.fileType)}','${escHtml(f.fileName)}')"
-            title="預覽">
-            <i class="fas fa-eye"></i>
-          </button>
-          <a class="btn btn-secondary btn-sm"
-            href="${escHtml(f.downloadUrl)}" target="_blank" title="下載">
-            <i class="fas fa-download"></i>
-          </a>
-        </div>
-      </div>`;
-  }).join('');
-
-  el.innerHTML = `
-    <div class="attach-title">
-      <i class="fas fa-paperclip"></i> 附件（${files.length} 個）
-    </div>
-    ${items}`;
-}
-
-// ============================================================
-// 關閉文章 Modal
-// ============================================================
-function closeArticleModal(e) {
+// ── 關閉文章 Modal ──
+window.closeArticleModal = function (e) {
   if (e && e.target !== document.getElementById('articleModal')) return;
   document.getElementById('articleModal').classList.remove('active');
-}
+};
 
-// ============================================================
-// 預覽檔案
-// ============================================================
-function previewFile(url, mimeType, fileName) {
-  if (!url) { showToast('預覽連結無效', 'error'); return; }
-
-  const modal   = document.getElementById('previewModal');
-  const content = document.getElementById('previewContent');
-
-  if (mimeType && mimeType.startsWith('image/')) {
-    content.innerHTML = `<img src="${escHtml(url)}" alt="${escHtml(fileName)}"
-      onerror="showToast('圖片載入失敗','error');closePreview()">`;
-  } else {
-    content.innerHTML = `<iframe src="${escHtml(url)}"
-      title="${escHtml(fileName)}" allowfullscreen></iframe>`;
-  }
-
-  modal.classList.add('active');
-}
-
-function closePreview() {
-  document.getElementById('previewModal').classList.remove('active');
-  document.getElementById('previewContent').innerHTML = '';
-}
-
-// ============================================================
-// 撰寫頁初始化
-// ============================================================
-function initWritePage() {
-  if (!currentUser || currentUser.role === 'guest') {
-    showToast('請先登入才能發文', 'warning');
-    switchTab('articles');
-    return;
-  }
-
-  // 若非編輯模式，嘗試恢復草稿
-  if (!editingArticleId) {
-    restoreDraft();
-  }
-
-  // 啟動自動儲存草稿
-  startDraftTimer();
-}
-
-// ============================================================
-// 字數計數
-// ============================================================
-function updateCharCount(inputId, countId, max) {
-  const val = document.getElementById(inputId)?.value || '';
-  const len = val.length;
-  const el  = document.getElementById(countId);
-  if (!el) return;
-  el.textContent = len + ' / ' + max;
-  el.className   = 'char-count' +
-    (len > max ? ' over' : len > max * 0.9 ? ' warn' : '');
-}
-
-// ============================================================
-// 草稿自動儲存
-// ============================================================
-function startDraftTimer() {
-  if (draftTimer) clearInterval(draftTimer);
-  draftTimer = setInterval(saveDraft, 30000); // 每 30 秒
-}
-
-function saveDraft() {
-  const title   = document.getElementById('articleTitle')?.value   || '';
-  const content = document.getElementById('articleContent')?.value || '';
-  if (!title && !content) return;
-  const draft = {
-    title,
-    content,
-    category:   document.getElementById('articleCategory')?.value   || '',
-    visibility: document.getElementById('articleVisibility')?.value || 'public',
-    tags:       document.getElementById('articleTags')?.value       || '',
-    savedAt:    new Date().toISOString()
-  };
-  localStorage.setItem('nb_draft', JSON.stringify(draft));
-}
-
-function restoreDraft() {
-  try {
-    const raw = localStorage.getItem('nb_draft');
-    if (!raw) return;
-    const draft = JSON.parse(raw);
-    if (!draft.title && !draft.content) return;
-
-    const savedAt = draft.savedAt
-      ? new Date(draft.savedAt).toLocaleString('zh-TW') : '';
-
-    // 詢問是否恢復
-    const el = document.getElementById('page-write');
-    const notice = document.createElement('div');
-    notice.style.cssText =
-      'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;' +
-      'padding:12px;margin-bottom:12px;font-size:13px;display:flex;' +
-      'align-items:center;justify-content:space-between;gap:8px';
-    notice.innerHTML = `
-      <span>📝 發現未完成草稿（${savedAt}），是否恢復？</span>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        <button class="btn btn-secondary btn-sm" onclick="discardDraft(this.closest('div[style]'))">
-          捨棄
-        </button>
-        <button class="btn btn-primary btn-sm" onclick="applyDraft(${JSON.stringify(draft).replace(/"/g,'&quot;')},this.closest('div[style]'))">
-          恢復
-        </button>
-      </div>`;
-    el.insertBefore(notice, el.firstChild);
-  } catch(e) {}
-}
-
-function applyDraft(draft, noticeEl) {
-  const set = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) el.value = val || '';
-  };
-  set('articleTitle',      draft.title);
-  set('articleContent',    draft.content);
-  set('articleCategory',   draft.category);
-  set('articleVisibility', draft.visibility);
-  set('articleTags',       draft.tags);
-  updateCharCount('articleTitle',   'titleCount',   100);
-  updateCharCount('articleContent', 'contentCount', 5000);
-  if (noticeEl) noticeEl.remove();
-  showToast('草稿已恢復', 'success');
-}
-
-function discardDraft(noticeEl) {
-  localStorage.removeItem('nb_draft');
-  if (noticeEl) noticeEl.remove();
-  showToast('草稿已捨棄', 'info');
-}
-
-// ============================================================
-// 清除撰寫表單
-// ============================================================
-function clearWriteForm() {
-  ['articleTitle','articleContent','articleTags'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  const cat = document.getElementById('articleCategory');
-  const vis = document.getElementById('articleVisibility');
-  if (cat) cat.value = '技術';
-  if (vis) vis.value = 'public';
-  pendingFiles = [];
-  renderPendingFiles();
-  editingArticleId = null;
-  updateCharCount('articleTitle',   'titleCount',   100);
-  updateCharCount('articleContent', 'contentCount', 5000);
-  const title = document.getElementById('writePageTitle');
-  if (title) title.textContent = '撰寫文章';
-  const btn = document.getElementById('submitBtn');
-  if (btn) btn.innerHTML = '<i class="fas fa-paper-plane"></i> 發布文章';
-  localStorage.removeItem('nb_draft');
-  if (draftTimer) clearInterval(draftTimer);
-}
-
-// ============================================================
-// 發布 / 更新文章
-// ============================================================
-async function submitArticle() {
-  const title   = (document.getElementById('articleTitle')?.value   || '').trim();
-  const content = (document.getElementById('articleContent')?.value || '').trim();
-
-  if (!title)   { showToast('請輸入文章標題', 'error'); return; }
-  if (!content) { showToast('請輸入文章內容', 'error'); return; }
-  if (!currentToken) { showToast('請先登入', 'error'); return; }
-
-  const tagsRaw = (document.getElementById('articleTags')?.value || '');
-  const tags    = tagsRaw
-    ? tagsRaw.split(',').map(t => t.trim()).filter(t => t)
-    : [];
-  const isEdit  = !!editingArticleId;
-
-  const btn = document.getElementById('submitBtn');
-  setButtonLoading(btn, true, isEdit ? '更新中...' : '發布中...');
-
-  try {
-    const res = await apiPost({
-      action:     isEdit ? 'updateArticle' : 'createArticle',
-      token:      currentToken,
-      articleId:  editingArticleId || undefined,
-      title, content,
-      category:   document.getElementById('articleCategory')?.value   || '未分類',
-      visibility: document.getElementById('articleVisibility')?.value || 'public',
-      tags
-    });
-
-    if (!res.success) {
-      showToast('❌ ' + res.message, 'error');
-      return;
-    }
-
-    const targetId = isEdit ? editingArticleId : res.articleId;
-
-    // 上傳附件
-    if (pendingFiles.length > 0) {
-      showToast('📤 上傳附件中...', 'info');
-      await uploadAllPendingFiles(targetId);
-    }
-
-    showToast(isEdit ? '✅ 文章更新成功！' : '🎉 文章發布成功！', 'success');
-    localStorage.removeItem('nb_draft');
-    clearWriteForm();
-    setTimeout(() => switchTab('articles'), 800);
-
-  } finally {
-    setButtonLoading(btn, false, isEdit ? '更新文章' : '發布文章');
-  }
-}
-
-// ============================================================
-// 編輯文章
-// ============================================================
-async function editArticle(articleId) {
+// ── 編輯文章 ──
+window.editArticle = async function (articleId) {
   showLoading('載入文章...');
   const res = await apiPost({
     action: 'getArticle', token: currentToken, articleId
@@ -2002,14 +1524,12 @@ async function editArticle(articleId) {
   if (btn) btn.innerHTML = '<i class="fas fa-save"></i> 更新文章';
 
   document.getElementById('articleModal').classList.remove('active');
-  switchTab('write');
+  window.switchTab('write');
   showToast('已載入文章，請修改後更新', 'info');
-}
+};
 
-// ============================================================
-// 刪除文章確認
-// ============================================================
-async function confirmDeleteArticle(articleId) {
+// ── 刪除文章 ──
+window.confirmDeleteArticle = async function (articleId) {
   if (!confirm('確定要刪除此文章嗎？\n此操作無法復原。')) return;
   showLoading('刪除中...');
   const res = await apiPost({
@@ -2024,33 +1544,498 @@ async function confirmDeleteArticle(articleId) {
   } else {
     showToast('❌ ' + res.message, 'error');
   }
+};
+
+// ── 發布 / 更新文章 ──
+window.submitArticle = async function () {
+  const title   = (document.getElementById('articleTitle')?.value   || '').trim();
+  const content = (document.getElementById('articleContent')?.value || '').trim();
+
+  if (!title)        { showToast('請輸入文章標題', 'error'); return; }
+  if (!content)      { showToast('請輸入文章內容', 'error'); return; }
+  if (!currentToken) { showToast('請先登入', 'error');       return; }
+
+  const tags   = (document.getElementById('articleTags')?.value || '')
+    .split(',').map(t => t.trim()).filter(t => t);
+  const isEdit = !!editingArticleId;
+  const btn    = document.getElementById('submitBtn');
+
+  setButtonLoading(btn, true, isEdit ? '更新中...' : '發布中...');
+
+  try {
+    const res = await apiPost({
+      action:     isEdit ? 'updateArticle' : 'createArticle',
+      token:      currentToken,
+      articleId:  editingArticleId || undefined,
+      title, content,
+      category:   document.getElementById('articleCategory')?.value   || '未分類',
+      visibility: document.getElementById('articleVisibility')?.value || 'public',
+      tags
+    });
+
+    if (!res.success) { showToast('❌ ' + res.message, 'error'); return; }
+
+    const targetId = isEdit ? editingArticleId : res.articleId;
+
+    if (pendingFiles.length > 0) {
+      showToast('📤 上傳附件中...', 'info');
+      await uploadAllPendingFiles(targetId);
+    }
+
+    showToast(isEdit ? '✅ 文章更新成功！' : '🎉 文章發布成功！', 'success');
+    localStorage.removeItem('nb_draft');
+    clearWriteForm();
+    setTimeout(() => window.switchTab('articles'), 800);
+
+  } finally {
+    setButtonLoading(btn, false, isEdit ? '更新文章' : '發布文章');
+  }
+};
+
+// ── 清除表單 ──
+window.clearWriteForm = function () { clearWriteForm(); };
+
+// ── 字數計數 ──
+window.updateCharCount = function (inputId, countId, max) {
+  updateCharCount(inputId, countId, max);
+};
+
+// ── 拖曳上傳 ──
+window.handleDragOver   = function (e) { handleDragOver(e);   };
+window.handleDragLeave  = function (e) { handleDragLeave(e);  };
+window.handleDrop       = function (e) { handleDrop(e);       };
+window.handleFileSelect = function (e) { handleFileSelect(e); };
+
+// ── 移除待上傳檔案 ──
+window.removePendingFile = function (idx) { removePendingFile(idx); };
+
+// ── 預覽檔案 ──
+window.previewFile = function (url, mimeType, fileName) {
+  previewFile(url, mimeType, fileName);
+};
+
+// ── 關閉預覽 ──
+window.closePreview = function () { closePreview(); };
+
+// ── 使用者管理 ──
+window.loadUsers = function () { return loadUsers(); };
+
+window.openEditModal = function (userId, displayName, role, status) {
+  document.getElementById('editUserId').value     = userId;
+  document.getElementById('editUserName').value   = displayName;
+  document.getElementById('editUserRole').value   = role;
+  document.getElementById('editUserStatus').value = status;
+  document.getElementById('editUserModal').classList.add('active');
+};
+
+window.closeEditModal = function () {
+  document.getElementById('editUserModal').classList.remove('active');
+};
+
+window.saveUserRole = async function () {
+  const targetUserId = document.getElementById('editUserId').value;
+  const newRole      = document.getElementById('editUserRole').value;
+  const newStatus    = document.getElementById('editUserStatus').value;
+
+  showLoading('儲存中...');
+  const res = await apiPost({
+    action: 'updateUserRole', token: currentToken,
+    targetUserId, newRole, status: newStatus
+  });
+  hideLoading();
+
+  if (res.success) {
+    showToast('✅ ' + res.message, 'success');
+    window.closeEditModal();
+    loadUsers();
+  } else {
+    showToast('❌ ' + res.message, 'error');
+  }
+};
+
+// ── 個人資料 ──
+window.saveProfile = async function () {
+  const realName = (document.getElementById('profileRealName')?.value || '').trim();
+  if (!realName) { showToast('真實姓名不可為空', 'error'); return; }
+
+  const btn = document.querySelector('#page-profile .btn-primary');
+  setButtonLoading(btn, true, '儲存中...');
+
+  const res = await apiPost({
+    action: 'updateUserProfile', token: currentToken,
+    realName,
+    email: (document.getElementById('profileEmail')?.value || '').trim(),
+    phone: (document.getElementById('profilePhone')?.value || '').trim()
+  });
+
+  setButtonLoading(btn, false, '儲存變更');
+
+  if (res.success) {
+    currentUser.realName = realName;
+    showToast('✅ 個人資料已更新', 'success');
+  } else {
+    showToast('❌ ' + res.message, 'error');
+  }
+};
+
+// ── 登出 ──
+window.logout = async function () {
+  if (!confirm('確定要登出嗎？')) return;
+  currentToken = null;
+  currentUser  = null;
+  localStorage.removeItem('nb_token');
+  localStorage.removeItem('nb_draft');
+  if (draftTimer) clearInterval(draftTimer);
+
+  try {
+    if (typeof liff !== 'undefined' && liff.isLoggedIn()) liff.logout();
+  } catch(e) {}
+
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('userBar').innerHTML = '';
+  document.querySelectorAll('#pages .page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-login').classList.add('active');
+  showToast('已登出', 'info');
+};
+
+// ── 草稿操作 ──
+window.applyDraft = function (draft, noticeEl) {
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val || '';
+  };
+  set('articleTitle',      draft.title);
+  set('articleContent',    draft.content);
+  set('articleCategory',   draft.category);
+  set('articleVisibility', draft.visibility);
+  set('articleTags',       draft.tags);
+  updateCharCount('articleTitle',   'titleCount',   100);
+  updateCharCount('articleContent', 'contentCount', 5000);
+  if (noticeEl) noticeEl.remove();
+  showToast('草稿已恢復', 'success');
+};
+
+window.discardDraft = function (noticeEl) {
+  localStorage.removeItem('nb_draft');
+  if (noticeEl) noticeEl.remove();
+  showToast('草稿已捨棄', 'info');
+};
+
+// ============================================================
+// 內部函式（不需要 window，供上方 window.xxx 呼叫）
+// ============================================================
+
+function showRegisterPage(profile, idToken) {
+  window._pendingProfile = profile;
+  window._pendingIdToken = idToken;
+  const el = document.getElementById('regDisplayName');
+  if (el) el.value = profile.displayName || '';
+  showPage('register');
 }
 
-// ============================================================
-// 統計頁
-// ============================================================
-async function loadStats() {
-  const el = document.getElementById('statsContent');
-  el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><h3>載入中...</h3></div>';
+function showPage(name) {
+  document.querySelectorAll('#pages .page').forEach(p => p.classList.remove('active'));
+  const p = document.getElementById('page-' + name);
+  if (p) p.classList.add('active');
+}
 
-  const res = await apiPost({ action: 'getStats', token: currentToken });
+function autoLogin() {
+  return apiPost({ action: 'getUserProfile', token: currentToken })
+    .then(res => {
+      if (res.success) {
+        currentUser = res.user;
+        enterApp();
+      } else {
+        currentToken = null;
+        localStorage.removeItem('nb_token');
+      }
+    })
+    .catch(() => {
+      currentToken = null;
+      localStorage.removeItem('nb_token');
+    });
+}
+
+function enterApp() {
+  renderUserBar();
+  document.getElementById('nav').style.display = 'flex';
+
+  const adminNav = document.getElementById('nav-admin');
+  if (adminNav) {
+    const role = currentUser ? currentUser.role : 'guest';
+    adminNav.style.display = ['admin','mod'].includes(role) ? 'flex' : 'none';
+  }
+
+  const writeNav = document.getElementById('nav-write');
+  if (writeNav) {
+    writeNav.style.display =
+      currentUser && currentUser.role !== 'guest' ? 'flex' : 'none';
+  }
+
+  window.switchTab('articles');
+}
+
+function renderUserBar() {
+  const bar = document.getElementById('userBar');
+  if (!bar || !currentUser) return;
+  const roleMap = {
+    admin: { label: '管理者', cls: 'rb-admin' },
+    mod:   { label: '版主',   cls: 'rb-mod'   },
+    vip:   { label: 'VIP',    cls: 'rb-vip'   },
+    user:  { label: '會員',   cls: 'rb-user'  },
+    guest: { label: '遊客',   cls: 'rb-guest' }
+  };
+  const r = roleMap[currentUser.role] || roleMap.guest;
+  bar.innerHTML = `
+    <span class="role-badge ${r.cls}">${r.label}</span>
+    <span class="user-name">${escHtml(currentUser.displayName || '使用者')}</span>
+    <img class="avatar"
+      src="${escHtml(currentUser.pictureUrl || 'https://i.pravatar.cc/150?img=0')}"
+      alt="avatar"
+      onerror="this.src='https://i.pravatar.cc/150?img=0'"
+      onclick="window.switchTab('profile')">`;
+}
+
+async function loadArticles(page) {
+  currentPage = page || 1;
+  const list  = document.getElementById('articleList');
+  list.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><h3>載入中...</h3></div>';
+
+  const res = await apiPost({
+    action:   currentKeyword ? 'searchArticles' : 'listArticles',
+    token:    currentToken,
+    page:     currentPage,
+    pageSize: 8,
+    category: currentCategory,
+    keyword:  currentKeyword
+  });
 
   if (!res.success) {
-    el.innerHTML = `<div class="empty-state">
-      <div class="empty-icon">🔒</div>
-      <h3>無法取得統計</h3>
-      <p>${escHtml(res.message)}</p></div>`;
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">❌</div>
+      <h3>載入失敗</h3><p>${escHtml(res.message)}</p></div>`;
     return;
   }
 
-  const s = res.stats;
+  const { articles, pagination } = res;
+  if (!articles || articles.length === 0) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📭</div>
+      <h3>${currentKeyword ? '找不到相關文章' : '目前沒有文章'}</h3>
+      <p>${currentKeyword ? '請嘗試其他關鍵字' : '成為第一個發文的人吧！'}</p></div>`;
+    renderPagination(pagination);
+    return;
+  }
+
+  list.innerHTML = articles.map(a => renderArticleCard(a)).join('');
+  renderPagination(pagination);
+}
+
+function renderArticleCard(a) {
+  const visMap = {
+    public:  { label: '🌐 公開',  cls: 'vb-public'  },
+    vip:     { label: '👑 VIP',   cls: 'vb-vip'     },
+    private: { label: '🔒 私人',  cls: 'vb-private' }
+  };
+  const vis  = visMap[a.visibility] || visMap.public;
+  const tags = (a.tags || []).slice(0, 3)
+    .map(t => `<span class="tag-item">${escHtml(t)}</span>`).join('');
+  const date = a.createdAt ? String(a.createdAt).substr(0, 10) : '';
+  return `
+    <div class="article-card" onclick="window.openArticle('${escHtml(a.articleId)}')">
+      <div class="card-top">
+        <div class="card-title">${escHtml(a.title)}</div>
+        <span class="vis-badge ${vis.cls}">${vis.label}</span>
+      </div>
+      <div class="card-summary">${escHtml(a.summary || '')}</div>
+      <div class="card-meta">
+        <div class="card-meta-left">
+          <span class="cat-tag">${escHtml(a.category || '未分類')}</span>
+          <span class="author-name">
+            <i class="fas fa-user" style="font-size:10px"></i>
+            ${escHtml(a.authorName || '')}
+          </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="read-count"><i class="fas fa-eye"></i> ${a.readCount || 0}</span>
+          <span style="font-size:11px;color:var(--muted)">${date}</span>
+        </div>
+      </div>
+      ${tags ? `<div class="tag-list">${tags}</div>` : ''}
+    </div>`;
+}
+
+function renderPagination(p) {
+  const el = document.getElementById('pagination');
+  if (!p || p.totalPages <= 1) { el.innerHTML = ''; return; }
+  let html = '';
+  html += `<button class="page-btn" ${p.page <= 1 ? 'disabled' : ''}
+    onclick="window.loadArticles(${p.page - 1})">
+    <i class="fas fa-chevron-left"></i></button>`;
+  const start = Math.max(1, p.page - 2);
+  const end   = Math.min(p.totalPages, start + 4);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="page-btn ${i === p.page ? 'active' : ''}"
+      onclick="window.loadArticles(${i})">${i}</button>`;
+  }
+  html += `<button class="page-btn" ${p.page >= p.totalPages ? 'disabled' : ''}
+    onclick="window.loadArticles(${p.page + 1})">
+    <i class="fas fa-chevron-right"></i></button>`;
+  html += `<span class="page-info">${p.page} / ${p.totalPages} 頁・共 ${p.total} 篇</span>`;
+  el.innerHTML = html;
+}
+
+function renderAttachments(files, articleId) {
+  const el = document.getElementById('modalAttach');
+  if (!files || files.length === 0) { el.innerHTML = ''; return; }
+  const items = files.map(f => `
+    <div class="attach-item">
+      <span class="attach-icon">${getFileEmoji(f.fileType)}</span>
+      <div class="attach-info">
+        <div class="attach-name" title="${escHtml(f.fileName)}">${escHtml(f.fileName)}</div>
+        <div class="attach-size">${f.fileSizeStr || ''} · ${escHtml(f.uploaderName || '')}</div>
+      </div>
+      <div class="attach-actions">
+        <button class="btn btn-secondary btn-sm"
+          onclick="window.previewFile('${escHtml(f.previewUrl)}','${escHtml(f.fileType)}','${escHtml(f.fileName)}')"
+          title="預覽"><i class="fas fa-eye"></i>
+        </button>
+        <a class="btn btn-secondary btn-sm"
+          href="${escHtml(f.downloadUrl)}" target="_blank" title="下載">
+          <i class="fas fa-download"></i>
+        </a>
+      </div>
+    </div>`).join('');
+  el.innerHTML = `
+    <div class="attach-title">
+      <i class="fas fa-paperclip"></i> 附件（${files.length} 個）
+    </div>${items}`;
+}
+
+function previewFile(url, mimeType, fileName) {
+  if (!url) { showToast('預覽連結無效', 'error'); return; }
+  const modal   = document.getElementById('previewModal');
+  const content = document.getElementById('previewContent');
+  if (mimeType && mimeType.startsWith('image/')) {
+    content.innerHTML = `<img src="${escHtml(url)}" alt="${escHtml(fileName)}"
+      onerror="showToast('圖片載入失敗','error');window.closePreview()">`;
+  } else {
+    content.innerHTML = `<iframe src="${escHtml(url)}"
+      title="${escHtml(fileName)}" allowfullscreen></iframe>`;
+  }
+  modal.classList.add('active');
+}
+
+function closePreview() {
+  document.getElementById('previewModal').classList.remove('active');
+  document.getElementById('previewContent').innerHTML = '';
+}
+
+function initWritePage() {
+  if (!currentUser || currentUser.role === 'guest') {
+    showToast('請先登入才能發文', 'warning');
+    window.switchTab('articles');
+    return;
+  }
+  if (!editingArticleId) restoreDraft();
+  startDraftTimer();
+}
+
+function updateCharCount(inputId, countId, max) {
+  const val = document.getElementById(inputId)?.value || '';
+  const len = val.length;
+  const el  = document.getElementById(countId);
+  if (!el) return;
+  el.textContent = len + ' / ' + max;
+  el.className   = 'char-count' +
+    (len > max ? ' over' : len > max * 0.9 ? ' warn' : '');
+}
+
+function startDraftTimer() {
+  if (draftTimer) clearInterval(draftTimer);
+  draftTimer = setInterval(saveDraft, 30000);
+}
+
+function saveDraft() {
+  const title   = document.getElementById('articleTitle')?.value   || '';
+  const content = document.getElementById('articleContent')?.value || '';
+  if (!title && !content) return;
+  localStorage.setItem('nb_draft', JSON.stringify({
+    title, content,
+    category:   document.getElementById('articleCategory')?.value   || '',
+    visibility: document.getElementById('articleVisibility')?.value || 'public',
+    tags:       document.getElementById('articleTags')?.value       || '',
+    savedAt:    new Date().toISOString()
+  }));
+}
+
+function restoreDraft() {
+  try {
+    const raw = localStorage.getItem('nb_draft');
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    if (!draft.title && !draft.content) return;
+    const savedAt = draft.savedAt
+      ? new Date(draft.savedAt).toLocaleString('zh-TW') : '';
+    const el     = document.getElementById('page-write');
+    const notice = document.createElement('div');
+    notice.style.cssText =
+      'background:#fff3cd;border:1px solid #ffc107;border-radius:8px;' +
+      'padding:12px;margin-bottom:12px;font-size:13px;display:flex;' +
+      'align-items:center;justify-content:space-between;gap:8px';
+    const draftJson = escHtml(JSON.stringify(draft));
+    notice.innerHTML = `
+      <span>📝 發現未完成草稿（${savedAt}），是否恢復？</span>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-secondary btn-sm"
+          onclick="window.discardDraft(this.closest('div[style]'))">捨棄</button>
+        <button class="btn btn-primary btn-sm"
+          onclick="window.applyDraft(JSON.parse(this.dataset.draft),this.closest('div[style]'))"
+          data-draft="${draftJson}">恢復</button>
+      </div>`;
+    el.insertBefore(notice, el.firstChild);
+  } catch(e) { console.error('restoreDraft:', e); }
+}
+
+function clearWriteForm() {
+  ['articleTitle','articleContent','articleTags'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const cat = document.getElementById('articleCategory');
+  const vis = document.getElementById('articleVisibility');
+  if (cat) cat.value = '技術';
+  if (vis) vis.value = 'public';
+  pendingFiles     = [];
+  editingArticleId = null;
+  renderPendingFiles();
+  updateCharCount('articleTitle',   'titleCount',   100);
+  updateCharCount('articleContent', 'contentCount', 5000);
+  const t = document.getElementById('writePageTitle');
+  if (t) t.textContent = '撰寫文章';
+  const b = document.getElementById('submitBtn');
+  if (b) b.innerHTML = '<i class="fas fa-paper-plane"></i> 發布文章';
+  localStorage.removeItem('nb_draft');
+  if (draftTimer) clearInterval(draftTimer);
+}
+
+async function loadStats() {
+  const el = document.getElementById('statsContent');
+  el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><h3>載入中...</h3></div>';
+  const res = await apiPost({ action: 'getStats', token: currentToken });
+  if (!res.success) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🔒</div>
+      <h3>無法取得統計</h3><p>${escHtml(res.message)}</p></div>`;
+    return;
+  }
+  const s       = res.stats;
   const topHtml = (s.topArticles || []).map((a, i) => `
     <div class="top-item">
       <div class="top-rank ${['r1','r2','r3'][i] || ''}">${i + 1}</div>
       <div class="top-title">${escHtml(a.title)}</div>
       <div class="top-count"><i class="fas fa-eye"></i> ${a.readCount}</div>
     </div>`).join('');
-
   el.innerHTML = `
     <div class="stats-grid">
       <div class="stat-card">
@@ -2082,22 +2067,16 @@ async function loadStats() {
     </div>`;
 }
 
-// ============================================================
-// 管理頁：使用者列表
-// ============================================================
 async function loadUsers() {
   const el = document.getElementById('userList');
   el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><h3>載入中...</h3></div>';
-
   const res = await apiPost({ action: 'listUsers', token: currentToken });
-
   if (!res.success) {
     el.innerHTML = `<div class="empty-state">
       <div class="empty-icon">❌</div>
       <h3>載入失敗</h3><p>${escHtml(res.message)}</p></div>`;
     return;
   }
-
   const roleMap = {
     admin: { label: '👑 管理者', cls: 'rb-admin' },
     mod:   { label: '🛡️ 版主',  cls: 'rb-mod'   },
@@ -2110,10 +2089,8 @@ async function loadUsers() {
     inactive: { label: '⏸️ 停用', cls: 'sb-inactive' },
     banned:   { label: '🚫 封禁', cls: 'sb-banned'   }
   };
-
   const isAdmin = currentUser && currentUser.role === 'admin';
-
-  el.innerHTML = res.users.map(u => {
+  el.innerHTML = (res.users || []).map(u => {
     const r = roleMap[u.role]     || roleMap.user;
     const s = statusMap[u.status] || statusMap.active;
     return `
@@ -2132,55 +2109,20 @@ async function loadUsers() {
         </div>
         ${isAdmin ? `
           <button class="btn btn-secondary btn-sm"
-            onclick="openEditModal('${escHtml(u.userId)}','${escHtml(u.displayName)}','${u.role}','${u.status}')">
+            onclick="window.openEditModal(
+              '${escHtml(u.userId)}',
+              '${escHtml(u.displayName)}',
+              '${u.role}',
+              '${u.status}')">
             <i class="fas fa-edit"></i>
           </button>` : ''}
       </div>`;
-  }).join('') || '<div class="empty-state"><div class="empty-icon">👥</div><h3>目前沒有使用者</h3></div>';
+  }).join('') ||
+  '<div class="empty-state"><div class="empty-icon">👥</div><h3>目前沒有使用者</h3></div>';
 }
 
-// ============================================================
-// 角色編輯 Modal
-// ============================================================
-function openEditModal(userId, displayName, role, status) {
-  document.getElementById('editUserId').value     = userId;
-  document.getElementById('editUserName').value   = displayName;
-  document.getElementById('editUserRole').value   = role;
-  document.getElementById('editUserStatus').value = status;
-  document.getElementById('editUserModal').classList.add('active');
-}
-
-function closeEditModal() {
-  document.getElementById('editUserModal').classList.remove('active');
-}
-
-async function saveUserRole() {
-  const targetUserId = document.getElementById('editUserId').value;
-  const newRole      = document.getElementById('editUserRole').value;
-  const newStatus    = document.getElementById('editUserStatus').value;
-
-  showLoading('儲存中...');
-  const res = await apiPost({
-    action: 'updateUserRole', token: currentToken,
-    targetUserId, newRole, status: newStatus
-  });
-  hideLoading();
-
-  if (res.success) {
-    showToast('✅ ' + res.message, 'success');
-    closeEditModal();
-    loadUsers();
-  } else {
-    showToast('❌ ' + res.message, 'error');
-  }
-}
-
-// ============================================================
-// 個人資料頁
-// ============================================================
 function loadProfile() {
   if (!currentUser) return;
-
   const roleMap = {
     admin: { label: '👑 管理者', cls: 'rb-admin' },
     mod:   { label: '🛡️ 版主',  cls: 'rb-mod'   },
@@ -2188,12 +2130,10 @@ function loadProfile() {
     user:  { label: '👤 一般會員', cls: 'rb-user' },
     guest: { label: '👁️ 遊客',  cls: 'rb-guest' }
   };
-  const r = roleMap[currentUser.role] || roleMap.guest;
-
+  const r      = roleMap[currentUser.role] || roleMap.guest;
   const avatar = document.getElementById('profileAvatar');
   const name   = document.getElementById('profileName');
   const role   = document.getElementById('profileRole');
-
   if (avatar) {
     avatar.src     = currentUser.pictureUrl || 'https://i.pravatar.cc/150?img=0';
     avatar.onerror = () => { avatar.src = 'https://i.pravatar.cc/150?img=0'; };
@@ -2201,7 +2141,6 @@ function loadProfile() {
   if (name) name.textContent = currentUser.displayName || '';
   if (role) role.innerHTML   =
     `<span class="role-badge ${r.cls}" style="font-size:13px;padding:4px 14px">${r.label}</span>`;
-
   const set = (id, val) => {
     const el = document.getElementById(id);
     if (el) el.value = val || '';
@@ -2211,72 +2150,17 @@ function loadProfile() {
   set('profilePhone',    currentUser.phone);
 }
 
-async function saveProfile() {
-  const realName = (document.getElementById('profileRealName')?.value || '').trim();
-  if (!realName) { showToast('真實姓名不可為空', 'error'); return; }
-
-  const btn = document.querySelector('#page-profile .btn-primary');
-  setButtonLoading(btn, true, '儲存中...');
-
-  const res = await apiPost({
-    action: 'updateUserProfile', token: currentToken,
-    realName,
-    email: (document.getElementById('profileEmail')?.value || '').trim(),
-    phone: (document.getElementById('profilePhone')?.value || '').trim()
-  });
-
-  setButtonLoading(btn, false, '儲存變更');
-
-  if (res.success) {
-    currentUser.realName = realName;
-    showToast('✅ 個人資料已更新', 'success');
-  } else {
-    showToast('❌ ' + res.message, 'error');
-  }
-}
-
-// ============================================================
-// 登出
-// ============================================================
-async function logout() {
-  if (!confirm('確定要登出嗎？')) return;
-  currentToken = null;
-  currentUser  = null;
-  localStorage.removeItem('nb_token');
-  localStorage.removeItem('nb_draft');
-  if (draftTimer) clearInterval(draftTimer);
-
-  try {
-    if (typeof liff !== 'undefined' && liff.isLoggedIn()) {
-      liff.logout();
-    }
-  } catch(e) {}
-
-  // 重置 UI
-  document.getElementById('nav').style.display = 'none';
-  document.getElementById('userBar').innerHTML = '';
-  document.querySelectorAll('#pages .page').forEach(p => p.classList.remove('active'));
-  document.getElementById('page-login').classList.add('active');
-  showToast('已登出', 'info');
-}
-
-// ============================================================
-// 附件上傳模組
-// ============================================================
+// ── 附件上傳 ──
 const ALLOWED_TYPES = [
   'image/jpeg','image/jpg','image/png','image/gif','image/webp',
-  'image/svg+xml','image/bmp',
-  'application/pdf',
-  'application/msword',
+  'image/svg+xml','image/bmp','application/pdf','application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'text/plain','text/csv',
-  'application/zip','application/x-zip-compressed',
-  'video/mp4','video/quicktime',
-  'audio/mpeg','audio/wav'
+  'text/plain','text/csv','application/zip','application/x-zip-compressed',
+  'video/mp4','video/quicktime','audio/mpeg','audio/wav'
 ];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -2301,17 +2185,14 @@ function handleFileSelect(e) {
 function processFiles(files) {
   files.forEach(file => {
     if (file.size > MAX_FILE_SIZE) {
-      showToast(`❌ ${file.name}：超過 10MB 限制`, 'error');
-      return;
+      showToast(`❌ ${file.name}：超過 10MB 限制`, 'error'); return;
     }
     const mime = file.type || getMimeByExt(file.name);
     if (!ALLOWED_TYPES.includes(mime)) {
-      showToast(`❌ ${file.name}：不支援的檔案類型`, 'error');
-      return;
+      showToast(`❌ ${file.name}：不支援的檔案類型`, 'error'); return;
     }
     if (pendingFiles.find(f => f.name === file.name && f.size === file.size)) {
-      showToast(`⚠️ ${file.name} 已在列表中`, 'warning');
-      return;
+      showToast(`⚠️ ${file.name} 已在列表中`, 'warning'); return;
     }
     pendingFiles.push(file);
   });
@@ -2321,19 +2202,16 @@ function processFiles(files) {
 function getMimeByExt(name) {
   const ext = (name || '').split('.').pop().toLowerCase();
   const map = {
-    jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png',
-    gif:'image/gif',  webp:'image/webp', svg:'image/svg+xml',
-    pdf:'application/pdf',
+    jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',
+    webp:'image/webp',svg:'image/svg+xml',pdf:'application/pdf',
     doc:'application/msword',
     docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     xls:'application/vnd.ms-excel',
     xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ppt:'application/vnd.ms-powerpoint',
     pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    txt:'text/plain', csv:'text/csv',
-    zip:'application/zip',
-    mp4:'video/mp4', mov:'video/quicktime',
-    mp3:'audio/mpeg', wav:'audio/wav'
+    txt:'text/plain',csv:'text/csv',zip:'application/zip',
+    mp4:'video/mp4',mov:'video/quicktime',mp3:'audio/mpeg',wav:'audio/wav'
   };
   return map[ext] || 'application/octet-stream';
 }
@@ -2349,15 +2227,18 @@ function getFileEmoji(mime) {
   if (mime.startsWith('audio/'))      return '🎵';
   if (mime.includes('zip'))           return '🗜️';
   if (mime === 'text/plain')          return '📃';
-  if (mime === 'text/csv')            return '📊';
   return '📎';
+}
+
+function removePendingFile(idx) {
+  pendingFiles.splice(idx, 1);
+  renderPendingFiles();
 }
 
 function renderPendingFiles() {
   const container = document.getElementById('filePreviewList');
   if (!container) return;
   if (pendingFiles.length === 0) { container.innerHTML = ''; return; }
-
   container.innerHTML = pendingFiles.map((f, i) => {
     const mime    = f.type || getMimeByExt(f.name);
     const isImage = mime.startsWith('image/');
@@ -2377,16 +2258,15 @@ function renderPendingFiles() {
           </div>
           <div class="file-status" id="fps_${i}">等待上傳</div>
         </div>
-        <button class="btn btn-danger btn-sm" onclick="removePendingFile(${i})">
+        <button class="btn btn-danger btn-sm"
+          onclick="window.removePendingFile(${i})">
           <i class="fas fa-times"></i>
         </button>
       </div>`;
   }).join('');
-
-  // 產生縮圖
   pendingFiles.forEach((f, i) => {
     if (f.type && f.type.startsWith('image/')) {
-      const reader = new FileReader();
+      const reader  = new FileReader();
       reader.onload = e => {
         const el = document.getElementById('thumb_' + i);
         if (el) el.src = e.target.result;
@@ -2394,11 +2274,6 @@ function renderPendingFiles() {
       reader.readAsDataURL(f);
     }
   });
-}
-
-function removePendingFile(idx) {
-  pendingFiles.splice(idx, 1);
-  renderPendingFiles();
 }
 
 function updateFileProgress(idx, pct, text, isError) {
@@ -2409,39 +2284,33 @@ function updateFileProgress(idx, pct, text, isError) {
     bar.style.background = isError ? '#e74c3c' : 'var(--primary)';
   }
   if (txt) {
-    txt.textContent  = text;
-    txt.className    = 'file-status' + (isError ? ' error' : pct === 100 ? ' success' : '');
+    txt.textContent = text;
+    txt.className   = 'file-status' + (isError ? ' error' : pct === 100 ? ' success' : '');
   }
 }
 
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
-    const reader  = new FileReader();
-    reader.onload = e => resolve(e.target.result);
-    reader.onerror = e => reject(new Error('檔案讀取失敗：' + (e.target.error?.message || '未知')));
+    const reader   = new FileReader();
+    reader.onload  = e => resolve(e.target.result);
+    reader.onerror = e => reject(new Error('檔案讀取失敗'));
     reader.readAsDataURL(file);
   });
 }
 
 async function uploadSingleFile(file, articleId, idx) {
-  const MAX_RETRY = 2;
-  for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       updateFileProgress(idx, 10, attempt > 1 ? `重試第 ${attempt} 次...` : '讀取中...', false);
       const dataUrl = await readFileAsBase64(file);
       if (!dataUrl || !dataUrl.includes(',')) throw new Error('Base64 轉換失敗');
-
       updateFileProgress(idx, 50, '上傳中...', false);
-
       const res = await apiPost({
-        action:    'uploadFile',
-        token:     currentToken,
-        articleId,
-        fileName:  file.name,
-        fileType:  file.type || getMimeByExt(file.name),
-        fileData:  dataUrl
+        action: 'uploadFile', token: currentToken, articleId,
+        fileName: file.name,
+        fileType: file.type || getMimeByExt(file.name),
+        fileData: dataUrl
       });
-
       if (res.success) {
         updateFileProgress(idx, 100, '✅ 上傳成功', false);
         return res;
@@ -2450,7 +2319,7 @@ async function uploadSingleFile(file, articleId, idx) {
         return res;
       }
     } catch(err) {
-      if (attempt < MAX_RETRY) {
+      if (attempt < 2) {
         updateFileProgress(idx, 0, '失敗，準備重試...', true);
         await sleep(1500);
       } else {
@@ -2465,22 +2334,20 @@ async function uploadAllPendingFiles(articleId) {
   if (!pendingFiles.length) return [];
   const results = [];
   for (let i = 0; i < pendingFiles.length; i++) {
-    const res = await uploadSingleFile(pendingFiles[i], articleId, i);
-    results.push(res);
+    results.push(await uploadSingleFile(pendingFiles[i], articleId, i));
   }
   const ok   = results.filter(r => r && r.success).length;
   const fail = results.length - ok;
   if (fail === 0) {
     showToast(`✅ ${ok} 個附件上傳成功`, 'success');
   } else {
-    showToast(`⚠️ ${ok} 個成功，${fail} 個失敗`, fail === results.length ? 'error' : 'warning');
+    showToast(`⚠️ ${ok} 個成功，${fail} 個失敗`,
+      fail === results.length ? 'error' : 'warning');
   }
   return results;
 }
 
-// ============================================================
-// API 呼叫
-// ============================================================
+// ── API ──
 async function apiPost(payload) {
   try {
     const res = await fetch(GAS_URL, {
@@ -2496,11 +2363,7 @@ async function apiPost(payload) {
   }
 }
 
-// ============================================================
-// UI 工具函式
-// ============================================================
-
-// Toast 通知
+// ── UI 工具 ──
 function showToast(msg, type) {
   const icons = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' };
   const c     = document.getElementById('toastContainer');
@@ -2516,7 +2379,6 @@ function showToast(msg, type) {
   }, 3500);
 }
 
-// Loading 遮罩
 function showLoading(text) {
   const el = document.getElementById('loadingOverlay');
   const tx = document.getElementById('loadingText');
@@ -2528,16 +2390,14 @@ function hideLoading() {
   if (el) el.classList.remove('active');
 }
 
-// 按鈕 Loading 狀態
 function setButtonLoading(btn, loading, text) {
   if (!btn) return;
-  btn.disabled   = loading;
-  btn.innerHTML  = loading
+  btn.disabled  = loading;
+  btn.innerHTML = loading
     ? `<i class="fas fa-spinner fa-spin"></i> ${escHtml(text)}`
     : `<i class="fas fa-check"></i> ${escHtml(text)}`;
 }
 
-// 顯示設定錯誤
 function showConfigError(msg) {
   const p = document.getElementById('page-login');
   if (!p) return;
@@ -2565,7 +2425,6 @@ function showConfigError(msg) {
   p.classList.add('active');
 }
 
-// HTML 跳脫
 function escHtml(str) {
   if (!str) return '';
   return String(str)
@@ -2573,23 +2432,19 @@ function escHtml(str) {
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-// 格式化檔案大小
 function formatFileSize(bytes) {
-  if (!bytes || bytes <= 0)           return '0 B';
-  if (bytes < 1024)                   return bytes + ' B';
-  if (bytes < 1024 * 1024)            return (bytes / 1024).toFixed(1) + ' KB';
-  if (bytes < 1024 * 1024 * 1024)     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  if (!bytes || bytes <= 0)          return '0 B';
+  if (bytes < 1024)                  return bytes + ' B';
+  if (bytes < 1024 * 1024)           return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024)    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
 }
 
-// 等待
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// ============================================================
-// 鍵盤快捷鍵
-// ============================================================
+// ── 鍵盤快捷鍵 ──
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.getElementById('articleModal')?.classList.remove('active');
