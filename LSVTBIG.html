@@ -659,7 +659,7 @@
 // GAS 注入變數
 // ================================================================
 const LIFF_ID  = '2009456572-AUDE1qmM';
-const GAS_URL  = 'https://script.google.com/macros/s/AKfycbwjU1wnGsctRFM9L2WTofFxhfEzH6sa_LY6_qg4nRRh1PJZDawnjXv8uZdgl_Lk-j6z3g/exec';
+const GAS_URL  = 'https://script.google.com/macros/s/AKfycbwjdSSOm0CCPdpDOL8BclWntAKbaIQVLT616dki12yUCQzws5CmAXKLkSL8ii3FndES/exec';
 const APP_NAME = 'PDA';
 const VERSION  = '85202581';
 
@@ -999,44 +999,49 @@ const nb = (function () {
   // 文章詳情
   // ================================================================
   async function openArticle(articleId) {
-    _showLoading('載入文章...');
-    const res = await _apiPost({ action: 'getArticle', token: currentToken, articleId });
-    _hideLoading();
-    if (!res.success) { _showToast(res.message, 'error'); return; }
+  _showLoading('載入文章...');
+  const res = await _apiPost({ action: 'getArticle', token: currentToken, articleId });
+  _hideLoading();
+  if (!res.success) { _showToast(res.message, 'error'); return; }
 
-    const a    = res.article;
-    const role = currentUser ? currentUser.role   : 'guest';
-    const uid  = currentUser ? currentUser.userId : null;
+  const a    = res.article;
+  const role = currentUser ? currentUser.role   : 'guest';
+  const uid  = currentUser ? currentUser.userId : null;
 
-    document.getElementById('modalTitle').textContent = a.title || '';
+  document.getElementById('modalTitle').textContent = a.title || '';
 
-    const visMap = {
-      public:  '<span class="vis-badge vb-public">🌐 公開</span>',
-      vip:     '<span class="vis-badge vb-vip">👑 VIP</span>',
-      private: '<span class="vis-badge vb-private">🔒 私人</span>'
-    };
-    document.getElementById('modalMeta').innerHTML =
-      (visMap[a.visibility] || visMap.public) +
-      '<span class="cat-tag">'    + _esc(a.category   || '') + '</span>' +
-      '<span class="author-name"><i class="fas fa-user" style="font-size:10px"></i> ' +
-        _esc(a.authorName || '') + '</span>' +
-      '<span class="read-count"><i class="fas fa-eye"></i> ' + (a.readCount || 0) + '</span>' +
-      '<span style="font-size:12px;color:var(--muted)">' +
-        String(a.createdAt || '').substr(0, 16) + '</span>';
+  const visMap = {
+    public:  '<span class="vis-badge vb-public">🌐 公開</span>',
+    vip:     '<span class="vis-badge vb-vip">👑 VIP</span>',
+    private: '<span class="vis-badge vb-private">🔒 私人</span>'
+  };
+  document.getElementById('modalMeta').innerHTML =
+    (visMap[a.visibility] || visMap.public) +
+    '<span class="cat-tag">'    + _esc(a.category   || '') + '</span>' +
+    '<span class="author-name"><i class="fas fa-user" style="font-size:10px"></i> ' +
+      _esc(a.authorName || '') + '</span>' +
+    '<span class="read-count"><i class="fas fa-eye"></i> ' + (a.readCount || 0) + '</span>' +
+    '<span style="font-size:12px;color:var(--muted)">' +
+      String(a.createdAt || '').substr(0, 16) + '</span>';
 
-    document.getElementById('modalContent').textContent = a.content || '';
-    _renderAttachments(a.files || []);
+  document.getElementById('modalContent').textContent = a.content || '';
 
-    const isOwner = a.authorId === uid;
-    const canEdit = ['admin','mod'].includes(role) || isOwner;
-    document.getElementById('modalFooter').innerHTML = canEdit ?
-      '<button class="btn btn-secondary" style="flex:1" onclick="nb.editArticle(\'' + _esc(a.articleId) + '\')">' +
-        '<i class="fas fa-edit"></i> 編輯</button>' +
-      '<button class="btn btn-danger" style="flex:1" onclick="nb.confirmDeleteArticle(\'' + _esc(a.articleId) + '\')">' +
-        '<i class="fas fa-trash"></i> 刪除</button>' : '';
+  // ★ 確保 files 是陣列
+  const files = Array.isArray(a.files) ? a.files : [];
+  console.log('📎 附件數量：', files.length, files); // debug
+  _renderAttachments(files);
 
-    document.getElementById('articleModal').classList.add('active');
-  }
+  const isOwner = a.authorId === uid;
+  const canEdit = ['admin','mod'].includes(role) || isOwner;
+  document.getElementById('modalFooter').innerHTML = canEdit ?
+    '<button class="btn btn-secondary" style="flex:1" onclick="nb.editArticle(\'' + _esc(a.articleId) + '\')">' +
+      '<i class="fas fa-edit"></i> 編輯</button>' +
+    '<button class="btn btn-danger" style="flex:1" onclick="nb.confirmDeleteArticle(\'' + _esc(a.articleId) + '\')">' +
+      '<i class="fas fa-trash"></i> 刪除</button>' : '';
+
+  document.getElementById('articleModal').classList.add('active');
+}
+
 
   function closeArticleModal(e) {
     if (e && e.target !== document.getElementById('articleModal')) return;
@@ -1044,32 +1049,53 @@ const nb = (function () {
   }
 
   function _renderAttachments(files) {
-    const el = document.getElementById('modalAttach');
-    if (!el) return;
-    if (!files || files.length === 0) { el.innerHTML = ''; return; }
-    const items = files.map(f =>
+  const el = document.getElementById('modalAttach');
+  if (!el) return;
+
+  // ★ 防護：確保是陣列且有資料
+  if (!Array.isArray(files) || files.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+
+  const items = files.map(f => {
+    // ★ 防護：確保每個欄位有值
+    const previewUrl  = f.previewUrl  || '';
+    const downloadUrl = f.downloadUrl || '';
+    const fileName    = f.fileName    || '未知檔案';
+    const fileType    = f.fileType    || '';
+    const fileSizeStr = f.fileSizeStr || '';
+    const uploaderName = f.uploaderName || '';
+
+    return (
       '<div class="attach-item">' +
-        '<span class="attach-icon">' + _fileEmoji(f.fileType) + '</span>' +
+        '<span class="attach-icon">' + _fileEmoji(fileType) + '</span>' +
         '<div class="attach-info">' +
-          '<div class="attach-name" title="' + _esc(f.fileName) + '">' + _esc(f.fileName) + '</div>' +
-          '<div class="attach-size">' + (f.fileSizeStr || '') + ' · ' + _esc(f.uploaderName || '') + '</div>' +
+          '<div class="attach-name" title="' + _esc(fileName) + '">' + _esc(fileName) + '</div>' +
+          '<div class="attach-size">' + _esc(fileSizeStr) +
+            (uploaderName ? ' · ' + _esc(uploaderName) : '') + '</div>' +
         '</div>' +
         '<div class="attach-actions">' +
-          '<button class="btn btn-secondary btn-sm"' +
-            ' onclick="nb.previewFile(\'' + _esc(f.previewUrl) + '\',\'' +
-              _esc(f.fileType) + '\',\'' + _esc(f.fileName) + '\')"' +
-            ' title="預覽"><i class="fas fa-eye"></i></button>' +
-          '<a class="btn btn-secondary btn-sm"' +
-            ' href="' + _esc(f.downloadUrl) + '" target="_blank" title="下載">' +
-            '<i class="fas fa-download"></i></a>' +
+          (previewUrl ?
+            '<button class="btn btn-secondary btn-sm"' +
+              ' onclick="nb.previewFile(\'' + _esc(previewUrl) + '\',\'' +
+                _esc(fileType) + '\',\'' + _esc(fileName) + '\')"' +
+              ' title="預覽"><i class="fas fa-eye"></i></button>' : '') +
+          (downloadUrl ?
+            '<a class="btn btn-secondary btn-sm"' +
+              ' href="' + _esc(downloadUrl) + '" target="_blank" title="下載">' +
+              '<i class="fas fa-download"></i></a>' : '') +
         '</div>' +
       '</div>'
-    ).join('');
-    el.innerHTML =
-      '<div class="attach-title">' +
-        '<i class="fas fa-paperclip"></i> 附件（' + files.length + ' 個）' +
-      '</div>' + items;
-  }
+    );
+  }).join('');
+
+  el.innerHTML =
+    '<div class="attach-title">' +
+      '<i class="fas fa-paperclip"></i> 附件（' + files.length + ' 個）' +
+    '</div>' + items;
+}
+
 
   async function editArticle(articleId) {
     _showLoading('載入文章...');
@@ -1231,43 +1257,59 @@ const nb = (function () {
   }
 
   async function submitArticle() {
-    const title   = (document.getElementById('articleTitle')?.value   || '').trim();
-    const content = (document.getElementById('articleContent')?.value || '').trim();
-    if (!title)        { _showToast('請輸入文章標題', 'error'); return; }
-    if (!content)      { _showToast('請輸入文章內容', 'error'); return; }
-    if (!currentToken) { _showToast('請先登入', 'error');       return; }
+  const title   = (document.getElementById('articleTitle')?.value   || '').trim();
+  const content = (document.getElementById('articleContent')?.value || '').trim();
+  if (!title)        { _showToast('請輸入文章標題', 'error'); return; }
+  if (!content)      { _showToast('請輸入文章內容', 'error'); return; }
+  if (!currentToken) { _showToast('請先登入', 'error');       return; }
 
-    const tags   = (document.getElementById('articleTags')?.value || '')
-      .split(',').map(t => t.trim()).filter(t => t);
-    const isEdit = !!editingArticleId;
-    const btn    = document.getElementById('submitBtn');
-    _setButtonLoading(btn, true, isEdit ? '更新中...' : '發布中...');
+  const tags   = (document.getElementById('articleTags')?.value || '')
+    .split(',').map(t => t.trim()).filter(t => t);
+  const isEdit = !!editingArticleId;
+  const btn    = document.getElementById('submitBtn');
+  _setButtonLoading(btn, true, isEdit ? '更新中...' : '發布中...');
 
-    try {
-      const res = await _apiPost({
-        action:     isEdit ? 'updateArticle' : 'createArticle',
-        token:      currentToken,
-        articleId:  editingArticleId || undefined,
-        title, content,
-        category:   document.getElementById('articleCategory')?.value   || '未分類',
-        visibility: document.getElementById('articleVisibility')?.value || 'public',
-        tags
-      });
-      if (!res.success) { _showToast('❌ ' + res.message, 'error'); return; }
+  try {
+    const res = await _apiPost({
+      action:     isEdit ? 'updateArticle' : 'createArticle',
+      token:      currentToken,
+      articleId:  editingArticleId || undefined,
+      title, content,
+      category:   document.getElementById('articleCategory')?.value   || '未分類',
+      visibility: document.getElementById('articleVisibility')?.value || 'public',
+      tags
+    });
+    if (!res.success) { _showToast('❌ ' + res.message, 'error'); return; }
 
-      const targetId = isEdit ? editingArticleId : res.articleId;
-      if (pendingFiles.length > 0) {
-        _showToast('📤 上傳附件中...', 'info');
-        await _uploadAllFiles(targetId);
-      }
-      _showToast(isEdit ? '✅ 文章更新成功！' : '🎉 文章發布成功！', 'success');
-      localStorage.removeItem('nb_draft');
-      clearWriteForm();
-      setTimeout(() => switchTab('articles'), 800);
-    } finally {
-      _setButtonLoading(btn, false, isEdit ? '更新文章' : '發布文章');
+    const targetId = isEdit ? editingArticleId : res.articleId;
+
+    // ★ 有附件才上傳
+    if (pendingFiles.length > 0) {
+      _showToast('📤 上傳附件中...', 'info');
+      await _uploadAllFiles(targetId);
     }
+
+    _showToast(isEdit ? '✅ 文章更新成功！' : '🎉 文章發布成功！', 'success');
+    localStorage.removeItem('nb_draft');
+
+    const hadFiles = pendingFiles.length > 0;
+    clearWriteForm();
+
+    // ★ 若有附件且是編輯模式，重新開啟 modal 顯示最新附件
+    if (hadFiles && isEdit) {
+      setTimeout(() => {
+        switchTab('articles');
+        setTimeout(() => openArticle(targetId), 500);
+      }, 800);
+    } else {
+      setTimeout(() => switchTab('articles'), 800);
+    }
+
+  } finally {
+    _setButtonLoading(btn, false, isEdit ? '<i class="fas fa-save"></i> 更新文章' : '<i class="fas fa-paper-plane"></i> 發布文章');
   }
+}
+
 
   // ================================================================
   // 統計
