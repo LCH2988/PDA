@@ -300,9 +300,10 @@
 </div>
 
 <!-- Tab bar -->
+<!-- FIX #5: 改用 data-tab 屬性取代依賴 DOM index -->
 <div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('post')">✏️ 發文</button>
-  <button class="tab-btn"        onclick="switchTab('feed')">📰 動態牆</button>
+  <button class="tab-btn active" data-tab="post" onclick="switchTab('post')">✏️ 發文</button>
+  <button class="tab-btn"        data-tab="feed" onclick="switchTab('feed')">📰 動態牆</button>
 </div>
 
 <!-- Post tab -->
@@ -380,8 +381,7 @@
 
 <script>
   // ── Configuration ─────────────────────────────────────────
-  // TODO: Replace with your actual values after deployment
-  const GAS_URL = 'https://script.google.com/macros/s/AKfycbx8Vpps5RC_7TlC3SEGFJ3Q-NCbk5LSkROmML4DaXLTvo8BSqf-HL78HGrJucrfcHHb1g/exec';
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbyuG8p9msdbR2By_rc4X0ZxQQK49yrL4W6nrQD780usTMGBcGmnSQRsZuohLurtt0xGOg/exec';
   const LIFF_ID = '2009456572-AUDE1qmM';
 
   // ── App state ─────────────────────────────────────────────
@@ -394,40 +394,45 @@
 
   // ── Type config ───────────────────────────────────────────
   const TYPE_CONFIG = {
-    '文字': { icon: '📝', hint: '輸入文字內容', sub: '',                          accept: '' },
+    '文字': { icon: '📝', hint: '輸入文字內容', sub: '',                           accept: '' },
     '圖片': { icon: '🖼️', hint: '點擊選擇圖片', sub: 'JPG / PNG / GIF，上限 20MB', accept: 'image/*' },
-    '連結': { icon: '🔗', hint: '輸入連結網址', sub: '',                          accept: '' },
-    '影片': { icon: '🎬', hint: '點擊選擇影片', sub: 'MP4 / MOV，上限 20MB',       accept: 'video/*' },
-    '檔案': { icon: '📎', hint: '點擊選擇檔案', sub: '任意格式，上限 20MB',         accept: '*/*' },
+    '連結': { icon: '🔗', hint: '輸入連結網址', sub: '',                           accept: '' },
+    '影片': { icon: '🎬', hint: '點擊選擇影片', sub: 'MP4 / MOV，上限 20MB',        accept: 'video/*' },
+    '檔案': { icon: '📎', hint: '點擊選擇檔案', sub: '任意格式，上限 20MB',          accept: '*/*' },
   };
   const TYPE_ICON = { '文字':'📝', '圖片':'🖼️', '連結':'🔗', '影片':'🎬', '檔案':'📎' };
 
-  // ── Mock data for preview ─────────────────────────────────
+  // ── Mock data ─────────────────────────────────────────────
   const MOCK_USER = {
-    userId:      'U_mock_preview',
-    displayName: '預覽使用者',
-    isAdmin:     true,
-    role:        '管理員',
+    userId: 'U_mock_preview', displayName: '預覽使用者',
+    isAdmin: true, role: '管理員',
   };
   const MOCK_POSTS = [
     {
       postId: 'mock-1', lineUserId: 'U_mock_preview',
       displayName: '預覽使用者', type: '文字',
       content: '這是一則示範文字貼文，實際內容將從 Google 試算表讀取。',
-      fileUrl: '', createdAt: new Date(Date.now() - 60000).toISOString(),
+      fileUrl: '', fileName: '', createdAt: new Date(Date.now() - 60000).toISOString(),
     },
     {
       postId: 'mock-2', lineUserId: 'U_other',
       displayName: '示範成員', type: '連結',
       content: '官方文件\nhttps://developers.line.biz',
-      fileUrl: '', createdAt: new Date(Date.now() - 3600000).toISOString(),
+      fileUrl: '', fileName: '', createdAt: new Date(Date.now() - 3600000).toISOString(),
     },
     {
       postId: 'mock-3', lineUserId: 'U_other',
       displayName: '示範成員', type: '圖片',
-      content: '示範圖片',
+      content: '示範圖片說明',
       fileUrl: 'https://picsum.photos/seed/liff/600/400',
-      createdAt: new Date(Date.now() - 86400000).toISOString(),
+      fileName: '', createdAt: new Date(Date.now() - 86400000).toISOString(),
+    },
+    {
+      postId: 'mock-4', lineUserId: 'U_other',
+      displayName: '示範成員', type: '影片',
+      content: '示範影片說明文字',
+      fileUrl: 'https://example.com/video.mp4',
+      fileName: 'demo.mp4', createdAt: new Date(Date.now() - 172800000).toISOString(),
     },
   ];
 
@@ -435,59 +440,40 @@
   //  INIT
   // ============================================================
   async function init() {
-    // Check if LIFF_ID is still placeholder
     const isPlaceholder = !LIFF_ID || LIFF_ID === 'YOUR_LIFF_ID';
-
     if (isPlaceholder) {
-      // No LIFF ID → enter mock/preview mode immediately
       enterMockMode('尚未設定 LIFF ID，進入預覽模式');
       return;
     }
-
-    // Try LIFF init with timeout guard
     try {
       document.getElementById('loadingMsg').textContent = '正在初始化 LIFF...';
-
-      // 10-second timeout in case SDK hangs
       await Promise.race([
         liff.init({ liffId: LIFF_ID }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('LIFF init timeout')), 10000)
         ),
       ]);
-
       if (!liff.isLoggedIn()) {
-        // In LINE browser → redirect to login
-        if (liff.isInClient()) {
-          liff.login();
-          return;
-        }
-        // External browser → mock mode (login redirect won't work well)
+        if (liff.isInClient()) { liff.login(); return; }
         enterMockMode('請在 LINE App 中開啟此頁面以使用完整功能');
         return;
       }
-
-      // Logged in → verify with backend
       document.getElementById('loadingMsg').textContent = '正在驗證身份...';
       const profile = await liff.getProfile();
       await verifyAndLogin(profile.userId, profile.displayName);
-
     } catch (err) {
       console.warn('LIFF init failed:', err.message);
-      // Any error → fall back to mock mode instead of blank screen
       enterMockMode('LIFF 初始化失敗，進入預覽模式\n(' + err.message + ')');
     }
   }
 
   async function verifyAndLogin(userId, displayName) {
-    // If GAS_URL is placeholder, skip API call
     if (!GAS_URL || GAS_URL === 'YOUR_GAS_WEB_APP_URL') {
       currentUser = { userId, displayName, isAdmin: false, role: '一般使用者' };
       renderHeader(displayName, false);
       hide('overlayLoading');
       return;
     }
-
     try {
       const result = await callAPI('checkUser', { lineUserId: userId });
       if (!result.success) {
@@ -500,7 +486,6 @@
       renderHeader(displayName, result.user.isAdmin);
       hide('overlayLoading');
     } catch (err) {
-      // API unreachable → still show UI with limited info
       currentUser = { userId, displayName, isAdmin: false, role: '一般使用者' };
       renderHeader(displayName, false);
       hide('overlayLoading');
@@ -510,10 +495,9 @@
 
   function enterMockMode(reason) {
     console.info('Mock mode:', reason);
-    isMockMode   = true;
-    currentUser  = MOCK_USER;
-    allPosts     = [...MOCK_POSTS];
-
+    isMockMode  = true;
+    currentUser = MOCK_USER;
+    allPosts    = [...MOCK_POSTS];
     renderHeader(MOCK_USER.displayName, MOCK_USER.isAdmin);
     document.getElementById('mockBanner').classList.add('show');
     hide('overlayLoading');
@@ -530,12 +514,11 @@
 
   // ============================================================
   //  TAB SWITCHING
+  //  FIX #5: 改用 data-tab 屬性比對，不依賴 DOM index
   // ============================================================
   function switchTab(tab) {
-    document.querySelectorAll('.tab-btn').forEach((btn, i) => {
-      btn.classList.toggle('active',
-        (i === 0 && tab === 'post') || (i === 1 && tab === 'feed')
-      );
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
     });
     document.getElementById('tabPost').style.display = tab === 'post' ? 'block' : 'none';
     document.getElementById('tabFeed').style.display = tab === 'feed' ? 'block' : 'none';
@@ -590,8 +573,8 @@
   }
 
   function formatBytes(bytes) {
-    if (bytes < 1024)        return bytes + ' B';
-    if (bytes < 1048576)     return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024)    return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / 1048576).toFixed(1) + ' MB';
   }
 
@@ -605,7 +588,6 @@
   // ============================================================
   async function submitPost() {
     if (!currentUser) return;
-
     const btn = document.getElementById('submitBtn');
     btn.disabled    = true;
     btn.textContent = '⏳ 發佈中...';
@@ -627,15 +609,12 @@
           showToast('請輸入有效的網址（需包含 http:// 或 https://）', 'error');
           return;
         }
+        // 格式：說明\nURL（說明可能含多行，URL 固定在最後一行）
         content = desc ? desc + '\n' + url : url;
 
       } else {
         if (!selectedFile) { showToast('請先選擇檔案', 'error'); return; }
-
-        if (isMockMode) {
-          showToast('⚠️ 預覽模式不支援實際上傳', '');
-          return;
-        }
+        if (isMockMode) { showToast('⚠️ 預覽模式不支援實際上傳', ''); return; }
 
         btn.textContent = '⏳ 上傳檔案中...';
         setProgress(30, true);
@@ -647,22 +626,21 @@
         setProgress(100, true);
         fileUrl  = uploadResult.fileUrl;
         fileName = uploadResult.fileName;
-        content  = document.getElementById('fileDesc').value.trim() || fileName;
+        // FIX #10/#11: content 只存說明文字，不混入 fileName
+        content  = document.getElementById('fileDesc').value.trim();
       }
 
-      // Mock mode: just prepend to local list
       if (isMockMode) {
         const mockPost = {
           postId:      'mock-' + Date.now(),
           lineUserId:  currentUser.userId,
           displayName: currentUser.displayName,
           type:        selectedType,
-          content,
-          fileUrl,
+          content, fileUrl, fileName,
           createdAt:   new Date().toISOString(),
         };
         allPosts.unshift(mockPost);
-        showToast('✅ 預覽模式：貼文已新增（不會實際儲存）', 'success');
+        showToast('✅ 預覽模式：貼文已新增（切換至動態牆查看）', 'success');
         resetForm();
         return;
       }
@@ -687,6 +665,7 @@
     } finally {
       btn.disabled    = false;
       btn.textContent = '🚀 發佈並同步至 LINE 群組';
+      setProgress(0, false);
     }
   }
 
@@ -701,6 +680,7 @@
 
   // ============================================================
   //  LOAD POSTS
+  //  FIX #6/#12: 載入完成後套用目前的 activeFilter
   // ============================================================
   async function loadPosts() {
     const listEl = document.getElementById('postList');
@@ -708,7 +688,7 @@
 
     if (isMockMode) {
       updateStats(allPosts);
-      renderPosts(allPosts);
+      applyFilter(activeFilter);   // ← FIX: 套用現有篩選
       document.getElementById('statsRow').style.display  = 'flex';
       document.getElementById('filterRow').style.display = 'flex';
       return;
@@ -722,7 +702,7 @@
       }
       allPosts = result.posts || [];
       updateStats(allPosts);
-      renderPosts(allPosts);
+      applyFilter(activeFilter);   // ← FIX: 套用現有篩選
       document.getElementById('statsRow').style.display  = 'flex';
       document.getElementById('filterRow').style.display = 'flex';
     } catch (err) {
@@ -767,35 +747,50 @@
 
     let bodyHtml = '';
     switch (post.type) {
+
       case '圖片':
         bodyHtml =
           '<img src="' + escAttr(post.fileUrl) + '" class="post-img" alt="圖片"' +
           ' onclick="openLightbox(\'' + escAttr(post.fileUrl) + '\')"' +
           ' onerror="this.style.display=\'none\'" />';
+        // 有說明文字才顯示（不等於 fileUrl 本身）
         if (post.content && post.content !== post.fileUrl)
-          bodyHtml += '<p class="post-body" style="margin-top:8px">' + escHtml(post.content) + '</p>';
+          bodyHtml += '<p class="post-body" style="margin-top:8px">' +
+            escHtml(post.content).replace(/\n/g, '<br>') + '</p>';
         break;
 
       case '連結': {
+        // FIX #3: 最後一行為 URL，其餘為說明（支援說明含換行）
         const lines = post.content.split('\n');
         const url   = lines[lines.length - 1];
         const desc  = lines.length > 1 ? lines.slice(0, -1).join('\n') : '';
         bodyHtml =
-          (desc ? '<p class="post-body">' + escHtml(desc) + '</p>' : '') +
-          '<a href="' + escAttr(url) + '" target="_blank" class="post-body">🔗 ' + escHtml(url) + '</a>';
+          // FIX #4: desc 換行轉 <br>
+          (desc ? '<p class="post-body">' + escHtml(desc).replace(/\n/g, '<br>') + '</p>' : '') +
+          '<a href="' + escAttr(url) + '" target="_blank" rel="noopener noreferrer" class="post-body">' +
+          '🔗 ' + escHtml(url) + '</a>';
         break;
       }
 
       case '影片':
-        bodyHtml = '<a href="' + escAttr(post.fileUrl) + '" target="_blank" class="file-link">🎬 播放影片</a>';
-        if (post.content)
-          bodyHtml += '<p class="post-body" style="margin-top:8px">' + escHtml(post.content) + '</p>';
+        // FIX #10/#11: 播放按鈕顯示 fileName（若有），說明文字另外顯示
+        bodyHtml =
+          '<a href="' + escAttr(post.fileUrl) + '" target="_blank" rel="noopener noreferrer" class="file-link">' +
+          '🎬 ' + (post.fileName ? escHtml(post.fileName) : '播放影片') + '</a>';
+        // 有說明文字才額外顯示（避免與 fileName 重複）
+        if (post.content && post.content !== post.fileName)
+          bodyHtml += '<p class="post-body" style="margin-top:8px">' +
+            escHtml(post.content).replace(/\n/g, '<br>') + '</p>';
         break;
 
       case '檔案':
         bodyHtml =
-          '<a href="' + escAttr(post.fileUrl) + '" target="_blank" class="file-link">' +
-          '📎 ' + escHtml(post.content) + '</a>';
+          '<a href="' + escAttr(post.fileUrl) + '" target="_blank" rel="noopener noreferrer" class="file-link">' +
+          '📎 ' + escHtml(post.fileName || post.content) + '</a>';
+        // 有說明文字才額外顯示
+        if (post.content && post.content !== post.fileName)
+          bodyHtml += '<p class="post-body" style="margin-top:8px">' +
+            escHtml(post.content).replace(/\n/g, '<br>') + '</p>';
         break;
 
       default:
@@ -823,32 +818,34 @@
 
   // ============================================================
   //  DELETE POST
+  //  FIX #14: 刪除後重新套用篩選器
   // ============================================================
   async function deletePost(postId) {
     if (!confirm('確定要刪除這則貼文嗎？此操作無法復原。')) return;
 
     if (isMockMode) {
       allPosts = allPosts.filter(p => p.postId !== postId);
-      const el = document.getElementById('post-' + postId);
-      if (el) el.remove();
       updateStats(allPosts);
+      applyFilter(activeFilter);   // ← FIX: 重新套用篩選
       showToast('✅ 預覽模式：貼文已移除', 'success');
       return;
     }
 
-    const result = await callAPI('deletePost', {
-      lineUserId: currentUser.userId,
-      postId,
-    });
-
-    if (result.success) {
-      const el = document.getElementById('post-' + postId);
-      if (el) el.remove();
-      allPosts = allPosts.filter(p => p.postId !== postId);
-      updateStats(allPosts);
-      showToast('✅ 貼文已成功刪除', 'success');
-    } else {
-      showToast('❌ ' + result.message, 'error');
+    try {
+      const result = await callAPI('deletePost', {
+        lineUserId: currentUser.userId,
+        postId,
+      });
+      if (result.success) {
+        allPosts = allPosts.filter(p => p.postId !== postId);
+        updateStats(allPosts);
+        applyFilter(activeFilter); // ← FIX: 重新套用篩選
+        showToast('✅ 貼文已成功刪除', 'success');
+      } else {
+        showToast('❌ ' + result.message, 'error');
+      }
+    } catch (err) {
+      showToast('❌ 刪除失敗：' + err.message, 'error');
     }
   }
 
@@ -937,6 +934,6 @@
 
   // ── Start ─────────────────────────────────────────────────
   init();
-</script>
+<\/script>
 </body>
 </html>
