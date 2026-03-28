@@ -79,22 +79,26 @@
             height: 100%;
             background: rgba(0,0,0,0.5);
             z-index: 200;
+            overflow-y: auto; /* Allow scrolling for long content */
         }
         .modal-content {
             background: white;
-            margin: 10% auto;
+            margin: 5% auto;
             padding: 20px;
             width: 90%;
-            max-width: 500px;
+            max-width: 600px; /* Increased max-width */
             border-radius: 8px;
         }
-        input, textarea, select {
+        input[type="text"], textarea, select {
             width: 100%;
             padding: 10px;
             margin: 10px 0;
             border: 1px solid #ddd;
             border-radius: 4px;
             box-sizing: border-box;
+        }
+        input[type="file"] {
+            margin: 10px 0;
         }
         .btn {
             padding: 10px 20px;
@@ -106,10 +110,40 @@
         .btn-primary { background: var(--primary-color); color: white; }
         .btn-secondary { background: #ddd; color: #333; }
         .btn-danger { background: #ff4d4d; color: white; }
+        .btn-upload { background: #007bff; color: white; margin-left: 10px; }
         
         #loading {
             text-align: center;
             padding: 20px;
+        }
+        .attachment-list {
+            margin-top: 10px;
+            border: 1px solid #eee;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .attachment-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .attachment-item:last-child { border-bottom: none; }
+        .attachment-item a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        .attachment-item button {
+            background: #ff4d4d;
+            color: white;
+            border: none;
+            padding: 3px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.8em;
         }
     </style>
 </head>
@@ -134,6 +168,13 @@
         <input type="hidden" id="edit-note-id">
         <input type="text" id="note-title-input" placeholder="標題">
         <textarea id="note-content-input" rows="10" placeholder="內容..."></textarea>
+
+        <h3>附件</h3>
+        <input type="file" id="attachment-input">
+        <button class="btn btn-upload" onclick="uploadAttachment()">上傳附件</button>
+        <div id="attachment-list" class="attachment-list"></div>
+
+        <h3>權限設定</h3>
         <select id="note-visibility-input">
             <option value="private">私人 (僅限自己)</option>
             <option value="public">公開 (所有人可見)</option>
@@ -158,12 +199,13 @@
 </div>
 
 <script>
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbzh2bZhtg7pxJrgvP3PlYlY23tBoa04rGf7NWygJGpwmCvFqeDTB8DNYP6ehobiPEIbzw/exec'; // 請替換為您的 GAS Web App URL
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbzUgOBUodbhuFO_mZW8VdkX0xo4YfV05w7ael87pBUQ5eQ8pA8J_S4oiEB_K3_0lLdblw/exec'; // 請替換為您的 GAS Web App URL
     let currentUser = null;
+    let currentAttachments = []; // 用於暫存當前編輯筆記的附件列表
 
     async function initLIFF() {
         try {
-            await liff.init({ liffId: "2009456572-AUDE1qmM" }); // 請替換為您的 LIFF ID
+            await liff.init({ liffId: "YOUR_LIFF_ID" }); // 請替換為您的 LIFF ID
             if (!liff.isLoggedIn()) {
                 liff.login();
             } else {
@@ -197,6 +239,7 @@
                         <div class="note-meta">
                             建立於: ${new Date(note.createdAt).toLocaleString()}<br>
                             權限: ${note.visibility}
+                            ${note.attachments && note.attachments.length > 0 ? `<br>附件: ${note.attachments.length} 個` : ''}
                         </div>
                     `;
                     document.getElementById('note-list').appendChild(card);
@@ -218,6 +261,10 @@
         const idInput = document.getElementById('edit-note-id');
         const deleteBtn = document.getElementById('delete-btn');
         const shareSection = document.getElementById('share-section');
+        const attachmentListDiv = document.getElementById('attachment-list');
+
+        currentAttachments = []; // 重置附件列表
+        attachmentListDiv.innerHTML = ''; // 清空附件顯示
 
         if (note) {
             document.getElementById('modal-title').innerText = '編輯筆記';
@@ -227,6 +274,10 @@
             visibilityInput.value = note.visibility;
             deleteBtn.style.display = 'block';
             shareSection.style.display = note.visibility === 'shared' ? 'block' : 'none';
+            if (note.attachments) {
+                currentAttachments = note.attachments;
+                renderAttachments();
+            }
         } else {
             document.getElementById('modal-title').innerText = '新增筆記';
             idInput.value = '';
@@ -246,6 +297,68 @@
 
     function closeEditor() {
         document.getElementById('editor-modal').style.display = 'none';
+        document.getElementById('attachment-input').value = ''; // 清空檔案選擇
+    }
+
+    async function uploadAttachment() {
+        const fileInput = document.getElementById('attachment-input');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            alert('請選擇一個檔案！');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('action', 'uploadFile');
+        formData.append('file', file);
+        formData.append('fileName', file.name);
+        formData.append('userId', currentUser.userId);
+
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                currentAttachments.push({ name: result.fileName, url: result.fileUrl });
+                renderAttachments();
+                fileInput.value = ''; // 清空檔案選擇
+                alert('檔案上傳成功！');
+            } else {
+                alert('檔案上傳失敗: ' + result.error);
+            }
+        } catch (err) {
+            console.error('檔案上傳失敗', err);
+            alert('網路錯誤，檔案上傳失敗。');
+        }
+    }
+
+    function renderAttachments() {
+        const attachmentListDiv = document.getElementById('attachment-list');
+        attachmentListDiv.innerHTML = '';
+        if (currentAttachments.length === 0) {
+            attachmentListDiv.innerHTML = '<p style="text-align:center; color:#888;">沒有附件</p>';
+            return;
+        }
+        currentAttachments.forEach((attachment, index) => {
+            const item = document.createElement('div');
+            item.className = 'attachment-item';
+            item.innerHTML = `
+                <a href="${attachment.url}" target="_blank">${attachment.name}</a>
+                <button onclick="removeAttachment(${index})">移除</button>
+            `;
+            attachmentListDiv.appendChild(item);
+        });
+    }
+
+    function removeAttachment(index) {
+        if (confirm('確定要移除此附件嗎？')) {
+            currentAttachments.splice(index, 1);
+            renderAttachments();
+        }
     }
 
     async function saveNote() {
@@ -253,6 +366,7 @@
         const note = {
             title: document.getElementById('note-title-input').value,
             content: document.getElementById('note-content-input').value,
+            attachments: currentAttachments, // 包含附件數據
             visibility: document.getElementById('note-visibility-input').value
         };
 
