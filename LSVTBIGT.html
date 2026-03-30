@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>📒 LSVTBIG記事本</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    /* ── 設計 Token ── */
+    :root {
+      --primary:#4CAF50; --primary-dark:#388E3C; --primary-light:#C8E6C9;
+      --danger:#e53935;  --danger-light:#ffebee;
+      --warn:#FB8C00;    --warn-light:#FFF3E0;
+      --info:#1E88E5;    --info-light:#E3F2FD;
+      --purple:#7B1FA2;  --purple-light:#F3E5F5;
+      --gold:#F9A825;    --gold-light:#FFFDE7;
+      --text-main:#212121; --text-sub:#757575; --text-hint:#BDBDBD;
+      --bg:#F5F5F5; --card-bg:#FFFFFF; --border:#E0E0E0;
+      --shadow:0 2px 8px rgba(0,0,0,.10);
+      --radius:12px;
+      --font:'Microsoft JhengHei','PingFang TC','Noto Sans TC',sans-serif;
+      --base-fs:16px; --max-w:600px; --header-h:56px;
+      --transition:.22s cubic-bezier(.4,0,.2,1);
+    }
+    *,*::before,*::after { box-sizing:border-box; margin:0; padding:0 }
+    html { font-size:var(--base-fs); -webkit-tap-highlight-color:transparent }
+    body { font-family:var(--font); background:var(--bg); color:var(--text-main); min-height:100dvh; overflow-x:hidden }
+
+    /* ── Splash ── */
+    #splash { position:fixed; inset:0; z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(160deg,#e8f5e9 0%,#fff 100%); gap:16px; transition:opacity .4s,visibility .4s }
+    #splash.hidden { opacity:0; visibility:hidden; pointer-events:none }
+    .splash-logo  { font-size:3rem; animation:bounce 1.2s infinite ease-in-out }
+    .splash-title { font-size:1.2rem; font-weight:700; color:var(--primary-dark) }
+    .spinner      { width:40px; height:40px; border:4px solid var(--primary-light); border-top-color:var(--primary); border-radius:50%; animation:spin .8s linear infinite }
+    .splash-msg   { font-size:.8rem; color:var(--text-sub) }
+    @keyframes spin   { to { transform:rotate(360deg) } }
+    @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+
+    /* ── Loading Overlay ── */
+    #loading-overlay { position:fixed; inset:0; z-index:8000; background:rgba(255,255,255,.72); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; opacity:0; visibility:hidden; transition:opacity .2s,visibility .2s }
+    #loading-overlay.active { opacity:1; visibility:visible }
+    .overlay-spinner { width:48px; height:48px; border:5px solid var(--primary-light); border-top-color:var(--primary); border-radius:50%; animation:spin .75s linear infinite }
+
+    /* ── Toast ── */
+    #toast-container { position:fixed; bottom:28px; left:50%; transform:translateX(-50%); z-index:9000; display:flex; flex-direction:column; align-items:center; gap:8px; pointer-events:none; width:min(calc(var(--max-w) - 32px),calc(100vw - 32px)) }
+    .toast { background:#323232; color:#fff; padding:12px 20px; border-radius:24px; font-size:.8rem; line-height:1.4; box-shadow:0 4px 16px rgba(0,0,0,.25); opacity:0; transform:translateY(16px); transition:opacity .3s,transform .3s; max-width:100%; text-align:center }
+    .toast.show    { opacity:1; transform:translateY(0) }
+    .toast.success { background:var(--primary-dark) }
+    .toast.error   { background:var(--danger) }
+    .toast.warn    { background:var(--warn) }
+
+    /* ── Modal ── */
+    #modal-backdrop { position:fixed; inset:0; z-index:8500; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; padding:24px; opacity:0; visibility:hidden; transition:opacity .25s,visibility .25s }
+    #modal-backdrop.active { opacity:1; visibility:visible }
+    .modal-box { background:var(--card-bg); border-radius:var(--radius); padding:28px 24px 20px; width:100%; max-width:360px; box-shadow:0 8px 32px rgba(0,0,0,.18); transform:scale(.92); transition:transform .25s }
+    #modal-backdrop.active .modal-box { transform:scale(1) }
+    .modal-title   { font-size:1rem; font-weight:700; margin-bottom:10px }
+    .modal-msg     { font-size:.85rem; color:var(--text-sub); line-height:1.6; margin-bottom:22px }
+    .modal-actions { display:flex; gap:10px; justify-content:flex-end }
+    .modal-actions button { padding:9px 20px; border:none; border-radius:8px; font-family:var(--font); font-size:.8rem; font-weight:600; cursor:pointer; transition:filter var(--transition) }
+    .modal-actions button:hover { filter:brightness(.92) }
+    .btn-modal-cancel  { background:var(--border); color:var(--text-main) }
+    .btn-modal-confirm { background:var(--danger); color:#fff }
+
+    /* ── Error Screen ── */
+    #error-screen { position:fixed; inset:0; z-index:9998; background:#fff; display:none; flex-direction:column; align-items:center; justify-content:center; padding:32px; gap:16px; text-align:center }
+    #error-screen.active { display:flex }
+    .error-icon  { font-size:3rem }
+    .error-title { font-size:1rem; font-weight:700; color:var(--danger) }
+    .error-msg   { font-size:.85rem; color:var(--text-sub); line-height:1.7 }
+    .btn-retry   { background:var(--primary); color:#fff; border:none; border-radius:10px; padding:12px 32px; font-family:var(--font); font-size:.85rem; font-weight:700; cursor:pointer }
+
+    /* ── App Shell ── */
+    #app { max-width:var(--max-w); margin:0 auto; min-height:100dvh; display:flex; flex-direction:column }
+
+    /* ── Header ── */
+    .app-header { position:sticky; top:0; z-index:100; height:var(--header-h); background:var(--primary); display:flex; align-items:center; padding:0 16px; gap:8px; box-shadow:0 2px 8px rgba(76,175,80,.3) }
+    .header-back { background:none; border:none; color:#fff; font-size:1.4rem; cursor:pointer; padding:6px 8px 6px 0; display:none; align-items:center; transition:opacity var(--transition) }
+    .header-back:hover { opacity:.75 }
+    .header-back.visible { display:flex }
+    .header-title { flex:1; color:#fff; font-size:1rem; font-weight:700; letter-spacing:.04em }
+    .header-actions { display:flex; align-items:center; gap:8px }
+    .header-btn { background:rgba(255,255,255,.2); border:none; color:#fff; border-radius:8px; padding:6px 12px; font-family:var(--font); font-size:.75rem; font-weight:600; cursor:pointer; transition:background var(--transition); white-space:nowrap }
+    .header-btn:hover { background:rgba(255,255,255,.35) }
+    .header-avatar { width:34px; height:34px; border-radius:50%; border:2px solid rgba(255,255,255,.7); object-fit:cover; background:var(--primary-light); display:flex; align-items:center; justify-content:center; font-size:.85rem; color:var(--primary-dark); font-weight:700; overflow:hidden; flex-shrink:0 }
+
+    /* ── Role Badge ── */
+    .role-badge { display:inline-flex; align-items:center; gap:4px; border-radius:20px; padding:3px 10px; font-size:.7rem; font-weight:700; white-space:nowrap }
+    .role-owner  { background:var(--gold-light);   color:#E65100 }
+    .role-admin  { background:var(--purple-light);  color:var(--purple) }
+    .role-member { background:var(--info-light);    color:var(--info) }
+    .role-guest  { background:var(--bg);            color:var(--text-sub); border:1px solid var(--border) }
+
+    /* ── Pages ── */
+    .page { flex:1; display:none; flex-direction:column; animation:fadeIn .2s ease }
+    .page.active { display:flex }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+
+    /* ── Page: List ── */
+    #page-list { padding-bottom:88px }
+    .search-bar { padding:12px 16px 8px; background:var(--card-bg); border-bottom:1px solid var(--border); position:sticky; top:var(--header-h); z-index:90 }
+    .search-wrap { display:flex; align-items:center; background:var(--bg); border:1.5px solid var(--border); border-radius:24px; padding:0 14px; gap:8px; transition:border-color var(--transition) }
+    .search-wrap:focus-within { border-color:var(--primary) }
+    .search-wrap span { color:var(--text-hint); font-size:.9rem }
+    #search-input { flex:1; border:none; background:transparent; font-family:var(--font); font-size:.85rem; color:var(--text-main); padding:10px 0; outline:none }
+    #search-input::placeholder { color:var(--text-hint) }
+    .search-clear { background:none; border:none; color:var(--text-hint); font-size:.9rem; cursor:pointer; padding:4px; display:none }
+    .search-clear.visible { display:block }
+    .list-meta { padding:10px 16px 4px; font-size:.75rem; color:var(--text-sub) }
+    .note-list  { padding:4px 16px 0; display:flex; flex-direction:column; gap:12px }
+
+    /* ── Note Card ── */
+    .note-card { background:var(--card-bg); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; display:flex; cursor:pointer; transition:transform var(--transition),box-shadow var(--transition) }
+    .note-card:active { transform:scale(.985); box-shadow:0 1px 4px rgba(0,0,0,.08) }
+    .note-card-stripe { width:5px; background:var(--primary); flex-shrink:0 }
+    .note-card-body   { flex:1; padding:14px 14px 12px; min-width:0 }
+    .note-card-title  { font-size:.95rem; font-weight:700; margin-bottom:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+    .note-card-meta   { font-size:.7rem; color:var(--text-sub); display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; align-items:center }
+    .meta-badge       { display:inline-flex; align-items:center; gap:3px; background:var(--bg); border-radius:10px; padding:2px 8px }
+    .note-card-content { font-size:.8rem; color:var(--text-sub); line-height:1.6; white-space:pre-wrap; word-break:break-word; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden }
+    .note-card-attachments { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px }
+    .attach-thumb { width:72px; height:72px; border-radius:8px; object-fit:cover; border:1px solid var(--border); cursor:pointer; transition:opacity var(--transition) }
+    .attach-thumb:hover { opacity:.85 }
+    .attach-file  { display:inline-flex; align-items:center; gap:4px; font-size:.7rem; color:var(--primary-dark); background:var(--primary-light); border-radius:8px; padding:4px 10px; cursor:pointer; text-decoration:none; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    .note-card-viewers { margin-top:8px; font-size:.7rem; color:var(--text-hint) }
+    .note-card-actions { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap }
+    .btn-card { border:none; border-radius:8px; font-family:var(--font); font-size:.72rem; font-weight:600; padding:6px 14px; cursor:pointer; transition:filter var(--transition) }
+    .btn-card:hover { filter:brightness(.92) }
+    .btn-edit    { background:var(--primary-light); color:var(--primary-dark) }
+    .btn-delete  { background:var(--danger-light);  color:var(--danger) }
+    .btn-forward { background:var(--info-light);    color:var(--info) }
+
+    /* ── Empty State ── */
+    .empty-state { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 24px; color:var(--text-hint); gap:12px }
+    .empty-state .icon { font-size:3rem }
+    .empty-state p { font-size:.85rem; text-align:center; line-height:1.6 }
+
+    /* ── FAB ── */
+    #fab-add { position:fixed; bottom:28px; right:calc(50% - min(var(--max-w),100vw)/2 + 20px); width:56px; height:56px; border-radius:50%; background:var(--primary); color:#fff; border:none; font-size:1.6rem; box-shadow:0 4px 16px rgba(76,175,80,.45); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:transform var(--transition),box-shadow var(--transition); z-index:200 }
+    #fab-add:hover  { transform:scale(1.08); box-shadow:0 6px 20px rgba(76,175,80,.55) }
+    #fab-add:active { transform:scale(.94) }
+    #fab-add.hidden { display:none }
+
+    /* ── Page: Form ── */
+    #page-form { padding:16px 16px 100px; gap:16px; overflow-y:auto }
+    .form-group    { display:flex; flex-direction:column; gap:6px }
+    .form-label    { font-size:.8rem; font-weight:700; color:var(--text-sub); letter-spacing:.04em }
+    .form-label .required { color:var(--danger); margin-left:2px }
+    .form-input,.form-textarea { background:var(--card-bg); border:1.5px solid var(--border); border-radius:10px; padding:12px 14px; font-family:var(--font); font-size:.9rem; color:var(--text-main); outline:none; transition:border-color var(--transition); width:100% }
+    .form-input:focus,.form-textarea:focus { border-color:var(--primary) }
+    .form-textarea { resize:vertical; min-height:160px; line-height:1.7 }
+    .upload-area { border:2px dashed var(--border); border-radius:10px; padding:20px; text-align:center; cursor:pointer; transition:border-color var(--transition),background var(--transition); background:var(--card-bg) }
+    .upload-area:hover    { border-color:var(--primary); background:#f9fff9 }
+    .upload-area.drag-over{ border-color:var(--primary); background:var(--primary-light) }
+    .upload-icon { font-size:1.6rem; margin-bottom:6px }
+    .upload-text { font-size:.8rem; color:var(--text-sub); line-height:1.6 }
+    .upload-text strong { color:var(--primary-dark) }
+    #file-input { display:none }
+    #upload-progress-wrap { display:none; flex-direction:column; gap:6px; margin-top:8px }
+    #upload-progress-wrap.active { display:flex }
+    .progress-label  { font-size:.75rem; color:var(--text-sub) }
+    .progress-bar-bg { height:6px; background:var(--border); border-radius:4px; overflow:hidden }
+    .progress-bar-fill { height:100%; background:var(--primary); border-radius:4px; width:0%; transition:width .3s }
+    .preview-list { display:flex; flex-wrap:wrap; gap:10px; margin-top:4px }
+    .preview-item { position:relative; width:80px; height:80px; border-radius:8px; overflow:hidden; border:1px solid var(--border); background:var(--bg); display:flex; align-items:center; justify-content:center; flex-direction:column; gap:4px }
+    .preview-item img { width:100%; height:100%; object-fit:cover }
+    .preview-item .file-icon { font-size:1.4rem }
+    .preview-item .file-name { font-size:.5rem; color:var(--text-sub); padding:0 4px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; width:100% }
+    .preview-remove { position:absolute; top:3px; right:3px; width:20px; height:20px; background:rgba(0,0,0,.55); color:#fff; border:none; border-radius:50%; font-size:.7rem; cursor:pointer; display:flex; align-items:center; justify-content:center }
+    .form-footer { position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:min(var(--max-w),100vw); background:var(--card-bg); border-top:1px solid var(--border); padding:12px 16px; display:flex; gap:10px; z-index:200 }
+    .btn-cancel,.btn-save { flex:1; padding:13px; border:none; border-radius:10px; font-family:var(--font); font-size:.9rem; font-weight:700; cursor:pointer; transition:filter var(--transition),transform var(--transition) }
+    .btn-cancel { background:var(--border); color:var(--text-main) }
+    .btn-save   { background:var(--primary); color:#fff; box-shadow:0 2px 8px rgba(76,175,80,.35) }
+    .btn-cancel:hover { filter:brightness(.93) }
+    .btn-save:hover   { filter:brightness(.93) }
+    .btn-save:active  { transform:scale(.97) }
+    .btn-save:disabled{ opacity:.6; cursor:not-allowed }
+
+    /* ── Page: Users ── */
+    #page-users { overflow-y:auto; padding-bottom:24px }
+    .users-header { padding:16px 16px 8px; background:var(--card-bg); border-bottom:1px solid var(--border); position:sticky; top:var(--header-h); z-index:90; display:flex; align-items:center; justify-content:space-between }
+    .users-header-title { font-size:.9rem; font-weight:700 }
+    .users-filter { display:flex; gap:6px; padding:10px 16px; overflow-x:auto; background:var(--card-bg); border-bottom:1px solid var(--border) }
+    .filter-chip { border:1.5px solid var(--border); background:var(--card-bg); border-radius:20px; padding:5px 14px; font-family:var(--font); font-size:.75rem; font-weight:600; cursor:pointer; transition:all var(--transition); white-space:nowrap }
+    .filter-chip.active { background:var(--primary); border-color:var(--primary); color:#fff }
+    .user-list { padding:12px 16px; display:flex; flex-direction:column; gap:10px }
+    .user-card { background:var(--card-bg); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 16px; display:flex; align-items:center; gap:12px }
+    .user-card.banned { opacity:.55 }
+    .user-avatar { width:44px; height:44px; border-radius:50%; object-fit:cover; background:var(--primary-light); display:flex; align-items:center; justify-content:center; font-size:1rem; font-weight:700; color:var(--primary-dark); flex-shrink:0; overflow:hidden }
+    .user-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50% }
+    .user-info { flex:1; min-width:0 }
+    .user-name { font-size:.9rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+    .user-meta { font-size:.7rem; color:var(--text-sub); margin-top:3px }
+    .user-actions { display:flex; flex-direction:column; gap:6px; align-items:flex-end }
+    .role-select { border:1.5px solid var(--border); border-radius:8px; padding:5px 8px; font-family:var(--font); font-size:.75rem; background:var(--card-bg); cursor:pointer; outline:none }
+    .role-select:focus { border-color:var(--primary) }
+    .btn-ban { border:none; border-radius:8px; padding:5px 12px; font-family:var(--font); font-size:.72rem; font-weight:600; cursor:pointer; transition:filter var(--transition) }
+    .btn-ban.ban   { background:var(--danger-light); color:var(--danger) }
+    .btn-ban.unban { background:var(--primary-light); color:var(--primary-dark) }
+    .btn-ban:hover { filter:brightness(.92) }
+
+    /* ── 通用 ── */
+    ::-webkit-scrollbar { width:4px }
+    ::-webkit-scrollbar-track { background:transparent }
+    ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px }
+  </style>
+</head>
+<body>
+
+<!-- Splash -->
+<div id="splash">
+  <div class="splash-logo">📒</div>
+  <div class="splash-title">LSVTBIG記事本</div>
+  <div class="spinner"></div>
+  <div class="splash-msg" id="splash-msg">正在驗證身份...</div>
+</div>
+
+<!-- Error -->
+<div id="error-screen">
+  <div class="error-icon">⚠️</div>
+  <div class="error-title" id="error-title">初始化失敗</div>
+  <div class="error-msg"   id="error-msg">請關閉後重新開啟應用程式。</div>
+  <button class="btn-retry" id="btn-retry">重新嘗試</button>
+</div>
+
+<!-- Loading / Toast / Modal -->
+<div id="loading-overlay"><div class="overlay-spinner"></div></div>
+<div id="toast-container"></div>
+<div id="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-title">確認</div>
+    <div class="modal-msg"   id="modal-msg"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel"  id="modal-cancel">取消</button>
+      <button class="btn-modal-confirm" id="modal-confirm">確認</button>
+    </div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <header class="app-header">
+    <button class="header-back" id="header-back" aria-label="返回">&#8592;</button>
+    <div class="header-title" id="header-title">📒 LSVTBIG記事本</div>
+    <div class="header-actions">
+      <button class="header-btn" id="btn-manage-users" style="display:none">👥 人員管理</button>
+      <div class="header-avatar" id="header-avatar">?</div>
+    </div>
+  </header>
+
+  <!-- 記事列表 -->
+  <div class="page active" id="page-list">
+    <div class="search-bar">
+      <div class="search-wrap">
+        <span>🔍</span>
+        <input type="search" id="search-input" placeholder="搜尋標題或內容..." autocomplete="off" />
+        <button class="search-clear" id="search-clear" aria-label="清除">✕</button>
+      </div>
+    </div>
+    <div class="list-meta" id="list-meta"></div>
+    <div class="note-list"  id="note-list"></div>
+  </div>
+
+  <!-- 新增/編輯表單 -->
+  <div class="page" id="page-form">
+    <div class="form-group">
+      <label class="form-label" for="f-title">標題<span class="required">*</span></label>
+      <input type="text" class="form-input" id="f-title" placeholder="輸入記事標題..." maxlength="100" />
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="f-content">內容<span class="required">*</span></label>
+      <textarea class="form-textarea" id="f-content" placeholder="輸入記事內容..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">附件（最多 10 個，單檔 ≤ 50MB）</label>
+      <div class="upload-area" id="upload-area">
+        <div class="upload-icon">📎</div>
+        <div class="upload-text">點擊選擇或拖曳檔案<br/><strong>支援圖片、PDF、文件等</strong></div>
+      </div>
+      <input type="file" id="file-input" multiple accept="*/*" />
+      <div id="upload-progress-wrap">
+        <div class="progress-label"  id="progress-label">上傳中 0 / 0</div>
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-bar"></div></div>
+      </div>
+      <div class="preview-list" id="preview-list"></div>
+    </div>
+    <div class="form-footer">
+      <button class="btn-cancel" id="btn-cancel">取消</button>
+      <button class="btn-save"   id="btn-save">💾 儲存</button>
+    </div>
+  </div>
+
+  <!-- 人員管理 -->
+  <div class="page" id="page-users">
+    <div class="users-header">
+      <div class="users-header-title">👥 人員管理</div>
+      <div id="users-count" style="font-size:.8rem;color:var(--text-sub)"></div>
+    </div>
+    <div class="users-filter" id="users-filter">
+      <button class="filter-chip active" data-role="all">全部</button>
+      <button class="filter-chip" data-role="owner">👑 版主</button>
+      <button class="filter-chip" data-role="admin">🛡 管理者</button>
+      <button class="filter-chip" data-role="member">⭐ 會員</button>
+      <button class="filter-chip" data-role="guest">👤 訪客</button>
+      <button class="filter-chip" data-role="banned">🚫 封鎖</button>
+    </div>
+    <div class="user-list" id="user-list"></div>
+  </div>
+
+</div><!-- /app -->
+
+<button id="fab-add" aria-label="新增記事">＋</button>
+
+<!-- Part 3 & 4 的 JS 將插入此處 -->
+<script>
+  /* ============================================================
+   Part 3 — app-core.js
+   LIFF 初始化、API 層、狀態管理、權限控制
+============================================================ */
+
+/* ============================================================
+   設定區
+============================================================ */
+const CONFIG = {
+  LIFF_ID  : '2009456572-AUDE1qmM',
+  GAS_URL  : 'https://script.google.com/macros/s/AKfycbzs8DpKyoFHtOuO1MwWL6EruTWAOSvSfEN2UUMXZJvvrZc0om43JeCqV8GFrjL44HhwGg/exec',
+  DEV_MODE : true,
+  DEV_USER : { userId:'dev_owner_001', displayName:'開發版主', pictureUrl:'' },
+  DEV_ROLE : 'owner',   // 開發模式預設角色
+};
+
+/* ============================================================
+   角色權限定義（前端鏡像，後端仍會再驗證）
+============================================================ */
+const ROLE_LEVEL = { owner:4, admin:3, member:2, guest:1 };
+
+const ROLE_LABEL = {
+  owner  : { icon:'👑', text:'版主',  cls:'role-owner'  },
+  admin  : { icon:'🛡', text:'管理者', cls:'role-admin'  },
+  member : { icon:'⭐', text:'會員',  cls:'role-member' },
+  guest  : { icon:'👤', text:'訪客',  cls:'role-guest'  },
+};
+
+/** 是否可寫入（新增/編輯/刪除） */
+const canWrite      = role => ROLE_LEVEL[role] >= ROLE_LEVEL.admin;
+/** 是否可下載附件 */
+const canDownload   = role => ROLE_LEVEL[role] >= ROLE_LEVEL.member;
+/** 是否可管理人員 */
+const canManageUser = role => ROLE_LEVEL[role] >= ROLE_LEVEL.owner;
+
+/* ============================================================
+   全域狀態
+============================================================ */
+const State = {
+  user        : null,   // { userId, displayName, pictureUrl }
+  myRole      : 'guest',// 目前使用者角色
+  notes       : [],     // 所有記事
+  filtered    : [],     // 搜尋後記事
+  users       : [],     // 所有使用者（人員管理用）
+  filteredUsers: [],    // 篩選後使用者
+  editingId   : null,   // 正在編輯的 NoteID
+  pendingFiles: [],     // 待上傳 File[]
+  existAttach : [],     // 已存在附件 URL[]
+  page        : 'list', // 目前頁面
+  userFilter  : 'all',  // 人員管理篩選角色
+};
+
+/* ============================================================
+   工具函式
+============================================================ */
+const escHtml = s =>
+  String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+const driveThumb = url => {
+  const m = String(url).match(/\/d\/([^/]+)\//);
+  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w200` : null;
+};
+
+const isImageUrl = url =>
+  /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/i.test(url)
+  || url.includes('drive.google.com/thumbnail')
+  || url.includes('drive.google.com/file');
+
+const fmtTime = ts => {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (isNaN(d)) return ts;
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+const toBase64 = file => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload  = e => res(e.target.result.split(',')[1]);
+  r.onerror = rej;
+  r.readAsDataURL(file);
+});
+
+/* ============================================================
+   UI 工具
+============================================================ */
+const Overlay = {
+  show() { document.getElementById('loading-overlay').classList.add('active') },
+  hide() { document.getElementById('loading-overlay').classList.remove('active') },
+};
+
+function showToast(msg, type = '', duration = 2800) {
+  const c  = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className   = `toast${type ? ' ' + type : ''}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 350);
+  }, duration);
+}
+
+function showModal({ title = '確認', msg = '', confirmText = '確認', cancelText = '取消', danger = true } = {}) {
+  return new Promise(resolve => {
+    const bd = document.getElementById('modal-backdrop');
+    document.getElementById('modal-title').textContent   = title;
+    document.getElementById('modal-msg').textContent     = msg;
+    document.getElementById('modal-confirm').textContent = confirmText;
+    document.getElementById('modal-cancel').textContent  = cancelText;
+
+    // 危險操作用紅色，一般操作用綠色
+    const confirmBtn = document.getElementById('modal-confirm');
+    confirmBtn.style.background = danger ? 'var(--danger)' : 'var(--primary)';
+
+    bd.classList.add('active');
+
+    const cleanup = val => {
+      bd.classList.remove('active');
+      ['modal-confirm', 'modal-cancel'].forEach(id => {
+        const el = document.getElementById(id);
+        el.replaceWith(el.cloneNode(true));
+      });
+      resolve(val);
+    };
+    document.getElementById('modal-confirm').addEventListener('click', () => cleanup(true),  { once: true });
+    document.getElementById('modal-cancel') .addEventListener('click', () => cleanup(false), { once: true });
+  });
+}
+
+function setProgress(current, total) {
+  const wrap  = document.getElementById('upload-progress-wrap');
+  const label = document.getElementById('progress-label');
+  const bar   = document.getElementById('progress-bar');
+  if (total === 0) { wrap.classList.remove('active'); return; }
+  wrap.classList.add('active');
+  label.textContent = `上傳附件中 ${current} / ${total}`;
+  bar.style.width   = `${Math.round((current / total) * 100)}%`;
+}
+
+/* ============================================================
+   頁面切換
+============================================================ */
+function switchPage(name) {
+  State.page = name;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(`page-${name}`).classList.add('active');
+
+  const back    = document.getElementById('header-back');
+  const fab     = document.getElementById('fab-add');
+  const title   = document.getElementById('header-title');
+  const btnMgr  = document.getElementById('btn-manage-users');
+
+  // 版主/管理者才顯示人員管理按鈕（僅在列表頁）
+  const showMgrBtn = name === 'list' && canManageUser(State.myRole);
+  btnMgr.style.display = showMgrBtn ? '' : 'none';
+
+  switch (name) {
+    case 'list':
+      back.classList.remove('visible');
+      title.textContent = '📒 LSVTBIG記事本';
+      // 只有可寫入角色才顯示 FAB
+      fab.classList.toggle('hidden', !canWrite(State.myRole));
+      break;
+    case 'form':
+      back.classList.add('visible');
+      fab.classList.add('hidden');
+      title.textContent = State.editingId ? '✏️ 編輯記事' : '➕ 新增記事';
+      break;
+    case 'users':
+      back.classList.add('visible');
+      fab.classList.add('hidden');
+      title.textContent = '👥 人員管理';
+      btnMgr.style.display = 'none';
+      break;
+  }
+}
+
+/* ============================================================
+   LIFF 身份驗證
+============================================================ */
+async function initLiff() {
+  setSplashMsg('正在初始化 LIFF...');
+  if (CONFIG.DEV_MODE) {
+    console.warn('[LIFF] DEV_MODE: 使用模擬使用者');
+    State.user   = CONFIG.DEV_USER;
+    State.myRole = CONFIG.DEV_ROLE;
+    return;
+  }
+  try {
+    await liff.init({ liffId: CONFIG.LIFF_ID });
+  } catch (err) {
+    showErrorScreen('LIFF 初始化失敗', err.message ?? '請重新開啟應用程式');
+    throw err;
+  }
+  if (!liff.isLoggedIn()) { liff.login(); return; }
+
+  setSplashMsg('正在取得使用者資料...');
+  try {
+    const p    = await liff.getProfile();
+    State.user = { userId: p.userId, displayName: p.displayName, pictureUrl: p.pictureUrl ?? '' };
+  } catch (err) {
+    showErrorScreen('無法取得使用者資料', '請授權應用程式存取 LINE 個人資料後重試。');
+    throw err;
+  }
+}
+
+const setSplashMsg = msg => { document.getElementById('splash-msg').textContent = msg; };
+
+function showErrorScreen(title, msg) {
+  document.getElementById('error-title').textContent = title;
+  document.getElementById('error-msg').textContent   = msg;
+  document.getElementById('error-screen').classList.add('active');
+  document.getElementById('splash').classList.add('hidden');
+}
+
+/* ============================================================
+   API 層
+============================================================ */
+
+/** GET 請求 */
+async function gasGet(params) {
+  const url = new URL(CONFIG.GAS_URL);
+  // 每次帶上使用者基本資訊，讓後端可更新 lastSeen
+  const base = {
+    userId     : State.user?.userId      ?? '',
+    userName   : State.user?.displayName ?? '',
+    pictureUrl : State.user?.pictureUrl  ?? '',
+  };
+  Object.entries({ ...base, ...params }).forEach(([k, v]) => {
+    if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+  });
+  const res = await fetch(url.toString(), { method: 'GET', redirect: 'follow' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+/**
+ * POST + text/plain（避免 CORS preflight）
+ * 用於附件上傳等大型資料
+ */
+async function gasPost(body) {
+  const base = {
+    userId     : State.user?.userId      ?? '',
+    userName   : State.user?.displayName ?? '',
+    pictureUrl : State.user?.pictureUrl  ?? '',
+  };
+  const res = await fetch(CONFIG.GAS_URL, {
+    method  : 'POST',
+    headers : { 'Content-Type': 'text/plain;charset=UTF-8' },
+    body    : JSON.stringify({ ...base, ...body }),
+    redirect: 'follow',
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+/* ── 單檔上傳 ── */
+async function uploadSingleFile(file) {
+  const MAX_MB = 50;
+  if (file.size > MAX_MB * 1024 * 1024) {
+    throw new Error(`「${file.name}」超過 ${MAX_MB}MB，無法上傳`);
+  }
+  const b64    = await toBase64(file);
+  const result = await gasPost({
+    action  : 'uploadFile',
+    fileName: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    data    : b64,
+  });
+  if (!result.success) throw new Error(result.error ?? '上傳失敗');
+  return result.url;
+}
+
+/* ── 批次上傳（帶進度）── */
+async function uploadAllFiles(files) {
+  const urls = [];
+  setProgress(0, files.length);
+  for (let i = 0; i < files.length; i++) {
+    try {
+      const url = await uploadSingleFile(files[i]);
+      urls.push(url);
+      setProgress(i + 1, files.length);
+    } catch (err) {
+      showToast(`⚠️ ${err.message}`, 'warn', 4000);
+    }
+  }
+  setProgress(0, 0);
+  return urls;
+}
+
+/* ============================================================
+   記事 CRUD
+============================================================ */
+
+/** 載入記事列表 */
+async function loadNotes() {
+  Overlay.show();
+  try {
+    const data = await gasGet({ action: 'list' });
+    // 後端回傳 myRole，同步更新前端狀態
+    if (data.myRole) {
+      State.myRole = data.myRole;
+      updateRoleBadge();
+    }
+    State.notes = (data.notes ?? []).filter(n => n.Status !== 'deleted');
+    applySearch();
+  } catch (e) {
+    showToast('載入記事失敗：' + e.message, 'error');
+  } finally {
+    Overlay.hide();
+  }
+}
+
+/** 儲存記事（新增 or 更新） */
+async function saveNote() {
+  // 前端權限預檢
+  if (!canWrite(State.myRole)) {
+    showToast('您的權限不足，無法儲存記事', 'error');
+    return;
+  }
+
+  const title   = document.getElementById('f-title').value.trim();
+  const content = document.getElementById('f-content').value.trim();
+  if (!title)   { showToast('請輸入標題', 'warn'); return; }
+  if (!content) { showToast('請輸入內容', 'warn'); return; }
+
+  const saveBtn    = document.getElementById('btn-save');
+  saveBtn.disabled = true;
+  Overlay.show();
+
+  try {
+    /* Step 1：上傳新附件 */
+    let newUrls = [];
+    if (State.pendingFiles.length > 0) {
+      newUrls = await uploadAllFiles(State.pendingFiles);
+    }
+
+    /* Step 2：合併附件 URL */
+    const allAttach = [...State.existAttach, ...newUrls];
+
+    /* Step 3：儲存記事 */
+    const result = await gasGet({
+      action      : State.editingId ? 'update' : 'create',
+      noteId      : State.editingId ?? '',
+      title,
+      content,
+      attachments : JSON.stringify(allAttach),
+    });
+
+    if (result.success) {
+      showToast(State.editingId ? '記事已更新 ✓' : '記事已新增 ✓', 'success');
+      resetForm();
+      switchPage('list');
+      await loadNotes();
+    } else {
+      throw new Error(result.error ?? '未知錯誤');
+    }
+  } catch (e) {
+    showToast('儲存失敗：' + e.message, 'error');
+  } finally {
+    saveBtn.disabled = false;
+    Overlay.hide();
+  }
+}
+
+/** 刪除記事 */
+async function deleteNote(noteId) {
+  if (!canWrite(State.myRole)) {
+    showToast('您的權限不足，無法刪除記事', 'error');
+    return;
+  }
+  const ok = await showModal({
+    title      : '刪除記事',
+    msg        : '確定要刪除這則記事嗎？此操作無法復原。',
+    confirmText: '刪除',
+    danger     : true,
+  });
+  if (!ok) return;
+
+  Overlay.show();
+  try {
+    const r = await gasGet({ action: 'delete', noteId });
+    if (r.success) {
+      showToast('記事已刪除', 'success');
+      await loadNotes();
+    } else {
+      throw new Error(r.error ?? '無權限');
+    }
+  } catch (e) {
+    showToast('刪除失敗：' + e.message, 'error');
+  } finally {
+    Overlay.hide();
+  }
+}
+
+/** 轉發記事（透過 LIFF ShareTargetPicker） */
+async function forwardNote(note) {
+  let attachUrls = [];
+  try { attachUrls = JSON.parse(note.Attachments ?? '[]'); } catch {}
+
+  const text = [
+    `📒 ${note.Title}`,
+    ``,
+    note.Content,
+    ``,
+    attachUrls.length ? `📎 附件 ${attachUrls.length} 個` : '',
+    `─────────────────`,
+    `👤 ${note.CreatedByUserName}  🕐 ${fmtTime(note.CreatedAt)}`,
+  ].filter(l => l !== undefined).join('\n');
+
+  try {
+    if (CONFIG.DEV_MODE) {
+      showToast('DEV_MODE：模擬轉發成功', 'success');
+      return;
+    }
+    if (liff.isApiAvailable('shareTargetPicker')) {
+      await liff.shareTargetPicker([{
+        type: 'text',
+        text,
+      }]);
+      showToast('已開啟分享選單 ✓', 'success');
+    } else {
+      // 降級：複製到剪貼簿
+      await navigator.clipboard.writeText(text);
+      showToast('已複製到剪貼簿，請手動貼上分享', 'success', 3500);
+    }
+  } catch (e) {
+    if (e?.code !== 'CANCEL') {
+      showToast('轉發失敗：' + e.message, 'error');
+    }
+  }
+}
+
+/** 記錄閱覽 */
+async function recordView(noteId) {
+  try {
+    await gasGet({ action: 'view', noteId });
+    const idx = State.notes.findIndex(n => n.NoteID === noteId);
+    if (idx >= 0) {
+      State.notes[idx].ViewCount = (parseInt(State.notes[idx].ViewCount) || 0) + 1;
+      applySearch();
+    }
+  } catch { /* 靜默失敗 */ }
+}
+
+/* ============================================================
+   搜尋
+============================================================ */
+function applySearch() {
+  const kw = document.getElementById('search-input').value.trim().toLowerCase();
+  State.filtered = kw
+    ? State.notes.filter(n =>
+        n.Title?.toLowerCase().includes(kw) ||
+        n.Content?.toLowerCase().includes(kw) ||
+        n.CreatedByUserName?.toLowerCase().includes(kw))
+    : [...State.notes];
+  renderNoteList(State.filtered);
+}
+
+/* ============================================================
+   人員管理 API
+============================================================ */
+
+/** 載入所有使用者 */
+async function loadUsers() {
+  Overlay.show();
+  try {
+    const data = await gasGet({ action: 'listUsers' });
+    if (!data.success) throw new Error(data.error ?? '載入失敗');
+    State.users = data.users ?? [];
+    applyUserFilter();
+  } catch (e) {
+    showToast('載入使用者失敗：' + e.message, 'error');
+  } finally {
+    Overlay.hide();
+  }
+}
+
+/** 更新使用者角色 */
+async function updateUserRole(targetId, newRole, selectEl) {
+  // 不可修改版主
+  const target = State.users.find(u => u.UserID === targetId);
+  if (target?.Role === 'owner') {
+    showToast('無法修改版主角色', 'error');
+    selectEl.value = 'owner';
+    return;
+  }
+
+  const roleLabel = ROLE_LABEL[newRole]?.text ?? newRole;
+  const ok = await showModal({
+    title      : '變更角色',
+    msg        : `確定將「${target?.DisplayName}」的角色變更為「${roleLabel}」？`,
+    confirmText: '確認變更',
+    danger     : false,
+  });
+  if (!ok) {
+    // 還原選單
+    selectEl.value = target?.Role ?? 'guest';
+    return;
+  }
+
+  Overlay.show();
+  try {
+    const r = await gasGet({ action: 'updateRole', targetId, newRole });
+    if (r.success) {
+      showToast(`已將 ${target?.DisplayName} 設為${roleLabel} ✓`, 'success');
+      await loadUsers();
+    } else {
+      throw new Error(r.error ?? '更新失敗');
+    }
+  } catch (e) {
+    showToast('更新角色失敗：' + e.message, 'error');
+    selectEl.value = target?.Role ?? 'guest';
+  } finally {
+    Overlay.hide();
+  }
+}
+
+/** 封鎖 / 解封使用者 */
+async function toggleBanUser(targetId, ban) {
+  const target = State.users.find(u => u.UserID === targetId);
+  const action = ban ? '封鎖' : '解封';
+  const ok = await showModal({
+    title      : `${action}使用者`,
+    msg        : `確定要${action}「${target?.DisplayName}」嗎？`,
+    confirmText: action,
+    danger     : ban,
+  });
+  if (!ok) return;
+
+  Overlay.show();
+  try {
+    const r = await gasGet({ action: 'banUser', targetId, ban: String(ban) });
+    if (r.success) {
+      showToast(`已${action}${target?.DisplayName} ✓`, 'success');
+      await loadUsers();
+    } else {
+      throw new Error(r.error ?? '操作失敗');
+    }
+  } catch (e) {
+    showToast(`${action}失敗：` + e.message, 'error');
+  } finally {
+    Overlay.hide();
+  }
+}
+
+/* ============================================================
+   使用者篩選
+============================================================ */
+function applyUserFilter() {
+  const f = State.userFilter;
+  State.filteredUsers = f === 'all'
+    ? [...State.users]
+    : f === 'banned'
+      ? State.users.filter(u => u.Status === 'banned')
+      : State.users.filter(u => u.Role === f && u.Status !== 'banned');
+  renderUserList(State.filteredUsers);
+}
+
+/* ============================================================
+   表單操作
+============================================================ */
+function openNewForm() {
+  if (!canWrite(State.myRole)) {
+    showToast('您的權限不足，無法新增記事', 'error');
+    return;
+  }
+  State.editingId   = null;
+  State.existAttach = [];
+  resetForm();
+  switchPage('form');
+}
+
+function openEditForm(note) {
+  if (!canWrite(State.myRole)) {
+    showToast('您的權限不足，無法編輯記事', 'error');
+    return;
+  }
+  State.editingId = note.NoteID;
+  document.getElementById('f-title').value   = note.Title   ?? '';
+  document.getElementById('f-content').value = note.Content ?? '';
+  try { State.existAttach = note.Attachments ? JSON.parse(note.Attachments) : []; }
+  catch { State.existAttach = []; }
+  State.pendingFiles = [];
+  renderExistingAttachPreviews();
+  switchPage('form');
+}
+
+function resetForm() {
+  document.getElementById('f-title').value    = '';
+  document.getElementById('f-content').value  = '';
+  document.getElementById('file-input').value = '';
+  State.pendingFiles = [];
+  State.existAttach  = [];
+  document.getElementById('preview-list').innerHTML = '';
+  setProgress(0, 0);
+}
+
+/* ============================================================
+   附件選擇處理
+============================================================ */
+function handleFileSelect(files) {
+  const MAX_MB    = 50;
+  const MAX_COUNT = 10;
+  const valid     = [];
+
+  Array.from(files).forEach(f => {
+    if (f.size > MAX_MB * 1024 * 1024) {
+      showToast(`「${f.name}」超過 ${MAX_MB}MB 限制`, 'warn');
+      return;
+    }
+    valid.push(f);
+  });
+
+  const total = State.existAttach.length + State.pendingFiles.length + valid.length;
+  if (total > MAX_COUNT) {
+    const allow = MAX_COUNT - State.existAttach.length - State.pendingFiles.length;
+    showToast(`附件總數不可超過 ${MAX_COUNT} 個，已截斷`, 'warn');
+    State.pendingFiles.push(...valid.slice(0, allow));
+  } else {
+    State.pendingFiles.push(...valid);
+  }
+  document.getElementById('file-input').value = '';
+  renderNewFilePreviews();
+}
+
+/* ============================================================
+   頭像 & 角色徽章
+============================================================ */
+function renderAvatar() {
+  const el = document.getElementById('header-avatar');
+  if (State.user.pictureUrl) {
+    const img = document.createElement('img');
+    img.src   = State.user.pictureUrl;
+    img.alt   = State.user.displayName;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+    el.innerHTML = '';
+    el.appendChild(img);
+  } else {
+    el.textContent = (State.user.displayName ?? '?')[0].toUpperCase();
+  }
+}
+
+/** 在 header avatar 旁顯示角色徽章（tooltip） */
+function updateRoleBadge() {
+  const el = document.getElementById('header-avatar');
+  const rl = ROLE_LABEL[State.myRole] ?? ROLE_LABEL.guest;
+  el.title = `${rl.icon} ${rl.text}`;
+}
+
+/* ============================================================
+   事件綁定
+============================================================ */
+function bindEvents() {
+  /* 導航 */
+  document.getElementById('fab-add')
+    .addEventListener('click', openNewForm);
+  document.getElementById('header-back')
+    .addEventListener('click', () => switchPage('list'));
+  document.getElementById('btn-cancel')
+    .addEventListener('click', () => switchPage('list'));
+  document.getElementById('btn-save')
+    .addEventListener('click', saveNote);
+  document.getElementById('btn-manage-users')
+    .addEventListener('click', async () => {
+      switchPage('users');
+      await loadUsers();
+    });
+  document.getElementById('btn-retry')
+    .addEventListener('click', () => {
+      document.getElementById('error-screen').classList.remove('active');
+      initApp();
+    });
+
+  /* 搜尋 */
+  const si = document.getElementById('search-input');
+  const sc = document.getElementById('search-clear');
+  let st;
+  si.addEventListener('input', () => {
+    sc.classList.toggle('visible', si.value.length > 0);
+    clearTimeout(st);
+    st = setTimeout(applySearch, 300);
+  });
+  sc.addEventListener('click', () => {
+    si.value = '';
+    sc.classList.remove('visible');
+    applySearch();
+  });
+
+  /* 附件上傳 */
+  const ua = document.getElementById('upload-area');
+  const fi = document.getElementById('file-input');
+  ua.addEventListener('click', () => fi.click());
+  fi.addEventListener('change', e => handleFileSelect(e.target.files));
+  ua.addEventListener('dragover',  e => { e.preventDefault(); ua.classList.add('drag-over'); });
+  ua.addEventListener('dragleave', () => ua.classList.remove('drag-over'));
+  ua.addEventListener('drop', e => {
+    e.preventDefault();
+    ua.classList.remove('drag-over');
+    handleFileSelect(e.dataTransfer.files);
+  });
+
+  /* 人員管理篩選 Chip */
+  document.getElementById('users-filter')
+    .addEventListener('click', e => {
+      const chip = e.target.closest('.filter-chip');
+      if (!chip) return;
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      State.userFilter = chip.dataset.role;
+      applyUserFilter();
+    });
+}
+
+/* ============================================================
+   主程式入口
+============================================================ */
+async function initApp() {
+  document.getElementById('splash').classList.remove('hidden');
+  try {
+    /* Step 1：LIFF 登入 */
+    await initLiff();
+    if (!State.user) return;
+    renderAvatar();
+
+    /* Step 2：向後端取得自己的角色 */
+    setSplashMsg('正在驗證權限...');
+    try {
+      const meData = await gasGet({ action: 'getMe' });
+      if (meData.success && meData.user) {
+        State.myRole = meData.user.Role ?? 'guest';
+        if (meData.user.Status === 'banned') {
+          showErrorScreen('帳號已被封鎖', '請聯絡管理員以解除封鎖。');
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('[getMe] 失敗，使用預設 guest 角色', e.message);
+    }
+    updateRoleBadge();
+
+    /* Step 3：載入記事 */
+    setSplashMsg('載入記事中...');
+    await loadNotes();
+
+    /* Step 4：顯示主畫面 */
+    document.getElementById('splash').classList.add('hidden');
+    switchPage('list');
+
+  } catch (e) {
+    console.error('[App]', e);
+  }
+}
+
+/* DOMContentLoaded 啟動 */
+document.addEventListener('DOMContentLoaded', () => {
+  bindEvents();
+  initApp();
+});
+
+/* ============================================================
+   Part 4 — app-ui.js
+   記事卡片渲染、附件預覽、人員管理頁面 UI
+   ★ 本檔依賴 app-core.js 中的所有全域變數與函式
+============================================================ */
+
+/* ============================================================
+   角色徽章 HTML 產生器
+============================================================ */
+function roleBadgeHtml(role) {
+  const rl = ROLE_LABEL[role] ?? ROLE_LABEL.guest;
+  return `<span class="role-badge ${rl.cls}">${rl.icon} ${rl.text}</span>`;
+}
+
+/* ============================================================
+   記事列表渲染
+============================================================ */
+function renderNoteList(notes) {
+  const container = document.getElementById('note-list');
+  const meta      = document.getElementById('list-meta');
+  container.innerHTML = '';
+
+  /* 列表頂部：筆數 + 當前角色徽章 */
+  const rl = ROLE_LABEL[State.myRole] ?? ROLE_LABEL.guest;
+  meta.innerHTML = notes.length
+    ? `共 <strong>${notes.length}</strong> 則記事　${roleBadgeHtml(State.myRole)}`
+    : roleBadgeHtml(State.myRole);
+
+  if (!notes.length) {
+    const el = document.createElement('div');
+    el.className = 'empty-state';
+
+    /* 依角色顯示不同提示 */
+    const hint = canWrite(State.myRole)
+      ? '點擊右下角 ＋ 新增第一則記事'
+      : '目前尚無記事，請稍後再查看';
+
+    el.innerHTML = `<div class="icon">📭</div><p>目前沒有記事<br/>${hint}</p>`;
+    container.appendChild(el);
+    return;
+  }
+
+  notes.forEach(n => container.appendChild(buildNoteCard(n)));
+}
+
+/* ============================================================
+   記事卡片建構
+============================================================ */
+function buildNoteCard(note) {
+  const isOwner = note.CreatedByUserID === State.user.userId;
+  const myRole  = State.myRole;
+
+  /* 編輯權限：版主可改所有人，管理者只能改自己 */
+  const canEdit   = myRole === 'owner' || (canWrite(myRole) && isOwner);
+  const canDel    = myRole === 'owner' || (canWrite(myRole) && isOwner);
+  const canFwd    = canWrite(myRole);
+  const canDl     = canDownload(myRole);
+
+  let attachUrls = [];
+  try { attachUrls = note.Attachments ? JSON.parse(note.Attachments) : []; } catch {}
+  let viewers = [];
+  try { viewers = note.Viewers ? JSON.parse(note.Viewers) : []; } catch {}
+
+  /* ── 卡片容器 ── */
+  const card = document.createElement('div');
+  card.className = 'note-card';
+
+  /* 左側色條 */
+  const stripe = document.createElement('div');
+  stripe.className = 'note-card-stripe';
+  card.appendChild(stripe);
+
+  /* 主體 */
+  const body = document.createElement('div');
+  body.className = 'note-card-body';
+  card.appendChild(body);
+
+  /* ── 標題 ── */
+  const titleEl = document.createElement('div');
+  titleEl.className   = 'note-card-title';
+  titleEl.textContent = note.Title;
+  body.appendChild(titleEl);
+
+  /* ── Meta（作者、時間、閱覽數） ── */
+  const metaEl = document.createElement('div');
+  metaEl.className = 'note-card-meta';
+  metaEl.innerHTML =
+    `<span class="meta-badge">👤 ${escHtml(note.CreatedByUserName ?? '未知')}</span>` +
+    `<span class="meta-badge">🕐 ${escHtml(fmtTime(note.CreatedAt))}</span>` +
+    `<span class="meta-badge">👁 ${escHtml(String(note.ViewCount ?? 0))} 次</span>`;
+  body.appendChild(metaEl);
+
+  /* ── 內容預覽 ── */
+  const contentEl = document.createElement('div');
+  contentEl.className   = 'note-card-content';
+  contentEl.textContent = note.Content;
+  body.appendChild(contentEl);
+
+  /* ── 附件區塊 ── */
+  if (attachUrls.length) {
+    const wrap = document.createElement('div');
+    wrap.className = 'note-card-attachments';
+
+    attachUrls.forEach(url => {
+      const thumb = driveThumb(url);
+
+      if (thumb || isImageUrl(url)) {
+        /* 圖片縮圖 */
+        const img       = document.createElement('img');
+        img.className   = 'attach-thumb';
+        img.src         = thumb ?? url;
+        img.alt         = '附件圖片';
+        img.dataset.openUrl = url;
+
+        if (canDl) {
+          /* 會員以上：可點擊開啟原始檔 */
+          img.style.cursor = 'pointer';
+          img.addEventListener('click', e => {
+            e.stopPropagation();
+            window.open(img.dataset.openUrl, '_blank');
+          });
+        } else {
+          /* 訪客：圖片加鎖定提示 */
+          img.style.cursor = 'not-allowed';
+          img.style.filter = 'brightness(.6)';
+          img.title        = '升級為會員以下載附件';
+          img.addEventListener('click', e => {
+            e.stopPropagation();
+            showToast('🔒 需要會員以上權限才能下載附件', 'warn');
+          });
+        }
+        wrap.appendChild(img);
+
+      } else {
+        /* 一般檔案 */
+        if (canDl) {
+          const a       = document.createElement('a');
+          a.className   = 'attach-file';
+          a.href        = url;
+          a.target      = '_blank';
+          a.rel         = 'noopener noreferrer';
+          a.textContent = '📎 ' + decodeURIComponent(url.split('/').pop().split('?')[0]);
+          a.addEventListener('click', e => e.stopPropagation());
+          wrap.appendChild(a);
+        } else {
+          /* 訪客：顯示鎖定圖示 */
+          const span       = document.createElement('span');
+          span.className   = 'attach-file';
+          span.style.cursor = 'not-allowed';
+          span.style.opacity = '.6';
+          span.textContent = '🔒 ' + decodeURIComponent(url.split('/').pop().split('?')[0]);
+          span.title       = '升級為會員以下載附件';
+          span.addEventListener('click', e => {
+            e.stopPropagation();
+            showToast('🔒 需要會員以上權限才能下載附件', 'warn');
+          });
+          wrap.appendChild(span);
+        }
+      }
+    });
+    body.appendChild(wrap);
+  }
+
+  /* ── 閱覽者清單 ── */
+  if (viewers.length) {
+    const vEl       = document.createElement('div');
+    vEl.className   = 'note-card-viewers';
+    const names     = viewers.slice(0, 5).map(v => escHtml(v)).join('、');
+    vEl.textContent = `👥 閱覽者：${names}${viewers.length > 5 ? ` 等 ${viewers.length} 人` : ''}`;
+    body.appendChild(vEl);
+  }
+
+  /* ── 操作按鈕區 ── */
+  const hasActions = canEdit || canDel || canFwd;
+  if (hasActions) {
+    const actions = document.createElement('div');
+    actions.className = 'note-card-actions';
+
+    /* 編輯按鈕 */
+    if (canEdit) {
+      const btnEdit       = document.createElement('button');
+      btnEdit.className   = 'btn-card btn-edit';
+      btnEdit.textContent = '✏️ 編輯';
+      btnEdit.addEventListener('click', e => {
+        e.stopPropagation();
+        openEditForm(note);
+      });
+      actions.appendChild(btnEdit);
+    }
+
+    /* 刪除按鈕 */
+    if (canDel) {
+      const btnDel       = document.createElement('button');
+      btnDel.className   = 'btn-card btn-delete';
+      btnDel.textContent = '🗑 刪除';
+      btnDel.addEventListener('click', e => {
+        e.stopPropagation();
+        deleteNote(note.NoteID);
+      });
+      actions.appendChild(btnDel);
+    }
+
+    /* 轉發按鈕 */
+    if (canFwd) {
+      const btnFwd       = document.createElement('button');
+      btnFwd.className   = 'btn-card btn-forward';
+      btnFwd.textContent = '↗ 轉發';
+      btnFwd.addEventListener('click', e => {
+        e.stopPropagation();
+        forwardNote(note);
+      });
+      actions.appendChild(btnFwd);
+    }
+
+    body.appendChild(actions);
+  }
+
+  /* 點擊卡片記錄閱覽 */
+  card.addEventListener('click', () => recordView(note.NoteID));
+  return card;
+}
+
+/* ============================================================
+   附件預覽：已存在附件
+============================================================ */
+function renderExistingAttachPreviews() {
+  const list = document.getElementById('preview-list');
+  list.innerHTML = '';
+
+  State.existAttach.forEach((url, i) => {
+    const item      = document.createElement('div');
+    item.className  = 'preview-item';
+
+    const thumb = driveThumb(url);
+    if (thumb || isImageUrl(url)) {
+      const img   = document.createElement('img');
+      img.src     = thumb ?? url;
+      img.alt     = '附件';
+      item.appendChild(img);
+    } else {
+      const icon       = document.createElement('div');
+      icon.className   = 'file-icon';
+      icon.textContent = '📎';
+      const name       = document.createElement('div');
+      name.className   = 'file-name';
+      name.textContent = decodeURIComponent(url.split('/').pop().split('?')[0]);
+      item.appendChild(icon);
+      item.appendChild(name);
+    }
+
+    /* 移除按鈕 */
+    const rm       = document.createElement('button');
+    rm.className   = 'preview-remove';
+    rm.textContent = '✕';
+    rm.title       = '移除此附件';
+    rm.addEventListener('click', () => {
+      State.existAttach.splice(i, 1);
+      renderExistingAttachPreviews();
+      renderNewFilePreviews();
+    });
+    item.appendChild(rm);
+    list.appendChild(item);
+  });
+}
+
+/* ============================================================
+   附件預覽：待上傳新檔案
+============================================================ */
+function renderNewFilePreviews() {
+  /* 先移除舊的 new 預覽 */
+  document.querySelectorAll('.preview-item[data-new]').forEach(el => el.remove());
+  const list = document.getElementById('preview-list');
+
+  State.pendingFiles.forEach((file, i) => {
+    const item      = document.createElement('div');
+    item.className  = 'preview-item';
+    item.dataset.new = '1';
+
+    if (file.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      const r   = new FileReader();
+      r.onload  = e => { img.src = e.target.result; };
+      r.readAsDataURL(file);
+      item.appendChild(img);
+    } else {
+      const icon       = document.createElement('div');
+      icon.className   = 'file-icon';
+      icon.textContent = '📎';
+      const name       = document.createElement('div');
+      name.className   = 'file-name';
+      name.textContent = file.name;
+      item.appendChild(icon);
+      item.appendChild(name);
+    }
+
+    /* 移除按鈕 */
+    const rm       = document.createElement('button');
+    rm.className   = 'preview-remove';
+    rm.textContent = '✕';
+    rm.title       = '移除此附件';
+    rm.addEventListener('click', () => {
+      State.pendingFiles.splice(i, 1);
+      renderNewFilePreviews();
+    });
+    item.appendChild(rm);
+    list.appendChild(item);
+  });
+}
+
+/* ============================================================
+   人員管理頁面渲染
+============================================================ */
+function renderUserList(users) {
+  const container = document.getElementById('user-list');
+  const countEl   = document.getElementById('users-count');
+  container.innerHTML = '';
+  countEl.textContent = `共 ${users.length} 人`;
+
+  if (!users.length) {
+    const el = document.createElement('div');
+    el.className = 'empty-state';
+    el.innerHTML = `<div class="icon">👥</div><p>此分類目前沒有使用者</p>`;
+    container.appendChild(el);
+    return;
+  }
+
+  users.forEach(user => container.appendChild(buildUserCard(user)));
+}
+
+/* ============================================================
+   使用者卡片建構
+============================================================ */
+function buildUserCard(user) {
+  const isSelf    = user.UserID === State.user.userId;
+  const isOwner   = user.Role   === 'owner';
+  const isBanned  = user.Status === 'banned';
+  const myRole    = State.myRole;
+
+  /* 版主才能操作角色與封鎖 */
+  const canOperate = canManageUser(myRole) && !isSelf && !isOwner;
+
+  /* ── 卡片容器 ── */
+  const card      = document.createElement('div');
+  card.className  = `user-card${isBanned ? ' banned' : ''}`;
+
+  /* ── 頭像 ── */
+  const avatarEl  = document.createElement('div');
+  avatarEl.className = 'user-avatar';
+  if (user.PictureUrl) {
+    const img   = document.createElement('img');
+    img.src     = user.PictureUrl;
+    img.alt     = user.DisplayName;
+    avatarEl.appendChild(img);
+  } else {
+    avatarEl.textContent = (user.DisplayName || '?')[0].toUpperCase();
+  }
+  card.appendChild(avatarEl);
+
+  /* ── 使用者資訊 ── */
+  const infoEl = document.createElement('div');
+  infoEl.className = 'user-info';
+
+  /* 名稱列：名稱 + 角色徽章 + 自己標記 */
+  const nameRow = document.createElement('div');
+  nameRow.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+
+  const nameEl       = document.createElement('span');
+  nameEl.className   = 'user-name';
+  nameEl.textContent = user.DisplayName || '（未知）';
+  nameRow.appendChild(nameEl);
+
+  /* 角色徽章 */
+  const badge = document.createElement('span');
+  badge.innerHTML = roleBadgeHtml(isBanned ? 'guest' : user.Role);
+  nameRow.appendChild(badge);
+
+  /* 封鎖標記 */
+  if (isBanned) {
+    const banTag       = document.createElement('span');
+    banTag.className   = 'role-badge';
+    banTag.style.cssText = 'background:#ffebee;color:#e53935';
+    banTag.textContent = '🚫 已封鎖';
+    nameRow.appendChild(banTag);
+  }
+
+  /* 自己標記 */
+  if (isSelf) {
+    const selfTag       = document.createElement('span');
+    selfTag.className   = 'role-badge role-member';
+    selfTag.textContent = '（我）';
+    nameRow.appendChild(selfTag);
+  }
+
+  infoEl.appendChild(nameRow);
+
+  /* Meta：加入時間、最後上線 */
+  const metaEl = document.createElement('div');
+  metaEl.className = 'user-meta';
+  metaEl.innerHTML =
+    `加入：${fmtTime(user.JoinedAt)}　` +
+    `上線：${fmtTime(user.LastSeenAt)}`;
+  infoEl.appendChild(metaEl);
+
+  card.appendChild(infoEl);
+
+  /* ── 操作區（僅版主可操作，且不可操作自己或版主） ── */
+  if (canOperate) {
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'user-actions';
+
+    /* 角色選單（封鎖中不顯示） */
+    if (!isBanned) {
+      const select = document.createElement('select');
+      select.className = 'role-select';
+      select.title     = '變更角色';
+
+      const roleOptions = [
+        { value:'admin',  label:'🛡 管理者' },
+        { value:'member', label:'⭐ 會員'  },
+        { value:'guest',  label:'👤 訪客'  },
+      ];
+      roleOptions.forEach(opt => {
+        const option       = document.createElement('option');
+        option.value       = opt.value;
+        option.textContent = opt.label;
+        if (opt.value === user.Role) option.selected = true;
+        select.appendChild(option);
+      });
+
+      select.addEventListener('change', () => {
+        updateUserRole(user.UserID, select.value, select);
+      });
+      actionsEl.appendChild(select);
+    }
+
+    /* 封鎖 / 解封按鈕 */
+    const btnBan       = document.createElement('button');
+    btnBan.className   = `btn-ban ${isBanned ? 'unban' : 'ban'}`;
+    btnBan.textContent = isBanned ? '✅ 解封' : '🚫 封鎖';
+    btnBan.addEventListener('click', () => toggleBanUser(user.UserID, !isBanned));
+    actionsEl.appendChild(btnBan);
+
+    card.appendChild(actionsEl);
+  }
+
+  return card;
+}
+
+/* ============================================================
+   權限說明面板（訪客/會員看到的提示）
+============================================================ */
+function renderPermissionHint() {
+  /* 若已有提示則不重複插入 */
+  if (document.getElementById('permission-hint')) return;
+
+  const role = State.myRole;
+  /* 管理者以上不顯示提示 */
+  if (canWrite(role)) return;
+
+  const hint = document.createElement('div');
+  hint.id    = 'permission-hint';
+  hint.style.cssText = [
+    'margin:12px 16px 0',
+    'padding:12px 16px',
+    'border-radius:10px',
+    'font-size:.8rem',
+    'line-height:1.7',
+    'display:flex',
+    'gap:10px',
+    'align-items:flex-start',
+    role === 'guest'
+      ? 'background:var(--warn-light);color:#E65100;border:1px solid #FFE0B2'
+      : 'background:var(--info-light);color:#1565C0;border:1px solid #BBDEFB',
+  ].join(';');
+
+  const icon = role === 'guest' ? '👤' : '⭐';
+  const text = role === 'guest'
+    ? '您目前是<strong>訪客</strong>，只能瀏覽記事。<br/>如需下載附件，請聯絡管理員升級為會員。'
+    : '您目前是<strong>會員</strong>，可瀏覽及下載附件。<br/>如需新增或編輯記事，請聯絡管理員升級為管理者。';
+
+  hint.innerHTML = `<span style="font-size:1.3rem">${icon}</span><div>${text}</div>`;
+
+  /* 插入在搜尋欄下方 */
+  const searchBar = document.querySelector('.search-bar');
+  searchBar.insertAdjacentElement('afterend', hint);
+}
+
+/* ============================================================
+   覆寫 loadNotes 完成後的 Hook
+   （在 app-core.js 的 loadNotes 呼叫 applySearch 後觸發）
+   透過覆寫 renderNoteList 來插入權限提示
+============================================================ */
+const _originalRenderNoteList = renderNoteList;
+
+/* 重新定義 renderNoteList，加入權限提示邏輯 */
+window.renderNoteList = function(notes) {
+  _originalRenderNoteList(notes);
+  renderPermissionHint();
+};
+
+/* ============================================================
+   統計資訊面板（版主專用）
+============================================================ */
+function renderOwnerStats(users) {
+  /* 僅版主顯示 */
+  if (State.myRole !== 'owner') return;
+
+  const existing = document.getElementById('owner-stats');
+  if (existing) existing.remove();
+
+  const counts = { owner:0, admin:0, member:0, guest:0, banned:0 };
+  users.forEach(u => {
+    if (u.Status === 'banned') { counts.banned++; return; }
+    counts[u.Role] = (counts[u.Role] || 0) + 1;
+  });
+
+  const panel = document.createElement('div');
+  panel.id    = 'owner-stats';
+  panel.style.cssText = [
+    'display:grid',
+    'grid-template-columns:repeat(5,1fr)',
+    'gap:8px',
+    'padding:12px 16px',
+    'background:var(--card-bg)',
+    'border-bottom:1px solid var(--border)',
+  ].join(';');
+
+  const items = [
+    { label:'版主',  count:counts.owner,  color:'var(--gold)',    icon:'👑' },
+    { label:'管理者', count:counts.admin,  color:'var(--purple)',  icon:'🛡' },
+    { label:'會員',  count:counts.member, color:'var(--info)',    icon:'⭐' },
+    { label:'訪客',  count:counts.guest,  color:'var(--text-sub)',icon:'👤' },
+    { label:'封鎖',  count:counts.banned, color:'var(--danger)',  icon:'🚫' },
+  ];
+
+  items.forEach(item => {
+    const cell = document.createElement('div');
+    cell.style.cssText = 'text-align:center;padding:8px 4px;border-radius:8px;background:var(--bg)';
+    cell.innerHTML = `
+      <div style="font-size:1.2rem">${item.icon}</div>
+      <div style="font-size:1.1rem;font-weight:700;color:${item.color}">${item.count}</div>
+      <div style="font-size:.65rem;color:var(--text-sub)">${item.label}</div>
+    `;
+    panel.appendChild(cell);
+  });
+
+  /* 插入在篩選列上方 */
+  const filter = document.getElementById('users-filter');
+  filter.insertAdjacentElement('beforebegin', panel);
+}
+
+/* ============================================================
+   覆寫 renderUserList，加入統計面板
+============================================================ */
+const _originalRenderUserList = renderUserList;
+
+window.renderUserList = function(users) {
+  /* 統計面板使用完整 State.users（非篩選後） */
+  renderOwnerStats(State.users);
+  _originalRenderUserList(users);
+};
+</script>
+</body>
+</html>
