@@ -796,6 +796,47 @@
     }
     @keyframes spin { to { transform:rotate(360deg); } }
     #loading-text { font-size:.85rem; color:var(--text-sub); }
+
+    /* 上傳進度條 */
+    .upload-progress-wrapper {
+      padding: 10px 12px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin: 6px 0;
+    }
+    .upload-progress-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: .8rem;
+      margin-bottom: 6px;
+      color: var(--text-sub);
+    }
+    .upload-filename {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 75%;
+    }
+    .upload-progress-bar-bg {
+      background: var(--border);
+      border-radius: 99px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .upload-progress-bar-fill {
+      height: 100%;
+      background: #00B900;
+      border-radius: 99px;
+      transition: width .3s ease;
+      width: 0%;
+    }
+    .upload-status {
+      font-size: .75rem;
+      color: var(--text-hint);
+      margin-top: 4px;
+    }
+
   </style>
 </head>
 <body>
@@ -910,7 +951,7 @@
 /* ── 設定 ── */
 const CONFIG = {
   LIFF_ID : '2009456572-AUDE1qmM',   // ← 替換
-  GAS_URL : 'https://script.google.com/macros/s/AKfycbz2-wRQ8Y-Bzq5eM9YuLMZXjheCt8pjCIeTxaK5Ej2_bl-jHfOcFgFMznWbNzl6tedC8Q/exec',   // ← 替換
+  GAS_URL : 'https://script.google.com/macros/s/AKfycbyhSn0h7h_NsB6_G7h_Ba7NH2kHBTiM1Db_9GYCP7vjfwMTC11BY_Dvm_Ii7bEISFebzg/exec',   // ← 替換
 };
 
 const ROLE_LABEL = {
@@ -1103,6 +1144,302 @@ function buildAttachElement(url, options = {}) {
       return span;
     }
   }
+}
+
+/* ============================================================
+   影片上傳模組 — Google Drive Resumable Upload API
+   直接從瀏覽器上傳，不經過 GAS，支援大檔案
+============================================================ */
+
+const UPLOAD_CFG = {
+  MAX_SIZE_MB   : 1024,          // 最大 1GB
+  CHUNK_SIZE    : 5 * 1024 * 1024, // 每次分段 5MB
+  VIDEO_TYPES   : ['video/mp4','video/quicktime','video/x-msvideo',
+                   'video/webm','video/mpeg','video/3gpp','video/x-matroska'],
+  IMAGE_TYPES   : ['image/jpeg','image/png','image/gif',
+                   'image/webp','image/bmp','image/svg+xml'],
+  DOC_TYPES     : ['application/pdf',
+                   'application/msword',
+                   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                   'application/vnd.ms-excel',
+                   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                   'application/vnd.ms-powerpoint',
+                   'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+};
+
+/* ============================================================
+   取得 Google OAuth Access Token（透過 LIFF）
+============================================================ */
+async function getAccessToken() {
+  try {
+    /* LIFF 環境：直接取得 token */
+    if (typeof liff !== 'undefined' && liff.isLoggedIn()) {
+      const token = liff.getAccessToken();
+      if (token) return token;
+    }
+  } catch(e) {
+    console.warn('[getAccessToken] LIFF token 失敗：', e.message);
+  }
+
+  /* 備用：從 GAS 取得 token */
+  try {
+    const res = await callAPI('getAccessToken');
+    if (res.token) return res.token;
+  } catch(e) {
+    console.warn('[getAccessToken] GAS token 失敗：', e.message);
+  }
+
+  throw new Error('無法取得 Access Token，請確認已登入');
+}
+
+/* ============================================================
+   判斷檔案類型
+============================================================ */
+function getFileCategory(mimeType) {
+  if (UPLOAD_CFG.VIDEO_TYPES.includes(mimeType))  return 'video';
+  if (UPLOAD_CFG.IMAGE_TYPES.includes(mimeType))  return 'image';
+  if (UPLOAD_CFG.DOC_TYPES.includes(mimeType))    return 'doc';
+  return 'other';
+}
+
+/* ============================================================
+   主要上傳函式（自動判斷走 GAS 或 Drive API）
+============================================================ */
+async function uploadFileAuto(file, onProgress) {
+  const sizeMB = file.size / 1024 / 1024;
+
+  /* 小於 4MB → 走原本 GAS Base64 上傳 */
+  if (sizeMB < 4) {
+    return await uploadViaGAS(file, onProgress);
+  }
+
+  /* 大於 4MB → 走 Drive API 直接上傳 */
+  return await uploadViaDriveAPI(file, onProgress);
+}
+
+/* ============================================================
+   原本的 GAS 上傳（小檔案用）
+============================================================ */
+async function uploadViaGAS(file, onProgress) {
+  if (onProgress) onProgress(0, file.name, 'reading');
+
+  const b64 = await fileToBase64(file);
+  if (onProgress) onProgress(50, file.name, 'uploading');
+
+  const res = await callAPI('uploadFile', {
+    fileName: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    data    : b64,
+  });
+
+  if (onProgress) onProgress(100, file.name, 'done');
+  return { url: res.url, fileId: res.fileId, fileName: res.fileName, via: 'GAS' };
+}
+
+/* ============================================================
+   Drive API 直接上傳（大檔案、影片用）
+============================================================ */
+async function uploadViaDriveAPI(file, onProgress) {
+  const sizeMB = file.size / 1024 / 1024;
+  if (sizeMB > UPLOAD_CFG.MAX_SIZE_MB) {
+    throw new Error(`檔案過大，上限 ${UPLOAD_CFG.MAX_SIZE_MB}MB（目前 ${sizeMB.toFixed(1)}MB）`);
+  }
+
+  /* Step 1：從 GAS 取得上傳用的 Folder ID */
+  const configRes = await callAPI('getUploadConfig');
+  const folderId  = configRes.folderId;
+  if (!folderId) throw new Error('無法取得上傳資料夾設定');
+
+  /* Step 2：取得 Access Token */
+  const token = await getAccessToken();
+
+  /* Step 3：建立 Resumable Upload Session */
+  if (onProgress) onProgress(0, file.name, 'preparing');
+
+  const metadata = {
+    name   : file.name,
+    parents: [folderId],
+  };
+
+  const initRes = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
+    {
+      method : 'POST',
+      headers: {
+        'Authorization' : `Bearer ${token}`,
+        'Content-Type'  : 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type'  : file.type || 'application/octet-stream',
+        'X-Upload-Content-Length': String(file.size),
+      },
+      body: JSON.stringify(metadata),
+    }
+  );
+
+  if (!initRes.ok) {
+    const errText = await initRes.text();
+    throw new Error(`建立上傳 Session 失敗（${initRes.status}）：${errText}`);
+  }
+
+  const uploadUrl = initRes.headers.get('Location');
+  if (!uploadUrl) throw new Error('無法取得上傳 URL');
+
+  /* Step 4：分段上傳 */
+  const fileId = await resumableUpload(file, uploadUrl, onProgress);
+
+  /* Step 5：設定公開分享（透過 GAS） */
+  if (onProgress) onProgress(99, file.name, 'sharing');
+  await callAPI('setFilePublic', { fileId });
+
+  const url = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
+  if (onProgress) onProgress(100, file.name, 'done');
+
+  return { url, fileId, fileName: file.name, via: 'DriveAPI' };
+}
+
+/* ============================================================
+   分段上傳核心
+============================================================ */
+async function resumableUpload(file, uploadUrl, onProgress) {
+  const chunkSize = UPLOAD_CFG.CHUNK_SIZE;
+  let   start     = 0;
+  let   fileId    = null;
+
+  while (start < file.size) {
+    const end   = Math.min(start + chunkSize, file.size);
+    const chunk = file.slice(start, end);
+
+    const res = await fetch(uploadUrl, {
+      method : 'PUT',
+      headers: {
+        'Content-Range': `bytes ${start}-${end - 1}/${file.size}`,
+        'Content-Type' : file.type || 'application/octet-stream',
+      },
+      body: chunk,
+    });
+
+    /* 308 Resume Incomplete → 繼續下一段 */
+    if (res.status === 308) {
+      const range = res.headers.get('Range');
+      start = range ? parseInt(range.split('-')[1]) + 1 : end;
+      const pct = Math.round((start / file.size) * 95);
+      if (onProgress) onProgress(pct, file.name, 'uploading');
+      continue;
+    }
+
+    /* 200 / 201 → 上傳完成 */
+    if (res.status === 200 || res.status === 201) {
+      const json = await res.json();
+      fileId = json.id;
+      break;
+    }
+
+    /* 其他錯誤 */
+    const errText = await res.text();
+    throw new Error(`上傳失敗（${res.status}）：${errText}`);
+  }
+
+  if (!fileId) throw new Error('上傳完成但未取得 File ID');
+  return fileId;
+}
+
+/* ============================================================
+   GAS 端需新增的兩個 Action（加入 Code.gs 的 doPost switch）
+============================================================ */
+
+/*
+case 'getUploadConfig':
+  result = actionGetUploadConfig(body);
+  break;
+
+case 'setFilePublic':
+  result = actionSetFilePublic(body);
+  break;
+*/
+
+/* ============================================================
+   進度條 UI
+============================================================ */
+function createProgressBar(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return null;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'upload-progress-wrapper';
+  wrapper.innerHTML = `
+    <div class="upload-progress-info">
+      <span class="upload-filename"></span>
+      <span class="upload-pct">0%</span>
+    </div>
+    <div class="upload-progress-bar-bg">
+      <div class="upload-progress-bar-fill"></div>
+    </div>
+    <div class="upload-status"></div>
+  `;
+  container.appendChild(wrapper);
+
+  const STATUS_TEXT = {
+    reading  : '📖 讀取中…',
+    preparing: '🔧 準備上傳…',
+    uploading: '⬆️ 上傳中…',
+    sharing  : '🔗 設定分享…',
+    done     : '✅ 完成！',
+  };
+
+  return {
+    update(pct, fileName, status) {
+      wrapper.querySelector('.upload-filename').textContent = fileName || '';
+      wrapper.querySelector('.upload-pct').textContent      = `${pct}%`;
+      wrapper.querySelector('.upload-progress-bar-fill').style.width = `${pct}%`;
+      wrapper.querySelector('.upload-status').textContent   = STATUS_TEXT[status] || status;
+      if (status === 'done') {
+        wrapper.querySelector('.upload-progress-bar-fill').style.background = '#00B900';
+      }
+    },
+    remove() { wrapper.remove(); },
+  };
+}
+
+/* ============================================================
+   修改後的 uploadPendingFiles（支援影片進度條）
+============================================================ */
+async function uploadPendingFilesWithProgress() {
+  if (!State.pendingFiles.length) return [];
+  const urls = [];
+
+  for (const file of State.pendingFiles) {
+    const sizeMB   = file.size / 1024 / 1024;
+    const category = getFileCategory(file.type);
+    const isLarge  = sizeMB >= 4;
+
+    showLoading(isLarge
+      ? `上傳 ${category === 'video' ? '影片' : '檔案'}：${file.name}（${sizeMB.toFixed(1)}MB）`
+      : `上傳附件：${file.name}`
+    );
+
+    const bar = createProgressBar('preview-list');
+
+    try {
+      const result = await uploadFileAuto(file, (pct, name, status) => {
+        if (bar) bar.update(pct, name, status);
+        if (isLarge) {
+          showLoading(`上傳中 ${pct}%：${file.name}`);
+        }
+      });
+
+      urls.push(result.url);
+      showToast(`✅ 上傳完成：${file.name}`, 'success');
+      console.log(`[Upload] ${file.name} → ${result.via} → ${result.url}`);
+
+    } catch(err) {
+      showToast(`❌ 上傳失敗：${file.name} — ${err.message}`, 'error', 6000);
+      console.error(`[Upload] ${file.name}`, err);
+    } finally {
+      if (bar) setTimeout(() => bar.remove(), 2000);
+    }
+  }
+
+  hideLoading();
+  return urls;
 }
 
 /* ============================================================
