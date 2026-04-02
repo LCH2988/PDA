@@ -31,6 +31,36 @@
       --fs-base      : 16px; /* ★ 預設大字，適合年長者 */
     }
 
+      html {
+    -webkit-text-size-adjust: 100% !important;
+    -moz-text-size-adjust   : 100% !important;
+    -ms-text-size-adjust    : 100% !important;
+    text-size-adjust        : 100% !important;
+  }
+
+  /* ★ 預設字體大小（直接寫在 html，不靠變數） */
+  html { font-size: 16px; }
+  body { font-size: 1rem; }
+
+  /* ★ 字體大小 class（同時套用 html + body，用 !important 強制覆蓋） */
+  html.font-small  { font-size: 16px !important; }
+  html.font-medium { font-size: 18px !important; }
+  html.font-large  { font-size: 22px !important; }
+  html.font-xlarge { font-size: 26px !important; }
+
+  body.font-small  { font-size: 16px !important; }
+  body.font-medium { font-size: 18px !important; }
+  body.font-large  { font-size: 22px !important; }
+  body.font-xlarge { font-size: 26px !important; }
+
+  /* ★ 確保所有子元素跟隨 rem 縮放 */
+  * { box-sizing: border-box; }
+
+  /* ★ 常用元素明確繼承（部分 WebView 不自動繼承） */
+  p, span, div, button, input, textarea, select, label, a, li {
+    font-size: inherit;
+  }
+
     /* ★ 直接對 html 設定 font-size，不透過變數繼承 */
     html,
     body                { font-size: 16px; } /* 預設：大 */
@@ -509,24 +539,50 @@ const CACHE = {
 const FontManager = {
   current: 'large',
   SIZES  : ['small', 'medium', 'large', 'xlarge'],
-  LABELS : { xlarge:'特大', large:'大（預設）', medium:'中', small:'小' },
+  LABELS : { small:'小', medium:'中', large:'大（預設）', xlarge:'特大' },
+  SIZE_PX: { small: 13,  medium: 16,  large: 19,  xlarge: 22 },
 
   init() {
-    this.current = CACHE.loadFont();
-    this._applyClass(this.current);
+    this.current = CACHE.loadFont() || 'large';
+    this._apply(this.current);
   },
 
-  /* ★ 修正：同時對 html + body 套用 class */
-  _applyClass(size) {
-    const targets = [document.documentElement, document.body];
-    targets.forEach(el => {
+  /* ★ 三管齊下：class + style + meta viewport */
+  _apply(size) {
+    const px = this.SIZE_PX[size] || 16;
+
+    /* 方法 1：class（CSS 方案） */
+    [document.documentElement, document.body].forEach(el => {
       this.SIZES.forEach(s => el.classList.remove('font-' + s));
       el.classList.add('font-' + size);
+    });
+
+    /* 方法 2：直接設定 style（最可靠，強制覆蓋） */
+    document.documentElement.style.fontSize = px + 'px';
+    document.body.style.fontSize            = px + 'px';
+
+    /* 方法 3：強制 reflow（手機 WebView 有時不自動重繪） */
+    this._forceReflow();
+  },
+
+  /* ★ 強制手機 WebView 重新計算佈局 */
+  _forceReflow() {
+    /* 讀取 offsetHeight 觸發同步 reflow */
+    void document.body.offsetHeight;
+
+    /* 用 requestAnimationFrame 確保下一幀重繪 */
+    requestAnimationFrame(() => {
+      void document.body.offsetHeight;
+
+      /* 第二幀再確認一次（iOS WebView 有時需要兩幀） */
+      requestAnimationFrame(() => {
+        void document.body.offsetHeight;
+      });
     });
   },
 
   apply(size, save = true) {
-    this._applyClass(size);
+    this._apply(size);
     this.current = size;
     if (save) CACHE.saveFont(size);
 
@@ -537,7 +593,10 @@ const FontManager = {
   },
 
   openModal() {
-    this.apply(this.current, false); /* 開啟前同步選中狀態 */
+    /* 開啟前同步選中狀態 */
+    document.querySelectorAll('.font-size-opt').forEach(el => {
+      el.classList.toggle('active', el.dataset.size === this.current);
+    });
     document.getElementById('font-modal').classList.add('open');
   },
 
@@ -553,20 +612,21 @@ const FontManager = {
     /* 選項點擊 */
     document.querySelectorAll('.font-size-opt').forEach(el => {
       el.addEventListener('click', () => {
-        this.apply(el.dataset.size);
+        const size = el.dataset.size;
+        this.apply(size);
         this.closeModal();
         showToast(
-          `字體已設為「${this.LABELS[el.dataset.size] || el.dataset.size}」`,
+          `字體已設為「${this.LABELS[size] || size}」`,
           'success', 2000
         );
       });
     });
 
     /* 關閉按鈕 */
-    document.getElementById('font-modal-cancel')
-      .addEventListener('click', () => this.closeModal());
-    document.getElementById('font-modal-close-x')
-      .addEventListener('click', () => this.closeModal());
+    const cancelBtn = document.getElementById('font-modal-cancel');
+    const closeX    = document.getElementById('font-modal-close-x');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => this.closeModal());
+    if (closeX)    closeX.addEventListener('click',    () => this.closeModal());
 
     /* 點擊背景關閉 */
     document.getElementById('font-modal')
