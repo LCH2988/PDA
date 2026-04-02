@@ -1513,38 +1513,136 @@ async function recordView(noteId) {
 ============================================================ */
 async function forwardNote(note) {
   if (!liff.isApiAvailable('shareTargetPicker')) {
-    showToast('此環境不支援轉發功能', 'warn'); return;
+    showToast('此環境不支援分享功能', 'error');
+    return;
   }
-  try {
-    await liff.shareTargetPicker([{
-      type    : 'flex',
-      altText : `📒 ${note.Title}`,
-      contents: {
-        type  : 'bubble',
-        header: {
-          type    : 'box', layout: 'vertical',
-          contents: [{ type:'text', text:'📒 記事本', size:'sm', color:'#ffffff', weight:'bold' }],
-          backgroundColor: '#00B900', paddingAll: '12px',
-        },
-        body: {
-          type: 'box', layout: 'vertical', spacing: 'sm',
-          contents: [
-            { type:'text', text: note.Title,   weight:'bold', size:'lg', wrap:true },
-            { type:'text', text: note.Content, size:'sm', color:'#666666', wrap:true, maxLines:3 },
-            {
-              type: 'box', layout: 'horizontal', margin: 'md',
-              contents: [
-                { type:'text', text:`👤 ${note.CreatedByUserName || '未知'}`, size:'xs', color:'#999999', flex:1 },
-                { type:'text', text:`👁 ${note.ViewCount || 0} 次`,           size:'xs', color:'#999999', align:'end' },
-              ],
-            },
-          ],
-        },
+
+  const deepLink  = buildNoteDeepLink(note.NoteID);
+  const previewTx = note.Content.length > 40
+    ? note.Content.slice(0, 40) + '…'
+    : note.Content;
+
+  /* ★ Flex Message：包含標題、內容預覽、深連結按鈕 */
+  const flexMessage = {
+    type: 'flex',
+    altText: `📝 ${note.Title}`,
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+
+      /* ── Header ── */
+      header: {
+        type   : 'box',
+        layout : 'vertical',
+        contents: [{
+          type : 'text',
+          text : '📝 記事分享',
+          size : 'xs',
+          color: '#ffffff99',
+        }],
+        backgroundColor: '#3B82F6',
+        paddingAll     : '12px',
       },
-    }]);
-    showToast('✅ 已轉發', 'success');
+
+      /* ── Body ── */
+      body: {
+        type   : 'box',
+        layout : 'vertical',
+        spacing: 'md',
+        contents: [
+          {
+            type  : 'text',
+            text  : note.Title,
+            weight: 'bold',
+            size  : 'lg',
+            wrap  : true,
+            color : '#1e293b',
+          },
+          {
+            type : 'text',
+            text : previewTx,
+            size : 'sm',
+            wrap : true,
+            color: '#64748b',
+          },
+          {
+            type   : 'box',
+            layout : 'horizontal',
+            margin : 'md',
+            spacing: 'sm',
+            contents: [
+              {
+                type : 'text',
+                text : `👤 ${note.CreatedByUserName ?? '未知'}`,
+                size : 'xs',
+                color: '#94a3b8',
+                flex : 1,
+              },
+              {
+                type : 'text',
+                text : `🕐 ${fmtTime(note.CreatedAt)}`,
+                size : 'xs',
+                color: '#94a3b8',
+                flex : 1,
+                align: 'end',
+              },
+            ],
+          },
+        ],
+      },
+
+      /* ── Footer：深連結按鈕 ── */
+      footer: {
+        type   : 'box',
+        layout : 'vertical',
+        contents: [{
+          type  : 'button',
+          style : 'primary',
+          color : '#3B82F6',
+          height: 'sm',
+          action: {
+            type : 'uri',
+            label: '📖 開啟完整內容',
+            uri  : deepLink,           // ★ LIFF 深連結
+          },
+        }],
+      },
+    },
+  };
+
+  /* 附件圖片（若有）加入 hero */
+  let attachUrls = [];
+  try { attachUrls = note.Attachments ? JSON.parse(note.Attachments) : []; } catch {}
+
+  const firstImage = attachUrls.find(u =>
+    /\.(jpe?g|png|gif|webp)/i.test(u)
+  );
+  if (firstImage) {
+    flexMessage.contents.hero = {
+      type       : 'image',
+      url        : firstImage,
+      size       : 'full',
+      aspectRatio: '20:13',
+      aspectMode : 'cover',
+    };
+  }
+
+  /* ── 呼叫 shareTargetPicker ── */
+  try {
+    showLoading('開啟分享選擇器…');
+    const result = await liff.shareTargetPicker([flexMessage], {
+      isMultiple: true,
+    });
+
+    if (result?.status === 'success') {
+      showToast('✅ 已成功分享！', 'success');
+    } else {
+      showToast('分享已取消', 'info');
+    }
   } catch (err) {
-    if (err.code !== 'CANCEL') showToast(`轉發失敗：${err.message}`, 'error');
+    showToast(`分享失敗：${err.message}`, 'error');
+  } finally {
+    hideLoading();
   }
 }
 
