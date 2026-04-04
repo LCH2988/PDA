@@ -705,7 +705,7 @@
 
 const API_CONFIG = {
   url:        localStorage.getItem('api_url') || '',
-  key:        localStorage.getItem('api_key') || 'PD2026',
+  key:        localStorage.getItem('api_key') || 'PDA85202581',
   timeout:    15000,
   retryCount: 2
 };
@@ -852,32 +852,89 @@ function loadApiConfig(){
 }
 
 // ── fetch 封裝（含 timeout + retry）────────────────────
-async function apiFetch(params, retries){
-  if(retries === undefined) retries = API_CONFIG.retryCount;
+// ── 新版 apiFetch（CORS-safe，全用 GET）────────────────────
+async function apiFetch(params, retries) {
+  if (retries === undefined) retries = API_CONFIG.retryCount;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_CONFIG.timeout);
   try {
-    const fetchOpts = {
-      method: params.method || 'GET',
-      signal: controller.signal
-    };
-    if(params.body){
-      fetchOpts.headers = { 'Content-Type':'application/json' };
-      fetchOpts.body    = JSON.stringify(params.body);
+    let url = params.url;
+    if (params.body) {
+      const encoded = encodeURIComponent(JSON.stringify(params.body));
+      url += (url.includes('?') ? '&' : '?') + 'payload=' + encoded;
     }
-    const response = await fetch(params.url, fetchOpts);
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      redirect: 'follow'
+    });
     clearTimeout(timer);
-    if(!response.ok) throw new Error('HTTP ' + response.status);
+    if (!response.ok) throw new Error('HTTP ' + response.status);
     return await response.json();
-  } catch(err){
+  } catch (err) {
     clearTimeout(timer);
-    if(retries > 0 && err.name !== 'AbortError'){
+    if (retries > 0 && err.name !== 'AbortError') {
       await new Promise(r => setTimeout(r, 1000));
       return apiFetch(params, retries - 1);
     }
     throw err;
   }
 }
+
+// ── 遠端單筆操作（移除 method:'POST'）────────────────────
+async function createRemote(data) {
+  const res = await apiFetch({
+    url:  API_CONFIG.url,
+    body: { action:'create', key:API_CONFIG.key, data }
+  });
+  if (!res.success) throw new Error(res.error);
+  return res.id;
+}
+
+async function updateRemote(id, data) {
+  const res = await apiFetch({
+    url:  API_CONFIG.url,
+    body: { action:'update', key:API_CONFIG.key, id, data }
+  });
+  if (!res.success) throw new Error(res.error);
+}
+
+async function deleteRemote(id) {
+  const res = await apiFetch({
+    url:  API_CONFIG.url,
+    body: { action:'delete', key:API_CONFIG.key, id }
+  });
+  if (!res.success) throw new Error(res.error);
+}
+
+async function pushToRemote() {
+  if (!API_CONFIG.url) {
+    showToast('⚠️ 請先設定 API URL','warning'); return;
+  }
+  if (!confirm('確定要將本機 ' + tasks.length + ' 筆資料上傳覆蓋試算表嗎？')) return;
+  syncState.syncing = true;
+  updateSyncBar();
+  try {
+    const res = await apiFetch({
+      url:  API_CONFIG.url,
+      body: { action:'batchWrite', key:API_CONFIG.key, data:tasks }
+      // ← 移除 method:'POST'
+    });
+    if (res.success) {
+      syncState.lastSync  = Date.now();
+      syncState.connected = true;
+      showToast('✅ 已上傳 ' + tasks.length + ' 筆資料至試算表','success');
+    } else {
+      throw new Error(res.error);
+    }
+  } catch (err) {
+    showToast('❌ 上傳失敗：' + err.message,'danger');
+  } finally {
+    syncState.syncing = false;
+    updateSyncBar();
+  }
+}
+
 
 // ── 連線測試 ─────────────────────────────────────────────
 async function pingRemote(){
@@ -968,33 +1025,33 @@ async function syncFromRemote(){
 }
 
 // ── 上傳本機資料到遠端 ───────────────────────────────────
-async function pushToRemote(){
-  if(!API_CONFIG.url){
-    showToast('⚠️ 請先設定 API URL','warning'); return;
-  }
-  if(!confirm('確定要將本機 ' + tasks.length + ' 筆資料上傳覆蓋試算表嗎？')) return;
-  syncState.syncing = true;
-  updateSyncBar();
-  try {
-    const res = await apiFetch({
-      url:    API_CONFIG.url,
-      method: 'POST',
-      body:   { action:'batchWrite', key:API_CONFIG.key, data:tasks }
-    });
-    if(res.success){
-      syncState.lastSync = Date.now();
-      syncState.connected = true;
-      showToast('✅ 已上傳 ' + tasks.length + ' 筆資料至試算表','success');
-    } else {
-      throw new Error(res.error);
-    }
-  } catch(err){
-    showToast('❌ 上傳失敗：' + err.message,'danger');
-  } finally {
-    syncState.syncing = false;
-    updateSyncBar();
-  }
-}
+// async function pushToRemote(){
+//   if(!API_CONFIG.url){
+//     showToast('⚠️ 請先設定 API URL','warning'); return;
+//   }
+//   if(!confirm('確定要將本機 ' + tasks.length + ' 筆資料上傳覆蓋試算表嗎？')) return;
+//   syncState.syncing = true;
+//   updateSyncBar();
+//   try {
+//     const res = await apiFetch({
+//       url:    API_CONFIG.url,
+//       method: 'POST',
+//       body:   { action:'batchWrite', key:API_CONFIG.key, data:tasks }
+//     });
+//     if(res.success){
+//       syncState.lastSync = Date.now();
+//       syncState.connected = true;
+//       showToast('✅ 已上傳 ' + tasks.length + ' 筆資料至試算表','success');
+//     } else {
+//       throw new Error(res.error);
+//     }
+//   } catch(err){
+//     showToast('❌ 上傳失敗：' + err.message,'danger');
+//   } finally {
+//     syncState.syncing = false;
+//     updateSyncBar();
+//   }
+// }
 
 // ── 連線到遠端 ───────────────────────────────────────────
 async function connectRemote(){
@@ -1024,31 +1081,31 @@ function switchToLocal(){
   showToast('📴 已切換為離線模式','warning');
 }
 
-// ── 遠端單筆操作 ─────────────────────────────────────────
-async function createRemote(data){
-  const res = await apiFetch({
-    url: API_CONFIG.url, method:'POST',
-    body:{ action:'create', key:API_CONFIG.key, data }
-  });
-  if(!res.success) throw new Error(res.error);
-  return res.id;
-}
+// // ── 遠端單筆操作 ─────────────────────────────────────────
+// async function createRemote(data){
+//   const res = await apiFetch({
+//     url: API_CONFIG.url, method:'POST',
+//     body:{ action:'create', key:API_CONFIG.key, data }
+//   });
+//   if(!res.success) throw new Error(res.error);
+//   return res.id;
+// }
 
-async function updateRemote(id, data){
-  const res = await apiFetch({
-    url: API_CONFIG.url, method:'POST',
-    body:{ action:'update', key:API_CONFIG.key, id, data }
-  });
-  if(!res.success) throw new Error(res.error);
-}
+// async function updateRemote(id, data){
+//   const res = await apiFetch({
+//     url: API_CONFIG.url, method:'POST',
+//     body:{ action:'update', key:API_CONFIG.key, id, data }
+//   });
+//   if(!res.success) throw new Error(res.error);
+// }
 
-async function deleteRemote(id){
-  const res = await apiFetch({
-    url: API_CONFIG.url, method:'POST',
-    body:{ action:'delete', key:API_CONFIG.key, id }
-  });
-  if(!res.success) throw new Error(res.error);
-}
+// async function deleteRemote(id){
+//   const res = await apiFetch({
+//     url: API_CONFIG.url, method:'POST',
+//     body:{ action:'delete', key:API_CONFIG.key, id }
+//   });
+//   if(!res.success) throw new Error(res.error);
+// }
 
 // ── 儲存後同步 ───────────────────────────────────────────
 async function syncAfterSave(isNew, taskData){
