@@ -655,7 +655,7 @@ textarea.form-control{resize:vertical;min-height:96px;}
 <script>
 /* ══ CONFIG ══ */
 const CFG={
-  gasUrl:'https://script.google.com/macros/s/AKfycbzyl9c8cFkmTE0Rcp8tWYJ8diA_Falrt1EgloqkzrRdOJBAZMaIOboZYYQ05vnkqOA8/exec',
+  gasUrl:'https://script.google.com/macros/s/AKfycbyub5MBzdSIUT6Sx9L3OfnxB6aegmo2zc_IW6i1qECPIdZQ3-F3bTH--1jwFvnYiraZ/exec',
   liffId:'2009456572-588gzru4',
   org:'社團法人台灣帕金森病友權益促進會',
   remitInfo:{
@@ -2100,37 +2100,58 @@ const AdminApp=(()=>{
     App._bindFileInput('ni-file','ni-attach-list','income');
   }
   async function submitNewIncome(){
-    const desc=_v('ni-desc'),amtStr=_v('ni-amount'),date=_v('ni-date'),
-          category=_v('ni-category'),method=_v('ni-method'),
-          payer=_v('ni-payer'),note=_v('ni-note'),status=_v('ni-status');
-    if(!desc){Toast.warning('請填寫收入說明');return;}
-    const amount=parseFloat(amtStr);
-    if(!amount||amount<=0){Toast.warning('請輸入有效金額');return;}
-    if(!date){Toast.warning('請選擇收款日期');return;}
-    const btn=document.getElementById('ni-submit-btn');
-    if(btn){btn.disabled=true;btn.textContent='建立中…';}
-    try{
-      const attachments=App._getState('_incomeAttachments')||[];
-      const r=await API.post('createIncomeRecord',{
-        description:desc,amount:amount,date:date,
-        category:category,method:method,payer:payer,
-        note:note,status:status,attachments:attachments,
-      });
-      if(r&&r.success){
-        Toast.success('✅ 收入記錄已建立！');
-        App._setState('_incomeAttachments',[]);
-        Modal.close();
-        if(status==='已核准')switchIncomeTab('all');
-        else switchIncomeTab('pending');
-      }else{
-        Toast.error(r.message||r.error||'建立失敗');
-        if(btn){btn.disabled=false;btn.textContent='💵 建立收入記錄';}
+  const desc     = _v('ni-desc');
+  const amtStr   = _v('ni-amount');
+  const date     = _v('ni-date');
+  const category = _v('ni-category');
+  const method   = _v('ni-method');
+  const payer    = _v('ni-payer');    // 後端欄位是 payerName
+  const note     = _v('ni-note');
+  const status   = _v('ni-status');
+
+  if(!desc){ Toast.warning('請填寫收入說明'); return; }
+  const amount = parseFloat(amtStr);
+  if(!amount || amount <= 0){ Toast.warning('請輸入有效金額'); return; }
+  if(!date){ Toast.warning('請選擇收款日期'); return; }
+
+  const btn = document.getElementById('ni-submit-btn');
+  if(btn){ btn.disabled = true; btn.textContent = '建立中…'; }
+
+  try{
+    const attachments = App._getState('_incomeAttachments') || [];
+    const r = await API.post('submitIncome', {   // ← 改這裡
+      description : desc,
+      amount      : amount,
+      date        : date,
+      category    : category,
+      method      : method,
+      payerName   : payer,   // ← 後端用 payerName
+      note        : note,
+      // ⚠️ 後端 _submitIncome 固定狀態為「待審核」
+      // 若需直接核准，需另外呼叫 approveIncome
+      attachments : attachments,
+    });
+
+    if(r && r.success){
+      // 若管理員選擇「直接核准」，再呼叫 approveIncome
+      if(status === '已核准' && r.recordId){
+        await API.post('approveIncome', { id: r.recordId, reviewNote: '管理員直接核准' });
+        Toast.success('✅ 收入記錄已建立並核准！');
+      } else {
+        Toast.success('✅ 收入記錄已建立，等待審核');
       }
-    }catch(e){
-      Toast.error(e.message);
-      if(btn){btn.disabled=false;btn.textContent='💵 建立收入記錄';}
+      App._setState('_incomeAttachments', []);
+      Modal.close();
+      switchIncomeTab(status === '已核准' ? 'all' : 'pending');
+    } else {
+      Toast.error(r.message || r.error || '建立失敗');
+      if(btn){ btn.disabled = false; btn.textContent = '💵 建立收入記錄'; }
     }
+  } catch(e){
+    Toast.error(e.message);
+    if(btn){ btn.disabled = false; btn.textContent = '💵 建立收入記錄'; }
   }
+}
 
   /* ════ 支出管理 ════ */
   async function switchExpenseTab(tab,btnEl){
@@ -2360,36 +2381,57 @@ const AdminApp=(()=>{
     }
   }
   async function submitNewExpense(){
-    const desc=_v('ne-desc'),amtStr=_v('ne-amount'),date=_v('ne-date'),
-          category=_v('ne-category'),method=_v('ne-method'),
-          payee=_v('ne-payee'),note=_v('ne-note'),status=_v('ne-status');
-    if(!desc){Toast.warning('請填寫支出說明');return;}
-    const amount=parseFloat(amtStr);
-    if(!amount||amount<=0){Toast.warning('請輸入有效金額');return;}
-    if(!date){Toast.warning('請選擇支出日期');return;}
-    const btn=document.getElementById('ne-submit-btn');
-    if(btn){btn.disabled=true;btn.textContent='建立中…';}
+    const desc     = _v('ne-desc');
+    const amtStr   = _v('ne-amount');
+    const date     = _v('ne-date');
+    const category = _v('ne-category');
+    const method   = _v('ne-method');
+    const payee    = _v('ne-payee');
+    const note     = _v('ne-note');
+    const status   = _v('ne-status');
+
+    if(!desc){ Toast.warning('請填寫支出說明'); return; }
+    const amount = parseFloat(amtStr);
+    if(!amount || amount <= 0){ Toast.warning('請輸入有效金額'); return; }
+    if(!date){ Toast.warning('請選擇支出日期'); return; }
+
+    const btn = document.getElementById('ne-submit-btn');
+    if(btn){ btn.disabled = true; btn.textContent = '建立中…'; }
+
     try{
-      const attachments=App._getState('_expenseAttachments')||[];
-      const r=await API.post('createExpenseRecord',{
-        description:desc,amount:amount,date:date,
-        category:category,method:method,payee:payee,
-        note:note,status:status,attachments:attachments,
+      const attachments = App._getState('_expenseAttachments') || [];
+      const r = await API.post('submitExpense', {   // ← 改這裡
+        description : desc,
+        amount      : amount,
+        date        : date,
+        category    : category,
+        method      : method,
+        payee       : payee,
+        note        : note,
+        attachments : attachments,
       });
-      if(r&&r.success){
-        const msg=status==='已核准'?'✅ 支出已核准，傳票已產生！':'✅ 支出申請已建立，等待審核';
-        Toast.success(msg);
-        App._setState('_expenseAttachments',[]);
-        Modal.close();
-        if(status==='已核准')switchExpenseTab('voucher');
-        else switchExpenseTab('pending');
-      }else{
-        Toast.error(r.message||r.error||'建立失敗');
-        if(btn){btn.disabled=false;btn.textContent='📤 建立支出申請';}
+
+      if(r && r.success){
+        // 若管理員選擇「直接核准」，再呼叫 approveExpense
+        if(status === '已核准' && r.recordId){
+          await API.post('approveExpense', { id: r.recordId, reviewNote: '管理員直接核准' });
+          Toast.success('✅ 支出已核准，傳票已產生！');
+          App._setState('_expenseAttachments', []);
+          Modal.close();
+          switchExpenseTab('voucher');
+        } else {
+          Toast.success('✅ 支出申請已建立，等待審核');
+          App._setState('_expenseAttachments', []);
+          Modal.close();
+          switchExpenseTab('pending');
+        }
+      } else {
+        Toast.error(r.message || r.error || '建立失敗');
+        if(btn){ btn.disabled = false; btn.textContent = '📤 建立支出申請'; }
       }
-    }catch(e){
+    } catch(e){
       Toast.error(e.message);
-      if(btn){btn.disabled=false;btn.textContent='📤 建立支出申請';}
+      if(btn){ btn.disabled = false; btn.textContent = '📤 建立支出申請'; }
     }
   }
 
