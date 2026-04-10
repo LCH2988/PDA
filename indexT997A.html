@@ -341,6 +341,42 @@
             <h3>⌨️ 快捷鍵</h3>
             <p><b>Ctrl+N</b>：新增任務<br><b>ESC</b>：關閉視窗<br><b>Ctrl+S</b>：儲存（Modal內）</p>
           </div>
+          <!-- ★ 新增：類別管理卡片 -->
+          <div class="settings-card" id="catManageCard">
+            <h3>🏷️ 類別管理</h3>
+            <p>可新增自訂類別並設定顏色；預設類別受保護無法刪除。</p>
+            <div id="catList" style="margin-bottom:10px;"></div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+              <input type="text" id="newCatName" placeholder="新類別名稱" maxlength="10"
+                style="flex:1;min-width:100px;padding:6px 10px;border:1.5px solid var(--bdr);border-radius:7px;font-size:var(--font-md);outline:none;">
+              <input type="color" id="newCatColor" value="#3B82F6" title="選擇顏色"
+                style="width:36px;height:34px;border:1.5px solid var(--bdr);border-radius:7px;cursor:pointer;padding:2px;">
+              <button class="btn btn-accent" onclick="addCategory()" style="white-space:nowrap;">＋ 新增類別</button>
+            </div>
+          </div>
+
+          <!-- ★ 新增：專業報表輸出卡片 -->
+          <div class="settings-card">
+            <h3>📄 專業報表輸出</h3>
+            <p>選擇報表類型後，可直接列印或另存為 PDF（使用瀏覽器列印功能）。</p>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+              <label class="setting-label">報表類型</label>
+              <select id="reportType" class="settings-select" style="margin-top:4px;">
+                <option value="summary">📊 年度任務總覽報表</option>
+                <option value="category">🏷️ 分類統計報表</option>
+                <option value="detail">📋 任務明細報表（完整）</option>
+                <option value="overdue">🚨 逾期／即將到期報表</option>
+                <option value="volunteer">🙋 志工管理報表</option>
+                <option value="finance">💰 財務管理報表</option>
+              </select>
+              <label class="setting-label" style="margin-top:6px;">報表年度</label>
+              <select id="reportYear" class="settings-select" style="margin-top:4px;"></select>
+            </div>
+            <div class="sync-btn-row">
+              <button class="btn btn-primary" onclick="previewReport()">👁️ 預覽報表</button>
+              <button class="btn btn-accent"  onclick="printReport()">🖨️ 列印／存PDF</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1407,6 +1443,9 @@ async function init(){
   initTopbarDate();
   initMonthFilter();
   initYearSelectors();
+  loadCategories();       // 載入自訂類別
+  initReportYearSelector(); // 初始化報表年度選單
+  renderCatList();        // 渲染類別列表
 
   // 載入資料
   const hasLocal=loadFromStorage();
@@ -1455,6 +1494,453 @@ async function init(){
       showToast('💡 提示：可在「設定與同步」頁面設定 Google Sheets 連線','');
     },1000);
   }
+}
+
+// ════════════════════════════════════════
+// 類別管理
+// ════════════════════════════════════════
+const DEFAULT_CATS = ['法定申報','財務管理','會議','活動推廣','倡議政策','補助計畫','行政事務','志工管理'];
+const CAT_STORAGE_KEY = 'parkinson_categories';
+
+// 從 localStorage 載入自訂類別，合併預設
+function loadCategories(){
+  try{
+    const saved = localStorage.getItem(CAT_STORAGE_KEY);
+    if(saved){
+      const parsed = JSON.parse(saved);
+      if(Array.isArray(parsed)){
+        parsed.forEach(c=>{
+          if(c.name && !CAT_COLOR[c.name]){
+            CAT_COLOR[c.name] = c.color || '#3B82F6';
+          }
+        });
+      }
+    }
+  }catch(e){ console.warn('類別載入失敗',e); }
+}
+
+function saveCategories(){
+  // 只儲存非預設類別
+  const custom = Object.entries(CAT_COLOR)
+    .filter(([name])=>!DEFAULT_CATS.includes(name))
+    .map(([name,color])=>({name,color}));
+  localStorage.setItem(CAT_STORAGE_KEY, JSON.stringify(custom));
+}
+
+function renderCatList(){
+  const el = document.getElementById('catList');
+  if(!el) return;
+  const allCats = Object.entries(CAT_COLOR);
+  if(allCats.length===0){ el.innerHTML='<div style="color:#94A3B8;font-size:11px;">尚無類別</div>'; return; }
+  el.innerHTML = allCats.map(([name,color])=>{
+    const isDefault = DEFAULT_CATS.includes(name);
+    const usageCount = tasks.filter(t=>t.cat===name).length;
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bdr);">
+        <div style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+        <span class="tag tag-${name}" style="background:${color}22;color:${color};">${name}</span>
+        <span style="font-size:10px;color:#94A3B8;flex:1;">${isDefault?'🔒 預設':'✏️ 自訂'} ｜ 使用 ${usageCount} 筆</span>
+        ${isDefault
+          ? `<button class="btn btn-sm" style="background:#F1F5F9;color:#94A3B8;cursor:not-allowed;" disabled title="預設類別無法刪除">🔒</button>`
+          : `<input type="color" value="${color}" onchange="updateCatColor('${name}',this.value)"
+              style="width:28px;height:26px;border:1px solid var(--bdr);border-radius:5px;cursor:pointer;padding:1px;">
+             <button class="btn btn-sm" style="background:#FFF5F5;color:#EF4444;" onclick="deleteCategory('${name}')" title="刪除類別">🗑</button>`
+        }
+      </div>`;
+  }).join('');
+}
+
+function addCategory(){
+  const nameEl  = document.getElementById('newCatName');
+  const colorEl = document.getElementById('newCatColor');
+  const name  = nameEl?.value?.trim();
+  const color = colorEl?.value || '#3B82F6';
+  if(!name){ showToast('⚠️ 請輸入類別名稱','warning'); nameEl?.focus(); return; }
+  if(name.length>10){ showToast('⚠️ 類別名稱不超過10字','warning'); return; }
+  if(CAT_COLOR[name]){ showToast(`⚠️ 「${name}」已存在`,'warning'); return; }
+  CAT_COLOR[name] = color;
+  // 動態注入 CSS tag 樣式
+  injectCatStyle(name, color);
+  saveCategories();
+  renderCatList();
+  updateAllCatSelectors();
+  if(nameEl) nameEl.value='';
+  showToast(`✅ 已新增類別「${name}」`,'success');
+}
+
+function deleteCategory(name){
+  if(DEFAULT_CATS.includes(name)){ showToast('🔒 預設類別無法刪除','warning'); return; }
+  const usageCount = tasks.filter(t=>t.cat===name).length;
+  const msg = usageCount>0
+    ? `「${name}」已有 ${usageCount} 筆任務使用此類別。\n刪除後這些任務的類別將變為「行政事務」。\n確定刪除？`
+    : `確定要刪除類別「${name}」嗎？`;
+  if(!confirm(msg)) return;
+  // 將使用此類別的任務改為行政事務
+  tasks.forEach(t=>{ if(t.cat===name) t.cat='行政事務'; });
+  delete CAT_COLOR[name];
+  saveToStorage();
+  saveCategories();
+  renderCatList();
+  updateAllCatSelectors();
+  refreshCurrentPage();
+  showToast(`🗑 已刪除類別「${name}」`,'warning');
+}
+
+function updateCatColor(name, color){
+  CAT_COLOR[name] = color;
+  injectCatStyle(name, color);
+  saveCategories();
+  renderCatList();
+  refreshCurrentPage();
+  showToast(`🎨 已更新「${name}」顏色`,'success');
+}
+
+function injectCatStyle(name, color){
+  const styleId = 'cat-style-'+name.replace(/\s/g,'_');
+  let el = document.getElementById(styleId);
+  if(!el){ el=document.createElement('style'); el.id=styleId; document.head.appendChild(el); }
+  el.textContent = `.tag-${CSS.escape(name)}{background:${color}22;color:${color};}`;
+}
+
+function updateAllCatSelectors(){
+  const cats = Object.keys(CAT_COLOR);
+  const optionsHtml = cats.map(c=>`<option>${c}</option>`).join('');
+  ['filterCat','ganttCat','fCat'].forEach(id=>{
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    const prev = sel.value;
+    const prefix = id==='filterCat'||id==='ganttCat' ? '<option value="">全部類別</option>' : '';
+    sel.innerHTML = prefix + optionsHtml;
+    if(cats.includes(prev)) sel.value=prev;
+  });
+}
+
+// ════════════════════════════════════════
+// 專業報表輸出
+// ════════════════════════════════════════
+function initReportYearSelector(){
+  const sel = document.getElementById('reportYear');
+  if(!sel) return;
+  sel.innerHTML = YEAR_OPTIONS.map(y=>`<option value="${y}" ${y===selectedYear?'selected':''}>${y}年（民國${y-1911}年）</option>`).join('');
+}
+
+function getReportYear(){
+  return parseInt(document.getElementById('reportYear')?.value,10) || selectedYear;
+}
+
+function buildReportHTML(type, year){
+  const list = tasks.filter(t=>parseInt(t.year,10)===year);
+  const rYear = `${year}年（民國${year-1911}年）`;
+  const now   = new Date().toLocaleString('zh-TW');
+  const total = list.length;
+  const done  = list.filter(t=>t.status==='已完成').length;
+  const rate  = total ? Math.round(done/total*100) : 0;
+
+  const baseStyle = `
+    <style>
+      @page { size:A4; margin:15mm 12mm; }
+      *{ box-sizing:border-box; margin:0; padding:0; }
+      body{ font-family:'Microsoft JhengHei','Segoe UI',sans-serif; font-size:11pt; color:#1E293B; background:#fff; }
+      .cover{ text-align:center; padding:30px 0 20px; border-bottom:3px solid #1E3A5F; margin-bottom:20px; }
+      .cover h1{ font-size:20pt; color:#1E3A5F; margin-bottom:6px; }
+      .cover h2{ font-size:14pt; color:#2D6A9F; margin-bottom:10px; }
+      .cover .meta{ font-size:9pt; color:#64748B; }
+      .section-title{ font-size:13pt; font-weight:700; color:#1E3A5F; border-left:4px solid #2D6A9F;
+        padding:4px 10px; margin:18px 0 10px; background:#F0F4F8; }
+      .stats-row{ display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+      .stat-box{ flex:1; min-width:100px; border:1px solid #E2E8F0; border-radius:8px;
+        padding:10px 14px; text-align:center; border-top:3px solid #2D6A9F; }
+      .stat-box .val{ font-size:22pt; font-weight:800; color:#2D6A9F; line-height:1.1; }
+      .stat-box .lbl{ font-size:8pt; color:#64748B; margin-top:3px; }
+      table{ width:100%; border-collapse:collapse; font-size:9pt; margin-bottom:16px; page-break-inside:auto; }
+      thead tr{ background:#1E3A5F; color:#fff; }
+      th{ padding:6px 8px; text-align:left; font-weight:600; white-space:nowrap; }
+      td{ padding:5px 8px; border-bottom:1px solid #E2E8F0; vertical-align:top; }
+      tr:nth-child(even) td{ background:#F8FAFC; }
+      tr:hover td{ background:#EFF6FF; }
+      .tag{ display:inline-block; padding:1px 6px; border-radius:10px; font-size:8pt; font-weight:600; white-space:nowrap; }
+      .badge-done{ background:#ECFDF5; color:#065F46; }
+      .badge-prog{ background:#EFF6FF; color:#1E40AF; }
+      .badge-todo{ background:#F1F5F9; color:#475569; }
+      .badge-late{ background:#FFF5F5; color:#991B1B; }
+      .badge-hold{ background:#FFFBEB; color:#92400E; }
+      .pri-urg{ color:#EF4444; font-weight:700; }
+      .pri-hi { color:#F59E0B; font-weight:700; }
+      .pri-md { color:#10B981; }
+      .pri-lo { color:#94A3B8; }
+      .progress-wrap{ background:#E2E8F0; border-radius:99px; height:6px; width:80px; display:inline-block; vertical-align:middle; }
+      .progress-fill{ height:100%; border-radius:99px; background:#3B82F6; }
+      .footer{ margin-top:20px; padding-top:10px; border-top:1px solid #E2E8F0;
+        font-size:8pt; color:#94A3B8; text-align:center; }
+      .page-break{ page-break-before:always; }
+      .cat-bar{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+      .cat-bar-label{ width:80px; font-size:9pt; font-weight:600; }
+      .cat-bar-track{ flex:1; background:#E2E8F0; border-radius:99px; height:14px; overflow:hidden; }
+      .cat-bar-fill{ height:100%; border-radius:99px; }
+      .cat-bar-num{ width:40px; font-size:9pt; color:#64748B; text-align:right; }
+      @media print{
+        .no-print{ display:none !important; }
+        body{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      }
+    </style>`;
+
+  const printBtn = `
+    <div class="no-print" style="position:fixed;top:16px;right:16px;display:flex;gap:8px;z-index:999;">
+      <button onclick="window.print()" style="padding:8px 18px;background:#1E3A5F;color:#fff;border:none;border-radius:7px;font-size:12px;cursor:pointer;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2);">🖨️ 列印 / 存PDF</button>
+      <button onclick="window.close()" style="padding:8px 14px;background:#E2E8F0;color:#475569;border:none;border-radius:7px;font-size:12px;cursor:pointer;">✕ 關閉</button>
+    </div>`;
+
+  const cover = `
+    <div class="cover">
+      <div style="font-size:28pt;margin-bottom:8px;">🌸</div>
+      <h1>帕金森病友權益促進會</h1>
+      <h2>${rYear} ${getReportTitle(type)}</h2>
+      <div class="meta">產製時間：${now}　｜　資料筆數：${total} 筆</div>
+    </div>`;
+
+  const footer = `<div class="footer">© 帕金森病友權益促進會 ｜ 年度行事曆維護平台 v3.3 ｜ 產製時間：${now}</div>`;
+
+  // 依報表類型產生內容
+  let body = '';
+  if(type==='summary')   body = buildSummaryReport(list, rYear, total, done, rate);
+  if(type==='category')  body = buildCategoryReport(list, rYear);
+  if(type==='detail')    body = buildDetailReport(list, rYear);
+  if(type==='overdue')   body = buildOverdueReport(list, rYear, year);
+  if(type==='volunteer') body = buildCatFilterReport(list, rYear, ['志工管理'], '志工管理報表');
+  if(type==='finance')   body = buildCatFilterReport(list, rYear, ['財務管理'], '財務管理報表');
+
+  return `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>${rYear} ${getReportTitle(type)}</title>${baseStyle}</head><body>${printBtn}${cover}${body}${footer}</body></html>`;
+}
+
+function getReportTitle(type){
+  return { summary:'年度任務總覽報表', category:'分類統計報表', detail:'任務明細報表',
+           overdue:'逾期／即將到期報表', volunteer:'志工管理報表', finance:'財務管理報表' }[type] || '報表';
+}
+
+function statusBadge(s){
+  const cls = s==='已完成'?'badge-done':s==='進行中'?'badge-prog':s==='暫緩'?'badge-hold':s==='取消'?'badge-late':'badge-todo';
+  return `<span class="tag ${cls}">${s}</span>`;
+}
+function priBadge(p){
+  const cls = p.includes('緊急')?'pri-urg':p.includes('高')?'pri-hi':p.includes('中')?'pri-md':'pri-lo';
+  return `<span class="${cls}">${p}</span>`;
+}
+function pctBar(pct){
+  const color = pct>=100?'#10B981':pct>=60?'#3B82F6':pct>=30?'#F59E0B':'#EF4444';
+  return `<div class="progress-wrap"><div class="progress-fill" style="width:${pct}%;background:${color};"></div></div> ${pct}%`;
+}
+
+// ── 年度總覽 ──
+function buildSummaryReport(list, rYear, total, done, rate){
+  const inprog = list.filter(t=>t.status==='進行中').length;
+  const pending= list.filter(t=>t.status==='待辦').length;
+  const overdue= list.filter(t=>{ if(t.status==='已完成'||t.status==='取消') return false; return diffDays(t.end)<0; }).length;
+  const urgent = list.filter(t=>{ if(t.status==='已完成'||t.status==='取消') return false; const d=diffDays(t.end); return d>=0&&d<=7; }).length;
+
+  const statsHtml = `
+    <div class="stats-row">
+      <div class="stat-box"><div class="val">${total}</div><div class="lbl">總任務數</div></div>
+      <div class="stat-box" style="border-top-color:#10B981;"><div class="val" style="color:#10B981;">${done}</div><div class="lbl">已完成</div></div>
+      <div class="stat-box" style="border-top-color:#3B82F6;"><div class="val" style="color:#3B82F6;">${inprog}</div><div class="lbl">進行中</div></div>
+      <div class="stat-box" style="border-top-color:#F59E0B;"><div class="val" style="color:#F59E0B;">${pending}</div><div class="lbl">待辦</div></div>
+      <div class="stat-box" style="border-top-color:#EF4444;"><div class="val" style="color:#EF4444;">${overdue}</div><div class="lbl">逾期</div></div>
+      <div class="stat-box" style="border-top-color:#F97316;"><div class="val" style="color:#F97316;">${rate}%</div><div class="lbl">完成率</div></div>
+    </div>`;
+
+  // 月份統計表
+  const monthRows = Array.from({length:12},(_,i)=>{
+    const mo=i+1, ml=list.filter(t=>t.mo===mo);
+    const md=ml.filter(t=>t.status==='已完成').length;
+    const mr=ml.length?Math.round(md/ml.length*100):0;
+    return `<tr><td style="font-weight:700;">${mo}月</td><td>${ml.length}</td><td>${md}</td>
+      <td>${ml.filter(t=>t.status==='進行中').length}</td>
+      <td>${ml.filter(t=>t.status==='待辦').length}</td>
+      <td>${pctBar(mr)}</td></tr>`;
+  }).join('');
+
+  // 優先級統計
+  const priStats = ['🔴 緊急','🟡 高','🟢 中','⚪ 低'].map(p=>{
+    const cnt=list.filter(t=>t.pri===p).length;
+    return `<tr><td>${priBadge(p)}</td><td>${cnt}</td><td>${total?Math.round(cnt/total*100):0}%</td></tr>`;
+  }).join('');
+
+  return `
+    <div class="section-title">📊 年度統計摘要</div>
+    ${statsHtml}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div>
+        <div class="section-title">🗓 各月任務統計</div>
+        <table>
+          <thead><tr><th>月份</th><th>總計</th><th>已完成</th><th>進行中</th><th>待辦</th><th>完成率</th></tr></thead>
+          <tbody>${monthRows}</tbody>
+        </table>
+      </div>
+      <div>
+        <div class="section-title">🚦 優先級分布</div>
+        <table>
+          <thead><tr><th>優先級</th><th>筆數</th><th>佔比</th></tr></thead>
+          <tbody>${priStats}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+// ── 分類統計 ──
+function buildCategoryReport(list, rYear){
+  const total = list.length || 1;
+  const catRows = Object.entries(CAT_COLOR).map(([cat,color])=>{
+    const cl = list.filter(t=>t.cat===cat);
+    if(cl.length===0) return '';
+    const done=cl.filter(t=>t.status==='已完成').length;
+    const rate=Math.round(done/cl.length*100);
+    return `
+      <tr>
+        <td><span class="tag" style="background:${color}22;color:${color};">${cat}</span></td>
+        <td style="text-align:center;">${cl.length}</td>
+        <td style="text-align:center;">${done}</td>
+        <td style="text-align:center;">${cl.filter(t=>t.status==='進行中').length}</td>
+        <td style="text-align:center;">${cl.filter(t=>t.status==='待辦').length}</td>
+        <td style="text-align:center;">${Math.round(cl.length/total*100)}%</td>
+        <td>${pctBar(rate)}</td>
+      </tr>`;
+  }).join('');
+
+  // 長條圖（文字版）
+  const maxCnt = Math.max(...Object.keys(CAT_COLOR).map(cat=>list.filter(t=>t.cat===cat).length),1);
+  const barRows = Object.entries(CAT_COLOR).map(([cat,color])=>{
+    const cnt=list.filter(t=>t.cat===cat).length;
+    if(cnt===0) return '';
+    const pct=Math.round(cnt/maxCnt*100);
+    return `<div class="cat-bar">
+      <div class="cat-bar-label">${cat}</div>
+      <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pct}%;background:${color};"></div></div>
+      <div class="cat-bar-num">${cnt}筆</div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="section-title">🏷️ 類別任務統計</div>
+    <table>
+      <thead><tr><th>類別</th><th>總計</th><th>已完成</th><th>進行中</th><th>待辦</th><th>佔比</th><th>完成率</th></tr></thead>
+      <tbody>${catRows}</tbody>
+    </table>
+    <div class="section-title">📊 類別任務數量圖</div>
+    <div style="padding:10px 0;">${barRows}</div>`;
+}
+
+// ── 任務明細 ──
+function buildDetailReport(list, rYear){
+  const sorted = [...list].sort((a,b)=>a.mo-b.mo||String(a.end||'').localeCompare(String(b.end||'')));
+  let html = '';
+  for(let mo=1;mo<=12;mo++){
+    const ml = sorted.filter(t=>t.mo===mo);
+    if(ml.length===0) continue;
+    const rows = ml.map((t,i)=>`
+      <tr>
+        <td style="color:#94A3B8;font-size:8pt;">${i+1}</td>
+        <td><span class="tag" style="background:${CAT_COLOR[t.cat]||'#94A3B8'}22;color:${CAT_COLOR[t.cat]||'#94A3B8'};">${t.cat}</span></td>
+        <td style="font-weight:600;max-width:160px;">${t.task}${t.note?`<div style="font-size:8pt;color:#94A3B8;margin-top:2px;">${t.note}</div>`:''}</td>
+        <td>${t.owner}</td>
+        <td>${priBadge(t.pri)}</td>
+        <td style="white-space:nowrap;">${t.start||'—'}</td>
+        <td style="white-space:nowrap;">${t.end||'—'}</td>
+        <td>${statusBadge(t.status)}</td>
+        <td>${pctBar(t.pct)}</td>
+      </tr>`).join('');
+    html += `
+      <div class="section-title">📅 ${mo}月份任務（${ml.length}筆）</div>
+      <table>
+        <thead><tr><th>#</th><th>類別</th><th>工作事項</th><th>負責人</th><th>優先級</th><th>開始</th><th>截止</th><th>狀態</th><th>完成率</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+  return html || '<div style="padding:20px;text-align:center;color:#94A3B8;">此年度無資料</div>';
+}
+
+// ── 逾期 / 即將到期 ──
+function buildOverdueReport(list, rYear, year){
+  const fakeYear = year;
+  const ovList = list.filter(t=>{ if(t.status==='已完成'||t.status==='取消') return false; return diffDays(t.end)<0; }).sort((a,b)=>String(a.end||'').localeCompare(String(b.end||'')));
+  const ugList = list.filter(t=>{ if(t.status==='已完成'||t.status==='取消') return false; const d=diffDays(t.end); return d>=0&&d<=7; }).sort((a,b)=>String(a.end||'').localeCompare(String(b.end||'')));
+
+  const ovRows = ovList.length===0
+    ? '<tr><td colspan="8" style="text-align:center;color:#10B981;padding:12px;">🎉 無逾期任務</td></tr>'
+    : ovList.map((t,i)=>{
+        const days=Math.abs(diffDays(t.end));
+        return `<tr><td>${i+1}</td><td><span class="tag" style="background:${CAT_COLOR[t.cat]||'#94A3B8'}22;color:${CAT_COLOR[t.cat]||'#94A3B8'};">${t.cat}</span></td><td style="font-weight:600;">${t.task}</td><td>${t.owner}</td><td>${priBadge(t.pri)}</td><td style="color:#EF4444;font-weight:700;">${t.end}</td><td><span class="tag badge-late">逾期${days}天</span></td><td>${statusBadge(t.status)}</td></tr>`;
+      }).join('');
+
+  const ugRows = ugList.length===0
+    ? '<tr><td colspan="8" style="text-align:center;color:#10B981;padding:12px;">✅ 近7天無即將到期任務</td></tr>'
+    : ugList.map((t,i)=>{
+        const d=diffDays(t.end);
+        const label=d===0?'今天到期！':d===1?'明天到期':`${d}天後`;
+        const color=d===0?'#EF4444':d<=2?'#F97316':'#F59E0B';
+        return `<tr><td>${i+1}</td><td><span class="tag" style="background:${CAT_COLOR[t.cat]||'#94A3B8'}22;color:${CAT_COLOR[t.cat]||'#94A3B8'};">${t.cat}</span></td><td style="font-weight:600;">${t.task}</td><td>${t.owner}</td><td>${priBadge(t.pri)}</td><td style="color:${color};font-weight:700;">${t.end}</td><td><span class="tag" style="background:${color}22;color:${color};">${label}</span></td><td>${statusBadge(t.status)}</td></tr>`;
+      }).join('');
+
+  return `
+    <div class="section-title">🚨 逾期任務（${ovList.length}筆）</div>
+    <table><thead><tr><th>#</th><th>類別</th><th>工作事項</th><th>負責人</th><th>優先級</th><th>截止日期</th><th>狀態</th><th>任務狀態</th></tr></thead><tbody>${ovRows}</tbody></table>
+    <div class="section-title">⏰ 7天內即將到期（${ugList.length}筆）</div>
+    <table><thead><tr><th>#</th><th>類別</th><th>工作事項</th><th>負責人</th><th>優先級</th><th>截止日期</th><th>到期狀況</th><th>任務狀態</th></tr></thead><tbody>${ugRows}</tbody></table>`;
+}
+
+// ── 單一類別篩選報表（志工/財務）──
+function buildCatFilterReport(list, rYear, cats, title){
+  const filtered = list.filter(t=>cats.includes(t.cat)).sort((a,b)=>a.mo-b.mo||String(a.end||'').localeCompare(String(b.end||'')));
+  if(filtered.length===0) return `<div style="padding:20px;text-align:center;color:#94A3B8;">此年度無${title}資料</div>`;
+  const done=filtered.filter(t=>t.status==='已完成').length;
+  const rate=filtered.length?Math.round(done/filtered.length*100):0;
+  const statsHtml=`
+    <div class="stats-row">
+      <div class="stat-box"><div class="val">${filtered.length}</div><div class="lbl">總筆數</div></div>
+      <div class="stat-box" style="border-top-color:#10B981;"><div class="val" style="color:#10B981;">${done}</div><div class="lbl">已完成</div></div>
+      <div class="stat-box" style="border-top-color:#F97316;"><div class="val" style="color:#F97316;">${rate}%</div><div class="lbl">完成率</div></div>
+    </div>`;
+  const rows=filtered.map((t,i)=>`
+    <tr>
+      <td style="color:#94A3B8;">${i+1}</td>
+      <td style="font-weight:600;color:#2D6A9F;">${t.mo}月</td>
+      <td style="font-weight:600;">${t.task}${t.note?`<div style="font-size:8pt;color:#94A3B8;">${t.note}</div>`:''}</td>
+      <td>${t.owner}</td>
+      <td>${priBadge(t.pri)}</td>
+      <td style="white-space:nowrap;">${t.start||'—'}</td>
+      <td style="white-space:nowrap;">${t.end||'—'}</td>
+      <td>${statusBadge(t.status)}</td>
+      <td>${pctBar(t.pct)}</td>
+    </tr>`).join('');
+  return `
+    <div class="section-title">📋 ${title}統計</div>
+    ${statsHtml}
+    <table>
+      <thead><tr><th>#</th><th>月份</th><th>工作事項</th><th>負責人</th><th>優先級</th><th>開始</th><th>截止</th><th>狀態</th><th>完成率</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── 預覽 / 列印 ──
+function previewReport(){
+  const type = document.getElementById('reportType')?.value || 'summary';
+  const year = getReportYear();
+  const html  = buildReportHTML(type, year);
+  const win   = window.open('','_blank','width=900,height=700,scrollbars=yes');
+  if(!win){ showToast('⚠️ 請允許彈出視窗以預覽報表','warning'); return; }
+  win.document.write(html);
+  win.document.close();
+  showToast('👁️ 報表已在新視窗開啟','success');
+}
+
+function printReport(){
+  const type = document.getElementById('reportType')?.value || 'summary';
+  const year = getReportYear();
+  const html  = buildReportHTML(type, year);
+  const win   = window.open('','_blank','width=900,height=700');
+  if(!win){ showToast('⚠️ 請允許彈出視窗以列印報表','warning'); return; }
+  win.document.write(html);
+  win.document.close();
+  win.onload = ()=>{ win.focus(); win.print(); };
+  showToast('🖨️ 報表列印視窗已開啟（可選擇「另存為PDF」）','success');
 }
 
 window.addEventListener('DOMContentLoaded', init);
