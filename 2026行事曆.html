@@ -865,6 +865,7 @@ function loadApiConfig(){
 
 async function apiFetch(params, retries){
   if(retries===undefined) retries=API_CONFIG.retryCount;
+
   try{
     const isPost = !!params.body;
     const controller = new AbortController();
@@ -877,11 +878,13 @@ async function apiFetch(params, retries){
       headers: {}
     };
 
-    const url = params.url;
+    let url = params.url;
 
     if(isPost){
-      fetchOptions.headers['Content-Type'] = 'application/json;charset=utf-8';
-      fetchOptions.body = JSON.stringify(params.body);
+      const form = new URLSearchParams();
+      form.append('payload', JSON.stringify(params.body));
+      fetchOptions.headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+      fetchOptions.body = form.toString();
     }
 
     const res = await fetch(url, fetchOptions);
@@ -890,10 +893,11 @@ async function apiFetch(params, retries){
     if(!res.ok) throw new Error('HTTP '+res.status);
 
     const text = await res.text();
+
     try{
       return JSON.parse(text);
     }catch(err){
-      throw new Error('伺服器回傳非 JSON：' + text.slice(0, 200));
+      throw new Error('伺服器回傳非 JSON：' + text.slice(0, 300));
     }
   }catch(err){
     if(retries>0 && err.name!=='AbortError'){
@@ -913,6 +917,7 @@ async function pingRemote(){
     });
     return r.success===true;
   }catch(e){
+    console.error('pingRemote error:', e);
     return false;
   }
 }
@@ -958,6 +963,7 @@ async function syncFromRemote(){
       throw new Error(res.error || '資料格式錯誤');
     }
   }catch(err){
+    console.error('syncFromRemote error:', err);
     syncState.connected=false;
     showToast('⚠️ 同步失敗：'+err.message,'warning');
   }finally{
@@ -998,6 +1004,7 @@ async function pushToRemote(){
     syncState.connected=true;
     showToast('✅ 已上傳正式任務＋庫存任務','success');
   }catch(err){
+    console.error('pushToRemote error:', err);
     showToast('❌ 上傳失敗：'+err.message,'danger');
   }finally{
     syncState.syncing=false;
@@ -1023,6 +1030,26 @@ async function connectRemote(){
   }
 }
 
+async function pushSilentBundle(){
+  const res = await apiFetch({
+    url: API_CONFIG.url,
+    body: {
+      action:'setBundle',
+      key:API_CONFIG.key,
+      data:{
+        tasks:tasks,
+        inventory:taskInventory,
+        version:'senior-electronic',
+        updatedAt:new Date().toISOString()
+      }
+    }
+  });
+
+  if(!res.success) throw new Error(res.error || '同步失敗');
+  syncState.lastSync=Date.now();
+  updateSyncBar();
+}
+
 function switchToLocal(){ syncState.connected=false; syncState.mode='local'; updateSyncBar(); showToast('📴 已切換離線模式','warning'); }
 function updateSyncBar(){
   const bar=document.getElementById('syncBar');
@@ -1045,26 +1072,6 @@ function updateSyncBar(){
     bar.innerHTML='<span>🟡 '+(hasUrl?'離線模式':'未設定 API')+'</span><span style="font-size:11px;color:#B45309;">資料存於本機瀏覽器</span><span style="margin-left:auto;cursor:pointer;color:#2D6A9F;font-weight:800;" onclick="connectRemote()">🔗 '+(hasUrl?'重新連線':'前往設定')+'</span>';
     if(st) st.textContent=hasUrl?'離線模式':'未設定 API URL';
   }
-}
-
-async function pushSilentBundle(){
-  const res = await apiFetch({
-    url: API_CONFIG.url,
-    body: {
-      action:'setBundle',
-      key:API_CONFIG.key,
-      data:{
-        tasks:tasks,
-        inventory:taskInventory,
-        version:'senior-electronic',
-        updatedAt:new Date().toISOString()
-      }
-    }
-  });
-
-  if(!res.success) throw new Error(res.error || '同步失敗');
-  syncState.lastSync=Date.now();
-  updateSyncBar();
 }
 
 async function syncAfterDataChange(){
