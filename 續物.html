@@ -1,0 +1,1763 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>續物 Reuse Match｜家中二手物品媒合平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-emerald-50 text-slate-800">
+  <div id="app"></div>
+
+  <script>
+    const STORAGE_KEYS = {
+      users: "reuse_users",
+      currentUser: "reuse_current_user",
+      items: "reuse_items",
+      applications: "reuse_applications",
+      favorites: "reuse_favorites",
+      chats: "reuse_chats",
+      reports: "reuse_reports"
+    };
+
+    const defaultUsers = [
+      {
+        id: 1,
+        role: "admin",
+        name: "平台管理員",
+        email: "admin@reuse.com",
+        password: "admin123",
+        phone: "0900-000-000",
+        city: "台北市",
+        bio: "負責平台營運與物品審核。"
+      },
+      {
+        id: 2,
+        role: "user",
+        name: "王小綠",
+        email: "green@example.com",
+        password: "123456",
+        phone: "0912-345-678",
+        city: "台北市",
+        bio: "喜歡分享家中閒置物品，讓資源再次流動。"
+      },
+      {
+        id: 3,
+        role: "user",
+        name: "李小光",
+        email: "light@example.com",
+        password: "123456",
+        phone: "0922-222-222",
+        city: "新北市",
+        bio: "希望透過分享與交換，減少浪費。"
+      }
+    ];
+
+    const defaultItems = [
+      {
+        id: 101,
+        ownerId: 2,
+        ownerName: "王小綠",
+        title: "木質收納櫃",
+        category: "家具家飾",
+        condition: "良好可用",
+        transferType: "低價轉讓",
+        price: 600,
+        location: "台北市大安區",
+        image: "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=900&q=80",
+        description: "家中空間重新整理，這個木質收納櫃仍很穩固，抽屜滑順，適合租屋族或小家庭。",
+        status: "刊登中",
+        createdAt: "2026-04-18",
+        matchedUserId: null,
+        matchedUserName: null
+      },
+      {
+        id: 102,
+        ownerId: 2,
+        ownerName: "王小綠",
+        title: "桌上型循環扇",
+        category: "家電用品",
+        condition: "可正常使用",
+        transferType: "免費索取",
+        price: 0,
+        location: "新北市永和區",
+        image: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=900&q=80",
+        description: "功能正常，風量穩定，因更換新家電故釋出，希望給有需要的人。",
+        status: "刊登中",
+        createdAt: "2026-04-17",
+        matchedUserId: null,
+        matchedUserName: null
+      },
+      {
+        id: 103,
+        ownerId: 3,
+        ownerName: "李小光",
+        title: "嬰兒安全餐椅",
+        category: "嬰幼兒用品",
+        condition: "近全新",
+        transferType: "低價轉讓",
+        price: 800,
+        location: "桃園市中壢區",
+        image: "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=900&q=80",
+        description: "孩子長大不再使用，整體保存良好，安全帶與餐盤皆完整。",
+        status: "刊登中",
+        createdAt: "2026-04-16",
+        matchedUserId: null,
+        matchedUserName: null
+      }
+    ];
+
+    const defaultApplications = [
+      {
+        id: 5001,
+        itemId: 101,
+        itemTitle: "木質收納櫃",
+        ownerId: 2,
+        ownerName: "王小綠",
+        applicantId: 3,
+        applicantName: "李小光",
+        message: "我最近搬新家，很需要這個收納櫃，可以自取。",
+        status: "待回覆",
+        createdAt: "2026-04-18"
+      }
+    ];
+
+    const defaultFavorites = [
+      { userId: 2, itemId: 103 },
+      { userId: 3, itemId: 101 }
+    ];
+
+    const defaultChats = [
+      {
+        id: 9001,
+        itemId: 101,
+        itemTitle: "木質收納櫃",
+        participants: [2, 3],
+        participantNames: ["王小綠", "李小光"],
+        messages: [
+          {
+            senderId: 3,
+            senderName: "李小光",
+            text: "您好，我對這個收納櫃有興趣。",
+            createdAt: "2026-04-18 10:30"
+          },
+          {
+            senderId: 2,
+            senderName: "王小綠",
+            text: "您好，可以喔，您方便哪天自取？",
+            createdAt: "2026-04-18 10:35"
+          }
+        ]
+      }
+    ];
+
+    const defaultReports = [
+      {
+        id: 7001,
+        itemId: 103,
+        itemTitle: "嬰兒安全餐椅",
+        reporterId: 2,
+        reporterName: "王小綠",
+        targetOwnerId: 3,
+        targetOwnerName: "李小光",
+        reason: "疑似重複刊登",
+        detail: "同一張圖片在其他地方也出現過，想請管理員協助確認。",
+        status: "待處理",
+        createdAt: "2026-04-18"
+      }
+    ];
+
+    const state = {
+      view: "home",
+      selectedItemId: null,
+      searchKeyword: "",
+      category: "全部",
+      authMode: "login",
+      editingItemId: null,
+      dashboardTab: "profile",
+      adminTab: "overview",
+      selectedChatId: null
+    };
+
+    function seedData() {
+      if (!localStorage.getItem(STORAGE_KEYS.users)) setData(STORAGE_KEYS.users, defaultUsers);
+      if (!localStorage.getItem(STORAGE_KEYS.items)) setData(STORAGE_KEYS.items, defaultItems);
+      if (!localStorage.getItem(STORAGE_KEYS.applications)) setData(STORAGE_KEYS.applications, defaultApplications);
+      if (!localStorage.getItem(STORAGE_KEYS.favorites)) setData(STORAGE_KEYS.favorites, defaultFavorites);
+      if (!localStorage.getItem(STORAGE_KEYS.chats)) setData(STORAGE_KEYS.chats, defaultChats);
+      if (!localStorage.getItem(STORAGE_KEYS.reports)) setData(STORAGE_KEYS.reports, defaultReports);
+    }
+
+    function getData(key) {
+      return JSON.parse(localStorage.getItem(key) || "[]");
+    }
+
+    function setData(key, data) {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+
+    function getCurrentUser() {
+      const raw = localStorage.getItem(STORAGE_KEYS.currentUser);
+      return raw ? JSON.parse(raw) : null;
+    }
+
+    function setCurrentUser(user) {
+      localStorage.setItem(STORAGE_KEYS.currentUser, JSON.stringify(user));
+    }
+
+    function logout() {
+      localStorage.removeItem(STORAGE_KEYS.currentUser);
+      state.view = "home";
+      state.dashboardTab = "profile";
+      state.adminTab = "overview";
+      state.selectedChatId = null;
+      renderApp();
+    }
+
+    function isAdmin() {
+      const user = getCurrentUser();
+      return user && user.role === "admin";
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatPrice(type, price) {
+      if (type === "免費索取") return "免費";
+      if (type === "交換物品") return "交換";
+      return "NT$ " + price;
+    }
+
+    function badgeClass(type) {
+      if (type === "免費索取") return "bg-green-100 text-green-700";
+      if (type === "交換物品") return "bg-amber-100 text-amber-700";
+      return "bg-emerald-100 text-emerald-700";
+    }
+
+    function statusBadgeClass(status) {
+      if (status === "刊登中") return "bg-blue-100 text-blue-700";
+      if (status === "已下架") return "bg-slate-200 text-slate-700";
+      if (status === "已媒合") return "bg-green-100 text-green-700";
+      return "bg-slate-100 text-slate-700";
+    }
+
+    function appStatusClass(status) {
+      if (status === "待回覆") return "bg-blue-100 text-blue-700";
+      if (status === "已同意") return "bg-green-100 text-green-700";
+      if (status === "已拒絕") return "bg-red-100 text-red-700";
+      if (status === "已取消") return "bg-slate-200 text-slate-700";
+      return "bg-slate-100 text-slate-700";
+    }
+
+    function reportStatusClass(status) {
+      if (status === "待處理") return "bg-amber-100 text-amber-700";
+      if (status === "已處理") return "bg-green-100 text-green-700";
+      if (status === "已駁回") return "bg-slate-200 text-slate-700";
+      return "bg-slate-100 text-slate-700";
+    }
+
+    function getFavoriteItemIds(userId) {
+      return getData(STORAGE_KEYS.favorites).filter(f => f.userId === userId).map(f => f.itemId);
+    }
+
+    function isFavorite(itemId) {
+      const user = getCurrentUser();
+      if (!user) return false;
+      return getData(STORAGE_KEYS.favorites).some(f => f.userId === user.id && f.itemId === itemId);
+    }
+
+    function toggleFavorite(itemId) {
+      const user = getCurrentUser();
+      if (!user) {
+        alert("請先登入後再收藏物品。");
+        return;
+      }
+      let favorites = getData(STORAGE_KEYS.favorites);
+      const exists = favorites.some(f => f.userId === user.id && f.itemId === itemId);
+      favorites = exists
+        ? favorites.filter(f => !(f.userId === user.id && f.itemId === itemId))
+        : [...favorites, { userId: user.id, itemId }];
+      setData(STORAGE_KEYS.favorites, favorites);
+      renderApp();
+    }
+
+    function header() {
+      const user = getCurrentUser();
+      return `
+        <header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-emerald-100">
+          <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+            <button onclick="goHome()" class="text-left">
+              <h1 class="text-2xl font-bold text-emerald-700">續物 Reuse Match</h1>
+              <p class="text-sm text-slate-500">他們不是沒用，只是現階段你不需要</p>
+            </button>
+
+            <nav class="hidden md:flex items-center gap-6 text-sm font-medium">
+              <button onclick="goHome()" class="hover:text-emerald-700">首頁</button>
+              <button onclick="goItems()" class="hover:text-emerald-700">物品媒合</button>
+              <button onclick="goPost()" class="hover:text-emerald-700">刊登物品</button>
+              ${user ? `<button onclick="goDashboard('profile')" class="hover:text-emerald-700">我的頁面</button>` : ""}
+              ${user ? `<button onclick="goDashboard('chats')" class="hover:text-emerald-700">聊天</button>` : ""}
+              ${user && user.role === "admin" ? `<button onclick="goAdmin('overview')" class="hover:text-emerald-700">管理員後台</button>` : ""}
+            </nav>
+
+            <div class="flex items-center gap-2">
+              ${
+                user
+                  ? `
+                    <div class="hidden sm:block text-right">
+                      <p class="text-sm font-semibold">${user.name}</p>
+                      <p class="text-xs text-slate-500">${user.role === "admin" ? "管理員" : "一般會員"}</p>
+                    </div>
+                    <button onclick="goDashboard('profile')" class="px-4 py-2 rounded-xl border border-emerald-200 text-emerald-700 hover:bg-emerald-50">我的頁面</button>
+                    <button onclick="goDashboard('chats')" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50">聊天</button>
+                    ${user.role === "admin" ? `<button onclick="goAdmin('overview')" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50">後台</button>` : ""}
+                    <button onclick="logout()" class="px-4 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-900">登出</button>
+                  `
+                  : `
+                    <button onclick="goAuth('login')" class="px-4 py-2 rounded-xl border border-emerald-200 text-emerald-700 hover:bg-emerald-50">登入</button>
+                    <button onclick="goAuth('register')" class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">註冊</button>
+                  `
+              }
+            </div>
+          </div>
+        </header>
+      `;
+    }
+
+    function footer() {
+      return `
+        <footer class="mt-16 bg-slate-900 text-slate-300">
+          <div class="max-w-7xl mx-auto px-4 py-8 flex flex-col md:flex-row items-center justify-between gap-3">
+            <div>
+              <p class="font-semibold">續物 Reuse Match</p>
+              <p class="text-sm text-slate-400">不是丟掉，而是讓價值被延續</p>
+            </div>
+            <p class="text-sm text-slate-400">© 2026 家中二手物品媒合平台</p>
+          </div>
+        </footer>
+      `;
+    }
+
+    function heroSection() {
+      return `
+        <section class="bg-gradient-to-br from-emerald-700 via-teal-600 to-green-600 text-white">
+          <div class="max-w-7xl mx-auto px-4 py-16 md:py-24 grid md:grid-cols-2 gap-10 items-center">
+            <div>
+              <p class="inline-block px-4 py-2 rounded-full bg-white/15 text-sm font-medium border border-white/20">
+                家中二手物品媒合平台
+              </p>
+              <h2 class="mt-5 text-4xl md:text-5xl font-bold leading-tight">
+                支援不浪費，<br />
+                減少地球的負擔
+              </h2>
+              <p class="mt-5 text-lg text-emerald-50 leading-8">
+                地球只有一個，讓我們一起延續它的價值。<br />
+                讓家中的每一件可用物品，都有重新被需要的機會。
+              </p>
+              <div class="mt-8 flex flex-wrap gap-4">
+                <button onclick="goItems()" class="bg-white text-emerald-700 px-6 py-3 rounded-xl font-semibold hover:bg-emerald-50">開始媒合</button>
+                <button onclick="goPost()" class="border border-white px-6 py-3 rounded-xl font-semibold hover:bg-white hover:text-emerald-700">我要刊登</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="bg-white/10 border border-white/20 rounded-2xl p-5 backdrop-blur">
+                <div class="text-3xl font-bold">1,280+</div>
+                <p class="mt-2 text-sm text-emerald-50">成功媒合物品</p>
+              </div>
+              <div class="bg-white/10 border border-white/20 rounded-2xl p-5 backdrop-blur">
+                <div class="text-3xl font-bold">860kg</div>
+                <p class="mt-2 text-sm text-emerald-50">減少潛在廢棄量</p>
+              </div>
+              <div class="bg-white/10 border border-white/20 rounded-2xl p-5 backdrop-blur">
+                <div class="text-3xl font-bold">540+</div>
+                <p class="mt-2 text-sm text-emerald-50">活躍分享者</p>
+              </div>
+              <div class="bg-white/10 border border-white/20 rounded-2xl p-5 backdrop-blur">
+                <div class="text-3xl font-bold">4.9★</div>
+                <p class="mt-2 text-sm text-emerald-50">平台好評</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function itemCard(item) {
+      const user = getCurrentUser();
+      const mine = user && item.ownerId === user.id;
+      const fav = user ? isFavorite(item.id) : false;
+
+      return `
+        <div class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition">
+          <img src="${item.image}" alt="${escapeHtml(item.title)}" class="w-full h-52 object-cover" />
+          <div class="p-6">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap gap-2">
+                <span class="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-700">${item.category}</span>
+                <span class="text-xs font-semibold px-3 py-1 rounded-full ${badgeClass(item.transferType)}">${item.transferType}</span>
+                <span class="text-xs font-semibold px-3 py-1 rounded-full ${statusBadgeClass(item.status)}">${item.status}</span>
+              </div>
+              <button onclick="toggleFavorite(${item.id})" class="text-sm px-3 py-1 rounded-full ${fav ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"}">
+                ${fav ? "♥ 已收藏" : "♡ 收藏"}
+              </button>
+            </div>
+
+            <h4 class="mt-4 text-xl font-bold">${escapeHtml(item.title)}</h4>
+            <p class="mt-2 text-sm text-slate-500">物品狀態：${item.condition}</p>
+            <p class="mt-3 text-sm text-slate-600 leading-7 line-clamp">${escapeHtml(item.description)}</p>
+
+            <div class="mt-5 space-y-1 text-sm text-slate-600">
+              <p>所在地：${escapeHtml(item.location)}</p>
+              <p>提供者：${escapeHtml(item.ownerName)}</p>
+            </div>
+
+            <div class="mt-6 flex items-center justify-between gap-3">
+              <p class="text-2xl font-bold text-emerald-700">${formatPrice(item.transferType, item.price)}</p>
+              <div class="flex gap-2 flex-wrap justify-end">
+                <button onclick="viewItem(${item.id})" class="px-4 py-2 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700">查看詳情</button>
+                ${mine || isAdmin() ? `<button onclick="goEditItem(${item.id})" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50">編輯</button>` : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function homeView() {
+      const items = getData(STORAGE_KEYS.items).slice(0, 3);
+      return `
+        ${heroSection()}
+        <main class="max-w-7xl mx-auto px-4 py-12">
+          <section class="max-w-3xl">
+            <h3 class="text-2xl md:text-3xl font-bold">平台理念</h3>
+            <p class="mt-4 text-slate-600 leading-8">
+              他們不是沒用，只是現階段你不需要。
+              讓可用物品重新流動，不只減少浪費，也讓需要的人得到幫助。
+            </p>
+          </section>
+
+          <section class="mt-12">
+            <div class="flex items-center justify-between mb-6">
+              <div>
+                <h3 class="text-2xl font-bold">最新刊登</h3>
+                <p class="text-slate-500">看看最近有哪些物品等待被延續使用</p>
+              </div>
+              <button onclick="goItems()" class="text-emerald-700 font-semibold hover:underline">查看更多</button>
+            </div>
+            <div class="grid md:grid-cols-3 gap-6">
+              ${items.map(item => itemCard(item)).join("")}
+            </div>
+          </section>
+        </main>
+      `;
+    }
+
+    function itemsView() {
+      const items = getData(STORAGE_KEYS.items);
+      const keyword = state.searchKeyword.toLowerCase();
+      const category = state.category;
+
+      const filtered = items.filter(item => {
+        const matchKeyword =
+          item.title.toLowerCase().includes(keyword) ||
+          item.description.toLowerCase().includes(keyword) ||
+          item.location.toLowerCase().includes(keyword) ||
+          item.category.toLowerCase().includes(keyword);
+        const matchCategory = category === "全部" || item.category === category;
+        return matchKeyword && matchCategory;
+      });
+
+      return `
+        <main class="max-w-7xl mx-auto px-4 py-12">
+          <section>
+            <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
+              <div>
+                <h2 class="text-3xl font-bold">物品媒合</h2>
+                <p class="text-slate-500 mt-1">搜尋家中二手物品，讓資源再次流動</p>
+              </div>
+              <div class="flex flex-col sm:flex-row gap-3">
+                <input
+                  value="${escapeHtml(state.searchKeyword)}"
+                  oninput="setSearchKeyword(this.value)"
+                  type="text"
+                  placeholder="搜尋物品名稱、關鍵字、地區"
+                  class="w-full sm:w-80 px-4 py-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <select onchange="setCategory(this.value)" class="px-4 py-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  ${["全部","家具家飾","家電用品","嬰幼兒用品","衣物配件","廚房餐具","3C配件","書籍文具"].map(cat => `
+                    <option value="${cat}" ${state.category === cat ? "selected" : ""}>${cat}</option>
+                  `).join("")}
+                </select>
+              </div>
+            </div>
+
+            ${
+              filtered.length
+                ? `<div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-6">${filtered.map(item => itemCard(item)).join("")}</div>`
+                : `<div class="bg-white rounded-2xl border border-slate-200 p-10 text-center text-slate-500">目前找不到符合條件的物品。</div>`
+            }
+          </section>
+        </main>
+      `;
+    }
+
+    function itemDetailView() {
+      const item = getData(STORAGE_KEYS.items).find(i => i.id === state.selectedItemId);
+      const user = getCurrentUser();
+
+      if (!item) {
+        return `
+          <main class="max-w-5xl mx-auto px-4 py-12">
+            <div class="bg-white rounded-2xl p-10 text-center border border-slate-200">找不到該物品。</div>
+          </main>
+        `;
+      }
+
+      return `
+        <main class="max-w-6xl mx-auto px-4 py-12">
+          <button onclick="goItems()" class="mb-6 text-emerald-700 font-semibold hover:underline">← 返回物品列表</button>
+          <div class="grid lg:grid-cols-2 gap-8">
+            <div class="bg-white rounded-3xl overflow-hidden border border-slate-200 shadow-sm">
+              <img src="${item.image}" alt="${escapeHtml(item.title)}" class="w-full h-full object-cover min-h-80" />
+            </div>
+
+            <div class="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+              <div class="flex flex-wrap gap-2">
+                <span class="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-700">${item.category}</span>
+                <span class="text-xs font-semibold px-3 py-1 rounded-full ${badgeClass(item.transferType)}">${item.transferType}</span>
+                <span class="text-xs font-semibold px-3 py-1 rounded-full ${statusBadgeClass(item.status)}">${item.status}</span>
+              </div>
+
+              <h2 class="mt-4 text-3xl font-bold">${escapeHtml(item.title)}</h2>
+              <p class="mt-2 text-slate-500">物品狀態：${item.condition}</p>
+              <p class="mt-4 text-slate-600 leading-8">${escapeHtml(item.description)}</p>
+
+              <div class="mt-6 space-y-3 text-slate-700">
+                <p><span class="font-semibold">所在地：</span>${escapeHtml(item.location)}</p>
+                <p><span class="font-semibold">提供者：</span>${escapeHtml(item.ownerName)}</p>
+                <p><span class="font-semibold">刊登日期：</span>${item.createdAt}</p>
+                ${item.status === "已媒合" ? `<p><span class="font-semibold">媒合對象：</span>${escapeHtml(item.matchedUserName || "-")}</p>` : ""}
+              </div>
+
+              <div class="mt-8 flex items-center justify-between gap-4">
+                <p class="text-3xl font-bold text-emerald-700">${formatPrice(item.transferType, item.price)}</p>
+                <div class="flex gap-2">
+                  <button onclick="toggleFavorite(${item.id})" class="px-4 py-2 rounded-xl ${isFavorite(item.id) ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-700"}">
+                    ${isFavorite(item.id) ? "♥ 已收藏" : "♡ 收藏"}
+                  </button>
+                  ${user ? `<button onclick="openReportForm(${item.id})" class="px-4 py-2 rounded-xl bg-amber-100 text-amber-700">檢舉</button>` : ""}
+                </div>
+              </div>
+
+              ${
+                user && (user.id === item.ownerId || user.role === "admin")
+                  ? `
+                    <div class="mt-6 flex gap-3 flex-wrap">
+                      <button onclick="goEditItem(${item.id})" class="px-5 py-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50">編輯刊登</button>
+                      <button onclick="deleteItem(${item.id})" class="px-5 py-3 rounded-xl bg-red-600 text-white hover:bg-red-700">刪除刊登</button>
+                      <button onclick="toggleItemStatus(${item.id})" class="px-5 py-3 rounded-xl bg-slate-800 text-white hover:bg-slate-900">
+                        ${item.status === "刊登中" ? "下架物品" : "重新上架"}
+                      </button>
+                    </div>
+                  `
+                  : ""
+              }
+
+              <div class="mt-8">
+                ${
+                  !user
+                    ? `
+                      <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-5">
+                        <p class="text-slate-700">登入後即可送出媒合申請、收藏物品與發送訊息。</p>
+                        <button onclick="goAuth('login')" class="mt-4 px-5 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700">立即登入</button>
+                      </div>
+                    `
+                    : user.id === item.ownerId
+                      ? `
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-slate-600">
+                          這是你刊登的物品，可在「我的頁面」查看收到的申請與聊天。
+                        </div>
+                      `
+                      : item.status === "已媒合"
+                        ? `
+                          <div class="bg-green-50 border border-green-100 rounded-2xl p-5 text-green-700">
+                            此物品已完成媒合。
+                          </div>
+                        `
+                        : `
+                          <form onsubmit="submitApplication(event, ${item.id})" class="space-y-4">
+                            <label class="block">
+                              <span class="block text-sm font-medium mb-2">申請留言</span>
+                              <textarea id="applicationMessage" rows="4" required placeholder="請簡單說明你的需求，例如使用目的、可取貨時間等" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                            </label>
+                            <div class="flex flex-wrap gap-3">
+                              <button type="submit" class="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700">
+                                送出媒合申請
+                              </button>
+                              <button type="button" onclick="startChatFromItem(${item.id})" class="px-6 py-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50">
+                                先聊聊看
+                              </button>
+                            </div>
+                            <p id="applicationFeedback" class="text-sm font-medium text-emerald-700"></p>
+                          </form>
+                        `
+                }
+              </div>
+            </div>
+          </div>
+        </main>
+      `;
+    }
+
+    function authView(mode) {
+      state.authMode = mode || state.authMode;
+
+      return `
+        <main class="max-w-5xl mx-auto px-4 py-12">
+          <div class="grid md:grid-cols-2 gap-8 items-stretch">
+            <div class="bg-gradient-to-br from-emerald-700 to-green-600 text-white rounded-3xl p-8">
+              <h2 class="text-3xl font-bold">加入續物</h2>
+              <p class="mt-4 leading-8 text-emerald-50">
+                分享可使用的二手物品，讓資源重新流動，讓更多人一起參與永續生活。
+              </p>
+              <ul class="mt-6 space-y-3 text-emerald-50">
+                <li>• 申請同意 / 拒絕</li>
+                <li>• 成交流程與媒合完成</li>
+                <li>• 站內聊天與檢舉機制</li>
+                <li>• 管理員後台管理</li>
+              </ul>
+            </div>
+
+            <div class="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+              <div class="flex gap-2 mb-6">
+                <button onclick="goAuth('login')" class="px-4 py-2 rounded-xl ${state.authMode === "login" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"}">登入</button>
+                <button onclick="goAuth('register')" class="px-4 py-2 rounded-xl ${state.authMode === "register" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"}">註冊</button>
+              </div>
+
+              ${
+                state.authMode === "login"
+                  ? `
+                    <form onsubmit="login(event)" class="space-y-4">
+                      <div>
+                        <label class="block text-sm font-medium mb-2">Email</label>
+                        <input id="loginEmail" type="email" required class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium mb-2">密碼</label>
+                        <input id="loginPassword" type="password" required class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                      </div>
+                      <button type="submit" class="w-full px-5 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700">登入帳號</button>
+                      <p id="loginMessage" class="text-sm font-medium"></p>
+                      <div class="text-sm text-slate-500 bg-slate-50 rounded-xl p-4 leading-7">
+                        一般會員：green@example.com / 123456<br />
+                        一般會員：light@example.com / 123456<br />
+                        管理員：admin@reuse.com / admin123
+                      </div>
+                    </form>
+                  `
+                  : `
+                    <form onsubmit="register(event)" class="space-y-4">
+                      <div>
+                        <label class="block text-sm font-medium mb-2">姓名</label>
+                        <input id="registerName" type="text" required class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium mb-2">Email</label>
+                        <input id="registerEmail" type="email" required class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium mb-2">密碼</label>
+                        <input id="registerPassword" type="password" required class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium mb-2">手機</label>
+                        <input id="registerPhone" type="text" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium mb-2">城市</label>
+                        <input id="registerCity" type="text" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                      </div>
+                      <button type="submit" class="w-full px-5 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700">建立帳號</button>
+                      <p id="registerMessage" class="text-sm font-medium"></p>
+                    </form>
+                  `
+              }
+            </div>
+          </div>
+        </main>
+      `;
+    }
+
+    function postView() {
+      const user = getCurrentUser();
+      if (!user) {
+        return `
+          <main class="max-w-4xl mx-auto px-4 py-12">
+            <div class="bg-white rounded-3xl p-10 border border-slate-200 shadow-sm text-center">
+              <h2 class="text-2xl font-bold">登入後即可刊登物品</h2>
+              <p class="mt-3 text-slate-500">建立帳號後，就能分享家中閒置但仍可使用的物品。</p>
+              <button onclick="goAuth('login')" class="mt-6 px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700">前往登入</button>
+            </div>
+          </main>
+        `;
+      }
+
+      const editItem = state.editingItemId ? getData(STORAGE_KEYS.items).find(i => i.id === state.editingItemId) : null;
+      const isEdit = !!editItem;
+
+      return `
+        <main class="max-w-5xl mx-auto px-4 py-12">
+          <div class="mb-6">
+            <h2 class="text-3xl font-bold">${isEdit ? "編輯刊登" : "刊登物品"}</h2>
+            <p class="text-slate-500 mt-1">${isEdit ? "修改你的物品資訊" : "把仍可使用的物品，交給下一位需要的人"}</p>
+          </div>
+
+          <div class="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+            <form onsubmit="${isEdit ? `updateItem(event, ${editItem.id})` : `createItem(event)`}" class="grid md:grid-cols-2 gap-5">
+              <div>
+                <label class="block text-sm font-medium mb-2">物品名稱</label>
+                <input id="itemTitle" type="text" required value="${escapeHtml(editItem?.title || "")}" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium mb-2">分類</label>
+                <select id="itemCategory" required class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  <option value="">請選擇分類</option>
+                  ${["家具家飾","家電用品","嬰幼兒用品","衣物配件","廚房餐具","3C配件","書籍文具"].map(cat => `
+                    <option value="${cat}" ${editItem?.category === cat ? "selected" : ""}>${cat}</option>
+                  `).join("")}
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium mb-2">物品狀態</label>
+                <select id="itemCondition" required class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  <option value="">請選擇狀態</option>
+                  ${["近全新","良好可用","可正常使用","有使用痕跡"].map(v => `
+                    <option value="${v}" ${editItem?.condition === v ? "selected" : ""}>${v}</option>
+                  `).join("")}
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium mb-2">轉讓方式</label>
+                <select id="itemTransferType" required class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                  <option value="">請選擇方式</option>
+                  ${["免費索取","低價轉讓","交換物品"].map(v => `
+                    <option value="${v}" ${editItem?.transferType === v ? "selected" : ""}>${v}</option>
+                  `).join("")}
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium mb-2">價格（免費或交換可填 0）</label>
+                <input id="itemPrice" type="number" min="0" required value="${editItem?.price ?? ""}" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium mb-2">所在區域</label>
+                <input id="itemLocation" type="text" required value="${escapeHtml(editItem?.location || "")}" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium mb-2">物品圖片網址</label>
+                <input id="itemImage" type="url" required value="${escapeHtml(editItem?.image || "")}" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium mb-2">物品描述</label>
+                <textarea id="itemDescription" rows="5" required class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500">${escapeHtml(editItem?.description || "")}</textarea>
+              </div>
+
+              <div class="md:col-span-2 flex flex-col sm:flex-row gap-3 sm:items-center">
+                <button type="submit" class="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700">
+                  ${isEdit ? "儲存變更" : "送出刊登"}
+                </button>
+                ${isEdit ? `<button type="button" onclick="cancelEdit()" class="px-6 py-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50">取消編輯</button>` : ""}
+                <p id="postMessage" class="text-sm font-medium text-emerald-700"></p>
+              </div>
+            </form>
+          </div>
+        </main>
+      `;
+    }
+
+    function dashboardTabButton(tab, label) {
+      return `
+        <button onclick="goDashboard('${tab}')" class="px-4 py-2 rounded-xl ${state.dashboardTab === tab ? "bg-emerald-600 text-white" : "bg-white border border-slate-200 text-slate-700"}">
+          ${label}
+        </button>
+      `;
+    }
+
+    function adminTabButton(tab, label) {
+      return `
+        <button onclick="goAdmin('${tab}')" class="px-4 py-2 rounded-xl ${state.adminTab === tab ? "bg-slate-800 text-white" : "bg-white border border-slate-200 text-slate-700"}">
+          ${label}
+        </button>
+      `;
+    }
+
+    function dashboardView() {
+      const user = getCurrentUser();
+      if (!user) return authView("login");
+
+      const items = getData(STORAGE_KEYS.items).filter(item => item.ownerId === user.id);
+      const applications = getData(STORAGE_KEYS.applications);
+      const myApplications = applications.filter(app => app.applicantId === user.id);
+      const receivedApplications = applications.filter(app => app.ownerId === user.id);
+      const favoriteItems = getData(STORAGE_KEYS.items).filter(item => getFavoriteItemIds(user.id).includes(item.id));
+      const chats = getUserChats(user.id);
+      const reports = getData(STORAGE_KEYS.reports).filter(r => r.reporterId === user.id);
+
+      return `
+        <main class="max-w-7xl mx-auto px-4 py-12">
+          <div class="mb-8">
+            <h2 class="text-3xl font-bold">我的頁面</h2>
+            <p class="text-slate-500 mt-1">管理個人資訊、刊登紀錄、收藏、申請、聊天與檢舉</p>
+          </div>
+
+          <div class="flex flex-wrap gap-3 mb-8">
+            ${dashboardTabButton("profile", "個人資訊")}
+            ${dashboardTabButton("items", "我的刊登")}
+            ${dashboardTabButton("favorites", "我的收藏")}
+            ${dashboardTabButton("received", "收到的申請")}
+            ${dashboardTabButton("applications", "我的申請")}
+            ${dashboardTabButton("chats", "聊天")}
+            ${dashboardTabButton("reports", "我的檢舉")}
+          </div>
+
+          ${
+            state.dashboardTab === "profile"
+              ? `
+                <div class="grid lg:grid-cols-3 gap-6">
+                  <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
+                    <h3 class="text-xl font-bold">個人資訊</h3>
+                    <div class="mt-5 space-y-3 text-slate-700">
+                      <p><span class="font-semibold">姓名：</span>${user.name}</p>
+                      <p><span class="font-semibold">Email：</span>${user.email}</p>
+                      <p><span class="font-semibold">角色：</span>${user.role === "admin" ? "管理員" : "一般會員"}</p>
+                      <p><span class="font-semibold">手機：</span>${user.phone || "未填寫"}</p>
+                      <p><span class="font-semibold">城市：</span>${user.city || "未填寫"}</p>
+                      <p><span class="font-semibold">自我介紹：</span>${user.bio || "喜歡分享，讓物品延續價值。"}</p>
+                    </div>
+                  </div>
+
+                  <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm lg:col-span-2">
+                    <h3 class="text-xl font-bold">我的統計</h3>
+                    <div class="mt-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div class="bg-emerald-50 rounded-2xl p-4">
+                        <p class="text-sm text-slate-500">我的刊登</p>
+                        <p class="text-3xl font-bold text-emerald-700">${items.length}</p>
+                      </div>
+                      <div class="bg-rose-50 rounded-2xl p-4">
+                        <p class="text-sm text-slate-500">我的收藏</p>
+                        <p class="text-3xl font-bold text-rose-700">${favoriteItems.length}</p>
+                      </div>
+                      <div class="bg-blue-50 rounded-2xl p-4">
+                        <p class="text-sm text-slate-500">收到申請</p>
+                        <p class="text-3xl font-bold text-blue-700">${receivedApplications.length}</p>
+                      </div>
+                      <div class="bg-amber-50 rounded-2xl p-4">
+                        <p class="text-sm text-slate-500">聊天數</p>
+                        <p class="text-3xl font-bold text-amber-700">${chats.length}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `
+              : ""
+          }
+
+          ${
+            state.dashboardTab === "items"
+              ? items.length
+                ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-6">${items.map(item => itemCard(item)).join("")}</div>`
+                : `<div class="bg-white rounded-2xl p-8 border border-slate-200 text-slate-500">你目前還沒有刊登任何物品。</div>`
+              : ""
+          }
+
+          ${
+            state.dashboardTab === "favorites"
+              ? favoriteItems.length
+                ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-6">${favoriteItems.map(item => itemCard(item)).join("")}</div>`
+                : `<div class="bg-white rounded-2xl p-8 border border-slate-200 text-slate-500">你目前還沒有收藏任何物品。</div>`
+              : ""
+          }
+
+          ${
+            state.dashboardTab === "received"
+              ? receivedApplications.length
+                ? `
+                  <div class="space-y-4">
+                    ${receivedApplications.map(app => `
+                      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                          <div>
+                            <h4 class="font-bold text-lg">${escapeHtml(app.itemTitle)}</h4>
+                            <p class="text-slate-600 mt-1">申請者：${escapeHtml(app.applicantName)}</p>
+                            <p class="text-slate-600 mt-2">留言：${escapeHtml(app.message)}</p>
+                            <p class="text-xs text-slate-400 mt-2">申請日期：${app.createdAt}</p>
+                          </div>
+                          <div class="flex flex-col items-start lg:items-end gap-3">
+                            <span class="px-3 py-2 rounded-xl text-sm font-semibold ${appStatusClass(app.status)}">${app.status}</span>
+                            ${
+                              app.status === "待回覆"
+                                ? `
+                                  <div class="flex gap-2">
+                                    <button onclick="updateApplicationStatus(${app.id}, '已同意')" class="px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700">同意</button>
+                                    <button onclick="updateApplicationStatus(${app.id}, '已拒絕')" class="px-4 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700">拒絕</button>
+                                  </div>
+                                `
+                                : ""
+                            }
+                            ${
+                              app.status === "已同意"
+                                ? `<button onclick="completeMatch(${app.id})" class="px-4 py-2 rounded-xl bg-emerald-700 text-white hover:bg-emerald-800">標記完成媒合</button>`
+                                : ""
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    `).join("")}
+                  </div>
+                `
+                : `<div class="bg-white rounded-2xl p-8 border border-slate-200 text-slate-500">目前尚未收到任何申請。</div>`
+              : ""
+          }
+
+          ${
+            state.dashboardTab === "applications"
+              ? myApplications.length
+                ? `
+                  <div class="space-y-4">
+                    ${myApplications.map(app => `
+                      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                          <div>
+                            <h4 class="font-bold text-lg">${escapeHtml(app.itemTitle)}</h4>
+                            <p class="text-slate-600 mt-1">提供者：${escapeHtml(app.ownerName)}</p>
+                            <p class="text-slate-600 mt-2">留言：${escapeHtml(app.message)}</p>
+                            <p class="text-xs text-slate-400 mt-2">申請日期：${app.createdAt}</p>
+                          </div>
+                          <span class="px-3 py-2 rounded-xl text-sm font-semibold ${appStatusClass(app.status)}">${app.status}</span>
+                        </div>
+                      </div>
+                    `).join("")}
+                  </div>
+                `
+                : `<div class="bg-white rounded-2xl p-8 border border-slate-200 text-slate-500">你目前尚未送出任何媒合申請。</div>`
+              : ""
+          }
+
+          ${
+            state.dashboardTab === "chats"
+              ? chatView()
+              : ""
+          }
+
+          ${
+            state.dashboardTab === "reports"
+              ? reports.length
+                ? `
+                  <div class="space-y-4">
+                    ${reports.map(report => `
+                      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                          <div>
+                            <h4 class="font-bold text-lg">${escapeHtml(report.itemTitle)}</h4>
+                            <p class="text-slate-600 mt-1">被檢舉對象：${escapeHtml(report.targetOwnerName)}</p>
+                            <p class="text-slate-600 mt-2">原因：${escapeHtml(report.reason)}</p>
+                            <p class="text-slate-600 mt-2">說明：${escapeHtml(report.detail)}</p>
+                            <p class="text-xs text-slate-400 mt-2">日期：${report.createdAt}</p>
+                          </div>
+                          <span class="px-3 py-2 rounded-xl text-sm font-semibold ${reportStatusClass(report.status)}">${report.status}</span>
+                        </div>
+                      </div>
+                    `).join("")}
+                  </div>
+                `
+                : `<div class="bg-white rounded-2xl p-8 border border-slate-200 text-slate-500">你目前沒有任何檢舉紀錄。</div>`
+              : ""
+          }
+        </main>
+      `;
+    }
+
+    function getUserChats(userId) {
+      return getData(STORAGE_KEYS.chats).filter(chat => chat.participants.includes(userId));
+    }
+
+    function chatView() {
+      const user = getCurrentUser();
+      const chats = getUserChats(user.id);
+      let activeChat = chats.find(c => c.id === state.selectedChatId) || chats[0] || null;
+
+      if (activeChat && !state.selectedChatId) state.selectedChatId = activeChat.id;
+
+      return `
+        <div class="grid lg:grid-cols-3 gap-6">
+          <div class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-slate-200">
+              <h3 class="font-bold text-lg">聊天列表</h3>
+            </div>
+            <div class="divide-y divide-slate-200">
+              ${
+                chats.length
+                  ? chats.map(chat => {
+                      const otherName = chat.participantNames.filter(name => name !== user.name).join("、");
+                      const lastMessage = chat.messages[chat.messages.length - 1];
+                      return `
+                        <button onclick="selectChat(${chat.id})" class="w-full text-left p-4 hover:bg-slate-50 ${state.selectedChatId === chat.id ? "bg-emerald-50" : ""}">
+                          <p class="font-semibold">${escapeHtml(chat.itemTitle)}</p>
+                          <p class="text-sm text-slate-500 mt-1">對象：${escapeHtml(otherName || user.name)}</p>
+                          <p class="text-xs text-slate-400 mt-1">${lastMessage ? escapeHtml(lastMessage.text) : "尚無訊息"}</p>
+                        </button>
+                      `;
+                    }).join("")
+                  : `<div class="p-6 text-slate-500">目前沒有任何聊天紀錄。</div>`
+              }
+            </div>
+          </div>
+
+          <div class="lg:col-span-2 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+            ${
+              activeChat
+                ? `
+                  <div class="p-5 border-b border-slate-200">
+                    <h3 class="font-bold text-lg">${escapeHtml(activeChat.itemTitle)}</h3>
+                    <p class="text-sm text-slate-500 mt-1">參與者：${activeChat.participantNames.map(escapeHtml).join("、")}</p>
+                  </div>
+
+                  <div class="p-5 h-96 overflow-y-auto bg-slate-50 space-y-4">
+                    ${activeChat.messages.map(msg => `
+                      <div class="${msg.senderId === user.id ? "text-right" : "text-left"}">
+                        <div class="inline-block max-w-xl px-4 py-3 rounded-2xl ${msg.senderId === user.id ? "bg-emerald-600 text-white" : "bg-white border border-slate-200 text-slate-800"}">
+                          <p class="text-sm font-semibold mb-1">${escapeHtml(msg.senderName)}</p>
+                          <p>${escapeHtml(msg.text)}</p>
+                          <p class="text-xs mt-2 ${msg.senderId === user.id ? "text-emerald-100" : "text-slate-400"}">${msg.createdAt}</p>
+                        </div>
+                      </div>
+                    `).join("")}
+                  </div>
+
+                  <form onsubmit="sendMessage(event, ${activeChat.id})" class="p-5 border-t border-slate-200 flex gap-3">
+                    <input id="chatMessage" type="text" placeholder="輸入訊息..." class="flex-1 px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500" required />
+                    <button type="submit" class="px-5 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700">送出</button>
+                  </form>
+                `
+                : `
+                  <div class="p-10 text-center text-slate-500">
+                    尚未選擇對話，或目前沒有聊天紀錄。
+                  </div>
+                `
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function adminView() {
+      if (!isAdmin()) {
+        return `
+          <main class="max-w-4xl mx-auto px-4 py-12">
+            <div class="bg-white rounded-3xl p-10 border border-slate-200 shadow-sm text-center">
+              <h2 class="text-2xl font-bold">無權限存取</h2>
+              <p class="mt-3 text-slate-500">只有管理員可以進入管理員後台。</p>
+            </div>
+          </main>
+        `;
+      }
+
+      const users = getData(STORAGE_KEYS.users);
+      const items = getData(STORAGE_KEYS.items);
+      const applications = getData(STORAGE_KEYS.applications);
+      const reports = getData(STORAGE_KEYS.reports);
+
+      return `
+        <main class="max-w-7xl mx-auto px-4 py-12">
+          <div class="mb-8">
+            <h2 class="text-3xl font-bold">管理員後台</h2>
+            <p class="text-slate-500 mt-1">管理會員、物品、申請與檢舉資料</p>
+          </div>
+
+          <div class="flex flex-wrap gap-3 mb-8">
+            ${adminTabButton("overview", "總覽")}
+            ${adminTabButton("users", "會員管理")}
+            ${adminTabButton("items", "物品管理")}
+            ${adminTabButton("applications", "申請紀錄")}
+            ${adminTabButton("reports", "檢舉管理")}
+          </div>
+
+          ${
+            state.adminTab === "overview"
+              ? `
+                <div class="grid md:grid-cols-5 gap-4">
+                  <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <p class="text-sm text-slate-500">會員總數</p>
+                    <p class="mt-2 text-3xl font-bold text-slate-800">${users.length}</p>
+                  </div>
+                  <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <p class="text-sm text-slate-500">物品總數</p>
+                    <p class="mt-2 text-3xl font-bold text-slate-800">${items.length}</p>
+                  </div>
+                  <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <p class="text-sm text-slate-500">刊登中</p>
+                    <p class="mt-2 text-3xl font-bold text-slate-800">${items.filter(i => i.status === "刊登中").length}</p>
+                  </div>
+                  <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <p class="text-sm text-slate-500">申請總數</p>
+                    <p class="mt-2 text-3xl font-bold text-slate-800">${applications.length}</p>
+                  </div>
+                  <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <p class="text-sm text-slate-500">待處理檢舉</p>
+                    <p class="mt-2 text-3xl font-bold text-slate-800">${reports.filter(r => r.status === "待處理").length}</p>
+                  </div>
+                </div>
+              `
+              : ""
+          }
+
+          ${
+            state.adminTab === "users"
+              ? `
+                <div class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                      <thead class="bg-slate-50">
+                        <tr>
+                          <th class="px-6 py-4 text-sm font-semibold">姓名</th>
+                          <th class="px-6 py-4 text-sm font-semibold">Email</th>
+                          <th class="px-6 py-4 text-sm font-semibold">角色</th>
+                          <th class="px-6 py-4 text-sm font-semibold">城市</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${users.map(user => `
+                          <tr class="border-t border-slate-200">
+                            <td class="px-6 py-4">${escapeHtml(user.name)}</td>
+                            <td class="px-6 py-4">${escapeHtml(user.email)}</td>
+                            <td class="px-6 py-4">${user.role === "admin" ? "管理員" : "一般會員"}</td>
+                            <td class="px-6 py-4">${escapeHtml(user.city || "-")}</td>
+                          </tr>
+                        `).join("")}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              `
+              : ""
+          }
+
+          ${
+            state.adminTab === "items"
+              ? `
+                <div class="space-y-4">
+                  ${items.map(item => `
+                    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div>
+                          <h4 class="font-bold text-lg">${escapeHtml(item.title)}</h4>
+                          <p class="text-slate-600 mt-1">提供者：${escapeHtml(item.ownerName)}｜分類：${item.category}｜狀態：${item.status}</p>
+                          <p class="text-slate-600 mt-2">${escapeHtml(item.description)}</p>
+                        </div>
+                        <div class="flex gap-2 flex-wrap">
+                          <button onclick="viewItem(${item.id})" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50">查看</button>
+                          <button onclick="goEditItem(${item.id})" class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">編輯</button>
+                          <button onclick="toggleItemStatus(${item.id})" class="px-4 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-900">${item.status === "刊登中" ? "下架" : "上架"}</button>
+                          <button onclick="deleteItem(${item.id})" class="px-4 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700">刪除</button>
+                        </div>
+                      </div>
+                    </div>
+                  `).join("")}
+                </div>
+              `
+              : ""
+          }
+
+          ${
+            state.adminTab === "applications"
+              ? `
+                <div class="space-y-4">
+                  ${applications.map(app => `
+                    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                          <h4 class="font-bold text-lg">${escapeHtml(app.itemTitle)}</h4>
+                          <p class="text-slate-600 mt-1">申請者：${escapeHtml(app.applicantName)}｜提供者：${escapeHtml(app.ownerName)}</p>
+                          <p class="text-slate-600 mt-2">留言：${escapeHtml(app.message)}</p>
+                          <p class="text-xs text-slate-400 mt-2">日期：${app.createdAt}</p>
+                        </div>
+                        <span class="px-3 py-2 rounded-xl text-sm font-semibold ${appStatusClass(app.status)}">${app.status}</span>
+                      </div>
+                    </div>
+                  `).join("")}
+                </div>
+              `
+              : ""
+          }
+
+          ${
+            state.adminTab === "reports"
+              ? reports.length
+                ? `
+                  <div class="space-y-4">
+                    ${reports.map(report => `
+                      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                          <div>
+                            <h4 class="font-bold text-lg">${escapeHtml(report.itemTitle)}</h4>
+                            <p class="text-slate-600 mt-1">檢舉人：${escapeHtml(report.reporterName)}｜對象：${escapeHtml(report.targetOwnerName)}</p>
+                            <p class="text-slate-600 mt-2">原因：${escapeHtml(report.reason)}</p>
+                            <p class="text-slate-600 mt-2">說明：${escapeHtml(report.detail)}</p>
+                            <p class="text-xs text-slate-400 mt-2">日期：${report.createdAt}</p>
+                          </div>
+                          <div class="flex flex-col items-start lg:items-end gap-3">
+                            <span class="px-3 py-2 rounded-xl text-sm font-semibold ${reportStatusClass(report.status)}">${report.status}</span>
+                            ${
+                              report.status === "待處理"
+                                ? `
+                                  <div class="flex gap-2">
+                                    <button onclick="updateReportStatus(${report.id}, '已處理')" class="px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700">標記已處理</button>
+                                    <button onclick="updateReportStatus(${report.id}, '已駁回')" class="px-4 py-2 rounded-xl bg-slate-700 text-white hover:bg-slate-800">駁回</button>
+                                  </div>
+                                `
+                                : ""
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    `).join("")}
+                  </div>
+                `
+                : `<div class="bg-white rounded-2xl p-8 border border-slate-200 text-slate-500">目前沒有檢舉資料。</div>`
+              : ""
+          }
+        </main>
+      `;
+    }
+
+    function renderApp() {
+      const app = document.getElementById("app");
+      let viewHtml = "";
+
+      if (state.view === "home") viewHtml = homeView();
+      if (state.view === "items") viewHtml = itemsView();
+      if (state.view === "detail") viewHtml = itemDetailView();
+      if (state.view === "auth") viewHtml = authView(state.authMode);
+      if (state.view === "post") viewHtml = postView();
+      if (state.view === "dashboard") viewHtml = dashboardView();
+      if (state.view === "admin") viewHtml = adminView();
+
+      app.innerHTML = `
+        ${header()}
+        ${viewHtml}
+        ${footer()}
+      `;
+    }
+
+    function goHome() {
+      state.view = "home";
+      renderApp();
+    }
+
+    function goItems() {
+      state.view = "items";
+      renderApp();
+    }
+
+    function viewItem(id) {
+      state.selectedItemId = id;
+      state.view = "detail";
+      renderApp();
+    }
+
+    function goAuth(mode) {
+      state.authMode = mode;
+      state.view = "auth";
+      renderApp();
+    }
+
+    function goPost() {
+      state.editingItemId = null;
+      state.view = "post";
+      renderApp();
+    }
+
+    function goDashboard(tab = "profile") {
+      state.dashboardTab = tab;
+      state.view = "dashboard";
+      renderApp();
+    }
+
+    function goAdmin(tab = "overview") {
+      state.adminTab = tab;
+      state.view = "admin";
+      renderApp();
+    }
+
+    function setSearchKeyword(value) {
+      state.searchKeyword = value;
+      renderApp();
+    }
+
+    function setCategory(value) {
+      state.category = value;
+      renderApp();
+    }
+
+    function goEditItem(itemId) {
+      const user = getCurrentUser();
+      const item = getData(STORAGE_KEYS.items).find(i => i.id === itemId);
+      if (!item || !user) return;
+      if (user.role !== "admin" && item.ownerId !== user.id) {
+        alert("你沒有權限編輯這筆刊登。");
+        return;
+      }
+      state.editingItemId = itemId;
+      state.view = "post";
+      renderApp();
+    }
+
+    function cancelEdit() {
+      state.editingItemId = null;
+      state.view = "dashboard";
+      state.dashboardTab = "items";
+      renderApp();
+    }
+
+    function login(event) {
+      event.preventDefault();
+      const email = document.getElementById("loginEmail").value.trim();
+      const password = document.getElementById("loginPassword").value.trim();
+      const users = getData(STORAGE_KEYS.users);
+      const user = users.find(u => u.email === email && u.password === password);
+      const message = document.getElementById("loginMessage");
+
+      if (!user) {
+        message.className = "text-sm font-medium text-red-600";
+        message.textContent = "登入失敗，請確認 Email 與密碼。";
+        return;
+      }
+
+      setCurrentUser(user);
+      state.view = user.role === "admin" ? "admin" : "dashboard";
+      renderApp();
+    }
+
+    function register(event) {
+      event.preventDefault();
+      const users = getData(STORAGE_KEYS.users);
+      const name = document.getElementById("registerName").value.trim();
+      const email = document.getElementById("registerEmail").value.trim();
+      const password = document.getElementById("registerPassword").value.trim();
+      const phone = document.getElementById("registerPhone").value.trim();
+      const city = document.getElementById("registerCity").value.trim();
+      const message = document.getElementById("registerMessage");
+
+      if (users.some(u => u.email === email)) {
+        message.className = "text-sm font-medium text-red-600";
+        message.textContent = "此 Email 已註冊。";
+        return;
+      }
+
+      const newUser = {
+        id: Date.now(),
+        role: "user",
+        name,
+        email,
+        password,
+        phone,
+        city,
+        bio: "一起減少浪費，延續物品的價值。"
+      };
+
+      users.push(newUser);
+      setData(STORAGE_KEYS.users, users);
+      setCurrentUser(newUser);
+      state.view = "dashboard";
+      renderApp();
+    }
+
+    function createItem(event) {
+      event.preventDefault();
+      const user = getCurrentUser();
+      if (!user) return;
+
+      const items = getData(STORAGE_KEYS.items);
+      const newItem = {
+        id: Date.now(),
+        ownerId: user.id,
+        ownerName: user.name,
+        title: document.getElementById("itemTitle").value.trim(),
+        category: document.getElementById("itemCategory").value,
+        condition: document.getElementById("itemCondition").value,
+        transferType: document.getElementById("itemTransferType").value,
+        price: Number(document.getElementById("itemPrice").value),
+        location: document.getElementById("itemLocation").value.trim(),
+        image: document.getElementById("itemImage").value.trim(),
+        description: document.getElementById("itemDescription").value.trim(),
+        status: "刊登中",
+        createdAt: new Date().toISOString().slice(0, 10),
+        matchedUserId: null,
+        matchedUserName: null
+      };
+
+      items.unshift(newItem);
+      setData(STORAGE_KEYS.items, items);
+
+      document.querySelector("form").reset();
+      const message = document.getElementById("postMessage");
+      message.textContent = "刊登成功！";
+      setTimeout(() => {
+        message.textContent = "";
+        state.view = "dashboard";
+        state.dashboardTab = "items";
+        renderApp();
+      }, 1000);
+    }
+
+    function updateItem(event, itemId) {
+      event.preventDefault();
+      const user = getCurrentUser();
+      let items = getData(STORAGE_KEYS.items);
+      const index = items.findIndex(i => i.id === itemId);
+      if (index === -1 || !user) return;
+      if (user.role !== "admin" && items[index].ownerId !== user.id) {
+        alert("你沒有權限修改這筆刊登。");
+        return;
+      }
+
+      items[index] = {
+        ...items[index],
+        title: document.getElementById("itemTitle").value.trim(),
+        category: document.getElementById("itemCategory").value,
+        condition: document.getElementById("itemCondition").value,
+        transferType: document.getElementById("itemTransferType").value,
+        price: Number(document.getElementById("itemPrice").value),
+        location: document.getElementById("itemLocation").value.trim(),
+        image: document.getElementById("itemImage").value.trim(),
+        description: document.getElementById("itemDescription").value.trim()
+      };
+
+      setData(STORAGE_KEYS.items, items);
+
+      const message = document.getElementById("postMessage");
+      message.textContent = "刊登資料已更新！";
+      setTimeout(() => {
+        state.editingItemId = null;
+        state.view = user.role === "admin" ? "admin" : "dashboard";
+        if (user.role === "admin") state.adminTab = "items";
+        else state.dashboardTab = "items";
+        renderApp();
+      }, 1000);
+    }
+
+    function deleteItem(itemId) {
+      const user = getCurrentUser();
+      let items = getData(STORAGE_KEYS.items);
+      const item = items.find(i => i.id === itemId);
+      if (!item || !user) return;
+      if (user.role !== "admin" && item.ownerId !== user.id) {
+        alert("你沒有權限刪除這筆刊登。");
+        return;
+      }
+      if (!confirm("確定要刪除此刊登嗎？此操作無法復原。")) return;
+
+      setData(STORAGE_KEYS.items, items.filter(i => i.id !== itemId));
+      setData(STORAGE_KEYS.favorites, getData(STORAGE_KEYS.favorites).filter(f => f.itemId !== itemId));
+      setData(STORAGE_KEYS.applications, getData(STORAGE_KEYS.applications).filter(a => a.itemId !== itemId));
+      setData(STORAGE_KEYS.chats, getData(STORAGE_KEYS.chats).filter(c => c.itemId !== itemId));
+      setData(STORAGE_KEYS.reports, getData(STORAGE_KEYS.reports).filter(r => r.itemId !== itemId));
+
+      alert("刊登已刪除。");
+      if (user.role === "admin") {
+        state.view = "admin";
+        state.adminTab = "items";
+      } else {
+        state.view = "dashboard";
+        state.dashboardTab = "items";
+      }
+      renderApp();
+    }
+
+    function toggleItemStatus(itemId) {
+      const user = getCurrentUser();
+      const items = getData(STORAGE_KEYS.items);
+      const index = items.findIndex(i => i.id === itemId);
+      if (index === -1 || !user) return;
+      if (user.role !== "admin" && items[index].ownerId !== user.id) {
+        alert("你沒有權限操作這筆刊登。");
+        return;
+      }
+
+      if (items[index].status === "已媒合") {
+        alert("已完成媒合的物品不可重新切換狀態。");
+        return;
+      }
+
+      items[index].status = items[index].status === "刊登中" ? "已下架" : "刊登中";
+      setData(STORAGE_KEYS.items, items);
+      renderApp();
+    }
+
+    function submitApplication(event, itemId) {
+      event.preventDefault();
+      const user = getCurrentUser();
+      const items = getData(STORAGE_KEYS.items);
+      const applications = getData(STORAGE_KEYS.applications);
+      const item = items.find(i => i.id === itemId);
+      const messageText = document.getElementById("applicationMessage").value.trim();
+      const feedback = document.getElementById("applicationFeedback");
+
+      if (!user || !item) return;
+      if (user.id === item.ownerId) {
+        feedback.className = "text-sm font-medium text-red-600";
+        feedback.textContent = "不能對自己的物品送出申請。";
+        return;
+      }
+      if (item.status !== "刊登中") {
+        feedback.className = "text-sm font-medium text-red-600";
+        feedback.textContent = "此物品目前無法申請。";
+        return;
+      }
+
+      const exists = applications.some(app => app.itemId === itemId && app.applicantId === user.id);
+      if (exists) {
+        feedback.className = "text-sm font-medium text-red-600";
+        feedback.textContent = "你已經申請過這個物品。";
+        return;
+      }
+
+      applications.unshift({
+        id: Date.now(),
+        itemId: item.id,
+        itemTitle: item.title,
+        ownerId: item.ownerId,
+        ownerName: item.ownerName,
+        applicantId: user.id,
+        applicantName: user.name,
+        message: messageText,
+        status: "待回覆",
+        createdAt: new Date().toISOString().slice(0, 10)
+      });
+
+      setData(STORAGE_KEYS.applications, applications);
+      ensureChat(item, user);
+      document.getElementById("applicationMessage").value = "";
+      feedback.className = "text-sm font-medium text-emerald-700";
+      feedback.textContent = "媒合申請已送出，並已建立聊天。";
+
+      setTimeout(() => {
+        feedback.textContent = "";
+      }, 3000);
+    }
+
+    function updateApplicationStatus(applicationId, status) {
+      const user = getCurrentUser();
+      const applications = getData(STORAGE_KEYS.applications);
+      const items = getData(STORAGE_KEYS.items);
+      const index = applications.findIndex(a => a.id === applicationId);
+      if (index === -1 || !user) return;
+      if (applications[index].ownerId !== user.id && user.role !== "admin") {
+        alert("你沒有權限操作這筆申請。");
+        return;
+      }
+
+      applications[index].status = status;
+
+      if (status === "已同意") {
+        const itemIndex = items.findIndex(i => i.id === applications[index].itemId);
+        if (itemIndex !== -1) {
+          items[itemIndex].status = "刊登中";
+        }
+        applications.forEach(app => {
+          if (app.itemId === applications[index].itemId && app.id !== applicationId && app.status === "待回覆") {
+            app.status = "已拒絕";
+          }
+        });
+        ensureChat(
+          items.find(i => i.id === applications[index].itemId),
+          { id: applications[index].applicantId, name: applications[index].applicantName }
+        );
+        setData(STORAGE_KEYS.items, items);
+      }
+
+      setData(STORAGE_KEYS.applications, applications);
+      renderApp();
+    }
+
+    function completeMatch(applicationId) {
+      const user = getCurrentUser();
+      const applications = getData(STORAGE_KEYS.applications);
+      const items = getData(STORAGE_KEYS.items);
+      const appIndex = applications.findIndex(a => a.id === applicationId);
+      if (appIndex === -1 || !user) return;
+      const app = applications[appIndex];
+
+      if (app.ownerId !== user.id && user.role !== "admin") {
+        alert("你沒有權限完成這筆媒合。");
+        return;
+      }
+
+      const itemIndex = items.findIndex(i => i.id === app.itemId);
+      if (itemIndex === -1) return;
+
+      items[itemIndex].status = "已媒合";
+      items[itemIndex].matchedUserId = app.applicantId;
+      items[itemIndex].matchedUserName = app.applicantName;
+
+      applications.forEach(a => {
+        if (a.itemId === app.itemId) {
+          if (a.id === applicationId) a.status = "已同意";
+          else a.status = "已拒絕";
+        }
+      });
+
+      setData(STORAGE_KEYS.items, items);
+      setData(STORAGE_KEYS.applications, applications);
+      alert("已標記為完成媒合。");
+      renderApp();
+    }
+
+    function ensureChat(item, applicant) {
+      if (!item || !applicant) return;
+      let chats = getData(STORAGE_KEYS.chats);
+      const exists = chats.find(c =>
+        c.itemId === item.id &&
+        c.participants.includes(item.ownerId) &&
+        c.participants.includes(applicant.id)
+      );
+      if (exists) return exists;
+
+      const newChat = {
+        id: Date.now(),
+        itemId: item.id,
+        itemTitle: item.title,
+        participants: [item.ownerId, applicant.id],
+        participantNames: [item.ownerName, applicant.name],
+        messages: []
+      };
+      chats.unshift(newChat);
+      setData(STORAGE_KEYS.chats, chats);
+      return newChat;
+    }
+
+    function startChatFromItem(itemId) {
+      const user = getCurrentUser();
+      const item = getData(STORAGE_KEYS.items).find(i => i.id === itemId);
+      if (!user || !item) return;
+      if (user.id === item.ownerId) {
+        alert("不能與自己的刊登建立聊天。");
+        return;
+      }
+
+      const chat = ensureChat(item, user);
+      state.selectedChatId = chat.id;
+      state.view = "dashboard";
+      state.dashboardTab = "chats";
+      renderApp();
+    }
+
+    function selectChat(chatId) {
+      state.selectedChatId = chatId;
+      renderApp();
+    }
+
+    function sendMessage(event, chatId) {
+      event.preventDefault();
+      const user = getCurrentUser();
+      const text = document.getElementById("chatMessage").value.trim();
+      if (!user || !text) return;
+
+      const chats = getData(STORAGE_KEYS.chats);
+      const index = chats.findIndex(c => c.id === chatId);
+      if (index === -1) return;
+
+      chats[index].messages.push({
+        senderId: user.id,
+        senderName: user.name,
+        text,
+        createdAt: new Date().toLocaleString("zh-TW", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        })
+      });
+
+      setData(STORAGE_KEYS.chats, chats);
+      document.getElementById("chatMessage").value = "";
+      renderApp();
+    }
+
+    function openReportForm(itemId) {
+      const user = getCurrentUser();
+      const item = getData(STORAGE_KEYS.items).find(i => i.id === itemId);
+      if (!user || !item) {
+        alert("請先登入。");
+        return;
+      }
+      if (user.id === item.ownerId) {
+        alert("不能檢舉自己的物品。");
+        return;
+      }
+
+      const reason = prompt("請輸入檢舉原因，例如：疑似詐騙、重複刊登、不當內容");
+      if (!reason) return;
+      const detail = prompt("請補充說明檢舉內容");
+      if (!detail) return;
+
+      const reports = getData(STORAGE_KEYS.reports);
+      reports.unshift({
+        id: Date.now(),
+        itemId: item.id,
+        itemTitle: item.title,
+        reporterId: user.id,
+        reporterName: user.name,
+        targetOwnerId: item.ownerId,
+        targetOwnerName: item.ownerName,
+        reason,
+        detail,
+        status: "待處理",
+        createdAt: new Date().toISOString().slice(0, 10)
+      });
+      setData(STORAGE_KEYS.reports, reports);
+      alert("檢舉已送出，管理員將進行審查。");
+    }
+
+    function updateReportStatus(reportId, status) {
+      const user = getCurrentUser();
+      if (!user || user.role !== "admin") {
+        alert("只有管理員可以處理檢舉。");
+        return;
+      }
+      const reports = getData(STORAGE_KEYS.reports);
+      const index = reports.findIndex(r => r.id === reportId);
+      if (index === -1) return;
+      reports[index].status = status;
+      setData(STORAGE_KEYS.reports, reports);
+      renderApp();
+    }
+
+    seedData();
+    renderApp();
+  </script>
+
+  <style>
+    .line-clamp {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+  </style>
+</body>
+</html>
