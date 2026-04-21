@@ -1,0 +1,3080 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>語音分析 + 帕金森語言訓練平台</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: 'Microsoft JhengHei', 'Segoe UI', Arial, sans-serif;
+      background: #0a0e27;
+      color: #fff;
+      overflow-x: hidden;
+    }
+
+    .app-container {
+      max-width: 100vw;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .status-bar {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .status-bar h1 {
+      font-size: 1.1em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #28a745;
+      box-shadow: 0 0 10px #28a745;
+      animation: pulse 2s infinite;
+    }
+
+    .status-indicator.recording {
+      background: #dc3545;
+      box-shadow: 0 0 10px #dc3545;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .main-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 15px;
+      padding-bottom: 90px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .page {
+      display: none;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    .panel,
+    .patient-card,
+    .recording-control,
+    .quality-score,
+    .waveform-container,
+    .spectrum-container,
+    .suggestions-panel,
+    .history-card,
+    .settings-item,
+    .metric-card,
+    .training-card,
+    .material-category,
+    .week-overview,
+    .progress-card,
+    .report-print {
+      background: linear-gradient(135deg, #1a1f3a 0%, #2a2f4a 100%);
+      border-radius: 15px;
+      padding: 15px;
+      margin-bottom: 15px;
+      border: 2px solid #3a3f5a;
+    }
+
+    .patient-card h3,
+    .waveform-container h3,
+    .spectrum-container h3,
+    .suggestions-panel h3,
+    .quality-score h3,
+    .section-title,
+    .panel h3 {
+      color: #667eea;
+      margin-bottom: 12px;
+      font-size: 1.05em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .patient-input,
+    .search-input {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 10px;
+      border: 2px solid #3a3f5a;
+      border-radius: 10px;
+      background: #0f1329;
+      color: white;
+      font-size: 1em;
+    }
+
+    .patient-input:focus,
+    .search-input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .recording-control {
+      text-align: center;
+    }
+
+    .recording-timer {
+      font-size: 2.4em;
+      color: #667eea;
+      font-weight: bold;
+      margin-bottom: 15px;
+      display: none;
+    }
+
+    .recording-timer.active {
+      display: block;
+      color: #dc3545;
+      animation: pulse 1s infinite;
+    }
+
+    .record-button {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      border: none;
+      background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+      color: white;
+      font-size: 3em;
+      cursor: pointer;
+      box-shadow: 0 8px 25px rgba(220, 53, 69, 0.4);
+      transition: all 0.3s;
+      margin: 0 auto 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .record-button.recording {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      box-shadow: 0 8px 25px rgba(40, 167, 69, 0.4);
+      animation: recordPulse 1.5s infinite;
+    }
+
+    @keyframes recordPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    .control-buttons,
+    .row-actions,
+    .training-actions,
+    .material-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+      flex-wrap: wrap;
+    }
+
+    .control-btn,
+    .mini-btn,
+    .nav-tab,
+    .practice-record-btn {
+      border: none;
+      border-radius: 12px;
+      font-size: 0.95em;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .control-btn,
+    .practice-record-btn {
+      flex: 1;
+      min-width: 120px;
+      padding: 14px 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .control-btn.primary,
+    .practice-record-btn.primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .control-btn.success,
+    .practice-record-btn.success {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      color: white;
+    }
+
+    .control-btn.danger,
+    .practice-record-btn.danger,
+    .mini-btn.delete {
+      background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+      color: white;
+    }
+
+    .control-btn.warning,
+    .mini-btn.toggle {
+      background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+      color: #222;
+    }
+
+    .control-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .control-btn:active:not(:disabled),
+    .mini-btn:active,
+    .practice-record-btn:active {
+      transform: scale(0.97);
+    }
+
+    .progress-bar {
+      background: #0f1329;
+      height: 8px;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      transition: width 0.3s;
+      border-radius: 10px;
+      width: 0%;
+    }
+
+    .quality-score {
+      text-align: center;
+    }
+
+    .score-ring {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      margin: 0 auto 15px;
+    }
+
+    .score-ring svg {
+      transform: rotate(-90deg);
+    }
+
+    .score-ring-bg {
+      fill: none;
+      stroke: #3a3f5a;
+      stroke-width: 15;
+    }
+
+    .score-ring-progress {
+      fill: none;
+      stroke: url(#scoreGradient);
+      stroke-width: 15;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.5s ease;
+    }
+
+    .score-value {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 3em;
+      font-weight: bold;
+    }
+
+    .score-label {
+      font-size: 1.1em;
+      color: #a0a5c0;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 15px;
+    }
+
+    .metric-card {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .metric-card.warning::before {
+      background: linear-gradient(90deg, #ffc107 0%, #ff9800 100%);
+    }
+
+    .metric-card.danger::before {
+      background: linear-gradient(90deg, #dc3545 0%, #c82333 100%);
+    }
+
+    .metric-card.success::before {
+      background: linear-gradient(90deg, #28a745 0%, #20c997 100%);
+    }
+
+    .metric-icon {
+      font-size: 1.8em;
+      margin-bottom: 8px;
+    }
+
+    .metric-label {
+      font-size: 0.85em;
+      color: #a0a5c0;
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-size: 2em;
+      font-weight: bold;
+      line-height: 1;
+    }
+
+    .metric-unit {
+      font-size: 0.5em;
+      color: #667eea;
+      margin-left: 3px;
+    }
+
+    .metric-status {
+      font-size: 0.8em;
+      padding: 3px 10px;
+      border-radius: 15px;
+      display: inline-block;
+      margin-top: 8px;
+    }
+
+    .metric-status.normal {
+      background: rgba(40, 167, 69, 0.2);
+      color: #28a745;
+      border: 1px solid #28a745;
+    }
+
+    .metric-status.warning {
+      background: rgba(255, 193, 7, 0.2);
+      color: #ffc107;
+      border: 1px solid #ffc107;
+    }
+
+    .metric-status.danger {
+      background: rgba(220, 53, 69, 0.2);
+      color: #dc3545;
+      border: 1px solid #dc3545;
+    }
+
+    .waveform-container,
+    .spectrum-container {
+      background: #1a1f3a;
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 150px !important;
+      background: #0f1329;
+      border-radius: 10px;
+    }
+
+    .frequency-bands {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .frequency-band {
+      text-align: center;
+      padding: 8px;
+      background: #0f1329;
+      border-radius: 8px;
+    }
+
+    .frequency-band-label {
+      font-size: 0.7em;
+      color: #a0a5c0;
+      margin-bottom: 5px;
+    }
+
+    .frequency-band-value {
+      font-size: 1em;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .frequency-band-bar {
+      height: 40px;
+      background: #1a1f3a;
+      border-radius: 4px;
+      margin-top: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .frequency-band-fill {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      background: linear-gradient(to top, #667eea, #764ba2);
+      transition: height 0.2s;
+      height: 0%;
+    }
+
+    .suggestion-item {
+      background: rgba(102, 126, 234, 0.1);
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      border-left: 3px solid #667eea;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .suggestion-item.warning {
+      border-left-color: #ffc107;
+      background: rgba(255, 193, 7, 0.1);
+    }
+
+    .suggestion-item.danger {
+      border-left-color: #dc3545;
+      background: rgba(220, 53, 69, 0.1);
+    }
+
+    .suggestion-item.success {
+      border-left-color: #28a745;
+      background: rgba(40, 167, 69, 0.1);
+    }
+
+    .suggestion-item.report {
+      border-left-color: #17a2b8;
+      background: rgba(23, 162, 184, 0.12);
+    }
+
+    .suggestion-icon {
+      font-size: 1.2em;
+      flex-shrink: 0;
+    }
+
+    .suggestion-text {
+      flex: 1;
+      line-height: 1.65;
+      font-size: 0.92em;
+      white-space: pre-line;
+    }
+
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 10px;
+    }
+
+    .history-date {
+      color: #667eea;
+      font-weight: bold;
+    }
+
+    .history-score {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: #28a745;
+    }
+
+    .history-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .history-metric {
+      text-align: center;
+      padding: 8px;
+      background: #0f1329;
+      border-radius: 8px;
+    }
+
+    .history-metric-label {
+      font-size: 0.75em;
+      color: #a0a5c0;
+    }
+
+    .history-metric-value {
+      font-size: 1.1em;
+      font-weight: bold;
+      color: #fff;
+      margin-top: 3px;
+    }
+
+    .history-note {
+      margin-top: 12px;
+      padding: 12px;
+      background: #0f1329;
+      border-radius: 10px;
+      color: #cfd3e6;
+      font-size: 0.85em;
+      white-space: pre-line;
+      line-height: 1.65;
+      border: 1px solid #2b3357;
+      display: none;
+    }
+
+    .history-note.show {
+      display: block;
+    }
+
+    .mini-btn {
+      padding: 8px 12px;
+      font-size: 0.82em;
+      color: #fff;
+    }
+
+    .mini-btn.view {
+      background: #667eea;
+    }
+
+    .mini-btn.print {
+      background: #20c997;
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .loading.active {
+      display: block;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #3a3f5a;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .toast {
+      position: fixed;
+      top: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(102, 126, 234, 0.95);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 25px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      z-index: 1000;
+      display: none;
+    }
+
+    .toast.show {
+      display: block;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #a0a5c0;
+    }
+
+    .toggle {
+      position: relative;
+      width: 50px;
+      height: 26px;
+      flex-shrink: 0;
+    }
+
+    .toggle input {
+      display: none;
+    }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: #3a3f5a;
+      border-radius: 26px;
+      transition: .3s;
+    }
+
+    .toggle-thumb {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      left: 3px;
+      top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: .3s;
+    }
+
+    .toggle input:checked + .toggle-track {
+      background: #667eea;
+    }
+
+    .toggle input:checked + .toggle-track + .toggle-thumb {
+      transform: translateX(24px);
+    }
+
+    .cloud-info,
+    .helper-box,
+    .practice-script-box,
+    .report-summary-box {
+      font-size: 0.88em;
+      color: #cfd3e6;
+      line-height: 1.7;
+      margin-top: 14px;
+      background: #11162f;
+      border: 1px solid #3a3f5a;
+      padding: 12px;
+      border-radius: 12px;
+    }
+
+    .helper-box strong,
+    .practice-script-box strong,
+    .report-summary-box strong {
+      color: #9fb2ff;
+    }
+
+    .script-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .script-pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(102,126,234,0.15);
+      border: 1px solid #667eea;
+      color: #dfe6ff;
+      cursor: pointer;
+      font-size: 0.85em;
+    }
+
+    .script-pill.active {
+      background: #667eea;
+      color: #fff;
+    }
+
+    .training-header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .training-header h2 {
+      color: #fff;
+      font-size: 1.5em;
+      margin-bottom: 8px;
+    }
+
+    .training-header p {
+      color: #cfd3e6;
+      line-height: 1.7;
+    }
+
+    .nav-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+      justify-content: center;
+    }
+
+    .nav-tab {
+      background: #fff;
+      padding: 12px 18px;
+      color: #4a5568;
+      min-width: 110px;
+    }
+
+    .nav-tab.active {
+      background: #667eea;
+      color: white;
+    }
+
+    .content-section {
+      display: none;
+    }
+
+    .content-section.active {
+      display: block;
+    }
+
+    .cards-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .training-card,
+    .material-category {
+      background: #fff;
+      color: #2d3748;
+      border: none;
+    }
+
+    .card-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 18px;
+      border-radius: 12px;
+      margin-bottom: 18px;
+      text-align: center;
+    }
+
+    .card-header h3 {
+      font-size: 1.45em;
+      margin-bottom: 8px;
+    }
+
+    .day-info {
+      font-size: 1em;
+      opacity: 0.92;
+    }
+
+    .exercise-section {
+      margin-bottom: 22px;
+    }
+
+    .exercise-title {
+      background: #f7fafc;
+      padding: 14px;
+      border-radius: 12px;
+      margin-bottom: 14px;
+      border-left: 5px solid #667eea;
+    }
+
+    .exercise-title h4 {
+      color: #667eea;
+      font-size: 1.05em;
+      margin-bottom: 6px;
+    }
+
+    .exercise-title .description {
+      color: #4a5568;
+      font-size: 0.95em;
+    }
+
+    .practice-content {
+      background: #fff5f5;
+      padding: 16px;
+      border-radius: 12px;
+      border: 2px dashed #667eea;
+      margin: 12px 0;
+      white-space: pre-line;
+      line-height: 1.9;
+    }
+
+    .practice-text,
+    .large-text,
+    .extra-large-text {
+      color: #2d3748;
+    }
+
+    .large-text {
+      font-size: 1em;
+    }
+
+    .extra-large-text {
+      font-size: 1.08em;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .difficulty-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.75em;
+      font-weight: bold;
+      margin-left: 10px;
+    }
+
+    .easy { background: #c6f6d5; color: #22543d; }
+    .medium { background: #feebc8; color: #c05621; }
+    .hard { background: #fed7d7; color: #c53030; }
+
+    .tips-card {
+      background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+      padding: 20px;
+      border-radius: 16px;
+      margin: 18px 0;
+      border: 2px solid #ed8936;
+      color: #744210;
+    }
+
+    .tips-card h4 {
+      color: #c05621;
+      margin-bottom: 10px;
+    }
+
+    .tips-card ul {
+      padding-left: 18px;
+    }
+
+    .tips-card li {
+      margin-bottom: 8px;
+    }
+
+    .progress-card {
+      background: #e6fffa;
+      color: #234e52;
+      border: 2px solid #38b2ac;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 14px;
+      padding: 12px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+      gap: 14px;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      transform: scale(1.4);
+    }
+
+    .checkbox-item label {
+      flex: 1;
+      line-height: 1.6;
+    }
+
+    .week-overview {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .week-goals {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    .goal-item {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 18px;
+      border-radius: 14px;
+    }
+
+    .goal-item h3 {
+      font-size: 1.1em;
+      margin-bottom: 8px;
+    }
+
+    .audio-instruction {
+      background: #e6fffa;
+      padding: 18px;
+      border-radius: 14px;
+      margin: 16px 0;
+      border: 2px dashed #38b2ac;
+      text-align: center;
+      color: #234e52;
+    }
+
+    .report-print {
+      display: none;
+      background: #fff;
+      color: #222;
+      border: none;
+    }
+
+    .report-print h1,
+    .report-print h2,
+    .report-print h3 {
+      color: #222;
+    }
+
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(135deg, #1a1f3a 0%, #2a2f4a 100%);
+      padding: 12px 10px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+      border-top: 2px solid #3a3f5a;
+      z-index: 100;
+    }
+
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      padding: 8px 10px;
+      border-radius: 10px;
+      min-width: 58px;
+    }
+
+    .nav-item.active {
+      background: rgba(102, 126, 234, 0.2);
+    }
+
+    .nav-icon {
+      font-size: 1.4em;
+    }
+
+    .nav-label {
+      font-size: 0.72em;
+      color: #a0a5c0;
+    }
+
+    .nav-item.active .nav-label {
+      color: #667eea;
+    }
+
+    @media (max-width: 768px) {
+      .metrics-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .history-metrics {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .frequency-bands {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .score-ring {
+        width: 150px;
+        height: 150px;
+      }
+
+      .score-value {
+        font-size: 2.3em;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff !important;
+        color: #000 !important;
+      }
+
+      .app-container > :not(.report-print),
+      .main-content > :not(.page),
+      .bottom-nav,
+      .toast,
+      .status-bar {
+        display: none !important;
+      }
+
+      #printReport {
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toast" id="toast"></div>
+
+  <div class="app-container">
+    <div class="status-bar">
+      <h1>
+        <span>🎙️</span>
+        <span>語音分析與訓練平台</span>
+      </h1>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="status-indicator" id="statusIndicator"></div>
+        <span id="statusText" style="font-size:0.9em;">就緒</span>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <!-- 首頁 -->
+      <div class="page active" id="homePage">
+        <div class="patient-card">
+          <h3>👤 患者資訊</h3>
+          <input type="text" class="patient-input" id="patientName" placeholder="姓名">
+          <select class="patient-input" id="patientGender">
+            <option value="">選擇性別</option>
+            <option value="male">男性</option>
+            <option value="female">女性</option>
+          </select>
+          <input type="number" class="patient-input" id="patientAge" placeholder="年齡">
+        </div>
+
+        <div class="panel">
+          <h3>📖 錄音標準題材 / 練習題材</h3>
+          <div class="helper-box">
+            <strong>使用方式：</strong>
+            分析錄音時，建議依照下方標準題材朗讀；若作為日常訓練，也可切換不同臨時題材進行練習。建議每次錄音至少 10～20 秒，並保持自然、清楚、穩定的發聲。
+          </div>
+          <div class="script-pills" id="scriptPills"></div>
+          <div class="practice-script-box" id="practiceScriptBox"></div>
+        </div>
+
+        <div class="recording-control">
+          <div class="recording-timer" id="recordingTimer">00:00</div>
+          <button class="record-button" id="recordBtn">
+            <span id="recordIcon">🔴</span>
+          </button>
+          <div style="color:#a0a5c0; margin-bottom:15px;" id="recordHint">點擊開始錄音</div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="recordProgress"></div>
+          </div>
+          <div class="control-buttons">
+            <button class="control-btn primary" id="playBtn" disabled><span>▶️</span> 播放</button>
+            <button class="control-btn success" id="analyzeBtn" disabled><span>📊</span> 分析</button>
+          </div>
+        </div>
+
+        <div class="quality-score">
+          <h3>🎯 語音質量評分</h3>
+          <div class="score-ring">
+            <svg width="180" height="180">
+              <defs>
+                <linearGradient id="scoreGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+                </linearGradient>
+              </defs>
+              <circle class="score-ring-bg" cx="90" cy="90" r="75"></circle>
+              <circle class="score-ring-progress" id="scoreProgress" cx="90" cy="90" r="75" stroke-dasharray="471.24" stroke-dashoffset="471.24"></circle>
+            </svg>
+            <div class="score-value" id="scoreValue">--</div>
+          </div>
+          <div class="score-label" id="scoreLabel">等待測量</div>
+        </div>
+
+        <div class="suggestions-panel">
+          <h3>💡 即時建議</h3>
+          <div id="suggestionsContainer">
+            <div class="suggestion-item">
+              <div class="suggestion-icon">ℹ️</div>
+              <div class="suggestion-text">請在安靜環境中進行測試，麥克風距離嘴巴約 20～30 公分，並以自然且穩定的音量發聲。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="suggestions-panel" id="analysisReportPanel">
+          <h3>📝 專業分析說明</h3>
+          <div id="analysisReportContainer">
+            <div class="suggestion-item report">
+              <div class="suggestion-icon">📋</div>
+              <div class="suggestion-text">完成分析後，這裡會顯示綜合判讀、臨床導向說明與後續建議。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>📄 報告輸出</h3>
+          <div class="control-buttons">
+            <button class="control-btn primary" id="printCurrentReportBtn"><span>🖨️</span> 列印目前報告</button>
+            <button class="control-btn success" id="downloadPdfHintBtn"><span>📑</span> 另存 PDF 提示</button>
+          </div>
+          <div class="helper-box">
+            <strong>提示：</strong>
+            點擊「列印目前報告」後，可在瀏覽器列印視窗中選擇「另存為 PDF」，即可輸出 PDF 格式報告。
+          </div>
+        </div>
+      </div>
+
+      <!-- 數據頁 -->
+      <div class="page" id="dataPage">
+        <h2 class="section-title">📊 聲學數據</h2>
+
+        <div class="metrics-grid">
+          <div class="metric-card" id="f0Card">
+            <div class="metric-icon">🎵</div>
+            <div class="metric-label">基本頻率 (F0)</div>
+            <div class="metric-value"><span id="f0Value">--</span><span class="metric-unit">Hz</span></div>
+            <span class="metric-status normal" id="f0Status">待測量</span>
+          </div>
+
+          <div class="metric-card" id="splCard">
+            <div class="metric-icon">🔊</div>
+            <div class="metric-label">聲音響度 (SPL)</div>
+            <div class="metric-value"><span id="splValue">--</span><span class="metric-unit">dB</span></div>
+            <span class="metric-status normal" id="splStatus">待測量</span>
+          </div>
+
+          <div class="metric-card" id="jitterCard">
+            <div class="metric-icon">〰️</div>
+            <div class="metric-label">嗓音擾動</div>
+            <div class="metric-value"><span id="jitterValue">--</span><span class="metric-unit">%</span></div>
+            <span class="metric-status normal" id="jitterStatus">待測量</span>
+          </div>
+
+          <div class="metric-card" id="shimmerCard">
+            <div class="metric-icon">📶</div>
+            <div class="metric-label">振幅擾動</div>
+            <div class="metric-value"><span id="shimmerValue">--</span><span class="metric-unit">%</span></div>
+            <span class="metric-status normal" id="shimmerStatus">待測量</span>
+          </div>
+
+          <div class="metric-card" id="hnrCard">
+            <div class="metric-icon">✨</div>
+            <div class="metric-label">諧噪比 (HNR)</div>
+            <div class="metric-value"><span id="hnrValue">--</span><span class="metric-unit">dB</span></div>
+            <span class="metric-status normal" id="hnrStatus">待測量</span>
+          </div>
+
+          <div class="metric-card" id="mptCard">
+            <div class="metric-icon">⏱️</div>
+            <div class="metric-label">發聲時間</div>
+            <div class="metric-value"><span id="mptValue">--</span><span class="metric-unit">秒</span></div>
+            <span class="metric-status normal" id="mptStatus">待測量</span>
+          </div>
+        </div>
+
+        <div class="waveform-container">
+          <h3>📊 即時波形</h3>
+          <canvas id="waveformCanvas"></canvas>
+        </div>
+
+        <div class="spectrum-container">
+          <h3>🌈 頻譜分析</h3>
+          <canvas id="spectrumCanvas"></canvas>
+          <div class="frequency-bands">
+            <div class="frequency-band">
+              <div class="frequency-band-label">低頻</div>
+              <div class="frequency-band-value" id="lowFreq">0</div>
+              <div class="frequency-band-bar"><div class="frequency-band-fill" id="lowFreqBar"></div></div>
+            </div>
+            <div class="frequency-band">
+              <div class="frequency-band-label">中低</div>
+              <div class="frequency-band-value" id="midLowFreq">0</div>
+              <div class="frequency-band-bar"><div class="frequency-band-fill" id="midLowFreqBar"></div></div>
+            </div>
+            <div class="frequency-band">
+              <div class="frequency-band-label">中高</div>
+              <div class="frequency-band-value" id="midHighFreq">0</div>
+              <div class="frequency-band-bar"><div class="frequency-band-fill" id="midHighFreqBar"></div></div>
+            </div>
+            <div class="frequency-band">
+              <div class="frequency-band-label">高頻</div>
+              <div class="frequency-band-value" id="highFreq">0</div>
+              <div class="frequency-band-bar"><div class="frequency-band-fill" id="highFreqBar"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 歷史 -->
+      <div class="page" id="historyPage">
+        <h2 class="section-title">📋 歷史記錄</h2>
+
+        <div class="panel">
+          <h3>🔎 搜尋歷史記錄</h3>
+          <input class="search-input" id="searchKeyword" placeholder="輸入姓名、備註、年齡或關鍵字">
+          <div class="control-buttons" style="margin-top:0;">
+            <button class="control-btn primary" id="searchHistoryBtn"><span>🔍</span> 搜尋</button>
+            <button class="control-btn success" id="reloadHistoryBtn"><span>🔄</span> 全部載入</button>
+            <button class="control-btn danger" id="clearHistoryBtn"><span>🗑️</span> 清空雲端</button>
+          </div>
+        </div>
+
+        <div class="loading" id="historyLoading">
+          <div class="spinner"></div>
+          <div>載入中...</div>
+        </div>
+
+        <div id="historyContainer">
+          <div class="empty-state">
+            <div style="font-size:4em; margin-bottom:15px; opacity:0.5;">📭</div>
+            <div>尚無歷史記錄</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 訓練平台 -->
+      <div class="page" id="trainingPage">
+        <div class="training-header">
+          <h2>🗣️ 帕金森病語言訓練平台</h2>
+          <p>提供 30 天系統性練習架構，並於關鍵節點加入錄製按鈕，以便保存練習時的語音表現與分析紀錄。</p>
+        </div>
+
+        <div class="panel">
+          <h3>🎙️ 練習錄製說明</h3>
+          <div class="helper-box">
+            在各練習卡片的關鍵節點，可按下「錄製此節點」進行練習錄音。錄製完成後可直接分析並儲存成歷史紀錄，資料會附帶節點名稱與練習內容摘要，方便後續追蹤。
+          </div>
+        </div>
+
+        <div class="nav-tabs">
+          <button class="nav-tab active" onclick="showTrainingSection('overview', this)">訓練概覽</button>
+          <button class="nav-tab" onclick="showTrainingSection('week1', this)">第1週</button>
+          <button class="nav-tab" onclick="showTrainingSection('week2', this)">第2週</button>
+          <button class="nav-tab" onclick="showTrainingSection('week3', this)">第3週</button>
+          <button class="nav-tab" onclick="showTrainingSection('week4', this)">第4週</button>
+          <button class="nav-tab" onclick="showTrainingSection('materials', this)">練習教材</button>
+          <button class="nav-tab" onclick="showTrainingSection('progress', this)">進度追蹤</button>
+        </div>
+
+        <!-- 訓練概覽 -->
+        <div id="training-overview" class="content-section active">
+          <div class="week-overview">
+            <h2>📋 30天訓練計畫概覽</h2>
+            <div class="tips-card">
+              <h4>🎯 訓練目標</h4>
+              <ul>
+                <li><strong>改善說話音量與可懂度</strong></li>
+                <li><strong>增強呼吸支持與發聲持續能力</strong></li>
+                <li><strong>提升語音語調與句子表達能力</strong></li>
+                <li><strong>加強日常對話與社交溝通</strong></li>
+              </ul>
+            </div>
+
+            <div class="week-goals">
+              <div class="goal-item">
+                <h3>第1週：基礎建立</h3>
+                <p>呼吸與發聲基礎、音量控制</p>
+              </div>
+              <div class="goal-item">
+                <h3>第2週：發音強化</h3>
+                <p>詞彙清晰度、語速與聲調</p>
+              </div>
+              <div class="goal-item">
+                <h3>第3週：句子練習</h3>
+                <p>短句、對話與故事朗讀</p>
+              </div>
+              <div class="goal-item">
+                <h3>第4週：綜合應用</h3>
+                <p>自由表達、社交情境與總結評估</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 第1週 -->
+        <div id="training-week1" class="content-section">
+          <div class="cards-container">
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第1天</h3>
+                <div class="day-info">呼吸基礎訓練</div>
+              </div>
+              <div class="exercise-title">
+                <h4>🫁 腹式呼吸練習 <span class="difficulty-badge easy">簡單</span></h4>
+                <div class="description">建立正確的呼吸基礎</div>
+              </div>
+              <div class="practice-content">步驟：
+1. 平躺或坐直，一手放胸部，一手放腹部
+2. 慢慢吸氣，感受腹部隆起（4秒）
+3. 慢慢呼氣，感受腹部收縮（6秒）
+4. 重複10次，每日3組</div>
+
+              <div class="exercise-title">
+                <h4>🎵 長音練習</h4>
+                <div class="description">訓練氣息控制和發聲</div>
+              </div>
+              <div class="practice-content">啊～～～（持續10秒）
+咿～～～（持續10秒）
+嗚～～～（持續10秒）
+欸～～～（持續10秒）
+喔～～～（持續10秒）</div>
+
+              <div class="training-actions">
+                <button class="practice-record-btn primary" onclick="preparePracticeRecord('第1天-長音練習', '啊～～～ 咿～～～ 嗚～～～ 欸～～～ 喔～～～')">🎙️ 錄製此節點</button>
+              </div>
+            </div>
+
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第2天</h3>
+                <div class="day-info">音量控制</div>
+              </div>
+              <div class="exercise-title">
+                <h4>📢 音量階梯練習</h4>
+                <div class="description">學習控制說話音量</div>
+              </div>
+              <div class="practice-content">小聲：1-2-3-4-5
+中聲：1-2-3-4-5
+大聲：1-2-3-4-5
+很大聲：1-2-3-4-5</div>
+              <div class="exercise-title">
+                <h4>🔊 重複練習</h4>
+                <div class="description">加強音量穩定性</div>
+              </div>
+              <div class="practice-content">好-好-好（大聲說3次）
+對-對-對（大聲說3次）
+是-是-是（大聲說3次）
+謝謝-謝謝-謝謝（大聲說3次）</div>
+              <div class="training-actions">
+                <button class="practice-record-btn primary" onclick="preparePracticeRecord('第2天-音量階梯練習', '小聲 中聲 大聲 很大聲 1到5')">🎙️ 錄製此節點</button>
+              </div>
+            </div>
+
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第7天</h3>
+                <div class="day-info">評估測試</div>
+              </div>
+              <div class="audio-instruction">
+                <h4>🎤 錄音練習</h4>
+                <p>朗讀以下句子並自我評估</p>
+              </div>
+              <div class="practice-content">我叫___，今年___歲。
+今天天氣很好，我很開心。
+謝謝大家的關心和幫助。</div>
+              <div class="training-actions">
+                <button class="practice-record-btn success" onclick="preparePracticeRecord('第7天-週末評估', '我叫___，今年___歲。今天天氣很好，我很開心。謝謝大家的關心和幫助。')">🎙️ 錄製評估</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 第2週 -->
+        <div id="training-week2" class="content-section">
+          <div class="cards-container">
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第11天</h3>
+                <div class="day-info">繞口令初級</div>
+              </div>
+              <div class="exercise-title">
+                <h4>🌪️ 繞口令練習 <span class="difficulty-badge medium">中等</span></h4>
+                <div class="description">提升發音靈活度</div>
+              </div>
+              <div class="practice-content">四是四，十是十
+媽媽騎馬，馬慢媽媽罵馬
+小小鳥，小小跳，小小鳥跳小小橋</div>
+              <div class="training-actions">
+                <button class="practice-record-btn primary" onclick="preparePracticeRecord('第11天-繞口令初級', '四是四，十是十。媽媽騎馬，馬慢媽媽罵馬。小小鳥，小小跳，小小鳥跳小小橋。')">🎙️ 錄製此節點</button>
+              </div>
+            </div>
+
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第14天</h3>
+                <div class="day-info">第2週評估</div>
+              </div>
+              <div class="audio-instruction">
+                <h4>🎤 錄音朗讀</h4>
+                <p>與第1週比較進步情況</p>
+              </div>
+              <div class="practice-content">我是___，我住在___。
+我喜歡看電視和聽音樂。
+今天我要去醫院看醫生。
+醫生說我需要多多練習說話。</div>
+              <div class="training-actions">
+                <button class="practice-record-btn success" onclick="preparePracticeRecord('第14天-第2週評估', '我是___，我住在___。我喜歡看電視和聽音樂。今天我要去醫院看醫生。醫生說我需要多多練習說話。')">🎙️ 錄製評估</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 第3週 -->
+        <div id="training-week3" class="content-section">
+          <div class="cards-container">
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第18天</h3>
+                <div class="day-info">對話練習A</div>
+              </div>
+              <div class="exercise-title">
+                <h4>💭 購物對話 <span class="difficulty-badge medium">中等</span></h4>
+                <div class="description">模擬日常購物情境</div>
+              </div>
+              <div class="practice-content">A：請問蘋果多少錢？
+B：一斤三十元。
+A：我要買兩斤。
+B：好的，一共六十元。
+A：謝謝！
+B：不客氣，歡迎再來。</div>
+              <div class="training-actions">
+                <button class="practice-record-btn primary" onclick="preparePracticeRecord('第18天-購物對話', '請問蘋果多少錢？一斤三十元。我要買兩斤。好的，一共六十元。謝謝。不客氣，歡迎再來。')">🎙️ 錄製此節點</button>
+              </div>
+            </div>
+
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第21天</h3>
+                <div class="day-info">第3週評估</div>
+              </div>
+              <div class="audio-instruction">
+                <h4>🎤 自由表達</h4>
+                <p>描述你的一天（至少說2分鐘）</p>
+              </div>
+              <div class="tips-card">
+                <h4>💡 表達提示</h4>
+                <ul>
+                  <li>從起床開始說到睡覺</li>
+                  <li>包含吃飯、活動、感受等</li>
+                  <li>盡量說得詳細一些</li>
+                </ul>
+              </div>
+              <div class="training-actions">
+                <button class="practice-record-btn success" onclick="preparePracticeRecord('第21天-自由表達評估', '請描述你的一天，從起床、吃飯、活動、休息到睡覺，盡量說得完整且連續。')">🎙️ 錄製評估</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 第4週 -->
+        <div id="training-week4" class="content-section">
+          <div class="cards-container">
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第24天</h3>
+                <div class="day-info">自我介紹</div>
+              </div>
+              <div class="exercise-title">
+                <h4>👋 完整自我介紹 <span class="difficulty-badge hard">困難</span></h4>
+                <div class="description">綜合運用所學技巧</div>
+              </div>
+              <div class="practice-content">大家好，我叫___，今年___歲。
+我住在___，家裡有___人。
+我的興趣是___，平常喜歡___。
+我最喜歡的食物是___。
+很高興認識大家，謝謝！</div>
+              <div class="training-actions">
+                <button class="practice-record-btn primary" onclick="preparePracticeRecord('第24天-完整自我介紹', '大家好，我叫___，今年___歲。我住在___，家裡有___人。我的興趣是___，平常喜歡___。我最喜歡的食物是___。很高興認識大家，謝謝！')">🎙️ 錄製此節點</button>
+              </div>
+            </div>
+
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第28天</h3>
+                <div class="day-info">即興表達</div>
+              </div>
+              <div class="exercise-title">
+                <h4>🎤 自由表達 <span class="difficulty-badge hard">困難</span></h4>
+                <div class="description">測試自然表達能力</div>
+              </div>
+              <div class="practice-content">主題選擇：
+• 我最喜歡的季節
+• 童年的美好回憶
+• 我的興趣愛好
+• 對家人的感謝
+• 未來的計畫</div>
+              <div class="training-actions">
+                <button class="practice-record-btn success" onclick="preparePracticeRecord('第28天-即興表達', '請從季節、回憶、興趣、感謝或未來計畫中擇一主題，自由表達 3 至 5 分鐘。')">🎙️ 錄製此節點</button>
+              </div>
+            </div>
+
+            <div class="training-card">
+              <div class="card-header">
+                <h3>第30天</h3>
+                <div class="day-info">總結評估</div>
+              </div>
+              <div class="audio-instruction">
+                <h4>🏆 最終測試</h4>
+                <p>完成以下所有項目並錄音保存</p>
+              </div>
+              <div class="practice-content">1. 自我介紹（2分鐘）
+2. 朗讀一首古詩
+3. 說一個繞口令
+4. 自由表達感想（3分鐘）
+5. 與家人進行5分鐘對話</div>
+              <div class="training-actions">
+                <button class="practice-record-btn success" onclick="preparePracticeRecord('第30天-總結評估', '請完成自我介紹、古詩朗讀、繞口令、自由表達感想與 5 分鐘對話，作為 30 天訓練總結。')">🎙️ 錄製總結評估</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 教材 -->
+        <div id="training-materials" class="content-section">
+          <div class="material-category">
+            <h3>📚 練習教材快速錄製</h3>
+            <div class="practice-content">你可以直接選擇常用教材進行錄製與保存。</div>
+            <div class="material-actions">
+              <button class="practice-record-btn primary" onclick="preparePracticeRecord('教材-古詩朗誦', '床前明月光，疑是地上霜。舉頭望明月，低頭思故鄉。')">🎙️ 古詩錄製</button>
+              <button class="practice-record-btn primary" onclick="preparePracticeRecord('教材-繞口令', '吃葡萄不吐葡萄皮，不吃葡萄倒吐葡萄皮。')">🎙️ 繞口令錄製</button>
+              <button class="practice-record-btn success" onclick="preparePracticeRecord('教材-醫療對話', '醫生：您今天有什麼不舒服嗎？病人：我覺得說話有點困難。')">🎙️ 醫療對話錄製</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 進度 -->
+        <div id="training-progress" class="content-section">
+          <div class="progress-card">
+            <h3>📊 30天進度追蹤</h3>
+            <div id="trainingProgressText" style="font-weight:bold; margin-bottom:15px;">完成進度：0%</div>
+
+            <div class="checkbox-item"><input type="checkbox" id="day1"><label for="day1">第1天 - 腹式呼吸練習完成</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="day2"><label for="day2">第2天 - 音量控制練習完成</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="day7"><label for="day7">第7天 - 週末評估完成</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="day14"><label for="day14">第14天 - 第2週評估完成</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="day21"><label for="day21">第21天 - 第3週評估完成</label></div>
+            <div class="checkbox-item"><input type="checkbox" id="day30"><label for="day30">第30天 - 總結評估完成</label></div>
+          </div>
+
+          <div class="tips-card">
+            <h4>📈 進度評估建議</h4>
+            <ul>
+              <li>每週可比較錄音之音量、可懂度與穩定度變化。</li>
+              <li>建議請家屬或治療人員提供外部聽感回饋。</li>
+              <li>若持續出現嗓音沙啞、氣音增加或音量明顯下降，建議進一步專業評估。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- 設定 -->
+      <div class="page" id="settingsPage">
+        <h2 class="section-title">⚙️ 設定</h2>
+
+        <div class="settings-item">
+          <div class="settings-label">採樣率</div>
+          <select class="patient-input" id="sampleRateSelect" style="width:auto; padding:8px; margin-bottom:0;">
+            <option value="44100">44.1 kHz</option>
+            <option value="48000" selected>48 kHz</option>
+          </select>
+        </div>
+
+        <div class="settings-item">
+          <div class="settings-label">自動儲存</div>
+          <label class="toggle">
+            <input type="checkbox" id="autoSave" checked>
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+
+        <div class="settings-item">
+          <div class="settings-label">震動回饋</div>
+          <label class="toggle">
+            <input type="checkbox" id="vibration" checked>
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
+        </div>
+
+        <button class="control-btn primary" onclick="resetApp()" style="width:100%; margin-top:15px;"><span>🔄</span> 重置應用程式</button>
+        <button class="control-btn success" onclick="exportData()" style="width:100%; margin-top:10px;"><span>📤</span> 匯出雲端資料</button>
+
+        <div class="cloud-info">
+          <div><strong>GAS API：</strong> <span id="gasApiUrlText">尚未設定</span></div>
+          <div><strong>雲端狀態：</strong> <span id="cloudStatusText">未連線</span></div>
+          <div><strong>練習節點：</strong> <span id="practiceContextText">未選擇</span></div>
+        </div>
+      </div>
+
+      <!-- 列印報告 -->
+      <div class="report-print" id="printReport"></div>
+    </div>
+
+    <div class="bottom-nav">
+      <div class="nav-item active" onclick="switchPage('home', this)">
+        <div class="nav-icon">🏠</div>
+        <div class="nav-label">首頁</div>
+      </div>
+      <div class="nav-item" onclick="switchPage('data', this)">
+        <div class="nav-icon">📊</div>
+        <div class="nav-label">數據</div>
+      </div>
+      <div class="nav-item" onclick="switchPage('history', this)">
+        <div class="nav-icon">📋</div>
+        <div class="nav-label">記錄</div>
+      </div>
+      <div class="nav-item" onclick="switchPage('training', this)">
+        <div class="nav-icon">🗣️</div>
+        <div class="nav-label">訓練</div>
+      </div>
+      <div class="nav-item" onclick="switchPage('settings', this)">
+        <div class="nav-icon">⚙️</div>
+        <div class="nav-label">設定</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzSNljOfbJyyaX9WMRwQ_-3DzB4OzJQAOBELnirW5PAUxZQrjL4z3ouYxWNk0FHSLcF/exec';
+    const GAS_API_KEY = 'voice-analysis-demo-key';
+
+    let audioContext;
+    let analyser;
+    let microphone;
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
+    let isPlaying = false;
+    let animationId;
+    let recordingStartTime;
+    let recordingInterval;
+    let audioBuffer;
+    let source;
+    let historyData = [];
+    let analysisInterval;
+    let wakeLock = null;
+    let currentRecordedBlob = null;
+    let currentRecordedMimeType = '';
+    let trainingPracticeContext = null;
+    let currentReportRecord = null;
+
+    const waveformCanvas = document.getElementById('waveformCanvas');
+    const waveformCtx = waveformCanvas.getContext('2d');
+    const spectrumCanvas = document.getElementById('spectrumCanvas');
+    const spectrumCtx = spectrumCanvas.getContext('2d');
+
+    let realtimeMetrics = {
+      f0: 0,
+      spl: 0,
+      jitter: 0,
+      shimmer: 0,
+      hnr: 0,
+      mpt: 0
+    };
+
+    const practiceScripts = [
+      {
+        id: 'standard-1',
+        title: '標準題材 A：自我介紹',
+        content: '大家好，我叫＿＿＿，今年＿＿＿歲。我今天來做語音測試，希望能夠清楚、自然地完成這次朗讀。謝謝大家。'
+      },
+      {
+        id: 'standard-2',
+        title: '標準題材 B：日常敘述',
+        content: '今天天氣很好，我早上起床後先刷牙洗臉，接著吃早餐。之後我打算散步、休息，並和家人聊聊天。'
+      },
+      {
+        id: 'standard-3',
+        title: '標準題材 C：醫療情境',
+        content: '醫生您好，我最近覺得說話的聲音比較小，有時候別人聽不清楚，所以我想要透過訓練讓聲音更穩定、更清楚。'
+      },
+      {
+        id: 'practice-1',
+        title: '練習題材：放鬆發聲',
+        content: '請以自然、放鬆的方式，持續而穩定地說出：啊—— 啊—— 啊——。接著再用自然音量說出：今天我會好好練習說話。'
+      },
+      {
+        id: 'practice-2',
+        title: '練習題材：音量提升',
+        content: '請用清楚、稍微大一點的音量說：你好，我今天感覺不錯。謝謝你的關心。我會繼續努力練習。'
+      }
+    ];
+
+    window.onload = async function() {
+      resizeCanvas();
+      initializeVisualizations();
+      setupStaticEvents();
+      initPracticeScripts();
+      initTrainingProgress();
+      updateCloudInfo();
+      await checkBackendHealth();
+      await loadHistoryFromGas();
+
+      document.body.addEventListener('touchmove', function(e) {
+        if (e.target.closest('.main-content')) return;
+        e.preventDefault();
+      }, { passive: false });
+    };
+
+    window.onresize = resizeCanvas;
+
+    function resizeCanvas() {
+      waveformCanvas.width = waveformCanvas.offsetWidth || 300;
+      waveformCanvas.height = 150;
+      spectrumCanvas.width = spectrumCanvas.offsetWidth || 300;
+      spectrumCanvas.height = 150;
+    }
+
+    function initializeVisualizations() {
+      drawWaveform([]);
+      drawSpectrum([]);
+    }
+
+    function setupStaticEvents() {
+      document.getElementById('recordBtn').addEventListener('click', handleRecordToggle);
+      document.getElementById('playBtn').addEventListener('click', handlePlayToggle);
+      document.getElementById('analyzeBtn').addEventListener('click', handleAnalyze);
+      document.getElementById('reloadHistoryBtn').addEventListener('click', loadHistoryFromGas);
+      document.getElementById('clearHistoryBtn').addEventListener('click', clearHistoryFromGas);
+      document.getElementById('searchHistoryBtn').addEventListener('click', searchHistory);
+      document.getElementById('printCurrentReportBtn').addEventListener('click', printCurrentReport);
+      document.getElementById('downloadPdfHintBtn').addEventListener('click', () => {
+        showToast('請在列印視窗中選擇「另存為 PDF」');
+        printCurrentReport();
+      });
+    }
+
+    function updateCloudInfo() {
+      document.getElementById('gasApiUrlText').textContent = GAS_API_URL;
+      updatePracticeContextInfo();
+    }
+
+    function updatePracticeContextInfo() {
+      document.getElementById('practiceContextText').textContent = trainingPracticeContext
+        ? trainingPracticeContext.title
+        : '未選擇';
+    }
+
+    async function checkBackendHealth() {
+      if (!GAS_API_URL || GAS_API_URL.includes('請替換')) {
+        document.getElementById('cloudStatusText').textContent = '請先設定 GAS_API_URL';
+        return;
+      }
+
+      try {
+        const res = await fetch(GAS_API_URL + '?t=' + Date.now());
+        const data = await res.json();
+        document.getElementById('cloudStatusText').textContent = data && data.success ? '已連線' : '連線異常';
+      } catch (err) {
+        document.getElementById('cloudStatusText').textContent = '無法連線';
+      }
+    }
+
+    function switchPage(page, el) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.getElementById(page + 'Page').classList.add('active');
+      if (el) el.classList.add('active');
+
+      if (navigator.vibrate && document.getElementById('vibration').checked) {
+        navigator.vibrate(10);
+      }
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+
+    function showHistoryLoading(show) {
+      document.getElementById('historyLoading').classList.toggle('active', !!show);
+    }
+
+    async function callGasApi(action, payload = {}) {
+      if (!GAS_API_URL || GAS_API_URL.includes('請替換')) {
+        throw new Error('請先設定 GAS_API_URL');
+      }
+
+      const response = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action,
+          apiKey: GAS_API_KEY,
+          ...payload
+        })
+      });
+
+      return await response.json();
+    }
+
+    function vibrate(pattern) {
+      if (navigator.vibrate && document.getElementById('vibration').checked) {
+        navigator.vibrate(pattern);
+      }
+    }
+
+    function initPracticeScripts() {
+      const pills = document.getElementById('scriptPills');
+      const box = document.getElementById('practiceScriptBox');
+
+      pills.innerHTML = practiceScripts.map((item, index) => `
+        <button class="script-pill ${index === 0 ? 'active' : ''}" onclick="selectPracticeScript('${item.id}', this)">${item.title}</button>
+      `).join('');
+
+      box.innerHTML = `<strong>${practiceScripts[0].title}</strong>\n${practiceScripts[0].content}`;
+    }
+
+    function selectPracticeScript(id, el) {
+      const script = practiceScripts.find(item => item.id === id);
+      if (!script) return;
+      document.querySelectorAll('.script-pill').forEach(p => p.classList.remove('active'));
+      if (el) el.classList.add('active');
+      document.getElementById('practiceScriptBox').innerHTML = `<strong>${escapeHtml(script.title)}</strong>\n${escapeHtml(script.content)}`;
+      trainingPracticeContext = {
+        title: script.title,
+        content: script.content,
+        type: 'standard-script'
+      };
+      updatePracticeContextInfo();
+    }
+
+    function preparePracticeRecord(title, content) {
+      trainingPracticeContext = {
+        title,
+        content,
+        type: 'training-node'
+      };
+      updatePracticeContextInfo();
+      switchPage('home', document.querySelectorAll('.nav-item')[0]);
+      document.getElementById('practiceScriptBox').innerHTML = `<strong>${escapeHtml(title)}</strong>\n${escapeHtml(content)}`;
+      showToast('已載入練習節點，請開始錄音');
+    }
+
+    async function handleRecordToggle() {
+      if (!isRecording) {
+        await requestWakeLock();
+        await startRecording();
+      } else {
+        stopRecording();
+        await releaseWakeLock();
+      }
+    }
+
+    async function startRecording() {
+      try {
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+
+        const preferredMimeTypes = [
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/mp4'
+        ];
+        const supportedMime = preferredMimeTypes.find(type => window.MediaRecorder && MediaRecorder.isTypeSupported(type));
+        mediaRecorder = supportedMime ? new MediaRecorder(stream, { mimeType: supportedMime }) : new MediaRecorder(stream);
+
+        audioChunks = [];
+        currentRecordedBlob = null;
+        currentRecordedMimeType = mediaRecorder.mimeType || '';
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          try {
+            const mimeType = mediaRecorder.mimeType || 'audio/webm';
+            const audioBlob = new Blob(audioChunks, { type: mimeType });
+            currentRecordedBlob = audioBlob;
+            currentRecordedMimeType = mimeType;
+
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+
+            document.getElementById('playBtn').disabled = false;
+            document.getElementById('analyzeBtn').disabled = false;
+            showToast(trainingPracticeContext ? '練習錄音完成！' : '錄音完成！');
+          } catch (err) {
+            console.error(err);
+            showToast('錄音解碼失敗');
+          } finally {
+            stream.getTracks().forEach(track => track.stop());
+          }
+        };
+
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.8;
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+
+        mediaRecorder.start();
+        isRecording = true;
+        recordingStartTime = Date.now();
+
+        document.getElementById('recordBtn').classList.add('recording');
+        document.getElementById('recordIcon').textContent = '⏹';
+        document.getElementById('recordHint').textContent = trainingPracticeContext
+          ? `錄音中：${trainingPracticeContext.title}`
+          : '錄音中...';
+        document.getElementById('statusIndicator').classList.add('recording');
+        document.getElementById('statusText').textContent = '錄音中';
+        document.getElementById('recordingTimer').classList.add('active');
+        document.getElementById('recordProgress').style.width = '0%';
+
+        vibrate(50);
+        visualizeRecording();
+        startRealtimeAnalysis();
+        startRecordingTimer();
+      } catch (err) {
+        showToast('無法存取麥克風');
+        console.error(err);
+      }
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        if (microphone) microphone.disconnect();
+        isRecording = false;
+
+        document.getElementById('recordBtn').classList.remove('recording');
+        document.getElementById('recordIcon').textContent = '🔴';
+        document.getElementById('recordHint').textContent = '點擊開始錄音';
+        document.getElementById('statusIndicator').classList.remove('recording');
+        document.getElementById('statusText').textContent = '就緒';
+        document.getElementById('recordingTimer').classList.remove('active');
+
+        cancelAnimationFrame(animationId);
+        clearInterval(recordingInterval);
+        stopRealtimeAnalysis();
+
+        const duration = (Date.now() - recordingStartTime) / 1000;
+        realtimeMetrics.mpt = duration;
+        updateMetricCard('mpt', duration);
+
+        vibrate([50, 100, 50]);
+      }
+    }
+
+    function startRecordingTimer() {
+      clearInterval(recordingInterval);
+      recordingInterval = setInterval(() => {
+        const elapsed = (Date.now() - recordingStartTime) / 1000;
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = Math.floor(elapsed % 60);
+        document.getElementById('recordingTimer').textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        const progress = Math.min((elapsed / 30) * 100, 100);
+        document.getElementById('recordProgress').style.width = progress + '%';
+      }, 100);
+    }
+
+    function visualizeRecording() {
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      const freqArray = new Uint8Array(bufferLength);
+
+      function draw() {
+        if (!isRecording) return;
+        animationId = requestAnimationFrame(draw);
+        analyser.getByteTimeDomainData(dataArray);
+        analyser.getByteFrequencyData(freqArray);
+        drawWaveform(dataArray);
+        drawSpectrum(freqArray);
+        updateFrequencyBands(freqArray);
+      }
+
+      draw();
+    }
+
+    function drawWaveform(dataArray) {
+      waveformCtx.fillStyle = '#0f1329';
+      waveformCtx.fillRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+
+      if (!dataArray.length) {
+        waveformCtx.strokeStyle = '#3a3f5a';
+        waveformCtx.lineWidth = 2;
+        waveformCtx.beginPath();
+        waveformCtx.moveTo(0, waveformCanvas.height / 2);
+        waveformCtx.lineTo(waveformCanvas.width, waveformCanvas.height / 2);
+        waveformCtx.stroke();
+        return;
+      }
+
+      waveformCtx.lineWidth = 2;
+      waveformCtx.strokeStyle = '#667eea';
+      waveformCtx.beginPath();
+
+      const sliceWidth = waveformCanvas.width / dataArray.length;
+      let x = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * waveformCanvas.height / 2;
+        if (i === 0) waveformCtx.moveTo(x, y);
+        else waveformCtx.lineTo(x, y);
+        x += sliceWidth;
+      }
+      waveformCtx.lineTo(waveformCanvas.width, waveformCanvas.height / 2);
+      waveformCtx.stroke();
+    }
+
+    function drawSpectrum(freqArray) {
+      spectrumCtx.fillStyle = '#0f1329';
+      spectrumCtx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+      if (!freqArray.length) return;
+
+      const barWidth = Math.max(1, (spectrumCanvas.width / freqArray.length) * 2.5);
+      let x = 0;
+
+      for (let i = 0; i < freqArray.length; i++) {
+        const barHeight = (freqArray[i] / 255) * spectrumCanvas.height;
+        const hue = (i / freqArray.length) * 360;
+        spectrumCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+        spectrumCtx.fillRect(x, spectrumCanvas.height - barHeight, barWidth, barHeight);
+        x += barWidth + 1;
+        if (x > spectrumCanvas.width) break;
+      }
+    }
+
+    function updateFrequencyBands(freqArray) {
+      if (!freqArray.length) return;
+
+      const bands = [
+        { id: 'low', start: 0, end: Math.floor(freqArray.length * 0.1) },
+        { id: 'midLow', start: Math.floor(freqArray.length * 0.1), end: Math.floor(freqArray.length * 0.3) },
+        { id: 'midHigh', start: Math.floor(freqArray.length * 0.3), end: Math.floor(freqArray.length * 0.6) },
+        { id: 'high', start: Math.floor(freqArray.length * 0.6), end: freqArray.length }
+      ];
+
+      bands.forEach(band => {
+        let sum = 0;
+        for (let i = band.start; i < band.end; i++) sum += freqArray[i];
+        const avg = Math.round(sum / Math.max(1, band.end - band.start));
+        const percentage = (avg / 255) * 100;
+        document.getElementById(`${band.id}Freq`).textContent = avg;
+        document.getElementById(`${band.id}FreqBar`).style.height = percentage + '%';
+      });
+    }
+
+    function startRealtimeAnalysis() {
+      clearInterval(analysisInterval);
+      analysisInterval = setInterval(() => {
+        if (!isRecording || !analyser) return;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        const freqArray = new Uint8Array(bufferLength);
+        analyser.getByteTimeDomainData(dataArray);
+        analyser.getByteFrequencyData(freqArray);
+        calculateRealtimeMetrics(dataArray, freqArray);
+        updateAllMetrics();
+        updateSuggestions();
+      }, 200);
+    }
+
+    function stopRealtimeAnalysis() {
+      if (analysisInterval) clearInterval(analysisInterval);
+    }
+
+    function calculateRealtimeMetrics(dataArray, freqArray) {
+      let sum = 0;
+      let count = 0;
+
+      for (let i = 0; i < freqArray.length; i++) {
+        if (freqArray[i] > 0) {
+          sum += i * freqArray[i];
+          count += freqArray[i];
+        }
+      }
+
+      if (count > 0 && audioContext) {
+        const avgBin = sum / count;
+        const nyquist = audioContext.sampleRate / 2;
+        realtimeMetrics.f0 = (avgBin / freqArray.length) * nyquist;
+      }
+
+      let rmsSum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const normalized = (dataArray[i] - 128) / 128;
+        rmsSum += normalized * normalized;
+      }
+      const rms = Math.sqrt(rmsSum / dataArray.length);
+      realtimeMetrics.spl = Math.max(0, Math.min(120, 20 * Math.log10(Math.max(rms, 1e-8) / 0.00002) + 94));
+
+      let variance = 0;
+      const mean = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+      for (let i = 0; i < dataArray.length; i++) variance += Math.pow(dataArray[i] - mean, 2);
+      const stdDev = Math.sqrt(variance / dataArray.length);
+      const stability = Math.max(0, 100 - (stdDev / Math.max(mean, 1) * 100));
+
+      let periodDiffs = 0;
+      for (let i = 1; i < dataArray.length; i++) {
+        if (dataArray[i - 1] < 128 && dataArray[i] >= 128) periodDiffs++;
+      }
+      realtimeMetrics.jitter = Math.min(5, periodDiffs / dataArray.length * 100);
+
+      const signalPower = rms * rms;
+      const noisePower = variance / Math.max(dataArray.length * dataArray.length, 1);
+      realtimeMetrics.hnr = noisePower > 0
+        ? Math.min(40, 10 * Math.log10(Math.max(signalPower, 1e-8) / Math.max(noisePower, 1e-8)))
+        : 40;
+
+      realtimeMetrics.shimmer = Math.min(10, (100 - stability) / 10);
+    }
+
+    function updateAllMetrics() {
+      updateMetricCard('f0', realtimeMetrics.f0);
+      updateMetricCard('spl', realtimeMetrics.spl);
+      updateMetricCard('jitter', realtimeMetrics.jitter);
+      updateMetricCard('shimmer', realtimeMetrics.shimmer);
+      updateMetricCard('hnr', realtimeMetrics.hnr);
+      updateQualityGauge();
+    }
+
+    function updateMetricCard(metric, value) {
+      const valueElement = document.getElementById(`${metric}Value`);
+      const statusElement = document.getElementById(`${metric}Status`);
+      const cardElement = document.getElementById(`${metric}Card`);
+      if (!valueElement || !statusElement || !cardElement) return;
+
+      valueElement.textContent = Number.isFinite(value) ? value.toFixed(metric === 'mpt' ? 2 : 1) : '--';
+
+      const gender = document.getElementById('patientGender').value;
+      let status = 'normal';
+      let statusText = '正常';
+
+      switch(metric) {
+        case 'f0':
+          if (!gender) {
+            statusText = '待性別';
+          } else {
+            const f0Range = gender === 'male' ? [100, 150] : [180, 250];
+            if (value < f0Range[0] || value > f0Range[1]) {
+              status = value < f0Range[0] * 0.8 || value > f0Range[1] * 1.2 ? 'danger' : 'warning';
+              statusText = status === 'danger' ? '異常' : '注意';
+            }
+          }
+          break;
+        case 'spl':
+          if (!gender) {
+            statusText = '待性別';
+          } else {
+            const splRange = gender === 'male' ? [65, 75] : [60, 70];
+            if (value < splRange[0] || value > splRange[1]) {
+              status = value < splRange[0] - 10 || value > splRange[1] + 10 ? 'danger' : 'warning';
+              statusText = status === 'danger' ? '異常' : '注意';
+            }
+          }
+          break;
+        case 'jitter':
+          if (value >= 1.04) {
+            status = value > 2 ? 'danger' : 'warning';
+            statusText = status === 'danger' ? '異常' : '注意';
+          }
+          break;
+        case 'shimmer':
+          if (value >= 3.81) {
+            status = value > 6 ? 'danger' : 'warning';
+            statusText = status === 'danger' ? '異常' : '注意';
+          }
+          break;
+        case 'hnr':
+          if (value < 20) {
+            status = value < 10 ? 'danger' : 'warning';
+            statusText = status === 'danger' ? '不佳' : '尚可';
+          } else {
+            statusText = '優良';
+          }
+          break;
+        case 'mpt':
+          if (!gender) {
+            statusText = '待性別';
+          } else {
+            const mptMin = gender === 'male' ? 20 : 15;
+            if (value < mptMin) {
+              status = value < mptMin * 0.7 ? 'danger' : 'warning';
+              statusText = status === 'danger' ? '不足' : '偏低';
+            }
+          }
+          break;
+      }
+
+      statusElement.textContent = statusText;
+      statusElement.className = `metric-status ${status}`;
+      cardElement.className = `metric-card ${status}`;
+    }
+
+    function calculateScore() {
+      const gender = document.getElementById('patientGender').value;
+      if (!gender) return 0;
+
+      const f0Range = gender === 'male' ? [100, 150] : [180, 250];
+      const splRange = gender === 'male' ? [65, 75] : [60, 70];
+
+      let score = 0;
+
+      if (realtimeMetrics.f0 >= f0Range[0] && realtimeMetrics.f0 <= f0Range[1]) {
+        score += 20;
+      } else {
+        const deviation = Math.min(
+          Math.abs(realtimeMetrics.f0 - f0Range[0]),
+          Math.abs(realtimeMetrics.f0 - f0Range[1])
+        );
+        score += Math.max(0, 20 - deviation / 10);
+      }
+
+      if (realtimeMetrics.spl >= splRange[0] && realtimeMetrics.spl <= splRange[1]) {
+        score += 20;
+      } else {
+        const deviation = Math.min(
+          Math.abs(realtimeMetrics.spl - splRange[0]),
+          Math.abs(realtimeMetrics.spl - splRange[1])
+        );
+        score += Math.max(0, 20 - deviation * 2);
+      }
+
+      score += Math.min(20, realtimeMetrics.hnr / 2);
+      score += Math.max(0, 20 - realtimeMetrics.jitter * 10);
+      score += Math.max(0, 20 - realtimeMetrics.shimmer * 2);
+
+      return Math.round(score);
+    }
+
+    function updateQualityGauge() {
+      const gender = document.getElementById('patientGender').value;
+      if (!gender) return;
+
+      const score = calculateScore();
+      const circumference = 471.24;
+      const offset = circumference - (score / 100) * circumference;
+
+      document.getElementById('scoreProgress').style.strokeDashoffset = offset;
+      document.getElementById('scoreValue').textContent = score;
+
+      let label = '';
+      if (score >= 90) label = '優秀';
+      else if (score >= 80) label = '良好';
+      else if (score >= 70) label = '中等';
+      else if (score >= 60) label = '及格';
+      else label = '需改善';
+
+      document.getElementById('scoreLabel').textContent = label;
+    }
+
+    function updateSuggestions() {
+      const container = document.getElementById('suggestionsContainer');
+      const suggestions = [];
+      const gender = document.getElementById('patientGender').value;
+
+      if (!gender) {
+        container.innerHTML = `
+          <div class="suggestion-item">
+            <div class="suggestion-icon">ℹ️</div>
+            <div class="suggestion-text">請先選擇性別，以便套用相對應參考範圍並進行較完整的聲學判讀。</div>
+          </div>
+        `;
+        return;
+      }
+
+      const f0Range = gender === 'male' ? [100, 150] : [180, 250];
+      const splRange = gender === 'male' ? [65, 75] : [60, 70];
+
+      if (realtimeMetrics.f0 < f0Range[0]) {
+        suggestions.push({ type: 'warning', icon: '⬆️', text: '音高偏低，建議於後續練習中稍提升音調，並維持自然放鬆的喉部狀態。' });
+      } else if (realtimeMetrics.f0 > f0Range[1]) {
+        suggestions.push({ type: 'warning', icon: '⬇️', text: '音高偏高，建議避免喉部過度用力，並留意肩頸是否緊繃。' });
+      } else {
+        suggestions.push({ type: 'success', icon: '✅', text: '音高表現位於建議範圍內，整體控制尚稱穩定。' });
+      }
+
+      if (realtimeMetrics.spl < splRange[0]) {
+        suggestions.push({ type: 'warning', icon: '🔊', text: '音量偏低，建議以較明確、但不費力的方式增加發聲強度。' });
+      } else if (realtimeMetrics.spl > splRange[1]) {
+        suggestions.push({ type: 'warning', icon: '🔉', text: '音量偏高，建議降低用力程度，避免以擠壓方式產生音量。' });
+      }
+
+      if (realtimeMetrics.hnr < 15) {
+        suggestions.push({ type: 'danger', icon: '⚠️', text: '聲音中氣音或噪音比例偏高，建議觀察是否伴隨沙啞、乾澀或發聲易疲勞。' });
+      }
+
+      container.innerHTML = suggestions.map(s => `
+        <div class="suggestion-item ${s.type}">
+          <div class="suggestion-icon">${s.icon}</div>
+          <div class="suggestion-text">${escapeHtml(s.text)}</div>
+        </div>
+      `).join('');
+    }
+
+    function generateAnalysisReport() {
+      const gender = document.getElementById('patientGender').value;
+      if (!gender) {
+        return {
+          summary: '目前尚未輸入性別資料，故無法套用適當之參考區間，建議補齊基本資訊後再進行正式判讀。',
+          details: ['由於缺少性別資料，現階段僅能提供有限之數值資訊，不建議據以進行完整聲學解讀。'],
+          suggestions: ['請先補齊患者基本資料，再重新進行分析與追蹤。'],
+          score: 0
+        };
+      }
+
+      const f0Range = gender === 'male' ? [100, 150] : [180, 250];
+      const splRange = gender === 'male' ? [65, 75] : [60, 70];
+      const mptMin = gender === 'male' ? 20 : 15;
+
+      const details = [];
+      const suggestions = [];
+
+      if (realtimeMetrics.f0 >= f0Range[0] && realtimeMetrics.f0 <= f0Range[1]) {
+        details.push(`基本頻率（F0）約為 ${realtimeMetrics.f0.toFixed(1)} Hz，位於建議參考範圍內，顯示目前音高控制大致適切。`);
+      } else if (realtimeMetrics.f0 < f0Range[0]) {
+        details.push(`基本頻率（F0）約為 ${realtimeMetrics.f0.toFixed(1)} Hz，低於建議參考範圍，顯示發聲音高可能偏低。`);
+        suggestions.push('建議於訓練中加入較輕柔之提音練習，並避免以壓低喉部方式發聲。');
+      } else {
+        details.push(`基本頻率（F0）約為 ${realtimeMetrics.f0.toFixed(1)} Hz，高於建議參考範圍，顯示發聲音高可能偏高。`);
+        suggestions.push('建議放鬆喉部與肩頸肌群，避免以過度緊張之方式維持音高。');
+      }
+
+      if (realtimeMetrics.spl >= splRange[0] && realtimeMetrics.spl <= splRange[1]) {
+        details.push(`聲音響度估計值約為 ${realtimeMetrics.spl.toFixed(1)} dB，整體發聲強度尚屬適中。`);
+      } else if (realtimeMetrics.spl < splRange[0]) {
+        details.push(`聲音響度估計值約為 ${realtimeMetrics.spl.toFixed(1)} dB，低於建議範圍，可能反映音量不足。`);
+        suggestions.push('建議於治療或練習時加入較明顯之音量提升訓練，並留意發聲是否容易疲勞。');
+      } else {
+        details.push(`聲音響度估計值約為 ${realtimeMetrics.spl.toFixed(1)} dB，高於建議範圍，可能反映用力發聲情形。`);
+        suggestions.push('建議調整為自然且穩定的發聲方式，避免以擠壓聲門方式增加音量。');
+      }
+
+      if (realtimeMetrics.jitter < 1.04) {
+        details.push(`Jitter 為 ${realtimeMetrics.jitter.toFixed(2)}%，顯示聲帶振動週期穩定度尚可。`);
+      } else {
+        details.push(`Jitter 為 ${realtimeMetrics.jitter.toFixed(2)}%，高於一般建議值，可能代表聲帶振動週期穩定性下降。`);
+        suggestions.push('建議觀察發聲時是否存在喉部緊張、顫抖或氣息支持不足情形。');
+      }
+
+      if (realtimeMetrics.shimmer < 3.81) {
+        details.push(`Shimmer 為 ${realtimeMetrics.shimmer.toFixed(2)}%，顯示振幅控制大致穩定。`);
+      } else {
+        details.push(`Shimmer 為 ${realtimeMetrics.shimmer.toFixed(2)}%，偏高，顯示振幅輸出穩定性可能不足。`);
+        suggestions.push('建議練習持續、平穩的母音延長發聲，以改善音量輸出一致性。');
+      }
+
+      if (realtimeMetrics.hnr >= 20) {
+        details.push(`諧噪比（HNR）為 ${realtimeMetrics.hnr.toFixed(1)} dB，顯示聲音中規律諧波成分相對充分，整體音質尚可。`);
+      } else {
+        details.push(`諧噪比（HNR）為 ${realtimeMetrics.hnr.toFixed(1)} dB，偏低，表示聲音中噪音或氣音比例可能偏高。`);
+        suggestions.push('若持續出現氣音、沙啞或粗糙音質，建議由耳鼻喉科或語言治療專業人員進一步評估。');
+      }
+
+      if (realtimeMetrics.mpt >= mptMin) {
+        details.push(`最長發聲時間（MPT）約為 ${realtimeMetrics.mpt.toFixed(1)} 秒，顯示呼吸支持與持續發聲能力尚可。`);
+      } else {
+        details.push(`最長發聲時間（MPT）約為 ${realtimeMetrics.mpt.toFixed(1)} 秒，低於建議值，可能顯示呼吸支持或持續發聲能力不足。`);
+        suggestions.push('建議加強腹式呼吸、氣息控制與持續母音發聲練習。');
+      }
+
+      const score = calculateScore();
+      let summary = '';
+
+      if (score >= 85) {
+        summary = '本次聲學分析結果顯示，整體語音表現大致穩定，多數指標位於可接受範圍內，建議持續維持目前訓練方式並定期追蹤。';
+      } else if (score >= 70) {
+        summary = '本次聲學分析顯示整體語音表現尚可，但部分指標已有偏離參考區間之情形，建議持續進行目標式訓練並追蹤變化。';
+      } else {
+        summary = '本次聲學分析顯示多項語音指標偏離參考範圍，建議持續接受系統性語言訓練，必要時安排進一步專業評估。';
+      }
+
+      if (!suggestions.length) {
+        suggestions.push('目前整體表現穩定，建議持續以規律、自然、清楚的方式進行日常發聲與朗讀練習。');
+      }
+
+      if (trainingPracticeContext) {
+        details.unshift(`本次錄音對應之練習節點為「${trainingPracticeContext.title}」，可作為後續追蹤同一訓練內容時之比較基準。`);
+      }
+
+      return { summary, details, suggestions, score };
+    }
+
+    function renderAnalysisReport() {
+      const report = generateAnalysisReport();
+      const container = document.getElementById('analysisReportContainer');
+
+      container.innerHTML = `
+        <div class="suggestion-item success">
+          <div class="suggestion-icon">🧾</div>
+          <div class="suggestion-text">${escapeHtml(report.summary)}</div>
+        </div>
+        ${report.details.map(item => `
+          <div class="suggestion-item report">
+            <div class="suggestion-icon">📌</div>
+            <div class="suggestion-text">${escapeHtml(item)}</div>
+          </div>
+        `).join('')}
+        ${report.suggestions.map(item => `
+          <div class="suggestion-item warning">
+            <div class="suggestion-icon">💡</div>
+            <div class="suggestion-text">${escapeHtml(item)}</div>
+          </div>
+        `).join('')}
+      `;
+    }
+
+    function buildAnalysisNoteText() {
+      const report = generateAnalysisReport();
+      return [
+        `綜合判讀：${report.summary}`,
+        trainingPracticeContext ? `練習節點：${trainingPracticeContext.title}` : '',
+        trainingPracticeContext ? `練習內容摘要：${trainingPracticeContext.content}` : '',
+        '',
+        '指標說明：',
+        ...report.details.map(item => `- ${item}`),
+        '',
+        '建議：',
+        ...report.suggestions.map(item => `- ${item}`)
+      ].filter(Boolean).join('\n');
+    }
+
+    function handlePlayToggle() {
+      if (!isPlaying && audioBuffer) playAudio();
+      else if (isPlaying) stopPlaying();
+    }
+
+    function playAudio() {
+      if (!audioBuffer) return;
+
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      analyser.connect(audioContext.destination);
+
+      source.start(0);
+      isPlaying = true;
+      document.getElementById('playBtn').innerHTML = '<span>⏹</span> 停止';
+
+      visualizePlaying();
+
+      source.onended = () => {
+        isPlaying = false;
+        document.getElementById('playBtn').innerHTML = '<span>▶️</span> 播放';
+        cancelAnimationFrame(animationId);
+      };
+    }
+
+    function stopPlaying() {
+      if (source) {
+        try { source.stop(); } catch (e) {}
+      }
+      isPlaying = false;
+      document.getElementById('playBtn').innerHTML = '<span>▶️</span> 播放';
+      cancelAnimationFrame(animationId);
+    }
+
+    function visualizePlaying() {
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      const freqArray = new Uint8Array(bufferLength);
+
+      function draw() {
+        if (!isPlaying) return;
+        animationId = requestAnimationFrame(draw);
+        analyser.getByteTimeDomainData(dataArray);
+        analyser.getByteFrequencyData(freqArray);
+        drawWaveform(dataArray);
+        drawSpectrum(freqArray);
+        updateFrequencyBands(freqArray);
+      }
+      draw();
+    }
+
+    function handleAnalyze() {
+      if (!audioBuffer) {
+        showToast('請先完成錄音');
+        return;
+      }
+      performFullAnalysis();
+    }
+
+    function performFullAnalysis() {
+      const data = audioBuffer.getChannelData(0);
+      const sampleRate = audioBuffer.sampleRate;
+
+      realtimeMetrics.f0 = calculateF0(data, sampleRate);
+      realtimeMetrics.spl = calculateSPL(data);
+      realtimeMetrics.mpt = audioBuffer.duration;
+      realtimeMetrics.jitter = calculateJitter(data, sampleRate);
+      realtimeMetrics.shimmer = calculateShimmer(data);
+      realtimeMetrics.hnr = calculateHNR(data, sampleRate);
+
+      updateAllMetrics();
+      updateSuggestions();
+      renderAnalysisReport();
+      currentReportRecord = buildCurrentRecordObject(false);
+
+      if (document.getElementById('autoSave').checked) {
+        saveToHistory();
+      } else {
+        showToast('分析完成！');
+      }
+
+      vibrate([100, 50, 100]);
+    }
+
+    function calculateF0(data, sampleRate) {
+      const minFreq = 50;
+      const maxFreq = 500;
+      const minPeriod = Math.floor(sampleRate / maxFreq);
+      const maxPeriod = Math.floor(sampleRate / minFreq);
+
+      let maxCorr = 0;
+      let bestPeriod = 0;
+
+      for (let period = minPeriod; period < maxPeriod; period++) {
+        let corr = 0;
+        for (let i = 0; i < data.length - period; i++) corr += data[i] * data[i + period];
+        if (corr > maxCorr) {
+          maxCorr = corr;
+          bestPeriod = period;
+        }
+      }
+
+      return bestPeriod > 0 ? sampleRate / bestPeriod : 0;
+    }
+
+    function calculateSPL(data) {
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+      const rms = Math.sqrt(sum / data.length);
+      const spl = 20 * Math.log10(Math.max(rms, 1e-8) / 0.00002) + 94;
+      return Math.max(0, Math.min(120, spl));
+    }
+
+    function calculateJitter(data, sampleRate) {
+      const periods = extractPeriods(data, sampleRate);
+      if (periods.length < 2) return 0;
+
+      let sum = 0;
+      for (let i = 1; i < periods.length; i++) sum += Math.abs(periods[i] - periods[i - 1]);
+      const avgDiff = sum / (periods.length - 1);
+      const avgPeriod = periods.reduce((a, b) => a + b, 0) / periods.length;
+
+      return avgPeriod > 0 ? (avgDiff / avgPeriod) * 100 : 0;
+    }
+
+    function calculateShimmer(data) {
+      const windowSize = 1024;
+      const amplitudes = [];
+
+      for (let i = 0; i < data.length - windowSize; i += windowSize) {
+        let max = 0;
+        for (let j = 0; j < windowSize; j++) {
+          max = Math.max(max, Math.abs(data[i + j]));
+        }
+        amplitudes.push(max);
+      }
+
+      if (amplitudes.length < 2) return 0;
+
+      let sum = 0;
+      for (let i = 1; i < amplitudes.length; i++) sum += Math.abs(amplitudes[i] - amplitudes[i - 1]);
+      const avgDiff = sum / (amplitudes.length - 1);
+      const avgAmp = amplitudes.reduce((a, b) => a + b, 0) / amplitudes.length;
+
+      return avgAmp > 0 ? (avgDiff / avgAmp) * 100 : 0;
+    }
+
+    function calculateHNR(data, sampleRate) {
+      const f0 = calculateF0(data, sampleRate);
+      if (f0 === 0) return 0;
+
+      const period = Math.floor(sampleRate / f0);
+      let harmonicPower = 0;
+      let noisePower = 0;
+
+      for (let i = 0; i < data.length - period; i++) {
+        const predicted = data[i + period];
+        const actual = data[i];
+        harmonicPower += predicted * predicted;
+        noisePower += (actual - predicted) * (actual - predicted);
+      }
+
+      if (noisePower === 0) return 40;
+      const hnr = 10 * Math.log10(Math.max(harmonicPower, 1e-8) / Math.max(noisePower, 1e-8));
+      return Math.max(0, Math.min(40, hnr));
+    }
+
+    function extractPeriods(data) {
+      const periods = [];
+      let lastZeroCrossing = -1;
+
+      for (let i = 1; i < data.length; i++) {
+        if (data[i - 1] < 0 && data[i] >= 0) {
+          if (lastZeroCrossing >= 0) periods.push(i - lastZeroCrossing);
+          lastZeroCrossing = i;
+        }
+      }
+      return periods;
+    }
+
+    function buildCurrentRecordObject(includeId = true) {
+      const gender = document.getElementById('patientGender').value;
+      const noteText = buildAnalysisNoteText();
+      const titlePrefix = trainingPracticeContext ? `[訓練] ${trainingPracticeContext.title}` : '一般語音分析';
+
+      return {
+        id: includeId ? String(Date.now()) : (currentReportRecord?.id || ''),
+        patientName: document.getElementById('patientName').value || '未命名',
+        gender: gender,
+        age: document.getElementById('patientAge').value || '',
+        score: calculateScore(),
+        metrics: { ...realtimeMetrics },
+        note: `${titlePrefix}\n\n${noteText}`
+      };
+    }
+
+    async function saveToHistory() {
+      const gender = document.getElementById('patientGender').value;
+      if (!gender) {
+        showToast('請先填寫性別');
+        return;
+      }
+
+      const record = buildCurrentRecordObject(true);
+
+      try {
+        const result = await callGasApi('saveRecord', { record });
+        if (result.success) {
+          currentReportRecord = { ...record, createdAt: new Date().toISOString() };
+          showToast(trainingPracticeContext ? '練習分析完成並已儲存' : '分析完成並已儲存');
+          await loadHistoryFromGas();
+        } else {
+          showToast('儲存失敗：' + (result.message || '未知錯誤'));
+        }
+      } catch (error) {
+        console.error(error);
+        showToast('雲端儲存失敗');
+      }
+    }
+
+    async function loadHistoryFromGas() {
+      showHistoryLoading(true);
+      try {
+        const result = await callGasApi('getRecords', { limit: 50 });
+        if (result.success) {
+          historyData = result.data || [];
+          displayHistory();
+        } else {
+          showToast('載入歷史失敗');
+        }
+      } catch (error) {
+        console.error(error);
+        if (String(error.message || '').includes('GAS_API_URL')) {
+          showToast('請先設定 GAS API URL');
+        } else {
+          showToast('無法連線到後端');
+        }
+      } finally {
+        showHistoryLoading(false);
+      }
+    }
+
+    async function searchHistory() {
+      const keyword = document.getElementById('searchKeyword').value.trim();
+      if (!keyword) {
+        await loadHistoryFromGas();
+        return;
+      }
+
+      showHistoryLoading(true);
+      try {
+        const result = await callGasApi('searchRecords', { keyword, limit: 50 });
+        if (result.success) {
+          historyData = result.data || [];
+          displayHistory();
+        } else {
+          showToast('搜尋失敗');
+        }
+      } catch (error) {
+        console.error(error);
+        showToast('搜尋失敗');
+      } finally {
+        showHistoryLoading(false);
+      }
+    }
+
+    function displayHistory() {
+      const container = document.getElementById('historyContainer');
+
+      if (!historyData.length) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div style="font-size:4em; margin-bottom:15px; opacity:0.5;">📭</div>
+            <div>尚無歷史記錄</div>
+            <div style="margin-top:8px; font-size:0.9em;">完成測量或練習錄製後會顯示在這裡</div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = historyData.map(record => `
+        <div class="history-card">
+          <div class="history-header">
+            <div>
+              <div class="history-date">${formatDate(record.createdAt)}</div>
+              <div style="color:#a0a5c0; font-size:0.9em; margin-top:3px;">
+                ${escapeHtml(record.patientName || '未命名')} | ${record.gender === 'male' ? '男' : '女'} | ${escapeHtml(String(record.age || '--'))}歲
+              </div>
+            </div>
+            <div class="history-score">${safeNum(record.score, 0)}</div>
+          </div>
+
+          <div class="history-metrics">
+            <div class="history-metric"><div class="history-metric-label">F0</div><div class="history-metric-value">${safeNum(record.metrics?.f0, 1)}</div></div>
+            <div class="history-metric"><div class="history-metric-label">SPL</div><div class="history-metric-value">${safeNum(record.metrics?.spl, 1)}</div></div>
+            <div class="history-metric"><div class="history-metric-label">HNR</div><div class="history-metric-value">${safeNum(record.metrics?.hnr, 1)}</div></div>
+            <div class="history-metric"><div class="history-metric-label">Jitter</div><div class="history-metric-value">${safeNum(record.metrics?.jitter, 2)}</div></div>
+            <div class="history-metric"><div class="history-metric-label">Shimmer</div><div class="history-metric-value">${safeNum(record.metrics?.shimmer, 2)}</div></div>
+            <div class="history-metric"><div class="history-metric-label">MPT</div><div class="history-metric-value">${safeNum(record.metrics?.mpt, 1)}</div></div>
+          </div>
+
+          ${record.note ? `<div class="history-note" id="historyNote_${record.id}">${escapeHtml(record.note)}</div>` : ''}
+
+          <div class="row-actions">
+            <button class="mini-btn view" onclick="viewHistoryRecord('${record.id}')">套用</button>
+            ${record.note ? `<button class="mini-btn toggle" onclick="toggleHistoryNote('${record.id}')">展開/收合說明</button>` : ''}
+            <button class="mini-btn print" onclick="printHistoryRecord('${record.id}')">列印</button>
+            <button class="mini-btn delete" onclick="deleteHistoryRecord('${record.id}')">刪除</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function toggleHistoryNote(recordId) {
+      const el = document.getElementById(`historyNote_${recordId}`);
+      if (!el) return;
+      el.classList.toggle('show');
+    }
+
+    async function deleteHistoryRecord(recordId) {
+      const ok = confirm('確定要刪除這筆紀錄嗎？');
+      if (!ok) return;
+
+      try {
+        const result = await callGasApi('deleteRecord', { recordId });
+        if (result.success) {
+          showToast('紀錄已刪除');
+          await loadHistoryFromGas();
+        } else {
+          showToast('刪除失敗：' + (result.message || '未知錯誤'));
+        }
+      } catch (error) {
+        console.error(error);
+        showToast('刪除失敗');
+      }
+    }
+
+    async function clearHistoryFromGas() {
+      const ok = confirm('確定要清空所有雲端紀錄嗎？此操作無法復原。');
+      if (!ok) return;
+
+      try {
+        const result = await callGasApi('clearRecords', { confirmClear: true });
+        if (result.success) {
+          historyData = [];
+          displayHistory();
+          showToast('已清空所有紀錄');
+        } else {
+          showToast('清空失敗：' + (result.message || '未知錯誤'));
+        }
+      } catch (error) {
+        console.error(error);
+        showToast('清空失敗');
+      }
+    }
+
+    function viewHistoryRecord(recordId) {
+      const record = historyData.find(item => String(item.id) === String(recordId));
+      if (!record) return;
+
+      currentReportRecord = record;
+
+      document.getElementById('patientName').value = record.patientName || '';
+      document.getElementById('patientGender').value = record.gender || '';
+      document.getElementById('patientAge').value = record.age || '';
+
+      realtimeMetrics = {
+        f0: Number(record.metrics?.f0 || 0),
+        spl: Number(record.metrics?.spl || 0),
+        jitter: Number(record.metrics?.jitter || 0),
+        shimmer: Number(record.metrics?.shimmer || 0),
+        hnr: Number(record.metrics?.hnr || 0),
+        mpt: Number(record.metrics?.mpt || 0)
+      };
+
+      updateAllMetrics();
+      updateMetricCard('mpt', realtimeMetrics.mpt);
+      updateSuggestions();
+
+      if (record.note) {
+        document.getElementById('analysisReportContainer').innerHTML = `
+          <div class="suggestion-item report">
+            <div class="suggestion-icon">📄</div>
+            <div class="suggestion-text">${escapeHtml(record.note)}</div>
+          </div>
+        `;
+      } else {
+        renderAnalysisReport();
+      }
+
+      switchPage('home', document.querySelectorAll('.nav-item')[0]);
+      showToast('已載入歷史紀錄');
+    }
+
+    function buildPrintHtml(record) {
+      const note = escapeHtml(record.note || '無');
+      return `
+        <div style="padding:24px; font-family:Microsoft JhengHei, Arial, sans-serif;">
+          <h1 style="margin-bottom:8px;">語音分析報告</h1>
+          <p style="margin-bottom:18px;">列印時間：${formatDate(new Date().toISOString())}</p>
+
+          <h3>基本資料</h3>
+          <p>姓名：${escapeHtml(record.patientName || '未命名')}</p>
+          <p>性別：${record.gender === 'male' ? '男' : record.gender === 'female' ? '女' : '--'}</p>
+          <p>年齡：${escapeHtml(String(record.age || '--'))}</p>
+          <p>建立時間：${formatDate(record.createdAt || new Date().toISOString())}</p>
+          <p>分數：${safeNum(record.score, 0)}</p>
+
+          <h3 style="margin-top:18px;">聲學數據</h3>
+          <ul>
+            <li>F0：${safeNum(record.metrics?.f0, 1)} Hz</li>
+            <li>SPL：${safeNum(record.metrics?.spl, 1)} dB</li>
+            <li>Jitter：${safeNum(record.metrics?.jitter, 2)} %</li>
+            <li>Shimmer：${safeNum(record.metrics?.shimmer, 2)} %</li>
+            <li>HNR：${safeNum(record.metrics?.hnr, 1)} dB</li>
+            <li>MPT：${safeNum(record.metrics?.mpt, 1)} 秒</li>
+          </ul>
+
+          <h3 style="margin-top:18px;">專業分析說明</h3>
+          <div style="white-space:pre-line; line-height:1.8; border:1px solid #ddd; padding:14px; border-radius:10px;">${note}</div>
+        </div>
+      `;
+    }
+
+    function printCurrentReport() {
+      const reportRecord = currentReportRecord || buildCurrentRecordObject(false);
+      const printArea = document.getElementById('printReport');
+      printArea.innerHTML = buildPrintHtml({
+        ...reportRecord,
+        createdAt: reportRecord.createdAt || new Date().toISOString()
+      });
+      window.print();
+    }
+
+    function printHistoryRecord(recordId) {
+      const record = historyData.find(item => String(item.id) === String(recordId));
+      if (!record) return;
+      currentReportRecord = record;
+      printCurrentReport();
+    }
+
+    async function exportData() {
+      try {
+        const result = await callGasApi('exportRecords');
+        if (!result.success) {
+          showToast('匯出失敗');
+          return;
+        }
+
+        const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `voice_analysis_export_${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('資料已匯出');
+      } catch (error) {
+        console.error(error);
+        showToast('匯出失敗');
+      }
+    }
+
+    function resetApp() {
+      if (!confirm('確定要重置目前畫面資料嗎？此動作不會刪除雲端紀錄。')) return;
+
+      if (isRecording) stopRecording();
+      if (isPlaying) stopPlaying();
+
+      audioBuffer = null;
+      currentRecordedBlob = null;
+      currentRecordedMimeType = '';
+      audioChunks = [];
+      trainingPracticeContext = null;
+      currentReportRecord = null;
+      updatePracticeContextInfo();
+
+      realtimeMetrics = { f0: 0, spl: 0, jitter: 0, shimmer: 0, hnr: 0, mpt: 0 };
+
+      document.getElementById('patientName').value = '';
+      document.getElementById('patientGender').value = '';
+      document.getElementById('patientAge').value = '';
+      document.getElementById('playBtn').disabled = true;
+      document.getElementById('analyzeBtn').disabled = true;
+      document.getElementById('recordProgress').style.width = '0%';
+      document.getElementById('recordingTimer').textContent = '00:00';
+      document.getElementById('recordHint').textContent = '點擊開始錄音';
+
+      ['f0', 'spl', 'jitter', 'shimmer', 'hnr', 'mpt'].forEach(metric => {
+        document.getElementById(`${metric}Value`).textContent = '--';
+        document.getElementById(`${metric}Status`).textContent = '待測量';
+        document.getElementById(`${metric}Status`).className = 'metric-status normal';
+        document.getElementById(`${metric}Card`).className = 'metric-card';
+      });
+
+      document.getElementById('scoreProgress').style.strokeDashoffset = '471.24';
+      document.getElementById('scoreValue').textContent = '--';
+      document.getElementById('scoreLabel').textContent = '等待測量';
+
+      document.getElementById('suggestionsContainer').innerHTML = `
+        <div class="suggestion-item">
+          <div class="suggestion-icon">ℹ️</div>
+          <div class="suggestion-text">請在安靜環境中進行測試，麥克風距離嘴巴約 20～30 公分，並以自然且穩定的音量發聲。</div>
+        </div>
+      `;
+
+      document.getElementById('analysisReportContainer').innerHTML = `
+        <div class="suggestion-item report">
+          <div class="suggestion-icon">📋</div>
+          <div class="suggestion-text">完成分析後，這裡會顯示綜合判讀、臨床導向說明與後續建議。</div>
+        </div>
+      `;
+
+      document.getElementById('practiceScriptBox').innerHTML = `<strong>${escapeHtml(practiceScripts[0].title)}</strong>\n${escapeHtml(practiceScripts[0].content)}`;
+      document.querySelectorAll('.script-pill').forEach((pill, index) => {
+        pill.classList.toggle('active', index === 0);
+      });
+
+      initializeVisualizations();
+
+      ['low', 'midLow', 'midHigh', 'high'].forEach(band => {
+        document.getElementById(`${band}Freq`).textContent = '0';
+        document.getElementById(`${band}FreqBar`).style.height = '0%';
+      });
+
+      showToast('應用程式已重置');
+    }
+
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.log('Wake Lock error:', err);
+      }
+    }
+
+    async function releaseWakeLock() {
+      try {
+        if (wakeLock) {
+          await wakeLock.release();
+          wakeLock = null;
+        }
+      } catch (err) {
+        console.log('Wake Lock release error:', err);
+      }
+    }
+
+    document.addEventListener('visibilitychange', async () => {
+      if (!document.hidden && isRecording) {
+        await requestWakeLock();
+      }
+    });
+
+    function showTrainingSection(sectionId, el) {
+      document.querySelectorAll('#trainingPage .content-section').forEach(section => {
+        section.classList.remove('active');
+      });
+      document.querySelectorAll('#trainingPage .nav-tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      document.getElementById('training-' + sectionId).classList.add('active');
+      if (el) el.classList.add('active');
+    }
+
+    function saveTrainingProgress() {
+      const checkboxes = document.querySelectorAll('#trainingPage input[type="checkbox"]');
+      const progress = {};
+      checkboxes.forEach(checkbox => {
+        progress[checkbox.id] = checkbox.checked;
+      });
+      localStorage.setItem('parkinsonProgress', JSON.stringify(progress));
+    }
+
+    function loadTrainingProgress() {
+      const savedProgress = localStorage.getItem('parkinsonProgress');
+      if (!savedProgress) return;
+      const progress = JSON.parse(savedProgress);
+      Object.keys(progress).forEach(id => {
+        const checkbox = document.getElementById(id);
+        if (checkbox) checkbox.checked = progress[id];
+      });
+    }
+
+    function calculateTrainingProgress() {
+      const checkboxes = document.querySelectorAll('#trainingPage input[type="checkbox"]');
+      const checkedBoxes = document.querySelectorAll('#trainingPage input[type="checkbox"]:checked');
+      const percentage = checkboxes.length ? Math.round((checkedBoxes.length / checkboxes.length) * 100) : 0;
+      document.getElementById('trainingProgressText').textContent = `完成進度：${percentage}%`;
+    }
+
+    function initTrainingProgress() {
+      loadTrainingProgress();
+      calculateTrainingProgress();
+      document.querySelectorAll('#trainingPage input[type="checkbox"]').forEach(checkbox => {
+        checkbox.addEventListener('change', () => {
+          saveTrainingProgress();
+          calculateTrainingProgress();
+        });
+      });
+    }
+
+    function formatDate(value) {
+      if (!value) return '--';
+      try {
+        return new Date(value).toLocaleString('zh-TW');
+      } catch (e) {
+        return value;
+      }
+    }
+
+    function safeNum(value, digits = 1) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '--';
+      return n.toFixed(digits);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    console.log('%c🎙️ 語音分析與訓練平台已啟動', 'font-size: 16px; font-weight: bold; color: #667eea;');
+    console.log('版本: 2.0 | 分析 + 歷史展開收合 + PDF列印 + 訓練平台');
+  </script>
+</body>
+</html>
