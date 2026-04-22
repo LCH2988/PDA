@@ -26,7 +26,6 @@
     .login-btn{width:100%;padding:16px;border:none;border-radius:14px;font-size:var(--fs-md);font-weight:700;cursor:pointer;margin-top:12px}
     .login-btn-line{background:#00B900;color:#fff}
     .login-btn-demo{background:#F1F5F9;color:#334155}
-    .login-btn-demo-admin{background:#1565C0;color:#fff}
     #app{display:none;flex-direction:column;height:100%;max-width:560px;margin:0 auto;background:#EEF2F7}
     #app.visible{display:flex}
     .top-bar{background:linear-gradient(135deg,var(--primary),var(--primary-d));color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
@@ -175,7 +174,6 @@
       <div style="font-size:var(--fs-md);color:var(--grey5);margin-top:8px">請選擇登入方式</div>
       <button class="login-btn login-btn-line" onclick="AuthManager.loginWithLine()">💬 使用 LINE 登入</button>
       <button class="login-btn login-btn-demo" onclick="AuthManager.loginDemo(false)">👤 示範模式（一般會員）</button>
-      <button class="login-btn login-btn-demo-admin" onclick="AuthManager.loginDemo(true)">👑 示範模式（管理員）</button>
       <div id="login-mode-text" style="margin-top:18px;background:#EFF6FF;padding:12px;border-radius:10px;color:#1D4ED8;font-size:var(--fs-sm)">正在檢測執行環境…</div>
     </div>
   </div>
@@ -266,6 +264,7 @@
                 <option value="照護支援">照護支援</option>
               </select>
             </div>
+            <div id="donate-attach-area"></div>
             <div class="form-group">
               <label class="form-label">留言</label>
               <textarea id="donate-message" class="form-control"></textarea>
@@ -390,7 +389,7 @@
 
   <script>
     const CFG = {
-      gasUrl: 'https://script.google.com/macros/s/AKfycbyWePjuQXDSNxAIGbAWFvmBKsrR9r0QPuEc6lueboncv_QrrhR4lav3jdub8S-OvdfB/exec',
+      gasUrl: 'https://script.google.com/macros/s/AKfycbxIp7MzNJh5w4UF6pkvKux0Bz5EDGG3TMaRuASgDwSLp3NigGK_2W5q4GQTJaiz9k0v/exec',
       liffId: '2009456572-588gzru4',
       org: '社團法人台灣帕金森病友權益促進會',
       feeMap: {},
@@ -450,35 +449,65 @@
     const _fmtSize = b => !b?'0 B':b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';
     const _mimeIcon = t => ({'image/jpeg':'🖼️','image/png':'🖼️','application/pdf':'📄'}[t]||'📎');
 
+    function _safeDate(input){
+      if(!input) return null;
+      if(input instanceof Date) return isNaN(input.getTime()) ? null : input;
+      const s = String(input).trim();
+      if(!s) return null;
+      let d = new Date(s.replace(' ', 'T').replace(/\//g,'-'));
+      if(!isNaN(d.getTime())) return d;
+      d = new Date(s.replace(/-/g,'/'));
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function _normalizeDriveImageUrl(url){
+      const s = String(url||'').trim();
+      if(!s) return '';
+      if(/^https?:\/\//i.test(s)) return s;
+      return 'https://drive.google.com/uc?export=view&id=' + s;
+    }
+
     function formatTWDateTime(input){
       if(!input) return '--';
-      const d = new Date(input);
-      if(isNaN(d.getTime())) return String(input);
+      const d = _safeDate(input);
+      if(!d) return String(input);
       const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
       const hh=String(d.getHours()).padStart(2,'0'),mm=String(d.getMinutes()).padStart(2,'0');
       return y+'/'+m+'/'+day+' '+hh+':'+mm;
     }
+
     function formatTWDate(input){
       if(!input) return '--';
-      const d = new Date(input);
-      if(isNaN(d.getTime())) return String(input).slice(0,10).replace(/-/g,'/');
+      const d = _safeDate(input);
+      if(!d) return String(input).slice(0,10).replace(/-/g,'/');
       const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
       return y+'/'+m+'/'+day;
     }
+
+    function _daysLeft(dateStr){
+      const d = _safeDate(dateStr);
+      if(!d) return null;
+      return Math.ceil((d.getTime()-Date.now())/86400000);
+    }
+
     function _getPointsLevel(pts){
       const p=isNaN(pts)?0:pts,L=CFG.pointsLevels;
       for(let i=L.length-1;i>=0;i--) if(p>=L[i].min) return {...L[i],index:i};
       return {...L[0],index:0};
     }
+
     function _row(label,val,cls=''){
       return '<div class="info-row"><span class="info-label">'+label+'</span><span class="info-value '+cls+'">'+_esc(String(val||'--'))+'</span></div>';
     }
+
     function _fg(label,req,inputHtml){
       return '<div class="form-group"><label class="form-label">'+label+(req?'<span class="req">*</span>':'')+'</label>'+inputHtml+'</div>';
     }
+
     function _emptyHtml(icon,text,sub=''){
       return '<div class="empty-state"><div class="empty-icon">'+icon+'</div><div class="empty-text">'+text+'</div>'+(sub?'<div>'+sub+'</div>':'')+'</div>';
     }
+
     function _remitHtml(noteText){
       const r=CFG.remitInfo;
       return '<div class="remit-card">'+
@@ -490,9 +519,20 @@
         '<div class="remit-note">💡 '+_esc(noteText||'匯款後請保留收據與證明')+'</div>'+
       '</div>';
     }
-    function _sealHtml(show){
-      if(!show || !CFG.electronicSealUrl) return '';
-      return '<div style="margin:12px 0 4px;text-align:center"><img src="'+_esc(CFG.electronicSealUrl)+'" style="max-width:120px;max-height:120px;object-fit:contain"></div>';
+
+    function _sealHtml(show,url){
+      const u = _normalizeDriveImageUrl(url || CFG.electronicSealUrl);
+      if(!show || !u) return '';
+      return '<div style="margin:12px 0 4px;text-align:center"><img src="'+_esc(u)+'" style="max-width:120px;max-height:120px;object-fit:contain"></div>';
+    }
+
+    function _attachmentsHtml(list){
+      const arr = Array.isArray(list) ? list.filter(a => a && a.url) : [];
+      if(!arr.length) return '';
+      return '<div class="card-sub" style="margin-top:8px">附件：</div>' +
+        arr.map(a =>
+          '<div class="info-row"><span class="info-label">'+_esc(a.name||'附件')+'</span><span class="info-value"><a href="'+_esc(a.url||'#')+'" target="_blank" rel="noopener">開啟</a></span></div>'
+        ).join('');
     }
 
     const Toast = (() => {
@@ -552,36 +592,73 @@
     const API = (() => {
       let _userId = '';
       let _pending = new Set();
+
       function setUser(id){ _userId = id || ''; }
+
       async function get(action,params={}){
         const url = new URL(CFG.gasUrl);
         url.searchParams.set('action',action);
-        if(_userId) url.searchParams.set('userId',_userId);
-        Object.entries(params).forEach(([k,v]) => { if(v!==undefined && v!==null && v!=='') url.searchParams.set(k,String(v)); });
-        const res = await fetch(url.toString());
+
+        const finalParams = {...params};
+        if(_userId && !finalParams.userId) finalParams.userId = _userId;
+
+        Object.entries(finalParams).forEach(([k,v]) => {
+          if(v!==undefined && v!==null && v!=='') url.searchParams.set(k,String(v));
+        });
+
+        let res;
+        try{
+          res = await fetch(url.toString());
+        }catch(e){
+          throw new Error('無法連線至伺服器，請檢查部署網址、權限或網路狀態');
+        }
+
         if(!res.ok) throw new Error('伺服器錯誤('+res.status+')');
-        const data = await res.json();
+
+        let data;
+        try{
+          data = await res.json();
+        }catch(e){
+          throw new Error('伺服器回應格式錯誤，請檢查 Apps Script 執行紀錄');
+        }
+
         if(data && data.error) throw new Error(data.error);
         return data;
       }
+
       async function post(action,body={}){
         const key = action+'_'+_userId;
         if(_pending.has(key)) throw new Error('請求處理中，請勿重複送出');
         _pending.add(key);
+
         try{
-          const res = await fetch(CFG.gasUrl,{
-            method:'POST',
-            headers:{'Content-Type':'text/plain;charset=utf-8'},
-            body:JSON.stringify({...body,action,userId:_userId})
-          });
+          let res;
+          try{
+            res = await fetch(CFG.gasUrl,{
+              method:'POST',
+              headers:{'Content-Type':'text/plain;charset=utf-8'},
+              body:JSON.stringify({...body,action,userId:_userId})
+            });
+          }catch(e){
+            throw new Error('無法連線至伺服器，請檢查部署網址、權限或網路狀態');
+          }
+
           if(!res.ok) throw new Error('伺服器錯誤('+res.status+')');
-          const data = await res.json();
+
+          let data;
+          try{
+            data = await res.json();
+          }catch(e){
+            throw new Error('伺服器回應格式錯誤，請檢查 Apps Script 執行紀錄');
+          }
+
           if(data && data.error) throw new Error(data.error);
           return data;
         } finally {
           _pending.delete(key);
         }
       }
+
       return {setUser,get,post};
     })();
 
@@ -686,17 +763,19 @@
       let _isAdmin = false;
       let _feeList = [], _donateList = [], _pointsHistory = [], _userExpenseList = [];
       let _selectedDonateAmt = 0;
-      let _incomeAttachments = [], _expenseAttachments = [], _signedExpenseAttachments = [];
+      let _incomeAttachments = [], _expenseAttachments = [], _signedExpenseAttachments = [], _donateAttachments = [];
 
       async function loadRemoteConfig(){
-        const d = await API.get('getConfig',{userId:'guest'});
+        const d = await API.get('getConfig');
         CFG.feeMap = d.feeMap || {};
         CFG.receiptStatus = d.receiptStatus || {};
         CFG.expenseStatus = d.expenseStatus || {};
         CFG.incomeStatus = d.incomeStatus || {};
-        CFG.electronicSealUrl = d.electronicSealUrl || '';
+        CFG.electronicSealUrl = _normalizeDriveImageUrl(d.electronicSealUrl || '');
         _html('fee-remit', _remitHtml('請先完成匯款，再建立預收據並發送給管理員確認。'));
         _html('donate-remit', _remitHtml('建立預收據後，請發送給管理員確認收款。'));
+        _html('donate-attach-area', _attachUploader('donate-file','donate-attach-list','點擊上傳匯款證明','donate'));
+        setTimeout(() => _bindFileInput('donate-file','donate-attach-list','donate'), 0);
       }
 
       function showPage(pageId){
@@ -736,7 +815,7 @@
       }
 
       function _renderProfile(d){
-        const daysLeft = d.expireDate ? Math.ceil((new Date(d.expireDate)-new Date())/86400000) : null;
+        const daysLeft = d.expireDate ? _daysLeft(d.expireDate) : null;
         document.getElementById('hero-name').textContent = d.name || '會員';
         document.getElementById('stat-days').textContent = daysLeft!==null ? Math.max(0,daysLeft) : '--';
         document.getElementById('stat-points').textContent = d.points || 0;
@@ -761,7 +840,7 @@
       }
 
       function _renderFeeStatus(d){
-        const daysLeft=d.expireDate?Math.ceil((new Date(d.expireDate)-new Date())/86400000):null;
+        const daysLeft=d.expireDate?_daysLeft(d.expireDate):null;
         let bg='#EFF6FF',bd='#BFDBFE',tc='#1D4ED8',txt='尚未設定會籍';
         if(daysLeft!==null){
           if(daysLeft<=0){ bg='#FEE2E2';bd='#FECACA';tc='#991B1B';txt='⚠️ 會籍已到期'; }
@@ -861,6 +940,7 @@
             _row('到期日',r.expireDate?formatTWDate(r.expireDate):'--')+
             _row('方式',r.method||'--')+
             _row('收據編號','#'+(r.receiptNo||r.id))+
+            _attachmentsHtml(r.attachments)+
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">'+
               '<button class="btn btn-outline btn-sm" onclick="App.showFeeReceipt('+idx+')">🧾 查看</button>'+
               (r.canSend
@@ -962,6 +1042,7 @@
             _row('日期',formatTWDateTime(r.date))+
             _row('方式',r.method||'--')+
             _row('收據編號','#'+(r.receiptNo||r.id))+
+            _attachmentsHtml(r.attachments)+
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">'+
               '<button class="btn btn-outline btn-sm" onclick="App.showDonateReceipt('+idx+')">🧾 查看</button>'+
               (r.canSend
@@ -980,6 +1061,7 @@
         btn.style.background='#E9D5FF';
         document.getElementById('donate-custom-amt').value='';
       }
+
       function clearDonateSelection(){
         _selectedDonateAmt=0;
         document.querySelectorAll('.donate-amt-btn').forEach(b => b.style.background='');
@@ -995,12 +1077,15 @@
             amount,
             method:_v('donate-method'),
             purpose:_v('donate-purpose'),
-            message:_v('donate-message')
+            message:_v('donate-message'),
+            attachments:_donateAttachments
           });
           Toast.success(r.message||'已建立');
           document.getElementById('donate-custom-amt').value='';
           document.getElementById('donate-message').value='';
           clearDonateSelection();
+          _donateAttachments = [];
+          _renderAttachList(_donateAttachments,'donate-attach-list','donate');
           await _loadDonateList();
         }catch(e){ Toast.error(e.message); }
         finally{ btn.disabled=false; }
@@ -1145,6 +1230,7 @@
         const r=_userExpenseList[idx];
         const signedList=Array.isArray(r.signedVoucher)?r.signedVoucher:[];
         const formalVoucher=r.formalVoucher||null;
+        const sealUrl = _normalizeDriveImageUrl((formalVoucher&&formalVoucher.sealUrl) || CFG.electronicSealUrl);
         Modal.show(
           '<div class="modal-title">📤 支出詳情</div>'+
           '<div class="card">'+
@@ -1164,9 +1250,9 @@
             _row('說明',formalVoucher.description||'--')+
             _row('金額',_fmtMoney(formalVoucher.amount||0))+
             _row('受款人',formalVoucher.payee||'--')+
-            ((formalVoucher.sealUrl||CFG.electronicSealUrl)?'<div style="text-align:center;padding-top:12px"><img src="'+_esc(formalVoucher.sealUrl||CFG.electronicSealUrl)+'" style="max-width:100px;max-height:100px;object-fit:contain"></div>':'')+
+            (sealUrl?'<div style="text-align:center;padding-top:12px"><img src="'+_esc(sealUrl)+'" style="max-width:100px;max-height:100px;object-fit:contain"></div>':'')+
           '</div>':'')+
-          (signedList.length?'<div class="card"><div class="card-title">簽名文件</div>'+signedList.map(a=>'<div class="info-row"><span class="info-label">'+_esc(a.name||'附件')+'</span><span class="info-value"><a href="'+_esc(a.url||'#')+'" target="_blank">開啟</a></span></div>').join('')+'</div>':'')+
+          (signedList.length?'<div class="card"><div class="card-title">簽名文件</div>'+signedList.map(a=>'<div class="info-row"><span class="info-label">'+_esc(a.name||'附件')+'</span><span class="info-value"><a href="'+_esc(a.url||'#')+'" target="_blank" rel="noopener">開啟</a></span></div>').join('')+'</div>':'')+
           '<button class="btn btn-secondary btn-full" onclick="Modal.close()">關閉</button>'
         );
       }
@@ -1270,7 +1356,7 @@
       function _attachUploader(inputId,listId,text,type){
         return '<div class="form-group"><label class="form-label">📎 附件</label>'+
           '<div class="attach-zone" onclick="document.getElementById(\''+inputId+'\').click()">'+
-            '<div style="font-size:36px">📄</div><div style="margin-top:8px;font-weight:700">'+_esc(text)+'</div><div style="font-size:var(--fs-sm);color:var(--grey5);margin-top:6px">支援 JPG、PNG、PDF，每檔不超過 10MB</div>'+
+            '<div style="font-size:36px">📄</div><div style="margin-top:8px;font-weight:700">'+_esc(text)+'</div><div style="font-size:var(--fs-sm);color:var(--grey5);margin-top:6px">支援 JPG、PNG、PDF，每檔不超過 5MB，最多 3 檔</div>'+
           '</div>'+
           '<input id="'+inputId+'" type="file" accept="image/*,.pdf" multiple style="display:none">'+
           '<div id="'+listId+'"></div></div>';
@@ -1286,17 +1372,41 @@
       function removeAttach(idx,listId,type){
         if(type==='income') _incomeAttachments.splice(idx,1);
         else if(type==='expense') _expenseAttachments.splice(idx,1);
+        else if(type==='donate') _donateAttachments.splice(idx,1);
         else _signedExpenseAttachments.splice(idx,1);
-        const arr = type==='income' ? _incomeAttachments : type==='expense' ? _expenseAttachments : _signedExpenseAttachments;
+
+        const arr =
+          type==='income' ? _incomeAttachments :
+          type==='expense' ? _expenseAttachments :
+          type==='donate' ? _donateAttachments :
+          _signedExpenseAttachments;
+
         _renderAttachList(arr,listId,type);
       }
 
       function _bindFileInput(inputId,listId,type){
         const fi=document.getElementById(inputId); if(!fi) return;
         fi.onchange=async e=>{
-          const arr = type==='income' ? _incomeAttachments : type==='expense' ? _expenseAttachments : _signedExpenseAttachments;
-          for(const file of Array.from(e.target.files)){
-            if(file.size > 10*1024*1024){ Toast.error('檔案不可超過 10MB：'+file.name); continue; }
+          const arr =
+            type==='income' ? _incomeAttachments :
+            type==='expense' ? _expenseAttachments :
+            type==='donate' ? _donateAttachments :
+            _signedExpenseAttachments;
+
+          const files = Array.from(e.target.files || []);
+          const remain = Math.max(0, 3 - arr.length);
+
+          if(!remain){
+            Toast.warning('附件最多 3 檔');
+            fi.value='';
+            return;
+          }
+
+          for(const file of files.slice(0, remain)){
+            if(file.size > 5*1024*1024){
+              Toast.error('檔案不可超過 5MB：'+file.name);
+              continue;
+            }
             const reader = new FileReader();
             const item = await new Promise((resolve,reject)=>{
               reader.onload = ev => resolve({name:file.name,mimeType:file.type,size:file.size,base64:ev.target.result.split(',')[1]});
@@ -1305,6 +1415,11 @@
             });
             arr.push(item);
           }
+
+          if(files.length > remain){
+            Toast.warning('附件最多 3 檔，其餘檔案未加入');
+          }
+
           _renderAttachList(arr,listId,type);
           fi.value='';
         };
@@ -1342,8 +1457,13 @@
         removeAttach,
         _renderAttachList,
         _bindFileInput,
-        _getState:k=>({_memberData,_isAdmin,_incomeAttachments,_expenseAttachments,_signedExpenseAttachments}[k]),
-        _setState:(k,v)=>{ if(k==='_incomeAttachments')_incomeAttachments=v; if(k==='_expenseAttachments')_expenseAttachments=v; if(k==='_signedExpenseAttachments')_signedExpenseAttachments=v; }
+        _getState:k=>({_memberData,_isAdmin,_incomeAttachments,_expenseAttachments,_signedExpenseAttachments,_donateAttachments}[k]),
+        _setState:(k,v)=>{
+          if(k==='_incomeAttachments')_incomeAttachments=v;
+          if(k==='_expenseAttachments')_expenseAttachments=v;
+          if(k==='_signedExpenseAttachments')_signedExpenseAttachments=v;
+          if(k==='_donateAttachments')_donateAttachments=v;
+        }
       };
     })();
 
@@ -1365,11 +1485,13 @@
           ]);
 
           _allMembers = Array.isArray(members)?members:[];
-          const activeMembers=_allMembers.filter(m => m.expireDate && new Date(m.expireDate)>new Date()).length;
+          const activeMembers=_allMembers.filter(m => {
+            const d = _safeDate(m.expireDate);
+            return d && d.getTime() > Date.now();
+          }).length;
           const expiringSoon=_allMembers.filter(m => {
-            if(!m.expireDate) return false;
-            const d=Math.ceil((new Date(m.expireDate)-new Date())/86400000);
-            return d>0 && d<=30;
+            const d = _daysLeft(m.expireDate);
+            return d!==null && d>0 && d<=30;
           }).length;
           const paidExpense=(Array.isArray(expenses)?expenses:[]).filter(r=>r.status===CFG.expenseStatus.PAID).reduce((s,r)=>s+(r.amount||0),0);
 
@@ -1396,7 +1518,7 @@
                 '<div class="card-title">🪪 電子印章設定</div>'+
                 '<div class="card-sub">審查通過後，正式收據 / 傳票將自動帶入電子印章</div>'+
                 (CFG.electronicSealUrl
-                  ? '<div style="text-align:center;padding:18px 0 8px"><img src="'+_esc(CFG.electronicSealUrl)+'" style="max-width:140px;max-height:140px;object-fit:contain"></div>'
+                  ? '<div style="text-align:center;padding:18px 0 8px"><img src="'+_esc(_normalizeDriveImageUrl(CFG.electronicSealUrl))+'" style="max-width:140px;max-height:140px;object-fit:contain"></div>'
                   : '<div class="notice-box notice-orange" style="margin-top:12px">尚未設定電子印章</div>')+
                 '<button class="btn btn-primary btn-full" onclick="AdminApp.showSealSettingModal()">🪪 設定電子印章</button>'+
               '</div>'+
@@ -1411,7 +1533,7 @@
         Modal.show(
           '<div class="modal-title">🪪 電子印章設定</div>'+
           (CFG.electronicSealUrl
-            ? '<div class="card"><div class="card-title">目前印章</div><div style="text-align:center;padding:12px 0"><img src="'+_esc(CFG.electronicSealUrl)+'" style="max-width:180px;max-height:180px;object-fit:contain"></div></div>'
+            ? '<div class="card"><div class="card-title">目前印章</div><div style="text-align:center;padding:12px 0"><img src="'+_esc(_normalizeDriveImageUrl(CFG.electronicSealUrl))+'" style="max-width:180px;max-height:180px;object-fit:contain"></div></div>'
             : '<div class="notice-box notice-orange">尚未設定電子印章</div>')+
           '<div class="form-group"><label class="form-label">上傳印章圖片</label><div class="attach-zone" onclick="document.getElementById(\'seal-file\').click()"><div style="font-size:36px">🪪</div><div style="margin-top:8px;font-weight:700">點擊上傳 PNG / JPG</div><div style="font-size:var(--fs-sm);color:var(--grey5);margin-top:6px">建議使用透明背景 PNG，檔案不超過 5MB</div></div><input id="seal-file" type="file" accept="image/*" style="display:none"><div id="seal-file-preview" style="margin-top:12px"></div></div>'+
           '<div style="display:flex;gap:12px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button><button id="seal-submit-btn" class="btn btn-primary btn-full" onclick="AdminApp.submitSeal()">儲存印章</button></div>'
@@ -1447,7 +1569,7 @@
         btn.disabled=true;
         try{
           const r = await API.post('setElectronicSeal', { file:_sealFile });
-          CFG.electronicSealUrl = r.sealUrl || '';
+          CFG.electronicSealUrl = _normalizeDriveImageUrl(r.sealUrl || '');
           Toast.success(r.message || '電子印章已更新');
           Modal.close();
           await initDashboard();
@@ -1492,6 +1614,7 @@
               _row('金額',_fmtMoney(r.amount))+
               _row('方式',r.method||'--')+
               _row('發送時間',formatTWDateTime(r.sentAt))+
+              _attachmentsHtml(r.attachments)+
               _fg('審查意見',false,'<input id="fee-review-'+idx+'" class="form-control">')+
               '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn btn-success btn-sm" onclick="AdminApp.confirmFeeReceipt(\''+_esc(r.id)+'\','+idx+')">✅ 確認收款</button><button class="btn btn-danger btn-sm" onclick="AdminApp.rejectFeeReceipt(\''+_esc(r.id)+'\','+idx+')">❌ 退回</button></div>'+
             '</div>'
@@ -1503,6 +1626,7 @@
               _row('用途',r.item||'--')+
               _row('金額',_fmtMoney(r.amount))+
               _row('方式',r.method||'--')+
+              _attachmentsHtml(r.attachments)+
               _fg('審查意見',false,'<input id="don-review-'+idx+'" class="form-control">')+
               '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn btn-success btn-sm" onclick="AdminApp.confirmDonateReceipt(\''+_esc(r.id)+'\','+idx+')">✅ 確認收款</button><button class="btn btn-danger btn-sm" onclick="AdminApp.rejectDonateReceipt(\''+_esc(r.id)+'\','+idx+')">❌ 退回</button></div>'+
             '</div>'
@@ -1520,6 +1644,7 @@
           }catch(e){ Toast.error(e.message); }
         },'確認收款');
       }
+
       async function rejectFeeReceipt(id,idx){
         const reviewNote=_v('fee-review-'+idx);
         Modal.confirm('確認退回此繳費收據？', async ()=>{
@@ -1530,6 +1655,7 @@
           }catch(e){ Toast.error(e.message); }
         },'確認退回',true);
       }
+
       async function confirmDonateReceipt(id,idx){
         const reviewNote=_v('don-review-'+idx);
         Modal.confirm('確認已收到此筆捐款？', async ()=>{
@@ -1540,6 +1666,7 @@
           }catch(e){ Toast.error(e.message); }
         },'確認收款');
       }
+
       async function rejectDonateReceipt(id,idx){
         const reviewNote=_v('don-review-'+idx);
         Modal.confirm('確認退回此捐款收據？', async ()=>{
@@ -1567,8 +1694,9 @@
             _row('金額',_fmtMoney(r.amount))+
             _row('日期',formatTWDateTime(r.date))+
             _row('受款人',r.payee||'--')+
+            _attachmentsHtml(r.originalAttachments)+
             _fg('審核意見',false,'<input id="exp-sub-note-'+idx+'" class="form-control">')+
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn btn-orange btn-sm" onclick="AdminApp.generateExpenseVoucher(\''+_esc(r.id)+'\','+idx+')">🧾 生成正式憑證</button><button class="btn btn-danger btn-sm" onclick="AdminApp.rejectExpenseFlow(\''+_esc(r.id)+'\','+idx+',\'exp-sub-note-\')">❌ 退回</button></div>'+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn btn-orange btn-sm" onclick="AdminApp.generateExpenseVoucher(\''+_esc(r.id)+'\','+idx+')">🧾 生成正式憑證</button><button class="btn btn-danger btn-sm" onclick="AdminApp.rejectExpenseFlow(\''+_esc(r.id)+'\','+idx+',\'exp-sub-note-\',\'expense-submitted\')">❌ 退回</button></div>'+
           '</div>'
         ).join('')+'</div>';
       }
@@ -1594,8 +1722,9 @@
             _row('說明',r.description||'--')+
             _row('金額',_fmtMoney(r.amount))+
             _row('已回傳簽名檔',String((r.signedVoucher||[]).length)+' 份')+
+            _attachmentsHtml(r.signedVoucher)+
             _fg('收件意見',false,'<input id="exp-rec-note-'+idx+'" class="form-control">')+
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn btn-success btn-sm" onclick="AdminApp.confirmExpenseReceived(\''+_esc(r.id)+'\','+idx+')">📥 確認收件</button><button class="btn btn-danger btn-sm" onclick="AdminApp.rejectExpenseFlow(\''+_esc(r.id)+'\','+idx+',\'exp-rec-note-\')">❌ 退回</button></div>'+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn btn-success btn-sm" onclick="AdminApp.confirmExpenseReceived(\''+_esc(r.id)+'\','+idx+')">📥 確認收件</button><button class="btn btn-danger btn-sm" onclick="AdminApp.rejectExpenseFlow(\''+_esc(r.id)+'\','+idx+',\'exp-rec-note-\',\'expense-receive\')">❌ 退回</button></div>'+
           '</div>'
         ).join('')+'</div>';
       }
@@ -1622,7 +1751,7 @@
             _row('金額',_fmtMoney(r.amount))+
             _row('受款人',r.payee||'--')+
             _fg('撥款意見',false,'<input id="exp-pay-note-'+idx+'" class="form-control">')+
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn btn-success btn-sm" onclick="AdminApp.confirmExpensePaid(\''+_esc(r.id)+'\','+idx+')">💸 確認撥款</button><button class="btn btn-danger btn-sm" onclick="AdminApp.rejectExpenseFlow(\''+_esc(r.id)+'\','+idx+',\'exp-pay-note-\')">❌ 退回</button></div>'+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn btn-success btn-sm" onclick="AdminApp.confirmExpensePaid(\''+_esc(r.id)+'\','+idx+')">💸 確認撥款</button><button class="btn btn-danger btn-sm" onclick="AdminApp.rejectExpenseFlow(\''+_esc(r.id)+'\','+idx+',\'exp-pay-note-\',\'expense-payment\')">❌ 退回</button></div>'+
           '</div>'
         ).join('')+'</div>';
       }
@@ -1638,13 +1767,13 @@
         },'確認撥款');
       }
 
-      async function rejectExpenseFlow(id,idx,prefix){
+      async function rejectExpenseFlow(id,idx,prefix,tabName){
         const reviewNote=_v(prefix+idx);
         Modal.confirm('確認退回此支出流程？', async ()=>{
           try{
             const r=await API.post('rejectExpenseWorkflow',{id,reviewNote});
             Toast.warning(r.message||'已退回');
-            await switchReviewTab('expense-submitted');
+            await switchReviewTab(tabName || 'expense-submitted');
           }catch(e){ Toast.error(e.message); }
         },'確認退回',true);
       }
@@ -1670,7 +1799,7 @@
       function _renderMemberCards(list){
         if(!list.length) return _emptyHtml('👥','找不到符合的會員');
         return list.map((m,idx)=>{
-          const daysLeft=m.expireDate?Math.ceil((new Date(m.expireDate)-new Date())/86400000):null;
+          const daysLeft=_daysLeft(m.expireDate);
           const statusText=daysLeft===null?'未設定':daysLeft<=0?'已到期':daysLeft<=30?'剩 '+daysLeft+' 天':'有效';
           const color=daysLeft===null?'#6B7280':daysLeft<=0?'#C62828':daysLeft<=30?'#F57F17':'#2E7D32';
           return '<div class="member-card"><div class="member-avatar">'+_esc((m.name||'?')[0])+'</div><div class="member-info"><div class="member-name">'+_esc(m.name||'未設定')+'</div><div class="member-sub">'+_esc(m.memberType||'一般會員')+'　'+_esc(m.phone||'--')+'</div></div><div><div style="font-size:var(--fs-sm);font-weight:700;color:'+color+'">'+statusText+'</div><button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="AdminApp.showMemberDetail('+idx+')">詳情</button></div></div>';
@@ -1711,11 +1840,13 @@
       async function _renderMemberExpire(el){
         const list = await API.get('getMemberList').catch(()=>[]);
         const expiring = list.filter(m => {
-          if(!m.expireDate) return false;
-          const d=Math.ceil((new Date(m.expireDate)-new Date())/86400000);
-          return d>0 && d<=30;
+          const d=_daysLeft(m.expireDate);
+          return d!==null && d>0 && d<=30;
         });
-        const expired = list.filter(m => !m.expireDate || new Date(m.expireDate)<=new Date());
+        const expired = list.filter(m => {
+          const d=_daysLeft(m.expireDate);
+          return d===null || d<=0;
+        });
         el.innerHTML='<div class="section">'+
           '<div class="summary-grid">'+
             _summaryItem(expiring.length,'即將到期','var(--amber)')+
@@ -1726,7 +1857,7 @@
       }
 
       async function _renderMemberStats(el){
-        const list = await API.get('getMemberList').catch(()=>[]);
+        const list=await API.get('getMemberList').catch(()=>[]);
         const byType={}, byTrouble={}, byExercise={};
         list.forEach(m=>{
           byType[m.memberType||'一般會員']=(byType[m.memberType||'一般會員']||0)+1;
@@ -1816,6 +1947,7 @@
             _row('金額',_fmtMoney(r.amount))+
             _row('收款日期',formatTWDateTime(r.date))+
             _row('付款人',r.payerName||'--')+
+            _attachmentsHtml(r.attachments)+
             _fg('審核意見',false,'<input id="income-review-'+idx+'" class="form-control">')+
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn btn-success btn-sm" onclick="AdminApp.approveIncome(\''+_esc(r.id)+'\','+idx+')">✅ 核准</button><button class="btn btn-danger btn-sm" onclick="AdminApp.rejectIncome(\''+_esc(r.id)+'\','+idx+')">❌ 退回</button></div>'+
           '</div>'
@@ -1855,6 +1987,7 @@
             _row('金額',_fmtMoney(r.amount))+
             _row('收款日期',formatTWDateTime(r.date))+
             _row('付款人',r.payerName||'--')+
+            _attachmentsHtml(r.attachments)+
             (r.reviewNote?'<div class="notice-box notice-orange">💬 '+_esc(r.reviewNote)+'</div>':'')+
           '</div>'
         ).join('')+'</div>';
@@ -1920,6 +2053,7 @@
             _row('狀態',r.status||'--')+_row('申請人',r.submitterName||'--')+_row('支出類別',r.category||'--')+_row('支出說明',r.description||'--')+
             _row('金額',_fmtMoney(r.amount))+_row('支出日期',formatTWDateTime(r.date))+_row('付款方式',r.method||'--')+_row('收款人',r.payee||'--')+
           '</div>'+
+          _attachmentsHtml(r.originalAttachments)+
           '<button class="btn btn-secondary btn-full" onclick="Modal.close()">關閉</button>'
         );
       }
@@ -1938,6 +2072,7 @@
 
       function showVoucher(idx){
         const v=_voucherList[idx], pid='voucher-print-content';
+        const sealUrl = _normalizeDriveImageUrl(CFG.electronicSealUrl);
         Modal.show(
           '<div class="modal-title">🧾 會計傳票</div>'+
           '<div id="'+pid+'" class="voucher-wrap">'+
@@ -1948,7 +2083,7 @@
               '<div><div>會計</div><div class="voucher-sign-line"></div></div>'+
               '<div><div>理事長</div><div class="voucher-sign-line"></div></div>'+
               '<div><div>單位章</div><div class="voucher-sign-line" style="border-bottom:none;height:auto;text-align:center">'+
-                (CFG.electronicSealUrl ? '<img src="'+_esc(CFG.electronicSealUrl)+'" style="max-width:100px;max-height:100px;object-fit:contain">' : '')+
+                (sealUrl ? '<img src="'+_esc(sealUrl)+'" style="max-width:100px;max-height:100px;object-fit:contain">' : '')+
               '</div></div>'+
             '</div>'+
           '</div>'+
@@ -2051,4 +2186,3 @@
   </script>
 </body>
 </html>
-
