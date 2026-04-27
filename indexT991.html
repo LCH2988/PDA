@@ -547,6 +547,149 @@ const NAV_ADMIN=[
   {id:'report',icon:'📊',label:'報表'},
 ];
 
+function _moneyToZhUpper(amount){
+  amount=Number(amount||0);
+  if(!isFinite(amount)||amount<0)return '新臺幣零元整';
+  const digits=['零','壹','貳','參','肆','伍','陸','柒','捌','玖'];
+  const units=['','拾','佰','仟'];
+  const bigUnits=['','萬','億','兆'];
+
+  function fourToZh(num){
+    let str='';
+    const s=String(num).padStart(4,'0');
+    for(let i=0;i<4;i++){
+      const n=Number(s[i]);
+      const pos=3-i;
+      if(n===0){
+        if(str && !str.endsWith('零')) str+='零';
+      }else{
+        str+=digits[n]+units[pos];
+      }
+    }
+    str=str.replace(/零+/g,'零').replace(/零$/,'');
+    return str;
+  }
+
+  const intPart=Math.floor(amount);
+  if(intPart===0)return '新臺幣零元整';
+
+  const parts=[];
+  let n=intPart;
+  let unitIndex=0;
+
+  while(n>0){
+    const section=n%10000;
+    if(section!==0){
+      let sectionZh=fourToZh(section);
+      if(unitIndex>0)sectionZh+=bigUnits[unitIndex];
+      parts.unshift(sectionZh);
+    }else{
+      if(parts.length && !parts[0].startsWith('零')) parts.unshift('零');
+    }
+    n=Math.floor(n/10000);
+    unitIndex++;
+  }
+
+  let result=parts.join('');
+  result=result.replace(/零+/g,'零')
+               .replace(/零萬/g,'萬')
+               .replace(/零億/g,'億')
+               .replace(/億萬/g,'億')
+               .replace(/零$/,'');
+
+  return '新臺幣'+result+'元整';
+}
+
+function _buildProfessionalReceiptHtml(d,isFee,receiptId){
+  const sealCfg=(CFG&&CFG.seals)?CFG.seals:{};
+  const title=isFee?'正式繳費收據':'正式捐款收據';
+  const upperAmt=_moneyToZhUpper(d.amount||0);
+
+  function sealBlock(label,imgUrl,isOrg){
+    const wrapStyle=isOrg
+      ?'width:160px;height:160px;'
+      :'width:92px;height:92px;';
+    const imgStyle=isOrg
+      ?'max-width:140px;max-height:140px;'
+      :'max-width:74px;max-height:74px;';
+
+    if(imgUrl){
+      return ''+
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:8px">'+
+          '<div style="font-size:14px;font-weight:700;color:#374151">'+label+'</div>'+
+          '<div style="'+wrapStyle+'border:1px solid #D1D5DB;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;">'+
+            '<img src="'+_esc(imgUrl)+'" alt="'+_esc(label)+'" style="'+imgStyle+'object-fit:contain;">'+
+          '</div>'+
+        '</div>';
+    }
+
+    return ''+
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:8px">'+
+        '<div style="font-size:14px;font-weight:700;color:#374151">'+label+'</div>'+
+        '<div style="'+wrapStyle+'border:2px dashed #B91C1C;border-radius:10px;background:#FFF5F5;display:flex;align-items:center;justify-content:center;color:#B91C1C;font-size:12px;font-weight:700;">章圖位置</div>'+
+      '</div>';
+  }
+
+  return ''+
+    '<div id="'+receiptId+'" style="background:#fff;color:#111827;border:2px solid #1F2937;border-radius:18px;padding:28px 28px 20px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Noto Sans TC,sans-serif;">'+
+      '<div style="text-align:center;border-bottom:3px solid #111827;padding-bottom:16px;margin-bottom:20px;">'+
+        '<div style="font-size:34px;font-weight:800;letter-spacing:1px;margin-bottom:6px;">'+_esc(d.org||CFG.org)+'</div>'+
+        '<div style="font-size:24px;font-weight:800;margin-bottom:8px;">'+title+'</div>'+
+        '<div style="font-size:15px;color:#6B7280;">收據編號：'+_esc(d.receiptNo||'--')+'</div>'+
+      '</div>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:18px;margin-bottom:20px;">'+
+        '<tbody>'+
+          '<tr>'+
+            '<td style="width:22%;padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">姓名</td>'+
+            '<td style="width:28%;padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.name||'--')+'</td>'+
+            '<td style="width:22%;padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">'+(isFee?'會員類型':'捐款用途')+'</td>'+
+            '<td style="width:28%;padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(isFee?(d.memberType||'--'):(d.purpose||'一般捐款'))+'</td>'+
+          '</tr>'+
+          (isFee
+            ?'<tr>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">有效期限</td>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.expireDate||'--')+'</td>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">付款方式</td>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.method||'--')+'</td>'+
+            '</tr>'
+            :'<tr>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">收款日期</td>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.date||'--')+'</td>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">付款方式</td>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.method||'--')+'</td>'+
+            '</tr>')+
+          '<tr>'+
+            '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">收款日期</td>'+
+            '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.date||'--')+'</td>'+
+            '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">確認人</td>'+
+            '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;word-break:break-all;">'+_esc(d.confirmBy||'--')+'</td>'+
+          '</tr>'+
+        '</tbody>'+
+      '</table>'+
+      '<div style="border:2px solid #111827;border-radius:14px;padding:18px 20px;margin-bottom:18px;">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:center;">'+
+          '<div style="text-align:center;border-right:1px solid #E5E7EB;padding-right:18px;">'+
+            '<div style="font-size:15px;color:#6B7280;margin-bottom:8px;font-weight:700;">收款金額</div>'+
+            '<div style="font-size:26px;font-weight:900;color:#111827;">'+_fmtMoney(d.amount||0)+'</div>'+
+          '</div>'+
+          '<div style="text-align:center;padding-left:8px;">'+
+            '<div style="font-size:15px;color:#6B7280;margin-bottom:8px;font-weight:700;">中文大寫</div>'+
+            '<div style="font-size:22px;font-weight:800;color:#92400E;line-height:1.5;">'+upperAmt+'</div>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="border-top:2px dashed #9CA3AF;padding-top:18px;margin-top:8px;">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;">'+
+          sealBlock('經辦章',sealCfg.handler||'',false)+
+          sealBlock('會計章',sealCfg.accountant||'',false)+
+          sealBlock('理事長章',sealCfg.chairman||'',false)+
+          sealBlock('單位章',sealCfg.org||'',true)+
+        '</div>'+
+      '</div>'+
+      '<div style="margin-top:18px;text-align:right;font-size:13px;color:#6B7280;">本收據為系統產生之電子收據</div>'+
+    '</div>';
+}
+
 const Toast=(()=>{
   const IC={success:'✅',error:'❌',warning:'⚠️',info:'ℹ️'};
   function show(msg,type,dur){
@@ -775,32 +918,6 @@ const App=(()=>{
   function _openUrl(url){
     if(!url){Toast.warning('無可用連結');return;}
     window.open(url,'_blank','noopener');
-  }
-  function _buildSealBox(label,imgUrl){
-    if(imgUrl){
-      return ''+
-        '<div style="border:1.5px solid #D1D5DB;border-radius:12px;padding:12px;text-align:center;background:#fff;min-height:130px;display:flex;flex-direction:column;justify-content:center;align-items:center">'+
-          '<div style="font-size:var(--fs-sm);font-weight:700;color:#374151;margin-bottom:8px">'+label+'</div>'+
-          '<img src="'+_esc(imgUrl)+'" alt="'+_esc(label)+'" style="max-width:100%;max-height:80px;object-fit:contain">'+
-        '</div>';
-    }
-    return ''+
-      '<div style="border:2px dashed #B91C1C;border-radius:12px;padding:16px;text-align:center;color:#B91C1C;background:#FFF5F5;min-height:130px;display:flex;flex-direction:column;justify-content:center">'+
-        '<div style="font-weight:700;font-size:18px">'+label+'</div>'+
-        '<div style="margin-top:10px;font-size:var(--fs-sm)">（章圖位置）</div>'+
-      '</div>';
-  }
-  function _buildReceiptSealGrid(){
-    const s=(CFG&&CFG.seals)?CFG.seals:{};
-    return ''+
-      '<div style="margin-top:24px;border-top:2px dashed #999;padding-top:18px">'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'+
-          _buildSealBox('經辦章',s.handler||'')+
-          _buildSealBox('會計章',s.accountant||'')+
-          _buildSealBox('理事長章',s.chairman||'')+
-          _buildSealBox('單位章',s.org||'')+
-        '</div>'+
-      '</div>';
   }
   function _showAttachmentPreviewModal(att){
     if(!att){Toast.warning('找不到附件資料');return;}
@@ -1141,29 +1258,20 @@ const App=(()=>{
 
   function showOfficialReceipt(type,idx){
     const r=type==='fee'?_feeList[idx]:_donateList[idx];
-    if(!r||!r.officialReceipt){Toast.warning('尚未完成入帳，無法列印正式收據');return;}
+    if(!r||!r.officialReceipt){
+      Toast.warning('尚未完成入帳，無法列印正式收據');
+      return;
+    }
     const d=r.officialReceipt;
     const isFee=type==='fee';
     const cid='official-receipt-content';
     Modal.show(
-      '<div class="modal-title">🧾 正式收據</div>'+
-      '<div class="receipt-wrap" id="'+cid+'" style="border:2px solid #000;padding:24px;background:#fff">'+
-        '<div class="receipt-head" style="border-bottom:2px solid #000;padding-bottom:14px">'+
-          '<div class="receipt-org" style="font-size:24px;color:#000">'+_esc(d.org||CFG.org)+'</div>'+
-          '<div class="receipt-title" style="font-size:20px;color:#000">'+(isFee?'正式繳費收據':'正式捐款收據')+'</div>'+
-          '<div class="receipt-no">收據編號：'+_esc(d.receiptNo||'--')+'</div>'+
-        '</div>'+
-        '<div class="receipt-row"><span class="receipt-row-lbl">姓名</span><span class="receipt-row-val">'+_esc(d.name||'--')+'</span></div>'+
-        (isFee
-          ?'<div class="receipt-row"><span class="receipt-row-lbl">會員類型</span><span class="receipt-row-val">'+_esc(d.memberType||'--')+'</span></div><div class="receipt-row"><span class="receipt-row-lbl">有效期限</span><span class="receipt-row-val">'+_esc(d.expireDate||'--')+'</span></div>'
-          :'<div class="receipt-row"><span class="receipt-row-lbl">捐款用途</span><span class="receipt-row-val">'+_esc(d.purpose||'一般捐款')+'</span></div>')+
-        '<div class="receipt-row"><span class="receipt-row-lbl">收款日期</span><span class="receipt-row-val">'+_esc(d.date||'--')+'</span></div>'+
-        '<div class="receipt-row"><span class="receipt-row-lbl">付款方式</span><span class="receipt-row-val">'+_esc(d.method||'--')+'</span></div>'+
-        '<div class="receipt-row"><span class="receipt-row-lbl">確認人</span><span class="receipt-row-val">'+_esc(d.confirmBy||'--')+'</span></div>'+
-        '<div class="receipt-total" style="background:#F5F5F5;border:1px solid #000"><div class="receipt-total-lbl" style="color:#000">收款金額</div><div class="receipt-total-amt" style="color:#000">'+_fmtMoney(d.amount||0)+'</div></div>'+
-        _buildReceiptSealGrid()+
-      '</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">關閉</button><button class="btn btn-success btn-full" onclick="PrintHelper.print(\''+cid+'\')">🖨️ 列印</button></div>'
+      '<div class="modal-title">🧾 '+(isFee?'正式繳費收據':'正式捐款收據')+'</div>'+
+      _buildProfessionalReceiptHtml(d,isFee,cid)+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px">'+
+        '<button class="btn btn-secondary btn-full" onclick="Modal.close()">關閉</button>'+
+        '<button class="btn btn-success btn-full" onclick="PrintHelper.print(\''+cid+'\')">🖨️ 列印</button>'+
+      '</div>'
     );
   }
 
@@ -1315,7 +1423,7 @@ const AdminApp=(()=>{
 
   async function initDashboard(){
     const el=document.getElementById('dashboard-container');if(!el)return;
-    el.innerHTML=_skelHtml();
+    el.innerHTML=App._skelHtml();
     try{
       const [receipts,expenseFlow,members,expenseAll]=await Promise.all([
         API.get('getPendingReceipts').catch(()=>({fees:[],donations:[],total:0})),
@@ -1345,18 +1453,18 @@ const AdminApp=(()=>{
         _pendingItem('📬 待確認收件',(expenseFlow.waitReceive||[]).length+' 筆','expense-admin')+
         _pendingItem('💸 待撥款',(expenseFlow.waitPayment||[]).length+' 筆','expense-admin')+
         '</div></div>';
-    }catch(e){el.innerHTML=_errHtml(e.message);}
+    }catch(e){el.innerHTML=App._errHtml(e.message);}
   }
 
   async function switchMemberTab(tab,btnEl){
     if(btnEl){document.querySelectorAll('#page-members .tab-btn').forEach(b=>b.classList.remove('active'));btnEl.classList.add('active');}
     const el=document.getElementById('members-container');if(!el)return;
-    el.innerHTML=_skelHtml();
+    el.innerHTML=App._skelHtml();
     try{
       if(tab==='list') await _renderMemberList(el);
       else if(tab==='expire') await _renderMemberExpire(el);
       else await _renderMemberStats(el);
-    }catch(e){el.innerHTML=_errHtml(e.message);}
+    }catch(e){el.innerHTML=App._errHtml(e.message);}
   }
 
   async function _renderMemberList(el){
@@ -1366,7 +1474,7 @@ const AdminApp=(()=>{
   }
 
   function _renderMemberCards(list){
-    if(!list.length)return _emptyHtml('👥','找不到符合的會員','');
+    if(!list.length)return App._emptyHtml('👥','找不到符合的會員','');
     return list.map(function(m,idx){
       const daysLeft=m.expireDate?Math.ceil((new Date(m.expireDate)-new Date())/86400000):null;
       const isExpired=daysLeft!==null&&daysLeft<=0;
@@ -1431,17 +1539,17 @@ const AdminApp=(()=>{
   async function switchReceiptTab(tab,btnEl){
     if(btnEl){document.querySelectorAll('#page-receipt-admin .tab-btn').forEach(b=>b.classList.remove('active'));btnEl.classList.add('active');}
     const el=document.getElementById('receipt-admin-container');if(!el)return;
-    el.innerHTML=_skelHtml();
+    el.innerHTML=App._skelHtml();
     try{
       _receiptData=await API.get('getPendingReceipts').catch(()=>({fees:[],donations:[],completedFees:[],completedDonations:[]}));
       if(tab==='pending-fee') _renderReceiptList(el,_receiptData.fees||[],'fee');
       else if(tab==='pending-donation') _renderReceiptList(el,_receiptData.donations||[],'donation');
       else _renderCompletedReceipts(el,_receiptData);
-    }catch(e){el.innerHTML=_errHtml(e.message);}
+    }catch(e){el.innerHTML=App._errHtml(e.message);}
   }
 
   function _renderReceiptList(el,list,type){
-    if(!list.length){el.innerHTML=_emptyHtml('🧾','目前無待審收據','');return;}
+    if(!list.length){el.innerHTML=App._emptyHtml('🧾','目前無待審收據','');return;}
     el.innerHTML='<div style="padding:18px">'+list.map(function(r,idx){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.name||'--')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-orange')+'">'+_esc(r.status||'--')+'</span></div>'+
@@ -1465,7 +1573,7 @@ const AdminApp=(()=>{
     const feeList=(data.completedFees||[]).map(x=>Object.assign({__type:'fee'},x));
     const donList=(data.completedDonations||[]).map(x=>Object.assign({__type:'donation'},x));
     const list=feeList.concat(donList);
-    if(!list.length){el.innerHTML=_emptyHtml('✅','尚無已完成收據','');return;}
+    if(!list.length){el.innerHTML=App._emptyHtml('✅','尚無已完成收據','');return;}
     el.innerHTML='<div style="padding:18px">'+list.map(function(r){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.name||'--')+'</span><span class="tag tag-green">已完成</span></div>'+
@@ -1528,45 +1636,30 @@ const AdminApp=(()=>{
       const data=await API.get('getPendingReceipts');
       const list=type==='fee'?(data.completedFees||[]):(data.completedDonations||[]);
       const r=list.find(x=>String(x.id)===String(id));
-      if(!r||!r.officialReceipt){Toast.warning('找不到正式收據資料');return;}
+      if(!r||!r.officialReceipt){
+        Toast.warning('找不到正式收據資料');
+        return;
+      }
       const d=r.officialReceipt;
+      const isFee=type==='fee';
       const cid='admin-official-receipt-content';
       Modal.show(
-        '<div class="modal-title">🧾 正式收據</div>'+
-        '<div class="receipt-wrap" id="'+cid+'" style="border:2px solid #000;padding:24px;background:#fff">'+
-          '<div class="receipt-head" style="border-bottom:2px solid #000;padding-bottom:14px">'+
-            '<div class="receipt-org" style="font-size:24px;color:#000">'+_esc(d.org||CFG.org)+'</div>'+
-            '<div class="receipt-title" style="font-size:20px;color:#000">'+(type==='fee'?'正式繳費收據':'正式捐款收據')+'</div>'+
-            '<div class="receipt-no">收據編號：'+_esc(d.receiptNo||'--')+'</div>'+
-          '</div>'+
-          '<div class="receipt-row"><span class="receipt-row-lbl">姓名</span><span class="receipt-row-val">'+_esc(d.name||'--')+'</span></div>'+
-          (type==='fee'
-            ?'<div class="receipt-row"><span class="receipt-row-lbl">會員類型</span><span class="receipt-row-val">'+_esc(d.memberType||'--')+'</span></div><div class="receipt-row"><span class="receipt-row-lbl">有效期限</span><span class="receipt-row-val">'+_esc(d.expireDate||'--')+'</span></div>'
-            :'<div class="receipt-row"><span class="receipt-row-lbl">捐款用途</span><span class="receipt-row-val">'+_esc(d.purpose||'一般捐款')+'</span></div>')+
-          '<div class="receipt-row"><span class="receipt-row-lbl">收款日期</span><span class="receipt-row-val">'+_esc(d.date||'--')+'</span></div>'+
-          '<div class="receipt-row"><span class="receipt-row-lbl">付款方式</span><span class="receipt-row-val">'+_esc(d.method||'--')+'</span></div>'+
-          '<div class="receipt-row"><span class="receipt-row-lbl">確認人</span><span class="receipt-row-val">'+_esc(d.confirmBy||'--')+'</span></div>'+
-          '<div class="receipt-total" style="background:#F5F5F5;border:1px solid #000"><div class="receipt-total-lbl" style="color:#000">收款金額</div><div class="receipt-total-amt" style="color:#000">'+_fmtMoney(d.amount||0)+'</div></div>'+
-          (function(){
-            const s=(CFG&&CFG.seals)?CFG.seals:{};
-            function sealBox(label,imgUrl){
-              if(imgUrl){
-                return '<div style="border:1.5px solid #D1D5DB;border-radius:12px;padding:12px;text-align:center;background:#fff;min-height:130px;display:flex;flex-direction:column;justify-content:center;align-items:center"><div style="font-size:var(--fs-sm);font-weight:700;color:#374151;margin-bottom:8px">'+label+'</div><img src="'+_esc(imgUrl)+'" alt="'+_esc(label)+'" style="max-width:100%;max-height:80px;object-fit:contain"></div>';
-              }
-              return '<div style="border:2px dashed #B91C1C;border-radius:12px;padding:16px;text-align:center;color:#B91C1C;background:#FFF5F5;min-height:130px;display:flex;flex-direction:column;justify-content:center"><div style="font-weight:700;font-size:18px">'+label+'</div><div style="margin-top:10px;font-size:var(--fs-sm)">（章圖位置）</div></div>';
-            }
-            return '<div style="margin-top:24px;border-top:2px dashed #999;padding-top:18px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'+sealBox('經辦章',s.handler||'')+sealBox('會計章',s.accountant||'')+sealBox('理事長章',s.chairman||'')+sealBox('單位章',s.org||'')+'</div></div>';
-          })()+
-        '</div>'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">關閉</button><button class="btn btn-success btn-full" onclick="PrintHelper.print(\''+cid+'\')">🖨️ 列印</button></div>'
+        '<div class="modal-title">🧾 '+(isFee?'正式繳費收據':'正式捐款收據')+'</div>'+
+        _buildProfessionalReceiptHtml(d,isFee,cid)+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px">'+
+          '<button class="btn btn-secondary btn-full" onclick="Modal.close()">關閉</button>'+
+          '<button class="btn btn-success btn-full" onclick="PrintHelper.print(\''+cid+'\')">🖨️ 列印</button>'+
+        '</div>'
       );
-    }catch(e){Toast.error(e.message);}
+    }catch(e){
+      Toast.error(e.message);
+    }
   }
 
   async function switchExpenseTab(tab,btnEl){
     if(btnEl){document.querySelectorAll('#page-expense-admin .tab-btn').forEach(b=>b.classList.remove('active'));btnEl.classList.add('active');}
     const el=document.getElementById('expense-admin-container');if(!el)return;
-    el.innerHTML=_skelHtml();
+    el.innerHTML=App._skelHtml();
     try{
       _expenseFlow=await API.get('getPendingExpenseWorkflow').catch(()=>({submitted:[],waitSignature:[],waitReceive:[],waitPayment:[]}));
       _expenseAll=await API.get('getExpenseHistory').catch(()=>([]));
@@ -1577,11 +1670,11 @@ const AdminApp=(()=>{
       else if(tab==='wait-pay') _renderExpenseStage(el,_expenseFlow.waitPayment||[],'wait-pay');
       else if(tab==='all') _renderExpenseAll(el);
       else _renderVoucherList(el);
-    }catch(e){el.innerHTML=_errHtml(e.message);}
+    }catch(e){el.innerHTML=App._errHtml(e.message);}
   }
 
   function _renderExpenseStage(el,list,stage){
-    if(!list.length){el.innerHTML=_emptyHtml('📤','目前無資料','');return;}
+    if(!list.length){el.innerHTML=App._emptyHtml('📤','目前無資料','');return;}
     el.innerHTML='<div style="padding:18px">'+list.map(function(r){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.description||'--')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-grey')+'">'+_esc(r.status||'--')+'</span></div>'+
@@ -1606,7 +1699,7 @@ const AdminApp=(()=>{
   }
 
   function _renderExpenseAll(el){
-    if(!_expenseAll.length){el.innerHTML=_emptyHtml('📤','尚無支出記錄','');return;}
+    if(!_expenseAll.length){el.innerHTML=App._emptyHtml('📤','尚無支出記錄','');return;}
     el.innerHTML='<div style="padding:18px">'+_expenseAll.map(function(r){
       return '<div class="card"><div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-md)">'+_esc(r.description||'--')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-grey')+'">'+_esc(r.status||'--')+'</span></div>'+_row('申請人',r.submitterName||'--')+_row('金額',_fmtMoney(r.amount),'font-bold color-orange')+_row('日期',r.date||'--')+_row('類別',r.category||'--')+'</div>';
     }).join('')+'</div>';
@@ -1701,7 +1794,7 @@ const AdminApp=(()=>{
   }
 
   function _renderVoucherList(el){
-    if(!_voucherList.length){el.innerHTML=_emptyHtml('📄','尚無傳票','');return;}
+    if(!_voucherList.length){el.innerHTML=App._emptyHtml('📄','尚無傳票','');return;}
     el.innerHTML='<div style="padding:18px">'+_voucherList.map(function(v,idx){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-md)">傳票 #'+_esc(v.voucherNo||v.id||String(idx+1))+'</span><span class="tag tag-green">'+_esc(v.status||'已撥款')+'</span></div>'+
@@ -1754,13 +1847,13 @@ const AdminApp=(()=>{
   async function switchReportTab(tab,btnEl){
     if(btnEl){document.querySelectorAll('#page-report .tab-btn').forEach(b=>b.classList.remove('active'));btnEl.classList.add('active');}
     const el=document.getElementById('report-container');if(!el)return;
-    el.innerHTML=_skelHtml();
+    el.innerHTML=App._skelHtml();
     try{
       if(tab==='balance') await _renderBalanceReport(el);
       else if(tab==='income') await _renderIncomeReport(el);
       else if(tab==='expense') await _renderExpenseReport(el);
       else await _renderMemberReport(el);
-    }catch(e){el.innerHTML=_errHtml(e.message);}
+    }catch(e){el.innerHTML=App._errHtml(e.message);}
   }
 
   async function _renderBalanceReport(el){
