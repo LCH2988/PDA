@@ -472,6 +472,22 @@ textarea.form-control{resize:vertical;min-height:96px;}
       <div id="expense-admin-container"></div>
     </div>
 
+    <div class="page" id="page-income-admin">
+      <div class="section" style="padding-bottom:0">
+        <div class="section-title">💰 收入管理</div>
+        <div class="tabs">
+          <button class="tab-btn active" onclick="AdminApp.switchIncomeTab('all',this)">📋 全部收入</button>
+          <button class="tab-btn" onclick="AdminApp.switchIncomeTab('pending',this)">⏳ 待審核</button>
+          <button class="tab-btn" onclick="AdminApp.switchIncomeTab('summary',this)">📊 摘要</button>
+        </div>
+        <div style="padding:0 0 18px 0">
+          <button class="btn btn-primary btn-full" onclick="AdminApp.showAdminIncomeModal()">➕ 新增收入</button>
+          <button class="btn btn-orange btn-full mt-8" onclick="AdminApp.showAdminExpenseModal()">➕ 新增支出</button>
+        </div>
+      </div>
+      <div id="income-admin-container"></div>
+    </div>
+
     <div class="page" id="page-report">
       <div class="section" style="padding-bottom:0">
         <div class="section-title">📊 財務報表</div>
@@ -491,7 +507,7 @@ textarea.form-control{resize:vertical;min-height:96px;}
 
 <script>
 const CFG={
-  gasUrl:'https://script.google.com/macros/s/AKfycbwFD3JxQXQrrWOK775sNwNTe-G7BPc32seGB6g7PFlUy9eeqaNDFDYQogGtrh-0MWE/exec',
+  gasUrl:'https://script.google.com/macros/s/AKfycbxKwS_QEeF3jvAJ6KesVk2jadLNWLOsiuj37IFliGLdksfHIXyuowXZJnhfNFVVxGzx/exec',
   liffId:'2009456572-588gzru4',
   org:'社團法人台灣帕金森病友權益促進會',
   remitInfo:{
@@ -517,6 +533,19 @@ const _phoneOk=p=>/^09\d{8}$/.test((p||'').replace(/[\s-]/g,''));
 const _fmtSize=b=>!b?'0 B':b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB';
 const MIME_ICON={'image/jpeg':'🖼️','image/png':'🖼️','image/webp':'🖼️','application/pdf':'📄'};
 const _mimeIcon=t=>MIME_ICON[t]||'📎';
+const _fmtDate=v=>{
+  if(!v)return '--';
+  const s=String(v).trim();
+  if(!s)return '--';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if(/^\d{4}-\d{2}-\d{2}\s/.test(s)) return s.slice(0,10);
+  const d=new Date(s.replace(/-/g,'/'));
+  if(isNaN(d.getTime())) return s.slice(0,10);
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
+};
 
 const STATUS_TAG={
   '待會員發送':'tag-grey',
@@ -544,6 +573,7 @@ const NAV_ADMIN=[
   {id:'members',icon:'👥',label:'會員'},
   {id:'receipt-admin',icon:'🧾',label:'收據'},
   {id:'expense-admin',icon:'📤',label:'支出'},
+  {id:'income-admin',icon:'💰',label:'收入'},
   {id:'report',icon:'📊',label:'報表'},
 ];
 
@@ -606,13 +636,8 @@ function _buildProfessionalReceiptHtml(d,isFee,receiptId){
   const upperAmt=_moneyToZhUpper(d.amount||0);
 
   function sealBlock(label,imgUrl,isOrg){
-    const wrapStyle=isOrg
-      ?'width:160px;height:160px;'
-      :'width:92px;height:92px;';
-    const imgStyle=isOrg
-      ?'max-width:140px;max-height:140px;'
-      :'max-width:74px;max-height:74px;';
-
+    const wrapStyle=isOrg?'width:160px;height:160px;':'width:92px;height:92px;';
+    const imgStyle=isOrg?'max-width:140px;max-height:140px;':'max-width:74px;max-height:74px;';
     if(imgUrl){
       return ''+
         '<div style="display:flex;flex-direction:column;align-items:center;gap:8px">'+
@@ -622,7 +647,6 @@ function _buildProfessionalReceiptHtml(d,isFee,receiptId){
           '</div>'+
         '</div>';
     }
-
     return ''+
       '<div style="display:flex;flex-direction:column;align-items:center;gap:8px">'+
         '<div style="font-size:14px;font-weight:700;color:#374151">'+label+'</div>'+
@@ -648,19 +672,19 @@ function _buildProfessionalReceiptHtml(d,isFee,receiptId){
           (isFee
             ?'<tr>'+
               '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">有效期限</td>'+
-              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.expireDate||'--')+'</td>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(_fmtDate(d.expireDate)||'--')+'</td>'+
               '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">付款方式</td>'+
               '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.method||'--')+'</td>'+
             '</tr>'
             :'<tr>'+
               '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">收款日期</td>'+
-              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.date||'--')+'</td>'+
+              '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(_fmtDate(d.date)||'--')+'</td>'+
               '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">付款方式</td>'+
               '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.method||'--')+'</td>'+
             '</tr>')+
           '<tr>'+
             '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">收款日期</td>'+
-            '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(d.date||'--')+'</td>'+
+            '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;">'+_esc(_fmtDate(d.date)||'--')+'</td>'+
             '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-weight:700;">確認人</td>'+
             '<td style="padding:14px 10px;border-bottom:1px solid #E5E7EB;font-weight:700;text-align:right;word-break:break-all;">'+_esc(d.confirmBy||'--')+'</td>'+
           '</tr>'+
@@ -945,15 +969,14 @@ const App=(()=>{
       body+
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'+
         '<button class="btn btn-secondary btn-full" onclick="Modal.close()">關閉</button>'+
-        '<button class="btn btn-outline btn-full" onclick="App.openAttachment(\''+_esc(preview)+'\')">新分頁</button>'+
-        '<button class="btn btn-primary btn-full" onclick="App.openAttachment(\''+_esc(download)+'\')">下載</button>'+
+        '<button class="btn btn-outline btn-full" onclick="App.openAttachmentByEncoded(\''+encodeURIComponent(preview)+'\')">新分頁</button>'+
+        '<button class="btn btn-primary btn-full" onclick="App.openAttachmentByEncoded(\''+encodeURIComponent(download)+'\')">下載</button>'+
       '</div>'
     );
   }
   function _attachPreview(list){
     if(!list||!list.length)return '<div style="font-size:var(--fs-sm);color:var(--grey5)">無附件</div>';
     return '<div class="attach-view-list">'+list.map(function(a,idx){
-      const download=a.downloadUrl||a.url||'';
       const key=encodeURIComponent(JSON.stringify(a));
       return '<div class="attach-view-item">'+
         '<div style="font-size:24px">'+_mimeIcon(a.mimeType)+'</div>'+
@@ -962,7 +985,6 @@ const App=(()=>{
           '<div class="attach-view-sub">'+_esc(a.mimeType||'')+' · '+_fmtSize(a.size||0)+'</div>'+
         '</div>'+
         '<button class="btn btn-outline btn-sm" onclick="App.previewAttachment(\''+key+'\')">預覽</button>'+
-        '<button class="btn btn-secondary btn-sm" onclick="App.openAttachment(\''+_esc(download)+'\')">下載</button>'+
       '</div>';
     }).join('')+'</div>';
   }
@@ -1030,6 +1052,7 @@ const App=(()=>{
       if(pageId==='members') AdminApp.switchMemberTab('list');
       if(pageId==='receipt-admin') AdminApp.switchReceiptTab('pending-fee');
       if(pageId==='expense-admin') AdminApp.switchExpenseTab('submitted');
+      if(pageId==='income-admin') AdminApp.switchIncomeTab('all');
       if(pageId==='report') AdminApp.switchReportTab('balance');
     }else{
       if(pageId==='fee') _loadFeeList();
@@ -1054,7 +1077,8 @@ const App=(()=>{
   }
 
   function _renderProfile(d){
-    const daysLeft=d.expireDate?Math.ceil((new Date(d.expireDate)-new Date())/86400000):null;
+    const expireDate=d.expireDate?_fmtDate(d.expireDate):'';
+    const daysLeft=expireDate?Math.ceil((new Date(expireDate)-new Date(_today()))/86400000):null;
     const isExpired=daysLeft!==null&&daysLeft<=0;
     const statusColor=isExpired?'var(--red)':(daysLeft!==null&&daysLeft<=30?'var(--amber)':'var(--green)');
     const statusText=daysLeft===null?'--':isExpired?'⚠️ 已到期':daysLeft<=30?'⚠️ 剩 '+daysLeft+' 天':'✅ 剩 '+daysLeft+' 天';
@@ -1065,7 +1089,14 @@ const App=(()=>{
     document.getElementById('top-status').textContent=_isAdmin?'管理員後台':isExpired?'⚠️ 會籍已到期':(daysLeft!==null&&daysLeft<=30?'⚠️ 會籍剩 '+daysLeft+' 天':'✅ 會籍有效');
     _html('profile-card',
       '<div class="card-header"><div class="card-icon" style="background:var(--primary-l)">👤</div><div><div class="card-title">'+_esc(d.name||'未設定姓名')+'</div><div class="card-sub">'+_esc(d.memberType||'一般會員')+'</div></div></div>'+
-      _row('暱稱',d.nickname||'--')+_row('電話',d.phone||'--')+_row('Email',d.email||'--')+_row('生日',d.birthday||'--')+_row('加入日期',d.joinDate||'--')+_row('到期日期',d.expireDate||'--')+
+      _row('暱稱',d.nickname||'--')+
+      _row('電話',d.phone||'--')+
+      _row('Email',d.email||'--')+
+      _row('生日',_fmtDate(d.birthday))+
+      _row('確診年份',d.diagnosisYear||'--')+
+      _row('主治醫師',d.doctor||'--')+
+      _row('加入日期',_fmtDate(d.joinDate))+
+      _row('到期日期',_fmtDate(d.expireDate))+
       '<div class="info-row"><span class="info-label">會籍狀態</span><span class="info-value font-bold" style="color:'+statusColor+'">'+statusText+'</span></div>'+
       _row('累計繳費',_fmtMoney(d.totalPaid||0))
     );
@@ -1076,7 +1107,8 @@ const App=(()=>{
   }
 
   function _renderFeeStatus(d){
-    const daysLeft=d.expireDate?Math.ceil((new Date(d.expireDate)-new Date())/86400000):null;
+    const expireDate=d.expireDate?_fmtDate(d.expireDate):'';
+    const daysLeft=expireDate?Math.ceil((new Date(expireDate)-new Date(_today()))/86400000):null;
     const isExpired=daysLeft!==null&&daysLeft<=0;
     let bgColor,borderColor,textColor,subColor,statusText;
     if(isExpired){bgColor='#FEE2E2';borderColor='#FECACA';textColor='#991B1B';subColor='#B91C1C';statusText='⚠️ 會籍已到期';}
@@ -1088,7 +1120,7 @@ const App=(()=>{
       '<div style="font-size:var(--fs-sm);color:'+subColor+';margin-bottom:6px;font-weight:700">會籍狀態</div>'+
       '<div style="font-size:var(--fs-xl);font-weight:700;color:'+textColor+'">'+statusText+'</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px">'+
-      '<div style="background:rgba(255,255,255,.75);border-radius:12px;padding:14px;border:1px solid '+borderColor+'"><div style="font-size:var(--fs-lg);font-weight:700;color:'+textColor+'">'+_esc(d.expireDate||'--')+'</div><div style="font-size:var(--fs-sm);color:'+subColor+';margin-top:4px;font-weight:600">到期日期</div></div>'+
+      '<div style="background:rgba(255,255,255,.75);border-radius:12px;padding:14px;border:1px solid '+borderColor+'"><div style="font-size:var(--fs-lg);font-weight:700;color:'+textColor+'">'+_esc(_fmtDate(d.expireDate)||'--')+'</div><div style="font-size:var(--fs-sm);color:'+subColor+';margin-top:4px;font-weight:600">到期日期</div></div>'+
       '<div style="background:rgba(255,255,255,.75);border-radius:12px;padding:14px;border:1px solid '+borderColor+'"><div style="font-size:var(--fs-lg);font-weight:700;color:'+textColor+'">'+_fmtMoney(d.totalPaid||0)+'</div><div style="font-size:var(--fs-sm);color:'+subColor+';margin-top:4px;font-weight:600">累計繳費</div></div>'+
       '</div></div>'
     );
@@ -1101,11 +1133,31 @@ const App=(()=>{
       _fg('姓名',true,'<input id="ep-name" class="form-control" value="'+_esc(d.name||'')+'" placeholder="請輸入真實姓名">')+
       _fg('暱稱',false,'<input id="ep-nickname" class="form-control" value="'+_esc(d.nickname||'')+'" placeholder="顯示用暱稱">')+
       '<div class="form-row">'+
-      _fg('電話',false,'<input id="ep-phone" class="form-control" type="tel" value="'+_esc(d.phone||'')+'" placeholder="09xxxxxxxx">')+
-      _fg('Email',false,'<input id="ep-email" class="form-control" type="email" value="'+_esc(d.email||'')+'" placeholder="example@email.com">')+
+        _fg('電話',false,'<input id="ep-phone" class="form-control" type="tel" value="'+_esc(d.phone||'')+'" placeholder="09xxxxxxxx">')+
+        _fg('Email',false,'<input id="ep-email" class="form-control" type="email" value="'+_esc(d.email||'')+'" placeholder="example@email.com">')+
       '</div>'+
-      _fg('生日',false,'<input id="ep-birthday" class="form-control" type="date" value="'+_esc(d.birthday||'')+'">')+
-      '<div style="display:flex;gap:12px;margin-top:10px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button><button class="btn btn-primary btn-full" id="ep-submit-btn" onclick="App._submitEditProfile()">💾 儲存</button></div>'
+      '<div class="form-row">'+
+        _fg('生日',false,'<input id="ep-birthday" class="form-control" type="date" value="'+_esc(_fmtDate(d.birthday)==='--'?'':_fmtDate(d.birthday))+'">')+
+        _fg('確診年份',false,'<input id="ep-diagnosisYear" class="form-control" type="number" value="'+_esc(d.diagnosisYear||'')+'" placeholder="例：2020">')+
+      '</div>'+
+      _fg('主治醫師',false,'<input id="ep-doctor" class="form-control" value="'+_esc(d.doctor||'')+'" placeholder="請輸入主治醫師">')+
+      '<div class="form-row">'+
+        _fg('是否做過手術',false,
+          '<select id="ep-surgeryType" class="form-control">'+
+            '<option value="">請選擇</option>'+
+            '<option value="是"'+((d.surgeryType||'')==='是'?' selected':'')+'>是</option>'+
+            '<option value="否"'+((d.surgeryType||'')==='否'?' selected':'')+'>否</option>'+
+          '</select>'
+        )+
+        _fg('手術名稱',false,'<input id="ep-surgeryOther" class="form-control" value="'+_esc(d.surgeryOther||'')+'" placeholder="請輸入手術名稱">')+
+      '</div>'+
+      _fg('最大困擾',false,'<textarea id="ep-mainTrouble" class="form-control" rows="2">'+_esc(d.mainTrouble||'')+'</textarea>')+
+      _fg('最常做的運動',false,'<input id="ep-exercise" class="form-control" value="'+_esc(d.exercise||'')+'" placeholder="例如：散步、瑜珈">')+
+      _fg('備註',false,'<textarea id="ep-note" class="form-control" rows="2">'+_esc(d.note||'')+'</textarea>')+
+      '<div style="display:flex;gap:12px;margin-top:10px">'+
+        '<button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button>'+
+        '<button class="btn btn-primary btn-full" id="ep-submit-btn" onclick="App._submitEditProfile()">💾 儲存</button>'+
+      '</div>'
     );
   }
 
@@ -1113,13 +1165,38 @@ const App=(()=>{
     const name=_v('ep-name'),phone=_v('ep-phone');
     if(!name){Toast.warning('請填寫姓名');return;}
     if(phone&&!_phoneOk(phone)){Toast.warning('電話格式不正確（09 開頭 10 碼）');return;}
-    const btn=document.getElementById('ep-submit-btn');if(btn){btn.disabled=true;btn.textContent='儲存中…';}
+
+    const btn=document.getElementById('ep-submit-btn');
+    if(btn){btn.disabled=true;btn.textContent='儲存中…';}
+
     try{
-      const r=await API.post('updateMemberProfile',{name:name,nickname:_v('ep-nickname'),phone:phone,email:_v('ep-email'),birthday:_v('ep-birthday')});
-      if(r&&r.success){Toast.success('資料更新成功！');Modal.close();await _loadMemberData();}
-      else Toast.error(r.message||'更新失敗');
-    }catch(e){Toast.error(e.message);}
-    finally{if(btn){btn.disabled=false;btn.textContent='💾 儲存';}}
+      const r=await API.post('updateMemberProfile',{
+        name:name,
+        nickname:_v('ep-nickname'),
+        phone:phone,
+        email:_v('ep-email'),
+        birthday:_v('ep-birthday'),
+        diagnosisYear:_v('ep-diagnosisYear'),
+        doctor:_v('ep-doctor'),
+        surgeryType:_v('ep-surgeryType'),
+        surgeryOther:_v('ep-surgeryOther'),
+        mainTrouble:_v('ep-mainTrouble'),
+        exercise:_v('ep-exercise'),
+        note:_v('ep-note')
+      });
+
+      if(r&&r.success){
+        Toast.success('資料更新成功！');
+        Modal.close();
+        await _loadMemberData();
+      }else{
+        Toast.error(r.message||'更新失敗');
+      }
+    }catch(e){
+      Toast.error(e.message);
+    }finally{
+      if(btn){btn.disabled=false;btn.textContent='💾 儲存';}
+    }
   }
 
   async function _loadFeeList(){
@@ -1136,7 +1213,7 @@ const App=(()=>{
     el.innerHTML=_feeList.map(function(r,idx){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.memberType||'一般會員')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-grey')+'">'+_esc(r.status||'--')+'</span></div>'+
-        _row('金額',_fmtMoney(r.amount))+_row('繳費日期',r.date||'--')+_row('到期日',r.expireDate||'--')+_row('方式',r.method||'--')+_row('收據編號',r.receiptNo||r.id||'--')+
+        _row('金額',_fmtMoney(r.amount))+_row('繳費日期',_fmtDate(r.date))+_row('到期日',_fmtDate(r.expireDate))+_row('方式',r.method||'--')+_row('收據編號',r.receiptNo||r.id||'--')+
         (r.attachments&&r.attachments.length?'<div style="margin-top:10px"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">📎 附件</div>'+_attachPreview(r.attachments)+'</div>':'')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">'+
         (r.canSend?'<button class="btn btn-primary btn-sm" onclick="App.sendFeeReceipt(\''+r.id+'\')">📨 送審</button>':'<button class="btn btn-secondary btn-sm" disabled>已送審</button>')+
@@ -1203,7 +1280,7 @@ const App=(()=>{
     el.innerHTML=_donateList.map(function(r,idx){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.purpose||'一般捐款')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-grey')+'">'+_esc(r.status||'--')+'</span></div>'+
-        _row('金額',_fmtMoney(r.amount),'color-purple font-bold')+_row('日期',r.date||'--')+_row('方式',r.method||'--')+_row('收據編號',r.receiptNo||r.id||'--')+
+        _row('金額',_fmtMoney(r.amount),'color-purple font-bold')+_row('日期',_fmtDate(r.date))+_row('方式',r.method||'--')+_row('收據編號',r.receiptNo||r.id||'--')+
         (r.attachments&&r.attachments.length?'<div style="margin-top:10px"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">📎 附件</div>'+_attachPreview(r.attachments)+'</div>':'')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">'+
         (r.canSend?'<button class="btn btn-primary btn-sm" onclick="App.sendDonateReceipt(\''+r.id+'\')">📨 送審</button>':'<button class="btn btn-secondary btn-sm" disabled>已送審</button>')+
@@ -1289,7 +1366,7 @@ const App=(()=>{
     el.innerHTML=_expenseUserList.map(function(r,idx){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.description||'--')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-grey')+'">'+_esc(r.status||'--')+'</span></div>'+
-        _row('類別',r.category||'--')+_row('金額',_fmtMoney(r.amount),'font-bold color-orange')+_row('日期',r.date||'--')+_row('付款方式',r.method||'--')+_row('收款人',r.payee||'--')+
+        _row('類別',r.category||'--')+_row('金額',_fmtMoney(r.amount),'font-bold color-orange')+_row('日期',_fmtDate(r.date))+_row('付款方式',r.method||'--')+_row('收款人',r.payee||'--')+
         (r.originalAttachments&&r.originalAttachments.length?'<div style="margin-top:10px"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">📎 原始附件</div>'+_attachPreview(r.originalAttachments)+'</div>':'')+
         (r.formalVoucher?'<div style="margin-top:10px;padding:12px;border:1px solid #E5E7EB;border-radius:12px;background:#FAFAFA"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">🧾 正式支出憑證</div><div style="font-size:var(--fs-sm);color:var(--grey5)">已建立，可列印後簽名並上傳</div><button class="btn btn-outline btn-sm mt-8" onclick="App.showFormalExpenseVoucher('+idx+')">查看 / 列印憑證</button></div>':'')+
         (r.signedVoucher&&r.signedVoucher.length?'<div style="margin-top:10px"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">✍️ 已上傳簽名文件</div>'+_attachPreview(r.signedVoucher)+'</div>':'')+
@@ -1311,7 +1388,7 @@ const App=(()=>{
         '<tr><th>支出類別</th><td>'+_esc(v.category||'--')+'</td></tr>'+
         '<tr><th>支出說明</th><td>'+_esc(v.description||'--')+'</td></tr>'+
         '<tr><th>金額</th><td>'+_fmtMoney(v.amount||0)+'</td></tr>'+
-        '<tr><th>支出日期</th><td>'+_esc(v.expenseDate||'--')+'</td></tr>'+
+        '<tr><th>支出日期</th><td>'+_esc(_fmtDate(v.expenseDate)||'--')+'</td></tr>'+
         '<tr><th>付款方式</th><td>'+_esc(v.method||'--')+'</td></tr>'+
         '<tr><th>收款人</th><td>'+_esc(v.payee||'--')+'</td></tr>'+
         '</tbody></table>'+
@@ -1394,6 +1471,14 @@ const App=(()=>{
     showContactInfo,showAbout,
     removeAttach,_bindFileInput,_renderAttachList,
     openAttachment:_openUrl,
+    openAttachmentByEncoded:function(encoded){
+      try{
+        const url=decodeURIComponent(encoded);
+        _openUrl(url);
+      }catch(e){
+        Toast.error('網址解析失敗');
+      }
+    },
     previewAttachment:function(encoded){
       try{
         const att=JSON.parse(decodeURIComponent(encoded));
@@ -1409,7 +1494,8 @@ const App=(()=>{
 
 const AdminApp=(()=>{
   const _fg=App._fg,_row=App._row,_skelHtml=App._skelHtml,_errHtml=App._errHtml,_emptyHtml=App._emptyHtml,_summaryItem=App._summaryItem,_attachPreview=App._attachPreview;
-  let _allMembers=[],_receiptData=null,_expenseFlow=null,_expenseAll=[],_voucherList=[];
+  let _allMembers=[],_receiptData=null,_expenseFlow=null,_expenseAll=[],_voucherList=[],_incomeAll=[],_incomePending=[],_incomeSummary=null;
+  let _adminIncomeAttachments=[],_adminExpenseAttachments=[];
 
   function _kpi(num,label,icon){
     return '<div class="admin-kpi"><div style="font-size:26px;margin-bottom:6px">'+icon+'</div><div class="admin-kpi-num">'+num+'</div><div class="admin-kpi-label">'+label+'</div></div>';
@@ -1425,22 +1511,23 @@ const AdminApp=(()=>{
     const el=document.getElementById('dashboard-container');if(!el)return;
     el.innerHTML=App._skelHtml();
     try{
-      const [receipts,expenseFlow,members,expenseAll]=await Promise.all([
+      const [receipts,expenseFlow,members,expenseAll,incomeSummary]=await Promise.all([
         API.get('getPendingReceipts').catch(()=>({fees:[],donations:[],total:0})),
         API.get('getPendingExpenseWorkflow').catch(()=>({submitted:[],waitSignature:[],waitReceive:[],waitPayment:[],total:0})),
         API.get('getMemberList').catch(()=>([])),
-        API.get('getExpenseHistory').catch(()=>([]))
+        API.get('getExpenseHistory').catch(()=>([])),
+        API.get('getIncomeSummary').catch(()=>({approved:0,pending:0,pendingCount:0}))
       ]);
-      const activeMembers=members.filter(m=>m.expireDate&&new Date(m.expireDate)>new Date()).length;
-      const expiringSoon=members.filter(m=>m.expireDate&&(()=>{const d=Math.ceil((new Date(m.expireDate)-new Date())/86400000);return d>0&&d<=30;})()).length;
+      const activeMembers=members.filter(m=>m.expireDate&&new Date(_fmtDate(m.expireDate))>new Date(_today())).length;
+      const expiringSoon=members.filter(m=>m.expireDate&&(()=>{const d=Math.ceil((new Date(_fmtDate(m.expireDate))-new Date(_today()))/86400000);return d>0&&d<=30;})()).length;
       const paidExpenses=expenseAll.filter(r=>r.status==='已撥款').reduce((s,r)=>s+Number(r.amount||0),0);
 
       el.innerHTML=
-        '<div class="admin-hero"><div class="admin-hero-title">🏠 協會概況</div><div class="admin-hero-sub">'+new Date().toLocaleDateString('zh-TW',{year:'numeric',month:'long',day:'numeric'})+'</div><div class="admin-kpi-grid">'+
+        '<div class="admin-hero"><div class="admin-hero-title">🏠 協會概況</div><div class="admin-hero-sub">'+_fmtDate(new Date())+'</div><div class="admin-kpi-grid">'+
         _kpi((receipts.total||0)+' 筆','待確認收據','🧾')+
         _kpi((expenseFlow.submitted||[]).length+' 筆','待審查支出','📤')+
         _kpi((expenseFlow.waitReceive||[]).length+' 筆','待收件支出','📬')+
-        _kpi((expenseFlow.waitPayment||[]).length+' 筆','待撥款支出','💸')+
+        _kpi((incomeSummary.pendingCount||0)+' 筆','待審核收入','💰')+
         '</div></div>'+
         '<div style="padding:18px"><div class="stat-grid">'+
         _statCard(members.length,'全部會員','👥','var(--primary)')+
@@ -1450,7 +1537,7 @@ const AdminApp=(()=>{
         '</div><div class="card">'+
         _pendingItem('🧾 收據待確認',(receipts.total||0)+' 筆','receipt-admin')+
         _pendingItem('📤 支出待審查',(expenseFlow.submitted||[]).length+' 筆','expense-admin')+
-        _pendingItem('📬 待確認收件',(expenseFlow.waitReceive||[]).length+' 筆','expense-admin')+
+        _pendingItem('💰 收入待審核',(incomeSummary.pendingCount||0)+' 筆','income-admin')+
         _pendingItem('💸 待撥款',(expenseFlow.waitPayment||[]).length+' 筆','expense-admin')+
         '</div></div>';
     }catch(e){el.innerHTML=App._errHtml(e.message);}
@@ -1476,7 +1563,8 @@ const AdminApp=(()=>{
   function _renderMemberCards(list){
     if(!list.length)return App._emptyHtml('👥','找不到符合的會員','');
     return list.map(function(m,idx){
-      const daysLeft=m.expireDate?Math.ceil((new Date(m.expireDate)-new Date())/86400000):null;
+      const d0=m.expireDate?_fmtDate(m.expireDate):'';
+      const daysLeft=d0?Math.ceil((new Date(d0)-new Date(_today()))/86400000):null;
       const isExpired=daysLeft!==null&&daysLeft<=0;
       const statusColor=isExpired?'var(--red)':(daysLeft!==null&&daysLeft<=30?'var(--amber)':'var(--green)');
       const statusText=daysLeft===null?'未設定':isExpired?'已到期':daysLeft<=30?'剩'+daysLeft+'天':'有效';
@@ -1492,7 +1580,7 @@ const AdminApp=(()=>{
 
   function showMemberDetail(idx){
     const m=_allMembers[idx];if(!m)return;
-    Modal.show('<div class="modal-title">👤 會員詳情</div><div class="card">'+_row('姓名',m.name||'--')+_row('暱稱',m.nickname||'--')+_row('電話',m.phone||'--')+_row('Email',m.email||'--')+_row('生日',m.birthday||'--')+_row('會員類型',m.memberType||'--')+_row('加入日期',m.joinDate||'--')+_row('到期日期',m.expireDate||'--')+_row('累計繳費',_fmtMoney(m.totalPaid||0))+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">關閉</button><button class="btn btn-primary btn-full" onclick="AdminApp.showEditMemberModal('+idx+')">✏️ 編輯</button></div>');
+    Modal.show('<div class="modal-title">👤 會員詳情</div><div class="card">'+_row('姓名',m.name||'--')+_row('暱稱',m.nickname||'--')+_row('電話',m.phone||'--')+_row('Email',m.email||'--')+_row('生日',_fmtDate(m.birthday))+_row('會員類型',m.memberType||'--')+_row('加入日期',_fmtDate(m.joinDate))+_row('到期日期',_fmtDate(m.expireDate))+_row('累計繳費',_fmtMoney(m.totalPaid||0))+_row('主治醫師',m.doctor||'--')+_row('最大困擾',m.mainTrouble||'--')+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">關閉</button><button class="btn btn-primary btn-full" onclick="AdminApp.showEditMemberModal('+idx+')">✏️ 編輯</button></div>');
   }
 
   function showEditMemberModal(idx){
@@ -1502,15 +1590,38 @@ const AdminApp=(()=>{
       _fg('姓名',true,'<input id="am-name" class="form-control" value="'+_esc(m.name||'')+'">')+
       _fg('暱稱',false,'<input id="am-nickname" class="form-control" value="'+_esc(m.nickname||'')+'">')+
       '<div class="form-row">'+_fg('電話',false,'<input id="am-phone" class="form-control" value="'+_esc(m.phone||'')+'">')+_fg('Email',false,'<input id="am-email" class="form-control" value="'+_esc(m.email||'')+'">')+'</div>'+
+      '<div class="form-row">'+_fg('生日',false,'<input id="am-birthday" class="form-control" type="date" value="'+_esc(_fmtDate(m.birthday)==='--'?'':_fmtDate(m.birthday))+'">')+_fg('確診年份',false,'<input id="am-diagnosisYear" class="form-control" type="number" value="'+_esc(m.diagnosisYear||'')+'">')+'</div>'+
       '<div class="form-row">'+_fg('會員類型',true,'<select id="am-memberType" class="form-control"><option value="一般會員"'+((m.memberType||'')==='一般會員'?' selected':'')+'>一般會員</option><option value="榮譽會員"'+((m.memberType||'')==='榮譽會員'?' selected':'')+'>榮譽會員</option></select>')+_fg('累計繳費',false,'<input id="am-totalPaid" class="form-control" type="number" value="'+_esc(m.totalPaid||0)+'">')+'</div>'+
-      '<div class="form-row">'+_fg('加入日期',false,'<input id="am-joinDate" class="form-control" type="date" value="'+_esc(m.joinDate||'')+'">')+_fg('到期日期',false,'<input id="am-expireDate" class="form-control" type="date" value="'+_esc(m.expireDate||'')+'">')+'</div>'+
+      '<div class="form-row">'+_fg('加入日期',false,'<input id="am-joinDate" class="form-control" type="date" value="'+_esc(_fmtDate(m.joinDate)==='--'?'':_fmtDate(m.joinDate))+'">')+_fg('到期日期',false,'<input id="am-expireDate" class="form-control" type="date" value="'+_esc(_fmtDate(m.expireDate)==='--'?'':_fmtDate(m.expireDate))+'">')+'</div>'+
+      _fg('主治醫師',false,'<input id="am-doctor" class="form-control" value="'+_esc(m.doctor||'')+'">')+
+      '<div class="form-row">'+_fg('是否做過手術',false,'<input id="am-surgeryType" class="form-control" value="'+_esc(m.surgeryType||'')+'">')+_fg('手術名稱',false,'<input id="am-surgeryOther" class="form-control" value="'+_esc(m.surgeryOther||'')+'">')+'</div>'+
+      _fg('最大困擾',false,'<textarea id="am-mainTrouble" class="form-control" rows="2">'+_esc(m.mainTrouble||'')+'</textarea>')+
+      _fg('最常做的運動',false,'<input id="am-exercise" class="form-control" value="'+_esc(m.exercise||'')+'">')+
       _fg('備註',false,'<textarea id="am-note" class="form-control" rows="2">'+_esc(m.note||'')+'</textarea>')+
       '<div style="display:flex;gap:12px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button><button class="btn btn-primary btn-full" id="am-submit-btn">儲存</button></div>'
     );
     document.getElementById('am-submit-btn').onclick=async function(){
       const btn=this;btn.disabled=true;btn.textContent='儲存中…';
       try{
-        const r=await API.post('adminUpdateMember',{id:m.id,name:_v('am-name'),nickname:_v('am-nickname'),phone:_v('am-phone'),email:_v('am-email'),memberType:_v('am-memberType'),totalPaid:_v('am-totalPaid'),joinDate:_v('am-joinDate'),expireDate:_v('am-expireDate'),note:_v('am-note')});
+        const r=await API.post('adminUpdateMember',{
+          id:m.id,
+          name:_v('am-name'),
+          nickname:_v('am-nickname'),
+          phone:_v('am-phone'),
+          email:_v('am-email'),
+          birthday:_v('am-birthday'),
+          diagnosisYear:_v('am-diagnosisYear'),
+          memberType:_v('am-memberType'),
+          totalPaid:_v('am-totalPaid'),
+          joinDate:_v('am-joinDate'),
+          expireDate:_v('am-expireDate'),
+          doctor:_v('am-doctor'),
+          surgeryType:_v('am-surgeryType'),
+          surgeryOther:_v('am-surgeryOther'),
+          mainTrouble:_v('am-mainTrouble'),
+          exercise:_v('am-exercise'),
+          note:_v('am-note')
+        });
         if(r&&r.success){Toast.success(r.message||'已更新');Modal.close();await switchMemberTab('list');}
         else Toast.error(r.message||'更新失敗');
       }catch(e){Toast.error(e.message);}
@@ -1521,9 +1632,9 @@ const AdminApp=(()=>{
   async function _renderMemberExpire(el){
     const data=await API.get('getMemberList').catch(()=>[]);
     const list=Array.isArray(data)?data:[];
-    const expiring=list.filter(m=>m.expireDate&&(()=>{const d=Math.ceil((new Date(m.expireDate)-new Date())/86400000);return d>0&&d<=30;})());
-    const expired=list.filter(m=>!m.expireDate||Math.ceil((new Date(m.expireDate)-new Date())/86400000)<=0);
-    el.innerHTML='<div style="padding:18px"><div style="background:linear-gradient(135deg,var(--amber),#E65100);color:#fff;border-radius:14px;padding:18px;margin-bottom:18px"><div style="font-size:var(--fs-sm);opacity:.88;margin-bottom:4px">即將到期（30天內）</div><div style="font-size:var(--fs-3xl);font-weight:700">'+expiring.length+' 位</div><div style="font-size:var(--fs-sm);opacity:.88;margin-top:4px">已到期：'+expired.length+' 位</div></div>'+(expiring.length?expiring.map(function(m){const d=Math.ceil((new Date(m.expireDate)-new Date())/86400000);return '<div class="member-card"><div class="member-avatar" style="background:#FEF3C7;color:var(--amber)">'+_esc((m.name||'?')[0])+'</div><div class="member-info"><div class="member-name">'+_esc(m.name||'未設定')+'</div><div class="member-sub">'+_esc(m.memberType||'一般會員')+'　到期：'+_esc(m.expireDate||'--')+'</div></div><div class="member-status"><div style="font-size:var(--fs-sm);font-weight:700;color:var(--amber)">剩 '+d+' 天</div></div></div>';}).join(''):_emptyHtml('✅','目前無即將到期會員',''))+'</div>';
+    const expiring=list.filter(m=>m.expireDate&&(()=>{const d=Math.ceil((new Date(_fmtDate(m.expireDate))-new Date(_today()))/86400000);return d>0&&d<=30;})());
+    const expired=list.filter(m=>!m.expireDate||Math.ceil((new Date(_fmtDate(m.expireDate))-new Date(_today()))/86400000)<=0);
+    el.innerHTML='<div style="padding:18px"><div style="background:linear-gradient(135deg,var(--amber),#E65100);color:#fff;border-radius:14px;padding:18px;margin-bottom:18px"><div style="font-size:var(--fs-sm);opacity:.88;margin-bottom:4px">即將到期（30天內）</div><div style="font-size:var(--fs-3xl);font-weight:700">'+expiring.length+' 位</div><div style="font-size:var(--fs-sm);opacity:.88;margin-top:4px">已到期：'+expired.length+' 位</div></div>'+(expiring.length?expiring.map(function(m){const d=Math.ceil((new Date(_fmtDate(m.expireDate))-new Date(_today()))/86400000);return '<div class="member-card"><div class="member-avatar" style="background:#FEF3C7;color:var(--amber)">'+_esc((m.name||'?')[0])+'</div><div class="member-info"><div class="member-name">'+_esc(m.name||'未設定')+'</div><div class="member-sub">'+_esc(m.memberType||'一般會員')+'　到期：'+_esc(_fmtDate(m.expireDate)||'--')+'</div></div><div class="member-status"><div style="font-size:var(--fs-sm);font-weight:700;color:var(--amber)">剩 '+d+' 天</div></div></div>';}).join(''):_emptyHtml('✅','目前無即將到期會員',''))+'</div>';
   }
 
   async function _renderMemberStats(el){
@@ -1531,7 +1642,7 @@ const AdminApp=(()=>{
     const list=Array.isArray(data)?data:[];
     const byType={};list.forEach(m=>{const t=m.memberType||'一般會員';byType[t]=(byType[t]||0)+1;});
     let active=0,expiringSoon=0,expired=0;
-    list.forEach(function(m){const d=m.expireDate?Math.ceil((new Date(m.expireDate)-new Date())/86400000):null;if(d===null||d<=0)expired++; else if(d<=30)expiringSoon++; else active++;});
+    list.forEach(function(m){const d=m.expireDate?Math.ceil((new Date(_fmtDate(m.expireDate))-new Date(_today()))/86400000):null;if(d===null||d<=0)expired++; else if(d<=30)expiringSoon++; else active++;});
     const totalPaid=list.reduce((s,m)=>s+Number(m.totalPaid||0),0);
     el.innerHTML='<div style="padding:18px"><div class="summary-grid">'+_summaryItem(list.length,'總會員數','var(--primary)')+_summaryItem(active,'有效會員','var(--green)')+_summaryItem(expiringSoon,'即將到期','var(--amber)')+_summaryItem(expired,'已到期','var(--red)')+'</div><div class="card">'+_row('一般會員',String(byType['一般會員']||0)+' 人')+_row('榮譽會員',String(byType['榮譽會員']||0)+' 人')+_row('累計繳費總額',_fmtMoney(totalPaid),'font-bold color-primary')+'</div></div>';
   }
@@ -1556,7 +1667,7 @@ const AdminApp=(()=>{
         _row('收據編號',r.receiptNo||r.id||'--')+
         (type==='fee'?_row('會員類型',r.memberType||'--'):_row('捐款用途',r.purpose||r.item||'--'))+
         _row('金額',_fmtMoney(r.amount),type==='fee'?'color-primary font-bold':'color-purple font-bold')+
-        _row('日期',r.date||'--')+
+        _row('日期',_fmtDate(r.date))+
         _row('方式',r.method||'--')+
         (r.note?_row('備註',r.note):'')+
         '<div style="margin-top:10px"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">📎 審查附件</div>'+_attachPreview(r.attachments||[])+'</div>'+
@@ -1577,7 +1688,7 @@ const AdminApp=(()=>{
     el.innerHTML='<div style="padding:18px">'+list.map(function(r){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.name||'--')+'</span><span class="tag tag-green">已完成</span></div>'+
-        _row('收據編號',r.receiptNo||r.id||'--')+_row('金額',_fmtMoney(r.amount),'font-bold color-green')+_row('日期',r.date||'--')+_row('確認人',r.confirmBy||'--')+
+        _row('收據編號',r.receiptNo||r.id||'--')+_row('金額',_fmtMoney(r.amount),'font-bold color-green')+_row('日期',_fmtDate(r.date))+_row('確認人',r.confirmBy||'--')+
         '<button class="btn btn-success btn-full mt-12" onclick="AdminApp.showCompletedReceiptPrint(\''+r.__type+'\',\''+r.id+'\')">🧾 列印正式收據</button>'+
       '</div>';
     }).join('')+'</div>';
@@ -1589,8 +1700,8 @@ const AdminApp=(()=>{
     Modal.show(
       '<div class="modal-title">✏️ 修正收據資料</div>'+
       (type==='fee'
-        ?'<div class="form-row">'+_fg('會員類型',true,'<select id="ar-memberType" class="form-control"><option value="一般會員"'+((r.memberType||'')==='一般會員'?' selected':'')+'>一般會員</option><option value="榮譽會員"'+((r.memberType||'')==='榮譽會員'?' selected':'')+'>榮譽會員</option></select>')+_fg('金額',true,'<input id="ar-amount" class="form-control" type="number" value="'+_esc(r.amount||0)+'">')+'</div>'+_fg('方式',true,'<input id="ar-method" class="form-control" value="'+_esc(r.method||'')+'">')+_fg('日期',true,'<input id="ar-date" class="form-control" type="date" value="'+_esc(String(r.date||'').slice(0,10))+'">')+_fg('到期日',false,'<input id="ar-expireDate" class="form-control" type="date" value="'+_esc(String(r.expireDate||'').slice(0,10))+'">')+_fg('備註',false,'<textarea id="ar-note" class="form-control" rows="2">'+_esc(r.note||'')+'</textarea>')
-        :'<div class="form-row">'+_fg('捐款用途',true,'<input id="ar-purpose" class="form-control" value="'+_esc(r.purpose||r.item||'')+'">')+_fg('金額',true,'<input id="ar-amount" class="form-control" type="number" value="'+_esc(r.amount||0)+'">')+'</div>'+_fg('方式',true,'<input id="ar-method" class="form-control" value="'+_esc(r.method||'')+'">')+_fg('日期',true,'<input id="ar-date" class="form-control" type="date" value="'+_esc(String(r.date||'').slice(0,10))+'">')+_fg('留言',false,'<textarea id="ar-message" class="form-control" rows="2">'+_esc(r.message||'')+'</textarea>')+_fg('備註',false,'<textarea id="ar-note" class="form-control" rows="2">'+_esc(r.note||'')+'</textarea>')
+        ?'<div class="form-row">'+_fg('會員類型',true,'<select id="ar-memberType" class="form-control"><option value="一般會員"'+((r.memberType||'')==='一般會員'?' selected':'')+'>一般會員</option><option value="榮譽會員"'+((r.memberType||'')==='榮譽會員'?' selected':'')+'>榮譽會員</option></select>')+_fg('金額',true,'<input id="ar-amount" class="form-control" type="number" value="'+_esc(r.amount||0)+'">')+'</div>'+_fg('方式',true,'<input id="ar-method" class="form-control" value="'+_esc(r.method||'')+'">')+_fg('日期',true,'<input id="ar-date" class="form-control" type="date" value="'+_esc(_fmtDate(r.date)==='--'?'':_fmtDate(r.date))+'">')+_fg('到期日',false,'<input id="ar-expireDate" class="form-control" type="date" value="'+_esc(_fmtDate(r.expireDate)==='--'?'':_fmtDate(r.expireDate))+'">')+_fg('備註',false,'<textarea id="ar-note" class="form-control" rows="2">'+_esc(r.note||'')+'</textarea>')
+        :'<div class="form-row">'+_fg('捐款用途',true,'<input id="ar-purpose" class="form-control" value="'+_esc(r.purpose||r.item||'')+'">')+_fg('金額',true,'<input id="ar-amount" class="form-control" type="number" value="'+_esc(r.amount||0)+'">')+'</div>'+_fg('方式',true,'<input id="ar-method" class="form-control" value="'+_esc(r.method||'')+'">')+_fg('日期',true,'<input id="ar-date" class="form-control" type="date" value="'+_esc(_fmtDate(r.date)==='--'?'':_fmtDate(r.date))+'">')+_fg('留言',false,'<textarea id="ar-message" class="form-control" rows="2">'+_esc(r.message||'')+'</textarea>')+_fg('備註',false,'<textarea id="ar-note" class="form-control" rows="2">'+_esc(r.note||'')+'</textarea>')
       )+
       '<div style="display:flex;gap:12px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button><button class="btn btn-primary btn-full" id="ar-submit-btn">儲存</button></div>'
     );
@@ -1675,10 +1786,12 @@ const AdminApp=(()=>{
 
   function _renderExpenseStage(el,list,stage){
     if(!list.length){el.innerHTML=App._emptyHtml('📤','目前無資料','');return;}
-    el.innerHTML='<div style="padding:18px">'+list.map(function(r){
+    el.innerHTML='<div style="padding:18px">'+
+      '<button class="btn btn-orange btn-full mb-12" onclick="AdminApp.showAdminExpenseModal()">➕ 新增支出</button>'+
+      list.map(function(r){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.description||'--')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-grey')+'">'+_esc(r.status||'--')+'</span></div>'+
-        _row('申請人',r.submitterName||'--')+_row('類別',r.category||'--')+_row('金額',_fmtMoney(r.amount),'font-bold color-orange')+_row('日期',r.date||'--')+_row('付款方式',r.method||'--')+_row('收款人',r.payee||'--')+
+        _row('申請人',r.submitterName||'--')+_row('類別',r.category||'--')+_row('金額',_fmtMoney(r.amount),'font-bold color-orange')+_row('日期',_fmtDate(r.date))+_row('付款方式',r.method||'--')+_row('收款人',r.payee||'--')+
         (r.note?_row('備註',r.note):'')+
         (r.originalAttachments&&r.originalAttachments.length?'<div style="margin-top:10px"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">📎 原始附件</div>'+_attachPreview(r.originalAttachments)+'</div>':'')+
         (r.formalVoucher?'<div style="margin-top:10px;padding:12px;border:1px solid #E5E7EB;border-radius:12px;background:#FAFAFA"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">🧾 正式支出憑證</div><button class="btn btn-outline btn-sm" onclick="AdminApp.showFormalVoucherModalById(\''+r.id+'\')">查看 / 列印</button></div>':'')+
@@ -1699,9 +1812,9 @@ const AdminApp=(()=>{
   }
 
   function _renderExpenseAll(el){
-    if(!_expenseAll.length){el.innerHTML=App._emptyHtml('📤','尚無支出記錄','');return;}
-    el.innerHTML='<div style="padding:18px">'+_expenseAll.map(function(r){
-      return '<div class="card"><div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-md)">'+_esc(r.description||'--')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-grey')+'">'+_esc(r.status||'--')+'</span></div>'+_row('申請人',r.submitterName||'--')+_row('金額',_fmtMoney(r.amount),'font-bold color-orange')+_row('日期',r.date||'--')+_row('類別',r.category||'--')+'</div>';
+    if(!_expenseAll.length){el.innerHTML='<div style="padding:18px"><button class="btn btn-orange btn-full mb-12" onclick="AdminApp.showAdminExpenseModal()">➕ 新增支出</button>'+App._emptyHtml('📤','尚無支出記錄','')+'</div>';return;}
+    el.innerHTML='<div style="padding:18px"><button class="btn btn-orange btn-full mb-12" onclick="AdminApp.showAdminExpenseModal()">➕ 新增支出</button>'+_expenseAll.map(function(r){
+      return '<div class="card"><div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-md)">'+_esc(r.description||'--')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-grey')+'">'+_esc(r.status||'--')+'</span></div>'+_row('申請人',r.submitterName||'--')+_row('金額',_fmtMoney(r.amount),'font-bold color-orange')+_row('日期',_fmtDate(r.date))+_row('類別',r.category||'--')+'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="AdminApp.showEditExpenseModal(\''+r.id+'\')">✏️ 編輯</button>'+(r.formalVoucher?'<button class="btn btn-primary btn-sm" onclick="AdminApp.showFormalVoucherModalById(\''+r.id+'\')">🧾 憑證</button>':'<button class="btn btn-secondary btn-sm" disabled>尚無憑證</button>')+'</div></div>';
     }).join('')+'</div>';
   }
 
@@ -1719,7 +1832,7 @@ const AdminApp=(()=>{
         '<tr><th>支出類別</th><td>'+_esc(v.category||'--')+'</td></tr>'+
         '<tr><th>支出說明</th><td>'+_esc(v.description||'--')+'</td></tr>'+
         '<tr><th>金額</th><td>'+_fmtMoney(v.amount||0)+'</td></tr>'+
-        '<tr><th>支出日期</th><td>'+_esc(v.expenseDate||'--')+'</td></tr>'+
+        '<tr><th>支出日期</th><td>'+_esc(_fmtDate(v.expenseDate)||'--')+'</td></tr>'+
         '<tr><th>付款方式</th><td>'+_esc(v.method||'--')+'</td></tr>'+
         '<tr><th>收款人</th><td>'+_esc(v.payee||'--')+'</td></tr>'+
         '</tbody></table>'+
@@ -1777,7 +1890,7 @@ const AdminApp=(()=>{
       '<div class="modal-title">✏️ 修正支出資料</div>'+
       _fg('支出類別',true,'<input id="ae-category" class="form-control" value="'+_esc(r.category||'')+'">')+
       _fg('支出說明',true,'<input id="ae-description" class="form-control" value="'+_esc(r.description||'')+'">')+
-      '<div class="form-row">'+_fg('金額',true,'<input id="ae-amount" class="form-control" type="number" value="'+_esc(r.amount||0)+'">')+_fg('日期',true,'<input id="ae-date" class="form-control" type="date" value="'+_esc(String(r.date||'').slice(0,10))+'">')+'</div>'+
+      '<div class="form-row">'+_fg('金額',true,'<input id="ae-amount" class="form-control" type="number" value="'+_esc(r.amount||0)+'">')+_fg('日期',true,'<input id="ae-date" class="form-control" type="date" value="'+_esc(_fmtDate(r.date)==='--'?'':_fmtDate(r.date))+'">')+'</div>'+
       '<div class="form-row">'+_fg('付款方式',true,'<input id="ae-method" class="form-control" value="'+_esc(r.method||'')+'">')+_fg('收款人',false,'<input id="ae-payee" class="form-control" value="'+_esc(r.payee||'')+'">')+'</div>'+
       _fg('備註',false,'<textarea id="ae-note" class="form-control" rows="2">'+_esc(r.note||'')+'</textarea>')+
       '<div style="display:flex;gap:12px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button><button class="btn btn-primary btn-full" id="ae-submit-btn">儲存</button></div>'
@@ -1798,7 +1911,7 @@ const AdminApp=(()=>{
     el.innerHTML='<div style="padding:18px">'+_voucherList.map(function(v,idx){
       return '<div class="card">'+
         '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-md)">傳票 #'+_esc(v.voucherNo||v.id||String(idx+1))+'</span><span class="tag tag-green">'+_esc(v.status||'已撥款')+'</span></div>'+
-        _row('說明',v.description||'--')+_row('金額',_fmtMoney(v.amount),'font-bold color-orange')+_row('日期',v.date||'--')+_row('類別',v.category||'--')+_row('收款人',v.payee||'--')+
+        _row('說明',v.description||'--')+_row('金額',_fmtMoney(v.amount),'font-bold color-orange')+_row('日期',_fmtDate(v.date))+_row('類別',v.category||'--')+_row('收款人',v.payee||'--')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="AdminApp.showEditVoucherModal('+idx+')">✏️ 修正</button><button class="btn btn-orange btn-sm" onclick="AdminApp.showVoucher('+idx+')">📄 查看傳票</button></div>'+
       '</div>';
     }).join('')+'</div>';
@@ -1810,7 +1923,7 @@ const AdminApp=(()=>{
     Modal.show(
       '<div class="modal-title">📄 會計傳票</div>'+
       '<div class="voucher-wrap" id="'+pid+'">'+
-        '<div class="voucher-head"><div class="voucher-title">支出傳票</div><div class="voucher-org">'+_esc(CFG.org)+'</div><div style="font-size:var(--fs-sm);margin-top:4px">傳票編號：'+_esc(v.voucherNo||v.id||'--')+'　日期：'+_esc(v.date||'--')+'</div></div>'+
+        '<div class="voucher-head"><div class="voucher-title">支出傳票</div><div class="voucher-org">'+_esc(CFG.org)+'</div><div style="font-size:var(--fs-sm);margin-top:4px">傳票編號：'+_esc(v.voucherNo||v.id||'--')+'　日期：'+_esc(_fmtDate(v.date)||'--')+'</div></div>'+
         '<table class="voucher-table"><thead><tr><th>科目</th><th>說明</th><th>借方</th><th>貸方</th></tr></thead><tbody>'+
           '<tr><td>'+_esc(v.category||'支出')+'</td><td>'+_esc(v.description||'--')+'</td><td class="amt">'+_fmtMoney(v.amount)+'</td><td class="amt">--</td></tr>'+
           '<tr><td>現金／銀行</td><td>'+_esc(v.method||'--')+'</td><td class="amt">--</td><td class="amt">'+_fmtMoney(v.amount)+'</td></tr>'+
@@ -1828,7 +1941,7 @@ const AdminApp=(()=>{
       '<div class="modal-title">✏️ 修正傳票</div>'+
       _fg('支出類別',true,'<input id="av-category" class="form-control" value="'+_esc(v.category||'')+'">')+
       _fg('支出說明',true,'<input id="av-description" class="form-control" value="'+_esc(v.description||'')+'">')+
-      '<div class="form-row">'+_fg('金額',true,'<input id="av-amount" class="form-control" type="number" value="'+_esc(v.amount||0)+'">')+_fg('日期',true,'<input id="av-date" class="form-control" type="date" value="'+_esc(String(v.date||'').slice(0,10))+'">')+'</div>'+
+      '<div class="form-row">'+_fg('金額',true,'<input id="av-amount" class="form-control" type="number" value="'+_esc(v.amount||0)+'">')+_fg('日期',true,'<input id="av-date" class="form-control" type="date" value="'+_esc(_fmtDate(v.date)==='--'?'':_fmtDate(v.date))+'">')+'</div>'+
       '<div class="form-row">'+_fg('付款方式',true,'<input id="av-method" class="form-control" value="'+_esc(v.method||'')+'">')+_fg('收款人',false,'<input id="av-payee" class="form-control" value="'+_esc(v.payee||'')+'">')+'</div>'+
       _fg('備註',false,'<textarea id="av-note" class="form-control" rows="2">'+_esc(v.note||'')+'</textarea>')+
       '<div style="display:flex;gap:12px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button><button class="btn btn-primary btn-full" id="av-submit-btn">儲存</button></div>'
@@ -1844,6 +1957,238 @@ const AdminApp=(()=>{
     };
   }
 
+  async function switchIncomeTab(tab,btnEl){
+    if(btnEl){document.querySelectorAll('#page-income-admin .tab-btn').forEach(b=>b.classList.remove('active'));btnEl.classList.add('active');}
+    const el=document.getElementById('income-admin-container');if(!el)return;
+    el.innerHTML=App._skelHtml();
+    try{
+      _incomeAll=await API.get('getIncomeHistory').catch(()=>([]));
+      _incomePending=await API.get('getPendingIncome').catch(()=>([]));
+      _incomeSummary=await API.get('getIncomeSummary').catch(()=>({approved:0,pending:0,rejected:0,pendingCount:0,byCategory:{},recent:[]}));
+      if(tab==='all') _renderIncomeAll(el);
+      else if(tab==='pending') _renderIncomePending(el);
+      else _renderIncomeSummary(el);
+    }catch(e){el.innerHTML=App._errHtml(e.message);}
+  }
+
+  function showAdminIncomeModal(){
+    _adminIncomeAttachments=[];
+    Modal.show(
+      '<div class="modal-title">💰 新增收入</div>'+
+      '<div class="flow-step-bar income"><span class="fstep-dot active">1</span><span class="fstep-label active">新增收入</span><span class="fstep-arrow">›</span><span class="fstep-dot pending">2</span><span class="fstep-label pending">待審核</span><span class="fstep-arrow">›</span><span class="fstep-dot pending">3</span><span class="fstep-label pending">核准</span></div>'+
+      _fg('收入說明',true,'<input id="ai-desc" class="form-control" placeholder="例如：活動報名收入">')+
+      '<div class="form-row">'+
+        _fg('收入類別',true,'<select id="ai-category" class="form-control"><option value="會費收入">會費收入</option><option value="捐款收入">捐款收入</option><option value="活動收入">活動收入</option><option value="其他收入">其他收入</option></select>')+
+        _fg('金額（NT$）',true,'<input id="ai-amount" class="form-control" type="number" min="1" placeholder="請輸入金額">')+
+      '</div>'+
+      '<div class="form-row">'+
+        _fg('收款日期',true,'<input id="ai-date" class="form-control" type="date" value="'+_today()+'">')+
+        _fg('收款方式',true,'<select id="ai-method" class="form-control"><option value="現金">現金</option><option value="銀行匯款">銀行匯款</option></select>')+
+      '</div>'+
+      _fg('付款人',false,'<input id="ai-payer" class="form-control" placeholder="付款人姓名 / 單位">')+
+      _fg('備註',false,'<textarea id="ai-note" class="form-control" rows="2"></textarea>')+
+      '<div class="form-group"><label class="form-label">📎 附件</label><div class="attach-zone" onclick="document.getElementById(\'ai-file\').click()"><div style="font-size:36px;margin-bottom:10px">📄</div><div style="font-size:var(--fs-md);font-weight:600">點擊上傳收入附件</div><div style="font-size:var(--fs-sm);color:var(--grey5);margin-top:6px">支援 JPG、PNG、PDF</div></div><input id="ai-file" type="file" accept="image/*,.pdf" multiple style="display:none"><div id="ai-attach-list"></div></div>'+
+      '<div style="display:flex;gap:12px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button><button class="btn btn-primary btn-full" id="ai-submit-btn">送出</button></div>'
+    );
+    document.getElementById('ai-file').onchange=async function(e){
+      for(const file of Array.from(e.target.files)){
+        if(file.size>10*1024*1024){Toast.error('檔案大小不可超過 10 MB：'+file.name);continue;}
+        try{
+          const reader=new FileReader();
+          const fd=await new Promise(function(res,rej){
+            reader.onload=function(ev){res({name:file.name,mimeType:file.type,size:file.size,base64:ev.target.result.split(',')[1]});};
+            reader.onerror=function(){rej(new Error('讀取失敗'));};
+            reader.readAsDataURL(file);
+          });
+          _adminIncomeAttachments.push(fd);
+        }catch(err){Toast.error(err.message);}
+      }
+      const list=document.getElementById('ai-attach-list');
+      if(list){
+        list.innerHTML=_adminIncomeAttachments.map(function(a,idx){
+          return '<div class="attach-item"><span class="attach-item-icon">'+_mimeIcon(a.mimeType)+'</span><div class="attach-item-info"><div class="attach-item-name">'+_esc(a.name)+'</div><div class="attach-item-size">'+_fmtSize(a.size)+'</div></div><button style="background:none;border:none;cursor:pointer;font-size:24px;padding:8px" onclick="AdminApp.removeAdminIncomeAttach('+idx+')">🗑️</button></div>';
+        }).join('');
+      }
+      e.target.value='';
+    };
+    document.getElementById('ai-submit-btn').onclick=async function(){
+      const btn=this;btn.disabled=true;btn.textContent='送出中…';
+      try{
+        const r=await API.post('submitIncome',{
+          description:_v('ai-desc'),
+          category:_v('ai-category'),
+          amount:_v('ai-amount'),
+          date:_v('ai-date'),
+          method:_v('ai-method'),
+          payerName:_v('ai-payer'),
+          note:_v('ai-note'),
+          attachments:_adminIncomeAttachments
+        });
+        if(r&&r.success){
+          Toast.success(r.message||'收入已送出');
+          Modal.close();
+          await switchIncomeTab('all');
+        }else{
+          Toast.error(r.message||'新增失敗');
+        }
+      }catch(e){Toast.error(e.message);}
+      finally{btn.disabled=false;btn.textContent='送出';}
+    };
+  }
+
+  function removeAdminIncomeAttach(idx){
+    _adminIncomeAttachments.splice(idx,1);
+    const list=document.getElementById('ai-attach-list');
+    if(list){
+      list.innerHTML=_adminIncomeAttachments.map(function(a,i){
+        return '<div class="attach-item"><span class="attach-item-icon">'+_mimeIcon(a.mimeType)+'</span><div class="attach-item-info"><div class="attach-item-name">'+_esc(a.name)+'</div><div class="attach-item-size">'+_fmtSize(a.size)+'</div></div><button style="background:none;border:none;cursor:pointer;font-size:24px;padding:8px" onclick="AdminApp.removeAdminIncomeAttach('+i+')">🗑️</button></div>';
+      }).join('');
+    }
+  }
+
+  function showAdminExpenseModal(){
+    _adminExpenseAttachments=[];
+    Modal.show(
+      '<div class="modal-title">📤 新增支出</div>'+
+      _fg('支出說明',true,'<input id="axe-desc" class="form-control" placeholder="例如：行政用品採購">')+
+      '<div class="form-row">'+
+        _fg('支出類別',true,'<select id="axe-category" class="form-control"><option value="行政費用">行政費用</option><option value="活動費用">活動費用</option><option value="交通費">交通費</option><option value="餐費">餐費</option><option value="印刷費">印刷費</option><option value="其他">其他</option></select>')+
+        _fg('金額（NT$）',true,'<input id="axe-amount" class="form-control" type="number" min="1" placeholder="請輸入金額">')+
+      '</div>'+
+      '<div class="form-row">'+
+        _fg('支出日期',true,'<input id="axe-date" class="form-control" type="date" value="'+_today()+'">')+
+        _fg('付款方式',true,'<select id="axe-method" class="form-control"><option value="銀行匯款">銀行匯款</option><option value="現金">現金</option></select>')+
+      '</div>'+
+      _fg('收款人',false,'<input id="axe-payee" class="form-control" placeholder="收款人 / 廠商名稱">')+
+      _fg('備註',false,'<textarea id="axe-note" class="form-control" rows="2"></textarea>')+
+      '<div class="form-group"><label class="form-label">📎 附件</label><div class="attach-zone" onclick="document.getElementById(\'axe-file\').click()"><div style="font-size:36px;margin-bottom:10px">🧾</div><div style="font-size:var(--fs-md);font-weight:600">點擊上傳支出附件</div><div style="font-size:var(--fs-sm);color:var(--grey5);margin-top:6px">支援 JPG、PNG、PDF</div></div><input id="axe-file" type="file" accept="image/*,.pdf" multiple style="display:none"><div id="axe-attach-list"></div></div>'+
+      '<div style="display:flex;gap:12px"><button class="btn btn-secondary btn-full" onclick="Modal.close()">取消</button><button class="btn btn-orange btn-full" id="axe-submit-btn">送出</button></div>'
+    );
+    document.getElementById('axe-file').onchange=async function(e){
+      for(const file of Array.from(e.target.files)){
+        if(file.size>10*1024*1024){Toast.error('檔案大小不可超過 10 MB：'+file.name);continue;}
+        try{
+          const reader=new FileReader();
+          const fd=await new Promise(function(res,rej){
+            reader.onload=function(ev){res({name:file.name,mimeType:file.type,size:file.size,base64:ev.target.result.split(',')[1]});};
+            reader.onerror=function(){rej(new Error('讀取失敗'));};
+            reader.readAsDataURL(file);
+          });
+          _adminExpenseAttachments.push(fd);
+        }catch(err){Toast.error(err.message);}
+      }
+      const list=document.getElementById('axe-attach-list');
+      if(list){
+        list.innerHTML=_adminExpenseAttachments.map(function(a,idx){
+          return '<div class="attach-item"><span class="attach-item-icon">'+_mimeIcon(a.mimeType)+'</span><div class="attach-item-info"><div class="attach-item-name">'+_esc(a.name)+'</div><div class="attach-item-size">'+_fmtSize(a.size)+'</div></div><button style="background:none;border:none;cursor:pointer;font-size:24px;padding:8px" onclick="AdminApp.removeAdminExpenseAttach('+idx+')">🗑️</button></div>';
+        }).join('');
+      }
+      e.target.value='';
+    };
+    document.getElementById('axe-submit-btn').onclick=async function(){
+      const btn=this;btn.disabled=true;btn.textContent='送出中…';
+      try{
+        const r=await API.post('submitExpense',{
+          description:_v('axe-desc'),
+          category:_v('axe-category'),
+          amount:_v('axe-amount'),
+          date:_v('axe-date'),
+          method:_v('axe-method'),
+          payee:_v('axe-payee'),
+          note:_v('axe-note'),
+          attachments:_adminExpenseAttachments
+        });
+        if(r&&r.success){
+          Toast.success(r.message||'支出已送出');
+          Modal.close();
+          await switchExpenseTab('all');
+        }else{
+          Toast.error(r.message||'新增失敗');
+        }
+      }catch(e){Toast.error(e.message);}
+      finally{btn.disabled=false;btn.textContent='送出';}
+    };
+  }
+
+  function removeAdminExpenseAttach(idx){
+    _adminExpenseAttachments.splice(idx,1);
+    const list=document.getElementById('axe-attach-list');
+    if(list){
+      list.innerHTML=_adminExpenseAttachments.map(function(a,i){
+        return '<div class="attach-item"><span class="attach-item-icon">'+_mimeIcon(a.mimeType)+'</span><div class="attach-item-info"><div class="attach-item-name">'+_esc(a.name)+'</div><div class="attach-item-size">'+_fmtSize(a.size)+'</div></div><button style="background:none;border:none;cursor:pointer;font-size:24px;padding:8px" onclick="AdminApp.removeAdminExpenseAttach('+i+')">🗑️</button></div>';
+      }).join('');
+    }
+  }
+
+  function _renderIncomeAll(el){
+    const header='<div style="padding:18px 18px 0"><button class="btn btn-primary btn-full mb-12" onclick="AdminApp.showAdminIncomeModal()">➕ 新增收入</button></div>';
+    if(!_incomeAll.length){el.innerHTML=header+App._emptyHtml('💰','尚無收入記錄','');return;}
+    el.innerHTML=header+'<div style="padding:18px">'+_incomeAll.map(function(r){
+      return '<div class="card">'+
+        '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.description||'--')+'</span><span class="tag '+(STATUS_TAG[r.status]||'tag-grey')+'">'+_esc(r.status||'--')+'</span></div>'+
+        _row('收入類別',r.category||'--')+
+        _row('金額',_fmtMoney(r.amount),'font-bold color-primary')+
+        _row('日期',_fmtDate(r.date))+
+        _row('收款方式',r.method||'--')+
+        _row('付款人',r.payerName||'--')+
+        _row('提交人',r.submitterName||'--')+
+        (r.note?_row('備註',r.note):'')+
+        (r.attachments&&r.attachments.length?'<div style="margin-top:10px"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">📎 附件</div>'+_attachPreview(r.attachments)+'</div>':'')+
+      '</div>';
+    }).join('')+'</div>';
+  }
+
+  function _renderIncomePending(el){
+    if(!_incomePending.length){el.innerHTML='<div style="padding:18px"><button class="btn btn-primary btn-full mb-12" onclick="AdminApp.showAdminIncomeModal()">➕ 新增收入</button>'+App._emptyHtml('✅','目前無待審核收入','')+'</div>';return;}
+    el.innerHTML='<div style="padding:18px"><button class="btn btn-primary btn-full mb-12" onclick="AdminApp.showAdminIncomeModal()">➕ 新增收入</button>'+_incomePending.map(function(r){
+      return '<div class="card">'+
+        '<div class="flex-between mb-8"><span class="font-bold" style="font-size:var(--fs-lg)">'+_esc(r.description||'--')+'</span><span class="tag tag-orange">待審核</span></div>'+
+        _row('收入類別',r.category||'--')+
+        _row('金額',_fmtMoney(r.amount),'font-bold color-primary')+
+        _row('日期',_fmtDate(r.date))+
+        _row('收款方式',r.method||'--')+
+        _row('付款人',r.payerName||'--')+
+        _row('提交人',r.submitterName||'--')+
+        '<div style="margin-top:10px"><div style="font-size:var(--fs-sm);font-weight:700;margin-bottom:6px">📎 附件</div>'+_attachPreview(r.attachments||[])+'</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">'+
+          '<button class="btn btn-success btn-sm" onclick="AdminApp.approveIncome(\''+r.id+'\')">✅ 核准</button>'+
+          '<button class="btn btn-danger btn-sm" onclick="AdminApp.rejectIncome(\''+r.id+'\')">❌ 退回</button>'+
+        '</div>'+
+      '</div>';
+    }).join('')+'</div>';
+  }
+
+  function _renderIncomeSummary(el){
+    const s=_incomeSummary||{approved:0,pending:0,rejected:0,pendingCount:0,byCategory:{},recent:[]};
+    const cats=Object.entries(s.byCategory||{});
+    el.innerHTML='<div style="padding:18px"><div class="summary-grid">'+
+      _summaryItem(_fmtMoney(s.approved||0),'已核准收入','var(--green)')+
+      _summaryItem(_fmtMoney(s.pending||0),'待審核收入','var(--amber)')+
+      _summaryItem(_fmtMoney(s.rejected||0),'已退回收入','var(--red)')+
+      _summaryItem(String(s.pendingCount||0)+' 筆','待審核筆數','var(--primary)')+
+      '</div><div class="card"><div class="card-title mb-12">📂 類別統計</div>'+(cats.length?cats.map(function(x){return _row(x[0],_fmtMoney(x[1]),'font-bold');}).join(''):'<div style="font-size:var(--fs-sm);color:var(--grey5)">尚無資料</div>')+'</div><div class="card"><div class="card-title mb-12">🕒 最近收入</div>'+((s.recent||[]).length?(s.recent||[]).map(function(r){return _row((_fmtDate(r.date)||'--')+'｜'+(r.description||'--'),_fmtMoney(r.amount));}).join(''):'<div style="font-size:var(--fs-sm);color:var(--grey5)">尚無資料</div>')+'</div></div>';
+  }
+
+  async function approveIncome(id){
+    Modal.confirm('確定核准此收入記錄？',async function(){
+      try{
+        const r=await API.post('approveIncome',{id:id});
+        if(r&&r.success){Toast.success(r.message||'已核准');await switchIncomeTab('pending');}
+        else Toast.error(r.message||'操作失敗');
+      }catch(e){Toast.error(e.message);}
+    },'確認核准');
+  }
+
+  async function rejectIncome(id){
+    Modal.confirm('確定退回此收入記錄？',async function(){
+      try{
+        const r=await API.post('rejectIncome',{id:id});
+        if(r&&r.success){Toast.warning(r.message||'已退回');await switchIncomeTab('pending');}
+        else Toast.error(r.message||'操作失敗');
+      }catch(e){Toast.error(e.message);}
+    },'確認退回',true);
+  }
+
   async function switchReportTab(tab,btnEl){
     if(btnEl){document.querySelectorAll('#page-report .tab-btn').forEach(b=>b.classList.remove('active'));btnEl.classList.add('active');}
     const el=document.getElementById('report-container');if(!el)return;
@@ -1857,20 +2202,22 @@ const AdminApp=(()=>{
   }
 
   async function _renderBalanceReport(el){
-    const [expenseData,receipts]=await Promise.all([API.get('getExpenseHistory').catch(()=>([])),API.get('getPendingReceipts').catch(()=>({completedFees:[],completedDonations:[]}))]);
+    const [expenseData,receipts,incomeSummary]=await Promise.all([API.get('getExpenseHistory').catch(()=>([])),API.get('getPendingReceipts').catch(()=>({completedFees:[],completedDonations:[]})),API.get('getIncomeSummary').catch(()=>({approved:0}))]);
     const feeSum=(receipts.completedFees||[]).reduce((s,r)=>s+Number(r.amount||0),0);
     const donSum=(receipts.completedDonations||[]).reduce((s,r)=>s+Number(r.amount||0),0);
-    const totalIncome=feeSum+donSum;
+    const extraIncome=Number(incomeSummary.approved||0);
+    const totalIncome=feeSum+donSum+extraIncome;
     const paidExpenses=(expenseData||[]).filter(r=>r.status==='已撥款');
     const totalExpense=paidExpenses.reduce((s,r)=>s+Number(r.amount||0),0);
     const net=totalIncome-totalExpense;
-    el.innerHTML='<div style="padding:18px"><div class="summary-grid">'+_summaryItem(_fmtMoney(totalIncome),'已完成收入','var(--green)')+_summaryItem(_fmtMoney(totalExpense),'已撥款支出','var(--orange)')+_summaryItem(_fmtMoney(net),'淨收支',net>=0?'var(--green)':'var(--red)')+_summaryItem((receipts.completedFees||[]).length+(receipts.completedDonations||[]).length+' 筆','完成收據','var(--primary)')+'</div><div class="card">'+_row('繳費收入',_fmtMoney(feeSum))+_row('捐款收入',_fmtMoney(donSum))+_row('支出合計',_fmtMoney(totalExpense))+_row('淨收支',_fmtMoney(net),net>=0?'font-bold color-green':'font-bold color-red')+'</div></div>';
+    el.innerHTML='<div style="padding:18px"><div class="summary-grid">'+_summaryItem(_fmtMoney(totalIncome),'已完成收入','var(--green)')+_summaryItem(_fmtMoney(totalExpense),'已撥款支出','var(--orange)')+_summaryItem(_fmtMoney(net),'淨收支',net>=0?'var(--green)':'var(--red)')+_summaryItem((receipts.completedFees||[]).length+(receipts.completedDonations||[]).length+' 筆','完成收據','var(--primary)')+'</div><div class="card">'+_row('繳費收入',_fmtMoney(feeSum))+_row('捐款收入',_fmtMoney(donSum))+_row('其他核准收入',_fmtMoney(extraIncome))+_row('支出合計',_fmtMoney(totalExpense))+_row('淨收支',_fmtMoney(net),net>=0?'font-bold color-green':'font-bold color-red')+'</div></div>';
   }
 
   async function _renderIncomeReport(el){
     const receipts=await API.get('getPendingReceipts').catch(()=>({completedFees:[],completedDonations:[]}));
+    const incomeSummary=await API.get('getIncomeSummary').catch(()=>({approved:0,pending:0,rejected:0}));
     const fee=receipts.completedFees||[],don=receipts.completedDonations||[];
-    el.innerHTML='<div style="padding:18px"><div class="summary-grid">'+_summaryItem(_fmtMoney(fee.reduce((s,r)=>s+Number(r.amount||0),0)),'繳費收入','var(--primary)')+_summaryItem(_fmtMoney(don.reduce((s,r)=>s+Number(r.amount||0),0)),'捐款收入','var(--purple)')+_summaryItem(fee.length+' 筆','完成繳費收據','var(--green)')+_summaryItem(don.length+' 筆','完成捐款收據','var(--orange)')+'</div></div>';
+    el.innerHTML='<div style="padding:18px"><div class="summary-grid">'+_summaryItem(_fmtMoney(fee.reduce((s,r)=>s+Number(r.amount||0),0)),'繳費收入','var(--primary)')+_summaryItem(_fmtMoney(don.reduce((s,r)=>s+Number(r.amount||0),0)),'捐款收入','var(--purple)')+_summaryItem(_fmtMoney(incomeSummary.approved||0),'其他核准收入','var(--green)')+_summaryItem(_fmtMoney(incomeSummary.pending||0),'待審核收入','var(--amber)')+'</div></div>';
   }
 
   async function _renderExpenseReport(el){
@@ -1893,6 +2240,7 @@ const AdminApp=(()=>{
     switchMemberTab,filterMembers,showMemberDetail,showEditMemberModal,
     switchReceiptTab,showEditReceiptModal,confirmReceipt,rejectReceipt,showCompletedReceiptPrint,
     switchExpenseTab,generateExpenseVoucher,confirmExpenseReceived,confirmExpensePaid,rejectExpense,showEditExpenseModal,showVoucher,showEditVoucherModal,showFormalVoucherModalById,
+    switchIncomeTab,showAdminIncomeModal,showAdminExpenseModal,removeAdminIncomeAttach,removeAdminExpenseAttach,approveIncome,rejectIncome,
     switchReportTab
   };
 })();
