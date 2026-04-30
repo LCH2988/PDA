@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NotebookLM 提示詞萬用生成器</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+
+    :root {
+      --primary: #6C63FF;
+      --secondary: #48CFAD;
+      --accent: #FF6584;
+      --dark: #1a1a2e;
+      --card-bg: #16213e;
+      --card-border: rgba(108,99,255,0.3);
+      --text: #e0e0e0;
+      --text-muted: #8892b0;
+      --input-bg: #0f3460;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background: var(--dark);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── 背景動畫 ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(108,99,255,0.15) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 80%, rgba(72,207,173,0.1) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 20px; position: relative; z-index: 1; }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      padding: 48px 20px 32px;
+    }
+    .logo-badge {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: rgba(108,99,255,0.15);
+      border: 1px solid var(--card-border);
+      border-radius: 50px;
+      padding: 6px 18px;
+      font-size: 13px;
+      color: var(--primary);
+      margin-bottom: 18px;
+      letter-spacing: 1px;
+    }
+    .logo-badge span { font-size: 18px; }
+    h1 {
+      font-size: clamp(26px, 5vw, 42px);
+      font-weight: 700;
+      background: linear-gradient(135deg, #fff 30%, var(--primary) 70%, var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.3;
+      margin-bottom: 12px;
+    }
+    .subtitle { color: var(--text-muted); font-size: 15px; }
+
+    /* ── Section Title ── */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--primary);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--card-border);
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+      transition: border-color .3s;
+    }
+    .card:hover { border-color: rgba(108,99,255,0.6); }
+
+    /* ── Style Grid ── */
+    .style-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+    }
+    .style-btn {
+      background: rgba(255,255,255,0.04);
+      border: 1.5px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 14px 10px;
+      cursor: pointer;
+      text-align: center;
+      transition: all .25s;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .style-btn .icon { font-size: 26px; display: block; margin-bottom: 6px; }
+    .style-btn:hover {
+      border-color: var(--primary);
+      background: rgba(108,99,255,0.12);
+      transform: translateY(-2px);
+    }
+    .style-btn.active {
+      border-color: var(--primary);
+      background: rgba(108,99,255,0.22);
+      color: #fff;
+      box-shadow: 0 0 16px rgba(108,99,255,0.35);
+    }
+
+    /* ── Form ── */
+    label { font-size: 13px; color: var(--text-muted); display: block; margin-bottom: 6px; }
+    input[type=text], textarea, select {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color .25s;
+      resize: vertical;
+    }
+    input[type=text]:focus, textarea:focus, select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(108,99,255,0.15);
+    }
+    select option { background: var(--card-bg); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .form-row.full { grid-template-columns: 1fr; }
+    .form-group { margin-bottom: 14px; }
+
+    /* ── Tags ── */
+    .tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .tag {
+      background: rgba(72,207,173,0.12);
+      border: 1px solid rgba(72,207,173,0.3);
+      color: var(--secondary);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .tag:hover { background: rgba(72,207,173,0.25); }
+    .tag.selected {
+      background: rgba(72,207,173,0.3);
+      border-color: var(--secondary);
+      font-weight: 600;
+    }
+
+    /* ── Tone Slider ── */
+    .tone-row { display: flex; align-items: center; gap: 12px; }
+    .tone-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    input[type=range] {
+      flex: 1;
+      -webkit-appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(to right, var(--secondary), var(--primary), var(--accent));
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 6px rgba(108,99,255,0.6);
+      cursor: pointer;
+    }
+
+    /* ── Generate Button ── */
+    .btn-generate {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--primary), #9b59b6);
+      border: none;
+      border-radius: 12px;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all .3s;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      letter-spacing: 1px;
+    }
+    .btn-generate:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(108,99,255,0.5);
+    }
+    .btn-generate:active { transform: translateY(0); }
+
+    /* ── Output ── */
+    #output-section { display: none; }
+    .output-box {
+      background: #0a0a1a;
+      border: 1px solid rgba(108,99,255,0.4);
+      border-radius: 12px;
+      padding: 20px;
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      color: #c9d1d9;
+      position: relative;
+      min-height: 120px;
+    }
+    .output-actions {
+      display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap;
+    }
+    .btn-action {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px 16px;
+      border-radius: 10px;
+      border: 1.5px solid;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .25s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-copy { border-color: var(--secondary); color: var(--secondary); background: transparent; }
+    .btn-copy:hover { background: rgba(72,207,173,0.15); }
+    .btn-regen { border-color: var(--primary); color: var(--primary); background: transparent; }
+    .btn-regen:hover { background: rgba(108,99,255,0.15); }
+    .btn-save { border-color: var(--accent); color: var(--accent); background: transparent; }
+    .btn-save:hover { background: rgba(255,101,132,0.15); }
+
+    /* ── Examples ── */
+    .example-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .ex-tab {
+      padding: 7px 16px;
+      border-radius: 20px;
+      border: 1.5px solid rgba(255,255,255,0.12);
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .ex-tab.active, .ex-tab:hover {
+      border-color: var(--primary);
+      color: #fff;
+      background: rgba(108,99,255,0.18);
+    }
+    .example-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.8;
+      color: #aab;
+      display: none;
+    }
+    .example-card.show { display: block; }
+    .example-card strong { color: var(--secondary); }
+
+    /* ── Saved List ── */
+    #saved-list { margin-top: 10px; }
+    .saved-item {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: #aab;
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+    }
+    .saved-item .del-btn {
+      background: none; border: none; color: var(--accent); cursor: pointer; font-size: 16px; flex-shrink: 0;
+    }
+    .empty-msg { color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px; }
+
+    /* ── Score Bar ── */
+    .score-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .score-label { font-size: 12px; color: var(--text-muted); width: 80px; flex-shrink: 0; }
+    .score-bar { flex: 1; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
+    .score-fill { height: 100%; border-radius: 4px; transition: width 1s ease; }
+    .score-val { font-size: 12px; color: var(--text); width: 35px; text-align: right; }
+
+    /* ── Typing animation ── */
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .cursor { display: inline-block; width: 2px; height: 1em; background: var(--primary); vertical-align: text-bottom; animation: blink 1s infinite; margin-left: 2px; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: var(--primary); color: #fff;
+      padding: 12px 24px; border-radius: 30px;
+      font-size: 14px; font-weight: 600;
+      transition: transform .4s ease;
+      z-index: 999; pointer-events: none;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── Footer ── */
+    footer { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 12px; }
+
+    @media(max-width:600px) {
+      .form-row { grid-template-columns: 1fr; }
+      .style-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<div id="toast">✅ 已複製到剪貼簿！</div>
+
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div class="logo-badge"><span>📓</span> NotebookLM Prompt Generator</div>
+    <h1>提示詞萬用生成器</h1>
+    <p class="subtitle">多樣風格 × 智慧生成 × 即時預覽 — 讓 AI 讀懂你的需求</p>
+  </header>
+
+  <!-- STEP 1: 風格選擇 -->
+  <div class="card">
+    <div class="section-title">🎨 Step 1 — 選擇提示詞風格</div>
+    <div class="style-grid" id="styleGrid">
+      <button class="style-btn active" data-style="學術研究" onclick="selectStyle(this)">
+        <span class="icon">🎓</span>學術研究
+      </button>
+      <button class="style-btn" data-style="商業分析" onclick="selectStyle(this)">
+        <span class="icon">📊</span>商業分析
+      </button>
+      <button class="style-btn" data-style="創意寫作" onclick="selectStyle(this)">
+        <span class="icon">✍️</span>創意寫作
+      </button>
+      <button class="style-btn" data-style="技術文件" onclick="selectStyle(this)">
+        <span class="icon">⚙️</span>技術文件
+      </button>
+      <button class="style-btn" data-style="教育學習" onclick="selectStyle(this)">
+        <span class="icon">📚</span>教育學習
+      </button>
+      <button class="style-btn" data-style="法律合規" onclick="selectStyle(this)">
+        <span class="icon">⚖️</span>法律合規
+      </button>
+      <button class="style-btn" data-style="醫療健康" onclick="selectStyle(this)">
+        <span class="icon">🏥</span>醫療健康
+      </button>
+      <button class="style-btn" data-style="新聞採訪" onclick="selectStyle(this)">
+        <span class="icon">📰</span>新聞採訪
+      </button>
+      <button class="style-btn" data-style="產品設計" onclick="selectStyle(this)">
+        <span class="icon">🎯</span>產品設計
+      </button>
+      <button class="style-btn" data-style="財務投資" onclick="selectStyle(this)">
+        <span class="icon">💹</span>財務投資
+      </button>
+      <button class="style-btn" data-style="行銷文案" onclick="selectStyle(this)">
+        <span class="icon">📣</span>行銷文案
+      </button>
+      <button class="style-btn" data-style="自由探索" onclick="selectStyle(this)">
+        <span class="icon">🔮</span>自由探索
+      </button>
+    </div>
+  </div>
+
+  <!-- STEP 2: 設定參數 -->
+  <div class="card">
+    <div class="section-title">⚙️ Step 2 — 設定提示詞參數</div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>📌 主題 / 文件描述</label>
+        <input type="text" id="topic" placeholder="例：2024年台灣半導體產業報告" />
+      </div>
+      <div class="form-group">
+        <label>🎯 目標任務</label>
+        <select id="task">
+          <option value="摘要整理">📋 摘要整理</option>
+          <option value="深度分析">🔍 深度分析</option>
+          <option value="問答對話">💬 問答對話</option>
+          <option value="重點提取">🎯 重點提取</option>
+          <option value="比較對照">⚖️ 比較對照</option>
+          <option value="時間軸整理">📅 時間軸整理</option>
+          <option value="觀點辯論">🗣️ 觀點辯論</option>
+          <option value="教學簡報">📊 教學簡報</option>
+          <option value="行動建議">🚀 行動建議</option>
+          <option value="創意發想">💡 創意發想</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>👤 目標受眾</label>
+        <select id="audience">
+          <option value="一般大眾">一般大眾</option>
+          <option value="專業人士">專業人士</option>
+          <option value="學生">學生</option>
+          <option value="管理階層">管理階層</option>
+          <option value="研究人員">研究人員</option>
+          <option value="投資人">投資人</option>
+          <option value="教師">教師</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>📏 輸出長度</label>
+        <select id="length">
+          <option value="簡短（3-5句）">簡短（3-5句）</option>
+          <option value="中等（1-2段）" selected>中等（1-2段）</option>
+          <option value="詳細（多段落）">詳細（多段落）</option>
+          <option value="完整報告">完整報告</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>🏷️ 關鍵字標籤（點選加入）</label>
+      <div class="tag-row" id="tagRow">
+        <span class="tag" onclick="toggleTag(this)">重點摘要</span>
+        <span class="tag" onclick="toggleTag(this)">數據引用</span>
+        <span class="tag" onclick="toggleTag(this)">條列式</span>
+        <span class="tag" onclick="toggleTag(this)">表格輸出</span>
+        <span class="tag" onclick="toggleTag(this)">中文回答</span>
+        <span class="tag" onclick="toggleTag(this)">英文術語</span>
+        <span class="tag" onclick="toggleTag(this)">舉例說明</span>
+        <span class="tag" onclick="toggleTag(this)">批判思考</span>
+        <span class="tag" onclick="toggleTag(this)">引用來源</span>
+        <span class="tag" onclick="toggleTag(this)">步驟說明</span>
+        <span class="tag" onclick="toggleTag(this)">SWOT分析</span>
+        <span class="tag" onclick="toggleTag(this)">FAQ格式</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>🎚️ 語氣調性</label>
+      <div class="tone-row">
+        <span class="tone-label">🟢 輕鬆口語</span>
+        <input type="range" id="toneSlider" min="0" max="100" value="50" oninput="updateTone(this.value)" />
+        <span class="tone-label" style="text-align:right">🔵 嚴謹正式</span>
+      </div>
+      <div style="text-align:center; font-size:12px; color:var(--primary); margin-top:6px;" id="toneLabel">⚖️ 平衡中性</div>
+    </div>
+
+    <div class="form-group">
+      <label>📝 補充說明（選填）</label>
+      <textarea id="extra" rows="3" placeholder="例：請特別關注台積電的市占率變化，並與三星進行比較..."></textarea>
+    </div>
+
+    <button class="btn-generate" onclick="generatePrompt()">
+      ✨ 生成提示詞
+    </button>
+  </div>
+
+  <!-- STEP 3: 輸出結果 -->
+  <div class="card" id="output-section">
+    <div class="section-title">🚀 Step 3 — 生成結果</div>
+
+    <div class="output-box" id="outputBox"></div>
+
+    <!-- 品質分析 -->
+    <div style="margin-top:18px;">
+      <div class="section-title" style="font-size:12px; margin-bottom:10px;">📊 提示詞品質分析</div>
+      <div class="score-row">
+        <span class="score-label">清晰度</span>
+        <div class="score-bar"><div class="score-fill" id="sc1" style="width:0%;background:linear-gradient(90deg,#48CFAD,#6C63FF)"></div></div>
+        <span class="score-val" id="sv1">0%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">具體性</span>
+        <div class="score-bar"><div class="score-fill" id="sc2" style="width:0%;background:linear-gradient(90deg,#6C63FF,#FF6584)"></div></div>
+        <span class="score-val" id="sv2">0%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">完整性</span>
+        <div class="score-bar"><div class="score-fill" id="sc3" style="width:0%;background:linear-gradient(90deg,#FF6584,#f7971e)"></div></div>
+        <span class="score-val" id="sv3">0%</span>
+      </div>
+      <div class="score-row">
+        <span class="score-label">NotebookLM適配</span>
+        <div class="score-bar"><div class="score-fill" id="sc4" style="width:0%;background:linear-gradient(90deg,#f7971e,#48CFAD)"></div></div>
+        <span class="score-val" id="sv4">0%</span>
+      </div>
+    </div>
+
+    <div class="output-actions">
+      <button class="btn-action btn-copy" onclick="copyPrompt()">📋 複製提示詞</button>
+      <button class="btn-action btn-regen" onclick="generatePrompt()">🔄 重新生成</button>
+      <button class="btn-action btn-save" onclick="savePrompt()">💾 儲存收藏</button>
+    </div>
+  </div>
+
+  <!-- 範例畫面 -->
+  <div class="card">
+    <div class="section-title">💡 Step 4 — 範例提示詞庫</div>
+    <div class="example-tabs">
+      <button class="ex-tab active" onclick="showExample(this,'ex1')">🎓 學術</button>
+      <button class="ex-tab" onclick="showExample(this,'ex2')">📊 商業</button>
+      <button class="ex-tab" onclick="showExample(this,'ex3')">✍️ 創意</button>
+      <button class="ex-tab" onclick="showExample(this,'ex4')">⚙️ 技術</button>
+      <button class="ex-tab" onclick="showExample(this,'ex5')">📚 教育</button>
+      <button class="ex-tab" onclick="showExample(this,'ex6')">💹 財務</button>
+    </div>
+
+    <div class="example-card show" id="ex1">
+      <strong>【學術研究 × 深度分析】</strong><br><br>
+      請以<strong>嚴謹的學術語氣</strong>，針對上傳的論文文件進行深度分析。<br><br>
+      🎯 <strong>任務要求：</strong><br>
+      1. 提取研究問題、研究方法與核心發現<br>
+      2. 評估研究的創新性與侷限性<br>
+      3. 與相關文獻進行比較分析<br>
+      4. 列出可延伸的未來研究方向<br><br>
+      📋 <strong>輸出格式：</strong>使用條列式，並引用原文頁碼佐證。<br>
+      👤 <strong>目標受眾：</strong>研究人員與學術評審
+    </div>
+
+    <div class="example-card" id="ex2">
+      <strong>【商業分析 × 行動建議】</strong><br><br>
+      請針對上傳的市場調查報告，以<strong>管理顧問視角</strong>提供策略建議。<br><br>
+      🎯 <strong>分析框架：</strong><br>
+      1. SWOT 分析（優勢/劣勢/機會/威脅）<br>
+      2. 競爭對手比較矩陣<br>
+      3. 短中長期行動計劃（3/6/12個月）<br>
+      4. KPI 指標建議<br><br>
+      📊 <strong>輸出格式：</strong>表格 + 重點摘要<br>
+      👤 <strong>目標受眾：</strong>C-level 管理階層
+    </div>
+
+    <div class="example-card" id="ex3">
+      <strong>【創意寫作 × 故事發展】</strong><br><br>
+      請根據上傳的角色設定文件，以<strong>富有想像力的敘事風格</strong>協助創作。<br><br>
+      ✍️ <strong>創作要求：</strong><br>
+      1. 分析角色動機與內心衝突<br>
+      2. 提出 3 個不同走向的劇情發展<br>
+      3. 建議場景描寫的感官細節<br>
+      4. 設計對話節奏與情感轉折<br><br>
+      🎨 <strong>風格參考：</strong>電影感、層次豐富<br>
+      👤 <strong>目標受眾：</strong>作家、編劇
+    </div>
+
+    <div class="example-card" id="ex4">
+      <strong>【技術文件 × 步驟說明】</strong><br><br>
+      請將上傳的技術規格文件轉化為<strong>清晰易懂的操作指南</strong>。<br><br>
+      ⚙️ <strong>處理要求：</strong><br>
+      1. 提取核心技術參數與規格<br>
+      2. 將複雜流程拆解為步驟化說明<br>
+      3. 標記注意事項與常見錯誤<br>
+      4. 生成 FAQ 常見問題清單<br><br>
+      📝 <strong>輸出格式：</strong>Markdown 格式，含代碼區塊<br>
+      👤 <strong>目標受眾：</strong>工程師、技術人員
+    </div>
+
+    <div class="example-card" id="ex5">
+      <strong>【教育學習 × 教學簡報】</strong><br><br>
+      請將上傳的教材內容，設計為<strong>互動式教學方案</strong>。<br><br>
+      📚 <strong>設計要求：</strong><br>
+      1. 提取核心概念並建立知識架構圖<br>
+      2. 設計 5 個引導思考的討論問題<br>
+      3. 建議課堂活動與分組練習<br>
+      4. 設計形成性評量題目（選擇題+申論題）<br><br>
+      🎓 <strong>教學原則：</strong>布魯姆分類法，由低到高認知層次<br>
+      👤 <strong>目標受眾：</strong>教師、教學設計師
+    </div>
+
+    <div class="example-card" id="ex6">
+      <strong>【財務投資 × 風險分析】</strong><br><br>
+      請針對上傳的財務報告，以<strong>專業分析師視角</strong>進行評估。<br><br>
+      💹 <strong>分析項目：</strong><br>
+      1. 財務健康度評估（流動比率/負債比率）<br>
+      2. 獲利能力趨勢分析（近3年）<br>
+      3. 潛在風險因子識別<br>
+      4. 估值模型建議（DCF/本益比）<br><br>
+      ⚠️ <strong>特別注意：</strong>標記所有不確定性假設<br>
+      👤 <strong>目標受眾：</strong>投資人、財務分析師
+    </div>
+  </div>
+
+  <!-- 收藏庫 -->
+  <div class="card">
+    <div class="section-title">💾 我的提示詞收藏庫</div>
+    <div id="saved-list">
+      <div class="empty-msg">📭 尚未收藏任何提示詞<br><small>生成後點擊「儲存收藏」即可保存</small></div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <p>✨ NotebookLM 提示詞萬用生成器 · 讓每一份文件都發揮最大價值</p>
+</footer>
+
+<script>
+  let selectedStyle = '學術研究';
+  let selectedTags = [];
+  let savedPrompts = [];
+
+  // ── 風格選擇 ──
+  function selectStyle(btn) {
+    document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedStyle = btn.dataset.style;
+  }
+
+  // ── 標籤切換 ──
+  function toggleTag(el) {
+    el.classList.toggle('selected');
+    const t = el.textContent;
+    if (el.classList.contains('selected')) {
+      if (!selectedTags.includes(t)) selectedTags.push(t);
+    } else {
+      selectedTags = selectedTags.filter(x => x !== t);
+    }
+  }
+
+  // ── 語氣滑桿 ──
+  function updateTone(v) {
+    const labels = ['🟢 非常口語輕鬆', '🟡 偏口語自然', '⚖️ 平衡中性', '🔵 偏正式專業', '🔵 嚴謹學術正式'];
+    const idx = Math.floor(v / 25);
+    document.getElementById('toneLabel').textContent = labels[Math.min(idx, 4)];
+  }
+
+  // ── 生成提示詞 ──
+  function generatePrompt() {
+    const topic = document.getElementById('topic').value.trim() || '上傳的文件';
+    const task = document.getElementById('task').value;
+    const audience = document.getElementById('audience').value;
+    const length = document.getElementById('length').value;
+    const extra = document.getElementById('extra').value.trim();
+    const tone = parseInt(document.getElementById('toneSlider').value);
+    const toneText = tone < 30 ? '輕鬆口語' : tone < 60 ? '平衡中性' : tone < 80 ? '正式專業' : '嚴謹學術';
+
+    const tagText = selectedTags.length > 0 ? `\n📌 格式要求：${selectedTags.join('、')}` : '';
+    const extraText = extra ? `\n\n💬 補充說明：${extra}` : '';
+
+    const templates = {
+      '學術研究': `請以嚴謹的學術語氣，針對「${topic}」進行${task}。\n\n🎯 核心任務：\n• 識別文件中的核心論點與研究方法\n• 評估論據的有效性與邏輯一致性\n• 提供基於文件內容的深度見解\n• 標注重要引用與數據來源\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '商業分析': `請以專業商業顧問的視角，針對「${topic}」進行${task}。\n\n📊 分析框架：\n• 市場環境與競爭態勢評估\n• 核心業務指標與財務表現\n• 策略機會與潛在風險識別\n• 具體可行的行動建議\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '創意寫作': `請以富有創意與想像力的方式，針對「${topic}」進行${task}。\n\n✍️ 創作方向：\n• 挖掘文件中的故事性與情感張力\n• 提出多元的創意詮釋角度\n• 建議生動的表達方式與修辭技巧\n• 激發讀者的共鳴與想像空間\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '技術文件': `請以精確清晰的技術語言，針對「${topic}」進行${task}。\n\n⚙️ 技術要求：\n• 提取關鍵技術規格與參數\n• 將複雜概念轉化為結構化說明\n• 標記注意事項、限制條件與最佳實踐\n• 提供實用的操作指引與範例\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '教育學習': `請以啟發式教學的理念，針對「${topic}」進行${task}。\n\n📚 教學設計：\n• 建立清晰的知識架構與學習路徑\n• 設計引導思考的提問與討論題\n• 連結先備知識與生活實例\n• 提供多元的學習評量方式\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '法律合規': `請以嚴謹的法律專業視角，針對「${topic}」進行${task}。\n\n⚖️ 法律分析：\n• 識別相關法規條文與適用範圍\n• 評估合規風險與法律義務\n• 分析案例適用性與例外情況\n• 提供風險管理建議（非法律意見）\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '醫療健康': `請以專業醫療衛教的角度，針對「${topic}」進行${task}。\n\n🏥 健康分析：\n• 提取關鍵醫療資訊與研究數據\n• 以易懂語言解釋專業術語\n• 強調預防保健與生活應用\n• 標注重要警示與就醫建議\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '新聞採訪': `請以新聞記者的客觀視角，針對「${topic}」進行${task}。\n\n📰 新聞要素：\n• 提取 5W1H 核心新聞事實\n• 識別多方立場與利害關係人\n• 評估資訊可信度與查核重點\n• 建議後續追蹤報導方向\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '產品設計': `請以使用者中心設計的思維，針對「${topic}」進行${task}。\n\n🎯 設計洞察：\n• 識別使用者需求與痛點\n• 分析現有解決方案的優劣\n• 提出創新設計機會點\n• 建議原型測試與驗證方向\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '財務投資': `請以專業財務分析師的視角，針對「${topic}」進行${task}。\n\n💹 財務分析：\n• 解讀關鍵財務指標與趨勢\n• 評估獲利能力與風險因子\n• 比較同業表現與市場基準\n• 提供投資考量點（非投資建議）\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '行銷文案': `請以創意行銷人的思維，針對「${topic}」進行${task}。\n\n📣 行銷策略：\n• 提取品牌核心價值與差異化優勢\n• 分析目標受眾的心理動機\n• 設計吸引人的訊息框架\n• 建議跨渠道傳播策略\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`,
+
+      '自由探索': `請以開放好奇的探索精神，針對「${topic}」進行${task}。\n\n🔮 探索方向：\n• 從多元角度解讀文件內容\n• 發現隱藏的模式與關聯\n• 提出創新的問題與假設\n• 連結跨領域的知識與應用\n\n👤 目標受眾：${audience}\n📏 輸出長度：${length}\n🎚️ 語氣調性：${toneText}${tagText}${extraText}`
+    };
+
+    const prompt = templates[selectedStyle] || templates['自由探索'];
+
+    // 顯示區塊
+    const section = document.getElementById('output-section');
+    section.style.display = 'block';
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // 打字機效果
+    typeWriter(prompt);
+
+    // 品質分數
+    setTimeout(() => {
+      const base = 65;
+      const topicBonus = topic !== '上傳的文件' ? 15 : 0;
+      const tagBonus = Math.min(selectedTags.length * 3, 12);
+      const extraBonus = extra ? 8 : 0;
+
+      setScore('sc1', 'sv1', Math.min(base + topicBonus + 5, 98));
+      setScore('sc2', 'sv2', Math.min(base + tagBonus + topicBonus, 96));
+      setScore('sc3', 'sv3', Math.min(base + extraBonus + tagBonus, 95));
+      setScore('sc4', 'sv4', Math.min(base + topicBonus + tagBonus + extraBonus, 99));
+    }, 500);
+  }
+
+  function typeWriter(text) {
+    const box = document.getElementById('outputBox');
+    box.innerHTML = '';
+    let i = 0;
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor';
+    box.appendChild(cursor);
+
+    const interval = setInterval(() => {
+      if (i < text.length) {
+        box.insertBefore(document.createTextNode(text[i]), cursor);
+        i++;
+      } else {
+        clearInterval(interval);
+        cursor.remove();
+      }
+    }, 18);
+  }
+
+  function setScore(barId, valId, val) {
+    document.getElementById(barId).style.width = val + '%';
+    document.getElementById(valId).textContent = val + '%';
+  }
+
+  // ── 複製 ──
+  function copyPrompt() {
+    const text = document.getElementById('outputBox').textContent;
+    navigator.clipboard.writeText(text).then(() => showToast('✅ 已複製到剪貼簿！'));
+  }
+
+  // ── 儲存 ──
+  function savePrompt() {
+    const text = document.getElementById('outputBox').textContent;
+    if (!text) return;
+    savedPrompts.unshift({ style: selectedStyle, text, time: new Date().toLocaleString('zh-TW') });
+    renderSaved();
+    showToast('💾 已儲存到收藏庫！');
+  }
+
+  function renderSaved() {
+    const list = document.getElementById('saved-list');
+    if (savedPrompts.length === 0) {
+      list.innerHTML = '<div class="empty-msg">📭 尚未收藏任何提示詞<br><small>生成後點擊「儲存收藏」即可保存</small></div>';
+      return;
+    }
+    list.innerHTML = savedPrompts.map((p, i) => `
+      <div class="saved-item">
+        <div>
+          <div style="color:var(--primary);font-weight:600;margin-bottom:4px;">🏷️ ${p.style} · <span style="color:var(--text-muted);font-weight:400;font-size:11px;">${p.time}</span></div>
+          <div>${p.text.substring(0, 120)}...</div>
+        </div>
+        <button class="del-btn" onclick="deletePrompt(${i})">🗑️</button>
+      </div>
+    `).join('');
+  }
+
+  function deletePrompt(i) {
+    savedPrompts.splice(i, 1);
+    renderSaved();
+    showToast('🗑️ 已刪除');
+  }
+
+  // ── 範例切換 ──
+  function showExample(tab, id) {
+    document.querySelectorAll('.ex-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.example-card').forEach(c => c.classList.remove('show'));
+    tab.classList.add('active');
+    document.getElementById(id).classList.add('show');
+  }
+
+  // ── Toast ──
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+</script>
+</body>
+</html>
