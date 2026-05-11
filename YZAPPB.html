@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coffee Wallet 店員收款頁</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(250, 204, 21, .14), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(120, 53, 15, .22), transparent 30%),
+        linear-gradient(135deg, #0f172a, #1e293b 45%, #3f2a14);
+      min-height: 100vh;
+    }
+    .glass {
+      background: rgba(255, 255, 255, .12);
+      backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, .12);
+    }
+    .card {
+      background: linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
+      border: 1px solid rgba(255,255,255,.08);
+    }
+    .shadow-soft {
+      box-shadow: 0 20px 40px rgba(0,0,0,.28);
+    }
+    .badge-pending {
+      background: rgba(251, 191, 36, .18);
+      color: #fde68a;
+    }
+    .badge-paid {
+      background: rgba(34, 197, 94, .18);
+      color: #86efac;
+    }
+    .badge-used {
+      background: rgba(34, 197, 94, .18);
+      color: #86efac;
+    }
+    .badge-expired {
+      background: rgba(239, 68, 68, .18);
+      color: #fca5a5;
+    }
+    .badge-ready {
+      background: rgba(59, 130, 246, .18);
+      color: #93c5fd;
+    }
+  </style>
+</head>
+<body class="text-white">
+  <div class="max-w-md mx-auto px-4 py-6">
+    <header class="mb-6">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-2xl bg-amber-400 text-gray-900 flex items-center justify-center text-3xl shadow-soft">
+          ☕
+        </div>
+        <div>
+          <h1 class="text-2xl font-black tracking-tight">Coffee Wallet Staff</h1>
+          <p class="text-sm text-amber-100/80">店員收款 / 核銷頁</p>
+        </div>
+      </div>
+    </header>
+
+    <section class="glass rounded-3xl p-5 shadow-soft mb-5">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-sm text-white/60">店員身份</p>
+          <p id="staffName" class="text-xl font-black mt-1">載入中...</p>
+          <p id="staffUserId" class="text-xs text-white/40 break-all mt-1"></p>
+        </div>
+        <div id="staffStatus" class="px-3 py-1 rounded-full text-sm font-bold badge-ready">
+          檢查中
+        </div>
+      </div>
+    </section>
+
+    <section id="noAccessBox" class="hidden glass rounded-3xl p-5 shadow-soft mb-5">
+      <h2 class="text-xl font-black mb-2">無操作權限</h2>
+      <p class="text-sm text-white/70 leading-relaxed">
+        你的 LINE 帳號不在店員名單內，無法使用本頁面。<br />
+        請將你的 LINE userId 加入 GAS 的 <b>CONFIG.STAFF_USER_IDS</b> 後重新部署。
+      </p>
+    </section>
+
+    <div id="staffApp" class="hidden">
+      <section class="glass rounded-3xl p-5 shadow-soft mb-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xl font-black">確認收款</h2>
+          <span class="text-xs text-white/50">輸入訂單編號</span>
+        </div>
+
+        <div class="flex gap-3">
+          <input id="orderIdInput" type="text" placeholder="例如：OD8c9f0a1b2c3d4e5f"
+            class="flex-1 rounded-2xl px-4 py-3 text-gray-900 bg-white" />
+          <button onclick="queryOrder()" class="rounded-2xl px-5 py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 font-black transition">
+            查詢
+          </button>
+        </div>
+
+        <div id="orderBox" class="hidden mt-4 card rounded-3xl p-5">
+          <div class="flex justify-between items-start gap-3">
+            <div>
+              <p id="orderProductName" class="text-lg font-black">-</p>
+              <p id="orderIdText" class="text-sm text-white/60 mt-1">訂單編號：-</p>
+              <p id="orderUserId" class="text-sm text-white/60">會員：-</p>
+              <p id="orderCups" class="text-sm text-white/60">杯數：-</p>
+              <p id="orderAmount" class="text-sm text-white/60">金額：-</p>
+              <p id="orderCreatedAt" class="text-xs text-white/40 mt-2">建立時間：-</p>
+              <p id="orderPaidAt" class="text-xs text-white/40">付款時間：-</p>
+            </div>
+            <div class="shrink-0 text-right">
+              <span id="orderStatusBadge" class="inline-block px-3 py-1 rounded-full text-xs font-bold badge-ready">
+                -
+              </span>
+            </div>
+          </div>
+
+          <button id="confirmPayBtn" onclick="confirmCashPayment()" class="mt-4 w-full rounded-2xl py-3 bg-green-500 hover:bg-green-400 text-gray-900 font-black transition">
+            確認收款
+          </button>
+        </div>
+      </section>
+
+      <section class="glass rounded-3xl p-5 shadow-soft mb-8">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xl font-black">確認核銷</h2>
+          <span class="text-xs text-white/50">輸入 6 位核銷碼</span>
+        </div>
+
+        <div class="flex gap-3">
+          <input id="redeemCodeInput" type="text" maxlength="6" placeholder="例如：123456"
+            class="flex-1 rounded-2xl px-4 py-3 text-gray-900 bg-white tracking-widest" />
+          <button onclick="queryRedeem()" class="rounded-2xl px-5 py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 font-black transition">
+            查詢
+          </button>
+        </div>
+
+        <div id="redeemBox" class="hidden mt-4 card rounded-3xl p-5">
+          <div class="flex justify-between items-start gap-3">
+            <div>
+              <p id="redeemCodeText" class="text-lg font-black">-</p>
+              <p id="redeemUserId" class="text-sm text-white/60 mt-1">會員：-</p>
+              <p id="redeemCups" class="text-sm text-white/60">杯數：-</p>
+              <p id="redeemCreatedAt" class="text-xs text-white/40 mt-2">建立時間：-</p>
+              <p id="redeemExpiredAt" class="text-xs text-white/40">到期時間：-</p>
+              <p id="redeemUsedAt" class="text-xs text-white/40">使用時間：-</p>
+            </div>
+            <div class="shrink-0 text-right">
+              <span id="redeemStatusBadge" class="inline-block px-3 py-1 rounded-full text-xs font-bold badge-ready">
+                -
+              </span>
+            </div>
+          </div>
+
+          <button id="confirmRedeemBtn" onclick="confirmRedeemAction()" class="mt-4 w-full rounded-2xl py-3 bg-green-500 hover:bg-green-400 text-gray-900 font-black transition">
+            確認核銷
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <footer class="text-center text-xs text-white/40 pb-6">
+      Coffee Wallet © Staff Console
+    </footer>
+  </div>
+
+  <div id="loading" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div class="text-center">
+      <div class="text-5xl mb-3">☕</div>
+      <p class="font-bold">店員頁載入中...</p>
+    </div>
+  </div>
+
+  <script>
+    const LIFF_ID = '2006181829-l81j2YrD';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbx8fV84mf3OyjnFCTTjl0nzPsrX8rQGfBSPTIsO8n4kxN8PnL8GmxOguHqG9R-dNVLT/exec';
+
+    let profile = null;
+    let currentOrder = null;
+    let currentRedeem = null;
+    let isStaff = false;
+
+    function showLoading(show) {
+      const el = document.getElementById('loading');
+      if (show) {
+        el.classList.remove('hidden');
+      } else {
+        el.classList.add('hidden');
+      }
+    }
+
+    async function api(action, data = {}) {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8'
+        },
+        body: JSON.stringify({
+          action,
+          ...data
+        })
+      });
+
+      const text = await res.text();
+      console.log('API raw response:', text);
+
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        throw new Error(
+          'API 回傳不是 JSON，請檢查 API_URL 是否為 GAS Web App /exec URL。\n\n前 200 字：\n' +
+          text.slice(0, 200)
+        );
+      }
+    }
+
+    async function main() {
+      try {
+        showLoading(true);
+
+        await liff.init({ liffId: LIFF_ID });
+
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return;
+        }
+
+        profile = await liff.getProfile();
+
+        document.getElementById('staffName').innerText = profile.displayName || 'LINE 使用者';
+        document.getElementById('staffUserId').innerText = profile.userId || '';
+
+        const result = await api('staffLogin', {
+          user: {
+            userId: profile.userId,
+            displayName: profile.displayName,
+            pictureUrl: profile.pictureUrl
+          }
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '店員登入失敗');
+        }
+
+        isStaff = !!result.isStaff;
+
+        if (!isStaff) {
+          document.getElementById('staffStatus').innerText = '無權限';
+          document.getElementById('staffStatus').className = 'px-3 py-1 rounded-full text-sm font-bold badge-expired';
+          document.getElementById('noAccessBox').classList.remove('hidden');
+          document.getElementById('staffApp').classList.add('hidden');
+          return;
+        }
+
+        document.getElementById('staffStatus').innerText = '店員可操作';
+        document.getElementById('staffStatus').className = 'px-3 py-1 rounded-full text-sm font-bold badge-paid';
+        document.getElementById('staffApp').classList.remove('hidden');
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '系統錯誤');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function queryOrder() {
+      try {
+        const orderId = document.getElementById('orderIdInput').value.trim();
+        if (!orderId) {
+          alert('請輸入訂單編號');
+          return;
+        }
+
+        showLoading(true);
+
+        const result = await api('getOrderById', {
+          staffUserId: profile.userId,
+          orderId: orderId
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '查詢訂單失敗');
+        }
+
+        currentOrder = result.order;
+        renderOrder(currentOrder);
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '查詢訂單失敗');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function renderOrder(order) {
+      document.getElementById('orderBox').classList.remove('hidden');
+      document.getElementById('orderProductName').innerText = order.productName || '-';
+      document.getElementById('orderIdText').innerText = '訂單編號：' + (order.orderId || '-');
+      document.getElementById('orderUserId').innerText = '會員：' + (order.userId || '-');
+      document.getElementById('orderCups').innerText = '杯數：' + Number(order.cups || 0) + ' 杯';
+      document.getElementById('orderAmount').innerText = '金額：NT$' + Number(order.amount || 0).toLocaleString('zh-TW');
+      document.getElementById('orderCreatedAt').innerText = '建立時間：' + formatDate(order.createdAt);
+      document.getElementById('orderPaidAt').innerText = '付款時間：' + (order.paidAt ? formatDate(order.paidAt) : '-');
+
+      const badge = document.getElementById('orderStatusBadge');
+      const btn = document.getElementById('confirmPayBtn');
+
+      if (String(order.status) === 'PAID') {
+        badge.innerText = '已付款';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-paid';
+        btn.disabled = true;
+        btn.innerText = '此訂單已付款';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-white/20 text-white/60 font-black cursor-not-allowed';
+      } else {
+        badge.innerText = '待付款';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-pending';
+        btn.disabled = false;
+        btn.innerText = '確認收款';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-green-500 hover:bg-green-400 text-gray-900 font-black transition';
+      }
+    }
+
+    async function confirmCashPayment() {
+      try {
+        if (!currentOrder || !currentOrder.orderId) {
+          alert('請先查詢訂單');
+          return;
+        }
+
+        if (!confirm('確認已收到現金，並將此訂單設為已付款？')) {
+          return;
+        }
+
+        showLoading(true);
+
+        const result = await api('staffConfirmCashPayment', {
+          staffUserId: profile.userId,
+          orderId: currentOrder.orderId
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '確認收款失敗');
+        }
+
+        alert(result.message || '收款成功');
+
+        if (result.order) {
+          currentOrder = result.order;
+          renderOrder(currentOrder);
+        } else {
+          await queryOrder();
+        }
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '確認收款失敗');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function queryRedeem() {
+      try {
+        const code = document.getElementById('redeemCodeInput').value.trim();
+        if (!code) {
+          alert('請輸入核銷碼');
+          return;
+        }
+
+        showLoading(true);
+
+        const result = await api('getRedeemByCode', {
+          staffUserId: profile.userId,
+          code: code
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '查詢核銷碼失敗');
+        }
+
+        currentRedeem = result.redeem;
+        renderRedeem(currentRedeem);
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '查詢核銷碼失敗');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function renderRedeem(redeem) {
+      document.getElementById('redeemBox').classList.remove('hidden');
+      document.getElementById('redeemCodeText').innerText = '核銷碼：' + (redeem.code || '-');
+      document.getElementById('redeemUserId').innerText = '會員：' + (redeem.userId || '-');
+      document.getElementById('redeemCups').innerText = '杯數：' + Number(redeem.cups || 0) + ' 杯';
+      document.getElementById('redeemCreatedAt').innerText = '建立時間：' + formatDate(redeem.createdAt);
+      document.getElementById('redeemExpiredAt').innerText = '到期時間：' + formatDate(redeem.expiredAt);
+      document.getElementById('redeemUsedAt').innerText = '使用時間：' + (redeem.usedAt ? formatDate(redeem.usedAt) : '-');
+
+      const badge = document.getElementById('redeemStatusBadge');
+      const btn = document.getElementById('confirmRedeemBtn');
+      const expired = isExpired(redeem.expiredAt);
+
+      if (String(redeem.status) === 'USED') {
+        badge.innerText = '已核銷';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-used';
+        btn.disabled = true;
+        btn.innerText = '此核銷碼已使用';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-white/20 text-white/60 font-black cursor-not-allowed';
+      } else if (expired) {
+        badge.innerText = '已過期';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-expired';
+        btn.disabled = true;
+        btn.innerText = '此核銷碼已過期';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-white/20 text-white/60 font-black cursor-not-allowed';
+      } else {
+        badge.innerText = '可核銷';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-ready';
+        btn.disabled = false;
+        btn.innerText = '確認核銷';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-green-500 hover:bg-green-400 text-gray-900 font-black transition';
+      }
+    }
+
+    async function confirmRedeemAction() {
+      try {
+        if (!currentRedeem || !currentRedeem.code) {
+          alert('請先查詢核銷碼');
+          return;
+        }
+
+        if (!confirm('確認要核銷這筆咖啡兌換嗎？')) {
+          return;
+        }
+
+        showLoading(true);
+
+        const result = await api('staffConfirmRedeem', {
+          staffUserId: profile.userId,
+          code: currentRedeem.code
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '確認核銷失敗');
+        }
+
+        alert(result.message || '核銷成功');
+
+        if (result.redeem) {
+          currentRedeem = result.redeem;
+          renderRedeem(currentRedeem);
+        } else {
+          await queryRedeem();
+        }
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '確認核銷失敗');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function isExpired(value) {
+      if (!value) return false;
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return false;
+      return d.getTime() < Date.now();
+    }
+
+    function formatDate(value) {
+      if (!value) return '';
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return String(value);
+      return d.toLocaleString('zh-TW');
+    }
+
+    main();
+  </script>
+</body>
+</html>
