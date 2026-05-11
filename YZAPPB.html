@@ -3,22 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Coffee Wallet 現金寄杯版</title>
+  <title>Coffee Wallet 店員收款頁</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     body {
       background:
-        radial-gradient(circle at top left, rgba(251, 191, 36, .15), transparent 30%),
-        radial-gradient(circle at bottom right, rgba(120, 53, 15, .25), transparent 30%),
-        linear-gradient(135deg, #111827, #1f2937 45%, #422006);
+        radial-gradient(circle at top left, rgba(250, 204, 21, .14), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(120, 53, 15, .22), transparent 30%),
+        linear-gradient(135deg, #0f172a, #1e293b 45%, #3f2a14);
       min-height: 100vh;
     }
     .glass {
       background: rgba(255, 255, 255, .12);
       backdrop-filter: blur(18px);
-      border: 1px solid rgba(255, 255, 255, .15);
+      border: 1px solid rgba(255, 255, 255, .12);
     }
     .card {
       background: linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
@@ -27,13 +27,6 @@
     .shadow-soft {
       box-shadow: 0 20px 40px rgba(0,0,0,.28);
     }
-    .qr-box canvas,
-    .qr-box img {
-      margin: 0 auto;
-      background: white;
-      padding: 10px;
-      border-radius: 16px;
-    }
     .badge-pending {
       background: rgba(251, 191, 36, .18);
       color: #fde68a;
@@ -41,6 +34,35 @@
     .badge-paid {
       background: rgba(34, 197, 94, .18);
       color: #86efac;
+    }
+    .badge-used {
+      background: rgba(34, 197, 94, .18);
+      color: #86efac;
+    }
+    .badge-expired {
+      background: rgba(239, 68, 68, .18);
+      color: #fca5a5;
+    }
+    .badge-ready {
+      background: rgba(59, 130, 246, .18);
+      color: #93c5fd;
+    }
+    #reader {
+      width: 100%;
+      overflow: hidden;
+      border-radius: 16px;
+    }
+    #reader video {
+      border-radius: 16px;
+    }
+    #reader__dashboard_section_csr button,
+    #reader__dashboard_section_swaplink {
+      color: #111827 !important;
+    }
+    #reader select,
+    #reader button,
+    #reader input {
+      color: #111827 !important;
     }
   </style>
 </head>
@@ -52,8 +74,8 @@
           ☕
         </div>
         <div>
-          <h1 class="text-2xl font-black tracking-tight">Coffee Wallet</h1>
-          <p class="text-sm text-amber-100/80">現金寄杯正式版</p>
+          <h1 class="text-2xl font-black tracking-tight">Coffee Wallet Staff</h1>
+          <p class="text-sm text-amber-100/80">店員收款 / 核銷頁</p>
         </div>
       </div>
     </header>
@@ -61,99 +83,127 @@
     <section class="glass rounded-3xl p-5 shadow-soft mb-5">
       <div class="flex items-center justify-between gap-3">
         <div>
-          <p class="text-sm text-white/60">目前剩餘</p>
-          <div class="flex items-end gap-2">
-            <span id="balance" class="text-5xl font-black">0</span>
-            <span class="pb-2 text-white/70">杯</span>
-          </div>
+          <p class="text-sm text-white/60">店員身份</p>
+          <p id="staffName" class="text-xl font-black mt-1">載入中...</p>
+          <p id="staffUserId" class="text-xs text-white/40 break-all mt-1"></p>
         </div>
-        <div class="text-right">
-          <img id="avatar" class="w-12 h-12 rounded-full ml-auto mb-2 hidden border border-white/20" alt="avatar" />
-          <p id="displayName" class="font-bold">載入中...</p>
-          <p class="text-xs text-white/50">會員帳戶</p>
+        <div id="staffStatus" class="px-3 py-1 rounded-full text-sm font-bold badge-ready">
+          檢查中
         </div>
-      </div>
-
-      <div class="grid grid-cols-2 gap-3 mt-5">
-        <button id="tabOrderBtn" onclick="switchTab('order')" class="rounded-2xl py-3 transition font-black bg-amber-500 text-gray-900">
-          訂購
-        </button>
-        <button id="tabRedeemBtn" onclick="switchTab('redeem')" class="rounded-2xl py-3 transition font-black bg-white/10 text-white hover:bg-white/20">
-          兌換
-        </button>
       </div>
     </section>
 
-    <div id="orderPage">
-      <section class="mb-6">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xl font-black">購買寄杯方案</h2>
-          <span class="text-xs text-amber-200">建立訂單後到櫃台付現</span>
-        </div>
-        <div id="products" class="space-y-3"></div>
-      </section>
+    <section id="noAccessBox" class="hidden glass rounded-3xl p-5 shadow-soft mb-5">
+      <h2 class="text-xl font-black mb-2">無操作權限</h2>
+      <p class="text-sm text-white/70 leading-relaxed">
+        你的 LINE 帳號不在店員名單內，無法使用本頁面。<br />
+        請將你的 LINE userId 加入 GAS 的 <b>CONFIG.STAFF_USER_IDS</b> 後重新部署。
+      </p>
+    </section>
 
-      <section class="glass rounded-3xl p-5 mb-6 shadow-soft">
+    <div id="staffApp" class="hidden">
+      <section class="glass rounded-3xl p-5 shadow-soft mb-5">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xl font-black">我的訂單</h2>
-          <span class="text-xs text-white/50">最新 20 筆</span>
+          <h2 class="text-xl font-black">確認收款</h2>
+          <span class="text-xs text-white/50">輸入訂單編號</span>
         </div>
-        <div id="orders" class="space-y-2"></div>
-      </section>
-    </div>
-
-    <div id="redeemPage" class="hidden">
-      <section class="glass rounded-3xl p-5 mb-6 shadow-soft">
-        <h2 class="text-xl font-black mb-2">我要兌換咖啡</h2>
-        <p class="text-sm text-white/60 mb-4">產生核銷碼後，請於有效期限內出示數字或 QRCode 給店員。</p>
 
         <div class="flex gap-3">
-          <select id="redeemCups" class="flex-1 rounded-2xl px-4 py-3 text-gray-900 bg-white">
-            <option value="1">兌換 1 杯</option>
-            <option value="2">兌換 2 杯</option>
-            <option value="3">兌換 3 杯</option>
-          </select>
-          <button onclick="createRedeem()" class="rounded-2xl px-5 py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 font-black transition">
-            產生
+          <input id="orderIdInput" type="text" placeholder="例如：OD8c9f0a1b2c3d4e5f"
+            class="flex-1 rounded-2xl px-4 py-3 text-gray-900 bg-white" />
+          <button onclick="queryOrder()" class="rounded-2xl px-5 py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 font-black transition">
+            查詢
           </button>
         </div>
 
-        <div id="redeemBox" class="hidden mt-5 rounded-3xl bg-black/30 p-5 text-center border border-amber-300/30">
-          <p class="text-sm text-white/60">請出示給店員</p>
-          <p id="redeemCode" class="text-5xl font-black tracking-widest my-3 text-amber-300">------</p>
-          <div id="qrcode" class="qr-box my-4 flex justify-center"></div>
-          <p id="redeemInfo" class="text-sm text-white/60 mb-2"></p>
-          <p id="redeemCountdown" class="text-sm text-amber-200 font-bold mb-4"></p>
-
-          <div class="grid grid-cols-2 gap-3">
-            <button onclick="copyRedeemCode()" class="rounded-2xl py-3 bg-white/10 hover:bg-white/20 transition font-bold">
-              複製核銷碼
-            </button>
-            <button onclick="downloadQR()" class="rounded-2xl py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 transition font-black">
-              下載 QR
-            </button>
+        <div id="orderBox" class="hidden mt-4 card rounded-3xl p-5">
+          <div class="flex justify-between items-start gap-3">
+            <div>
+              <p id="orderProductName" class="text-lg font-black">-</p>
+              <p id="orderIdText" class="text-sm text-white/60 mt-1">訂單編號：-</p>
+              <p id="orderUserId" class="text-sm text-white/60">會員：-</p>
+              <p id="orderCups" class="text-sm text-white/60">杯數：-</p>
+              <p id="orderAmount" class="text-sm text-white/60">金額：-</p>
+              <p id="orderCreatedAt" class="text-xs text-white/40 mt-2">建立時間：-</p>
+              <p id="orderPaidAt" class="text-xs text-white/40">付款時間：-</p>
+            </div>
+            <div class="shrink-0 text-right">
+              <span id="orderStatusBadge" class="inline-block px-3 py-1 rounded-full text-xs font-bold badge-ready">
+                -
+              </span>
+            </div>
           </div>
+
+          <button id="confirmPayBtn" onclick="confirmCashPayment()" class="mt-4 w-full rounded-2xl py-3 bg-green-500 hover:bg-green-400 text-gray-900 font-black transition">
+            確認收款
+          </button>
         </div>
       </section>
 
-      <section class="mb-8">
+      <section class="glass rounded-3xl p-5 shadow-soft mb-5">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xl font-black">最近交易紀錄</h2>
-          <span class="text-xs text-white/50">最新 20 筆</span>
+          <h2 class="text-xl font-black">掃碼核銷</h2>
+          <span class="text-xs text-white/50">可掃 QRCode 或手動輸入</span>
         </div>
-        <div id="ledger" class="space-y-2"></div>
+
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <button id="startScanBtn" onclick="startScanner()" class="rounded-2xl py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 font-black transition">
+            開始掃描
+          </button>
+          <button id="stopScanBtn" onclick="stopScanner()" class="rounded-2xl py-3 bg-white/10 hover:bg-white/20 text-white font-bold transition">
+            停止掃描
+          </button>
+        </div>
+
+        <div id="readerWrap" class="hidden">
+          <div id="reader" class="bg-white p-2 mb-3"></div>
+        </div>
+
+        <p id="scanHint" class="text-sm text-white/60 mb-4">
+          掃描顧客出示的 QRCode，系統會自動帶入核銷碼。
+        </p>
+
+        <div class="flex gap-3">
+          <input id="redeemCodeInput" type="text" maxlength="50" placeholder="例如：123456 或 COFFEE_REDEEM:123456"
+            class="flex-1 rounded-2xl px-4 py-3 text-gray-900 bg-white tracking-widest" />
+          <button onclick="queryRedeem()" class="rounded-2xl px-5 py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 font-black transition">
+            查詢
+          </button>
+        </div>
+
+        <div id="redeemBox" class="hidden mt-4 card rounded-3xl p-5">
+          <div class="flex justify-between items-start gap-3">
+            <div>
+              <p id="redeemCodeText" class="text-lg font-black">-</p>
+              <p id="redeemUserId" class="text-sm text-white/60 mt-1">會員：-</p>
+              <p id="redeemCups" class="text-sm text-white/60">杯數：-</p>
+              <p id="redeemCreatedAt" class="text-xs text-white/40 mt-2">建立時間：-</p>
+              <p id="redeemExpiredAt" class="text-xs text-white/40">到期時間：-</p>
+              <p id="redeemUsedAt" class="text-xs text-white/40">使用時間：-</p>
+            </div>
+            <div class="shrink-0 text-right">
+              <span id="redeemStatusBadge" class="inline-block px-3 py-1 rounded-full text-xs font-bold badge-ready">
+                -
+              </span>
+            </div>
+          </div>
+
+          <button id="confirmRedeemBtn" onclick="confirmRedeemAction()" class="mt-4 w-full rounded-2xl py-3 bg-green-500 hover:bg-green-400 text-gray-900 font-black transition">
+            確認核銷
+          </button>
+        </div>
       </section>
     </div>
 
     <footer class="text-center text-xs text-white/40 pb-6">
-      Coffee Wallet © Cash Version
+      Coffee Wallet © Staff Console
     </footer>
   </div>
 
   <div id="loading" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
     <div class="text-center">
       <div class="text-5xl mb-3">☕</div>
-      <p class="font-bold">咖啡帳戶載入中...</p>
+      <p class="font-bold">店員頁載入中...</p>
     </div>
   </div>
 
@@ -162,10 +212,12 @@
     const API_URL = 'https://script.google.com/macros/s/AKfycbz5hEAfjyygCSW0vcm2IIkKyAIR925upHs7OkX_64nAZWBCxrR7l5N51Kw_ouHhPYhb/exec';
 
     let profile = null;
-    let latestRedeemCode = '';
-    let latestRedeemExpiredAt = '';
-    let currentTab = 'order';
-    let countdownTimer = null;
+    let currentOrder = null;
+    let currentRedeem = null;
+    let isStaff = false;
+    let html5QrScanner = null;
+    let scanning = false;
+    let lastScannedText = '';
 
     function showLoading(show) {
       const el = document.getElementById('loading');
@@ -173,27 +225,6 @@
         el.classList.remove('hidden');
       } else {
         el.classList.add('hidden');
-      }
-    }
-
-    function switchTab(tab) {
-      currentTab = tab;
-
-      const orderPage = document.getElementById('orderPage');
-      const redeemPage = document.getElementById('redeemPage');
-      const orderBtn = document.getElementById('tabOrderBtn');
-      const redeemBtn = document.getElementById('tabRedeemBtn');
-
-      if (tab === 'order') {
-        orderPage.classList.remove('hidden');
-        redeemPage.classList.add('hidden');
-        orderBtn.className = 'rounded-2xl py-3 transition font-black bg-amber-500 text-gray-900';
-        redeemBtn.className = 'rounded-2xl py-3 transition font-black bg-white/10 text-white hover:bg-white/20';
-      } else {
-        orderPage.classList.add('hidden');
-        redeemPage.classList.remove('hidden');
-        orderBtn.className = 'rounded-2xl py-3 transition font-black bg-white/10 text-white hover:bg-white/20';
-        redeemBtn.className = 'rounded-2xl py-3 transition font-black bg-amber-500 text-gray-900';
       }
     }
 
@@ -235,15 +266,10 @@
 
         profile = await liff.getProfile();
 
-        document.getElementById('displayName').innerText = profile.displayName || 'LINE 使用者';
+        document.getElementById('staffName').innerText = profile.displayName || 'LINE 使用者';
+        document.getElementById('staffUserId').innerText = profile.userId || '';
 
-        if (profile.pictureUrl) {
-          const avatar = document.getElementById('avatar');
-          avatar.src = profile.pictureUrl;
-          avatar.classList.remove('hidden');
-        }
-
-        const loginResult = await api('login', {
+        const result = await api('staffLogin', {
           user: {
             userId: profile.userId,
             displayName: profile.displayName,
@@ -251,321 +277,319 @@
           }
         });
 
-        if (!loginResult.ok) {
-          throw new Error(loginResult.message || '登入失敗');
-        }
-
-        await refreshAll();
-        switchTab('order');
-      } catch (err) {
-        console.error(err);
-        alert(err.message || '系統發生錯誤');
-      } finally {
-        showLoading(false);
-      }
-    }
-
-    async function refreshAll() {
-      showLoading(true);
-      try {
-        await loadProducts();
-        await refreshWallet();
-        await loadOrders();
-      } finally {
-        showLoading(false);
-      }
-    }
-
-    async function loadProducts() {
-      const result = await api('getProducts');
-
-      if (!result.ok) {
-        throw new Error(result.message || '商品載入失敗');
-      }
-
-      const box = document.getElementById('products');
-      box.innerHTML = '';
-
-      if (!result.products || result.products.length === 0) {
-        box.innerHTML = `
-          <div class="card rounded-3xl p-5 text-sm text-white/60">
-            目前沒有可購買的寄杯方案
-          </div>
-        `;
-        return;
-      }
-
-      result.products.forEach(p => {
-        const div = document.createElement('div');
-        div.className = 'card rounded-3xl p-5 shadow-soft';
-
-        div.innerHTML = `
-          <div class="flex justify-between items-start gap-3">
-            <div>
-              <h3 class="text-lg font-black">${escapeHtml(p.name)}</h3>
-              <p class="text-sm text-white/60 mt-1">${escapeHtml(p.description || '')}</p>
-              <p class="text-amber-200 font-bold mt-3">${p.cups} 杯</p>
-            </div>
-            <div class="text-right shrink-0">
-              <p class="text-2xl font-black">NT$${Number(p.price).toLocaleString('zh-TW')}</p>
-              <p class="text-xs text-white/50">現金付款</p>
-            </div>
-          </div>
-
-          <button class="mt-4 w-full rounded-2xl py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 font-black transition">
-            建立訂單
-          </button>
-        `;
-
-        div.querySelector('button').onclick = () => checkout(p.productId);
-        box.appendChild(div);
-      });
-    }
-
-    async function checkout(productId) {
-      try {
-        showLoading(true);
-
-        const result = await api('checkout', {
-          userId: profile.userId,
-          productId: productId
-        });
-
         if (!result.ok) {
-          throw new Error(result.message || '建立訂單失敗');
+          throw new Error(result.message || '店員登入失敗');
         }
 
-        const order = result.order;
+        isStaff = !!result.isStaff;
 
-        alert(
-          '訂單已建立，請至櫃台付款。\n\n' +
-          '訂單編號：' + order.orderId + '\n' +
-          '商品：' + order.productName + '\n' +
-          '杯數：' + order.cups + ' 杯\n' +
-          '金額：NT$' + Number(order.amount).toLocaleString('zh-TW') + '\n' +
-          '付款方式：現金\n\n' +
-          '請出示此訂單編號給店員，收現完成後系統會自動入帳。'
-        );
-
-        await loadOrders();
-      } catch (err) {
-        console.error(err);
-        alert(err.message || '建立訂單失敗');
-      } finally {
-        showLoading(false);
-      }
-    }
-
-    async function loadOrders() {
-      const result = await api('getMyOrders', {
-        userId: profile.userId
-      });
-
-      if (!result.ok) {
-        throw new Error(result.message || '讀取訂單失敗');
-      }
-
-      const box = document.getElementById('orders');
-      box.innerHTML = '';
-
-      if (!result.orders || result.orders.length === 0) {
-        box.innerHTML = `
-          <div class="card rounded-2xl p-4 text-sm text-white/50">
-            尚無訂單紀錄
-          </div>
-        `;
-        return;
-      }
-
-      result.orders.forEach(order => {
-        const isPaid = String(order.status) === 'PAID';
-
-        const div = document.createElement('div');
-        div.className = 'rounded-2xl bg-white/10 p-4';
-
-        div.innerHTML = `
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="font-bold">${escapeHtml(order.productName)}</p>
-              <p class="text-sm text-white/60 mt-1">訂單編號：${escapeHtml(order.orderId)}</p>
-              <p class="text-sm text-white/60">杯數：${Number(order.cups)} 杯</p>
-              <p class="text-sm text-white/60">金額：NT$${Number(order.amount).toLocaleString('zh-TW')}</p>
-              ${!isPaid ? '<p class="text-xs text-amber-200 mt-2 font-bold">請至櫃台出示訂單編號完成付款</p>' : ''}
-              <p class="text-xs text-white/40 mt-2">建立時間：${formatDate(order.createdAt)}</p>
-              ${order.paidAt ? `<p class="text-xs text-white/40">付款時間：${formatDate(order.paidAt)}</p>` : ''}
-            </div>
-            <div class="shrink-0 text-right">
-              <span class="inline-block px-3 py-1 rounded-full text-xs font-bold ${isPaid ? 'badge-paid' : 'badge-pending'}">
-                ${isPaid ? '已付款' : '待付款'}
-              </span>
-            </div>
-          </div>
-        `;
-
-        box.appendChild(div);
-      });
-    }
-
-    async function refreshWallet() {
-      const result = await api('getWallet', {
-        userId: profile.userId
-      });
-
-      if (!result.ok) {
-        throw new Error(result.message || '讀取錢包失敗');
-      }
-
-      const wallet = result.wallet || {};
-      document.getElementById('balance').innerText = Number(wallet.balance || 0);
-
-      const ledgerBox = document.getElementById('ledger');
-      ledgerBox.innerHTML = '';
-
-      if (!result.ledger || result.ledger.length === 0) {
-        ledgerBox.innerHTML = `
-          <div class="card rounded-2xl p-4 text-sm text-white/50">
-            尚無交易紀錄
-          </div>
-        `;
-        return;
-      }
-
-      result.ledger.forEach(item => {
-        const cups = Number(item.cups || 0);
-        const isPlus = cups > 0;
-
-        const div = document.createElement('div');
-        div.className = 'rounded-2xl bg-white/10 p-4 flex justify-between items-center';
-
-        div.innerHTML = `
-          <div>
-            <p class="font-bold">${escapeHtml(item.note || item.type || '')}</p>
-            <p class="text-xs text-white/50">${formatDate(item.createdAt)}</p>
-          </div>
-          <div class="${isPlus ? 'text-green-300' : 'text-red-300'} font-black">
-            ${isPlus ? '+' : ''}${cups} 杯
-          </div>
-        `;
-
-        ledgerBox.appendChild(div);
-      });
-    }
-
-    async function createRedeem() {
-      try {
-        showLoading(true);
-
-        const cups = Number(document.getElementById('redeemCups').value);
-
-        const result = await api('createRedeem', {
-          userId: profile.userId,
-          cups: cups
-        });
-
-        if (!result.ok) {
-          throw new Error(result.message || '建立核銷碼失敗');
-        }
-
-        const redeem = result.redeem;
-        latestRedeemCode = redeem.code;
-        latestRedeemExpiredAt = redeem.expiredAt;
-
-        document.getElementById('redeemBox').classList.remove('hidden');
-        document.getElementById('redeemCode').innerText = redeem.code;
-        document.getElementById('redeemInfo').innerText =
-          '本次兌換 ' + redeem.cups + ' 杯，有效至 ' + formatDate(redeem.expiredAt);
-
-        renderQRCode('COFFEE_REDEEM:' + redeem.code);
-        startRedeemCountdown(redeem.expiredAt);
-        await refreshWallet();
-        switchTab('redeem');
-      } catch (err) {
-        console.error(err);
-        alert(err.message || '建立核銷碼失敗');
-      } finally {
-        showLoading(false);
-      }
-    }
-
-    function renderQRCode(text) {
-      const box = document.getElementById('qrcode');
-      box.innerHTML = '';
-
-      new QRCode(box, {
-        text: text,
-        width: 220,
-        height: 220,
-        colorDark: '#111827',
-        colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.H
-      });
-    }
-
-    function startRedeemCountdown(expiredAt) {
-      latestRedeemExpiredAt = expiredAt;
-      if (countdownTimer) {
-        clearInterval(countdownTimer);
-      }
-
-      function update() {
-        const end = new Date(expiredAt).getTime();
-        const now = Date.now();
-        const diff = end - now;
-        const el = document.getElementById('redeemCountdown');
-
-        if (diff <= 0) {
-          el.innerText = '核銷碼已過期';
+        if (!isStaff) {
+          document.getElementById('staffStatus').innerText = '無權限';
+          document.getElementById('staffStatus').className = 'px-3 py-1 rounded-full text-sm font-bold badge-expired';
+          document.getElementById('noAccessBox').classList.remove('hidden');
+          document.getElementById('staffApp').classList.add('hidden');
           return;
         }
 
-        const totalSec = Math.floor(diff / 1000);
-        const min = Math.floor(totalSec / 60);
-        const sec = totalSec % 60;
-        el.innerText = '剩餘時間：' + String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
-      }
-
-      update();
-      countdownTimer = setInterval(update, 1000);
-    }
-
-    async function copyRedeemCode() {
-      if (!latestRedeemCode) {
-        alert('目前沒有可複製的核銷碼');
-        return;
-      }
-
-      try {
-        await navigator.clipboard.writeText(latestRedeemCode);
-        alert('核銷碼已複製：' + latestRedeemCode);
+        document.getElementById('staffStatus').innerText = '店員可操作';
+        document.getElementById('staffStatus').className = 'px-3 py-1 rounded-full text-sm font-bold badge-paid';
+        document.getElementById('staffApp').classList.remove('hidden');
       } catch (err) {
-        alert('複製失敗，請手動複製：' + latestRedeemCode);
+        console.error(err);
+        alert(err.message || '系統錯誤');
+      } finally {
+        showLoading(false);
       }
     }
 
-    function downloadQR() {
-      const qrBox = document.getElementById('qrcode');
-      const canvas = qrBox.querySelector('canvas');
-      const img = qrBox.querySelector('img');
+    function extractRedeemCode(input) {
+      const s = String(input || '').trim();
 
-      let dataUrl = '';
+      if (!s) return '';
 
-      if (canvas) {
-        dataUrl = canvas.toDataURL('image/png');
-      } else if (img) {
-        dataUrl = img.src;
+      if (/^\d{6}$/.test(s)) return s;
+
+      const m1 = s.match(/COFFEE_REDEEM:(\d{6})/i);
+      if (m1) return m1[1];
+
+      const m2 = s.match(/(\d{6})/);
+      if (m2) return m2[1];
+
+      return '';
+    }
+
+    async function queryOrder() {
+      try {
+        const orderId = document.getElementById('orderIdInput').value.trim();
+        if (!orderId) {
+          alert('請輸入訂單編號');
+          return;
+        }
+
+        showLoading(true);
+
+        const result = await api('getOrderById', {
+          staffUserId: profile.userId,
+          orderId: orderId
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '查詢訂單失敗');
+        }
+
+        currentOrder = result.order;
+        renderOrder(currentOrder);
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '查詢訂單失敗');
+      } finally {
+        showLoading(false);
       }
+    }
 
-      if (!dataUrl) {
-        alert('目前沒有可下載的 QRCode');
-        return;
+    function renderOrder(order) {
+      document.getElementById('orderBox').classList.remove('hidden');
+      document.getElementById('orderProductName').innerText = order.productName || '-';
+      document.getElementById('orderIdText').innerText = '訂單編號：' + (order.orderId || '-');
+      document.getElementById('orderUserId').innerText = '會員：' + (order.userId || '-');
+      document.getElementById('orderCups').innerText = '杯數：' + Number(order.cups || 0) + ' 杯';
+      document.getElementById('orderAmount').innerText = '金額：NT$' + Number(order.amount || 0).toLocaleString('zh-TW');
+      document.getElementById('orderCreatedAt').innerText = '建立時間：' + formatDate(order.createdAt);
+      document.getElementById('orderPaidAt').innerText = '付款時間：' + (order.paidAt ? formatDate(order.paidAt) : '-');
+
+      const badge = document.getElementById('orderStatusBadge');
+      const btn = document.getElementById('confirmPayBtn');
+
+      if (String(order.status) === 'PAID') {
+        badge.innerText = '已付款';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-paid';
+        btn.disabled = true;
+        btn.innerText = '此訂單已付款';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-white/20 text-white/60 font-black cursor-not-allowed';
+      } else {
+        badge.innerText = '待付款';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-pending';
+        btn.disabled = false;
+        btn.innerText = '確認收款';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-green-500 hover:bg-green-400 text-gray-900 font-black transition';
       }
+    }
 
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = 'coffee-redeem-' + (latestRedeemCode || 'code') + '.png';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    async function confirmCashPayment() {
+      try {
+        if (!currentOrder || !currentOrder.orderId) {
+          alert('請先查詢訂單');
+          return;
+        }
+
+        if (!confirm('確認已收到現金，並將此訂單設為已付款？')) {
+          return;
+        }
+
+        showLoading(true);
+
+        const result = await api('staffConfirmCashPayment', {
+          staffUserId: profile.userId,
+          orderId: currentOrder.orderId
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '確認收款失敗');
+        }
+
+        alert(result.message || '收款成功');
+
+        if (result.order) {
+          currentOrder = result.order;
+          renderOrder(currentOrder);
+        } else {
+          await queryOrder();
+        }
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '確認收款失敗');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function queryRedeem() {
+      try {
+        const raw = document.getElementById('redeemCodeInput').value.trim();
+        const code = extractRedeemCode(raw);
+
+        if (!code) {
+          alert('請輸入有效核銷碼或掃描 QRCode');
+          return;
+        }
+
+        document.getElementById('redeemCodeInput').value = code;
+
+        showLoading(true);
+
+        const result = await api('getRedeemByCode', {
+          staffUserId: profile.userId,
+          code: code
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '查詢核銷碼失敗');
+        }
+
+        currentRedeem = result.redeem;
+        renderRedeem(currentRedeem);
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '查詢核銷碼失敗');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function renderRedeem(redeem) {
+      document.getElementById('redeemBox').classList.remove('hidden');
+      document.getElementById('redeemCodeText').innerText = '核銷碼：' + (redeem.code || '-');
+      document.getElementById('redeemUserId').innerText = '會員：' + (redeem.userId || '-');
+      document.getElementById('redeemCups').innerText = '杯數：' + Number(redeem.cups || 0) + ' 杯';
+      document.getElementById('redeemCreatedAt').innerText = '建立時間：' + formatDate(redeem.createdAt);
+      document.getElementById('redeemExpiredAt').innerText = '到期時間：' + formatDate(redeem.expiredAt);
+      document.getElementById('redeemUsedAt').innerText = '使用時間：' + (redeem.usedAt ? formatDate(redeem.usedAt) : '-');
+
+      const badge = document.getElementById('redeemStatusBadge');
+      const btn = document.getElementById('confirmRedeemBtn');
+      const expired = isExpired(redeem.expiredAt);
+
+      if (String(redeem.status) === 'USED') {
+        badge.innerText = '已核銷';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-used';
+        btn.disabled = true;
+        btn.innerText = '此核銷碼已使用';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-white/20 text-white/60 font-black cursor-not-allowed';
+      } else if (expired) {
+        badge.innerText = '已過期';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-expired';
+        btn.disabled = true;
+        btn.innerText = '此核銷碼已過期';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-white/20 text-white/60 font-black cursor-not-allowed';
+      } else {
+        badge.innerText = '可核銷';
+        badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-bold badge-ready';
+        btn.disabled = false;
+        btn.innerText = '確認核銷';
+        btn.className = 'mt-4 w-full rounded-2xl py-3 bg-green-500 hover:bg-green-400 text-gray-900 font-black transition';
+      }
+    }
+
+    async function confirmRedeemAction() {
+      try {
+        if (!currentRedeem || !currentRedeem.code) {
+          alert('請先查詢核銷碼');
+          return;
+        }
+
+        if (!confirm('確認要核銷這筆咖啡兌換嗎？')) {
+          return;
+        }
+
+        showLoading(true);
+
+        const result = await api('staffConfirmRedeem', {
+          staffUserId: profile.userId,
+          code: currentRedeem.code
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '確認核銷失敗');
+        }
+
+        alert(result.message || '核銷成功');
+
+        if (result.redeem) {
+          currentRedeem = result.redeem;
+          renderRedeem(currentRedeem);
+        } else {
+          await queryRedeem();
+        }
+
+        if (navigator.vibrate) {
+          navigator.vibrate(120);
+        }
+      } catch (err) {
+        console.error(err);
+        alert(err.message || '確認核銷失敗');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function startScanner() {
+      try {
+        if (scanning) return;
+
+        document.getElementById('readerWrap').classList.remove('hidden');
+        document.getElementById('scanHint').innerText = '掃描中，請將 QRCode 對準畫面中央。';
+
+        html5QrScanner = new Html5Qrcode('reader');
+
+        await html5QrScanner.start(
+          { facingMode: 'environment' },
+          {
+            fps: 10,
+            qrbox: { width: 220, height: 220 }
+          },
+          async (decodedText) => {
+            if (!decodedText) return;
+            if (decodedText === lastScannedText) return;
+
+            lastScannedText = decodedText;
+            const code = extractRedeemCode(decodedText);
+
+            if (!code) {
+              document.getElementById('scanHint').innerText = '掃描到內容，但不是有效核銷碼。';
+              return;
+            }
+
+            document.getElementById('redeemCodeInput').value = code;
+            document.getElementById('scanHint').innerText = '已掃描成功：' + code;
+
+            if (navigator.vibrate) {
+              navigator.vibrate(80);
+            }
+
+            await queryRedeem();
+          },
+          () => {}
+        );
+
+        scanning = true;
+      } catch (err) {
+        console.error(err);
+        alert('無法啟動相機掃描，請確認已允許相機權限。\n\n' + (err.message || err));
+      }
+    }
+
+    async function stopScanner() {
+      try {
+        if (html5QrScanner && scanning) {
+          await html5QrScanner.stop();
+          await html5QrScanner.clear();
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        html5QrScanner = null;
+        scanning = false;
+        lastScannedText = '';
+        document.getElementById('readerWrap').classList.add('hidden');
+        document.getElementById('scanHint').innerText = '掃描顧客出示的 QRCode，系統會自動帶入核銷碼。';
+      }
+    }
+
+    function isExpired(value) {
+      if (!value) return false;
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return false;
+      return d.getTime() < Date.now();
     }
 
     function formatDate(value) {
@@ -575,14 +599,9 @@
       return d.toLocaleString('zh-TW');
     }
 
-    function escapeHtml(str) {
-      return String(str)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
-    }
+    window.addEventListener('beforeunload', function () {
+      stopScanner();
+    });
 
     main();
   </script>
