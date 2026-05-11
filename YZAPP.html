@@ -122,7 +122,8 @@
           <p class="text-sm text-white/60">請出示給店員</p>
           <p id="redeemCode" class="text-5xl font-black tracking-widest my-3 text-amber-300">------</p>
           <div id="qrcode" class="qr-box my-4 flex justify-center"></div>
-          <p id="redeemInfo" class="text-sm text-white/60 mb-4"></p>
+          <p id="redeemInfo" class="text-sm text-white/60 mb-2"></p>
+          <p id="redeemCountdown" class="text-sm text-amber-200 font-bold mb-4"></p>
 
           <div class="grid grid-cols-2 gap-3">
             <button onclick="copyRedeemCode()" class="rounded-2xl py-3 bg-white/10 hover:bg-white/20 transition font-bold">
@@ -158,11 +159,13 @@
 
   <script>
     const LIFF_ID = '2006181829-l81j2YrD';
-    const API_URL = 'https://script.google.com/macros/s/AKfycbx8fV84mf3OyjnFCTTjl0nzPsrX8rQGfBSPTIsO8n4kxN8PnL8GmxOguHqG9R-dNVLT/exec';
+    const API_URL = 'https://script.google.com/macros/s/AKfycbz1UYEVSScCSQNyJsp32BF2-VMEBEz39q7kwAYZvZ7_qGoed2sFoAzui5OmpcZp0MDz/exec';
 
     let profile = null;
     let latestRedeemCode = '';
+    let latestRedeemExpiredAt = '';
     let currentTab = 'order';
+    let countdownTimer = null;
 
     function showLoading(show) {
       const el = document.getElementById('loading');
@@ -184,13 +187,11 @@
       if (tab === 'order') {
         orderPage.classList.remove('hidden');
         redeemPage.classList.add('hidden');
-
         orderBtn.className = 'rounded-2xl py-3 transition font-black bg-amber-500 text-gray-900';
         redeemBtn.className = 'rounded-2xl py-3 transition font-black bg-white/10 text-white hover:bg-white/20';
       } else {
         orderPage.classList.add('hidden');
         redeemPage.classList.remove('hidden');
-
         orderBtn.className = 'rounded-2xl py-3 transition font-black bg-white/10 text-white hover:bg-white/20';
         redeemBtn.className = 'rounded-2xl py-3 transition font-black bg-amber-500 text-gray-900';
       }
@@ -389,6 +390,7 @@
               <p class="text-sm text-white/60 mt-1">訂單編號：${escapeHtml(order.orderId)}</p>
               <p class="text-sm text-white/60">杯數：${Number(order.cups)} 杯</p>
               <p class="text-sm text-white/60">金額：NT$${Number(order.amount).toLocaleString('zh-TW')}</p>
+              ${!isPaid ? '<p class="text-xs text-amber-200 mt-2 font-bold">請至櫃台出示訂單編號完成付款</p>' : ''}
               <p class="text-xs text-white/40 mt-2">建立時間：${formatDate(order.createdAt)}</p>
               ${order.paidAt ? `<p class="text-xs text-white/40">付款時間：${formatDate(order.paidAt)}</p>` : ''}
             </div>
@@ -466,6 +468,7 @@
 
         const redeem = result.redeem;
         latestRedeemCode = redeem.code;
+        latestRedeemExpiredAt = redeem.expiredAt;
 
         document.getElementById('redeemBox').classList.remove('hidden');
         document.getElementById('redeemCode').innerText = redeem.code;
@@ -473,6 +476,7 @@
           '本次兌換 ' + redeem.cups + ' 杯，有效至 ' + formatDate(redeem.expiredAt);
 
         renderQRCode('COFFEE_REDEEM:' + redeem.code);
+        startRedeemCountdown(redeem.expiredAt);
         await refreshWallet();
         switchTab('redeem');
       } catch (err) {
@@ -495,6 +499,33 @@
         colorLight: '#ffffff',
         correctLevel: QRCode.CorrectLevel.H
       });
+    }
+
+    function startRedeemCountdown(expiredAt) {
+      latestRedeemExpiredAt = expiredAt;
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+      }
+
+      function update() {
+        const end = new Date(expiredAt).getTime();
+        const now = Date.now();
+        const diff = end - now;
+        const el = document.getElementById('redeemCountdown');
+
+        if (diff <= 0) {
+          el.innerText = '核銷碼已過期';
+          return;
+        }
+
+        const totalSec = Math.floor(diff / 1000);
+        const min = Math.floor(totalSec / 60);
+        const sec = totalSec % 60;
+        el.innerText = '剩餘時間：' + String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+      }
+
+      update();
+      countdownTimer = setInterval(update, 1000);
     }
 
     async function copyRedeemCode() {
