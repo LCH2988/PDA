@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>咖啡寄杯平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(245, 158, 11, .18), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(120, 53, 15, .22), transparent 30%),
+        linear-gradient(135deg, #111827, #1f2937 40%, #422006);
+    }
+    .glass {
+      background: rgba(255, 255, 255, .12);
+      backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, .18);
+    }
+    .coffee-card {
+      background: linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
+    }
+  </style>
+</head>
+<body class="min-h-screen text-white">
+  <div class="max-w-md mx-auto px-5 py-6">
+    <header class="mb-6">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center text-3xl shadow-xl">
+          ☕
+        </div>
+        <div>
+          <h1 class="text-2xl font-black tracking-tight">Coffee Wallet</h1>
+          <p class="text-sm text-amber-100/80">你的專屬咖啡寄杯帳戶</p>
+        </div>
+      </div>
+    </header>
+
+    <section class="glass rounded-3xl p-5 shadow-2xl mb-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm text-white/60">目前剩餘</p>
+          <div class="flex items-end gap-2">
+            <span id="balance" class="text-5xl font-black">0</span>
+            <span class="pb-2 text-white/70">杯</span>
+          </div>
+        </div>
+        <div class="text-right">
+          <p id="displayName" class="font-bold">載入中...</p>
+          <p class="text-xs text-white/50">會員帳戶</p>
+        </div>
+      </div>
+
+      <button onclick="refreshWallet()" class="mt-5 w-full rounded-2xl py-3 bg-white/15 hover:bg-white/25 transition font-bold">
+        重新整理帳戶
+      </button>
+    </section>
+
+    <section class="mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xl font-black">購買寄杯方案</h2>
+        <span class="text-xs text-amber-200">限時優惠</span>
+      </div>
+      <div id="products" class="space-y-3"></div>
+    </section>
+
+    <section class="glass rounded-3xl p-5 mb-6">
+      <h2 class="text-xl font-black mb-3">我要兌換咖啡</h2>
+      <p class="text-sm text-white/60 mb-4">產生核銷碼後，請於 5 分鐘內提供給店員。</p>
+
+      <div class="flex gap-3">
+        <select id="redeemCups" class="flex-1 rounded-2xl px-4 py-3 text-gray-900">
+          <option value="1">兌換 1 杯</option>
+          <option value="2">兌換 2 杯</option>
+          <option value="3">兌換 3 杯</option>
+        </select>
+        <button onclick="createRedeem()" class="rounded-2xl px-5 py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 font-black transition">
+          產生
+        </button>
+      </div>
+
+      <div id="redeemBox" class="hidden mt-5 rounded-3xl bg-black/30 p-5 text-center border border-amber-300/30">
+        <p class="text-sm text-white/60">請出示給店員</p>
+        <p id="redeemCode" class="text-5xl font-black tracking-widest my-3 text-amber-300">------</p>
+        <p id="redeemInfo" class="text-sm text-white/60"></p>
+      </div>
+    </section>
+
+    <section class="mb-8">
+      <h2 class="text-xl font-black mb-3">最近交易紀錄</h2>
+      <div id="ledger" class="space-y-2"></div>
+    </section>
+
+    <footer class="text-center text-xs text-white/40 pb-6">
+      Coffee Wallet © Powered by GAS + LINE Bot + LIFF
+    </footer>
+  </div>
+
+  <div id="loading" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div class="text-center">
+      <div class="text-5xl mb-3">☕</div>
+      <p class="font-bold">咖啡帳戶載入中...</p>
+    </div>
+  </div>
+
+  <script>
+    const LIFF_ID = '2006181829-l81j2YrD';
+    const API_URL = '請填入你的 GAS Web App URL';
+
+    let profile = null;
+    let currentOrder = null;
+
+    async function main() {
+      await liff.init({ liffId: LIFF_ID });
+
+      if (!liff.isLoggedIn()) {
+        liff.login();
+        return;
+      }
+
+      profile = await liff.getProfile();
+
+      document.getElementById('displayName').innerText = profile.displayName;
+
+      await api('login', {
+        user: {
+          userId: profile.userId,
+          displayName: profile.displayName,
+          pictureUrl: profile.pictureUrl
+        }
+      });
+
+      await loadProducts();
+      await refreshWallet();
+
+      document.getElementById('loading').classList.add('hidden');
+    }
+
+    async function api(action, data = {}) {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action,
+          ...data
+        })
+      });
+
+      return await res.json();
+    }
+
+    async function loadProducts() {
+      const result = await api('getProducts');
+      const box = document.getElementById('products');
+      box.innerHTML = '';
+
+      result.products.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'coffee-card rounded-3xl p-5 shadow-xl border border-white/10';
+
+        div.innerHTML = `
+          <div class="flex justify-between items-start gap-3">
+            <div>
+              <h3 class="text-lg font-black">${p.name}</h3>
+              <p class="text-sm text-white/60 mt-1">${p.description || ''}</p>
+              <p class="text-amber-200 font-bold mt-3">${p.cups} 杯</p>
+            </div>
+            <div class="text-right">
+              <p class="text-2xl font-black">$${p.price}</p>
+              <p class="text-xs text-white/50">TWD</p>
+            </div>
+          </div>
+
+          <button class="mt-4 w-full rounded-2xl py-3 bg-amber-500 hover:bg-amber-400 text-gray-900 font-black transition">
+            立即購買
+          </button>
+        `;
+
+        div.querySelector('button').onclick = () => checkout(p.productId);
+        box.appendChild(div);
+      });
+    }
+
+    async function checkout(productId) {
+      const result = await api('checkout', {
+        userId: profile.userId,
+        productId
+      });
+
+      if (!result.ok) {
+        alert(result.message);
+        return;
+      }
+
+      currentOrder = result.order;
+
+      const confirmed = confirm(
+        `訂單建立成功\n\n` +
+        `商品：${currentOrder.productName}\n` +
+        `杯數：${currentOrder.cups} 杯\n` +
+        `金額：$${currentOrder.amount}\n\n` +
+        `Demo 模式：是否模擬付款完成？`
+      );
+
+      if (confirmed) {
+        await payDemo(currentOrder.orderId);
+      }
+    }
+
+    async function payDemo(orderId) {
+      document.getElementById('loading').classList.remove('hidden');
+
+      const result = await api('payDemo', {
+        userId: profile.userId,
+        orderId
+      });
+
+      document.getElementById('loading').classList.add('hidden');
+
+      if (!result.ok) {
+        alert(result.message);
+        return;
+      }
+
+      alert('付款成功，寄杯已入帳！');
+      await refreshWallet();
+    }
+
+    async function refreshWallet() {
+      const result = await api('getWallet', {
+        userId: profile.userId
+      });
+
+      if (!result.ok) {
+        alert(result.message);
+        return;
+      }
+
+      const wallet = result.wallet;
+      document.getElementById('balance').innerText = Number(wallet.balance || 0);
+
+      const ledgerBox = document.getElementById('ledger');
+      ledgerBox.innerHTML = '';
+
+      if (!result.ledger || result.ledger.length === 0) {
+        ledgerBox.innerHTML = `<p class="text-sm text-white/50">尚無交易紀錄</p>`;
+        return;
+      }
+
+      result.ledger.forEach(item => {
+        const isPlus = Number(item.cups) > 0;
+        const div = document.createElement('div');
+        div.className = 'rounded-2xl bg-white/10 p-4 flex justify-between items-center';
+
+        div.innerHTML = `
+          <div>
+            <p class="font-bold">${item.note || item.type}</p>
+            <p class="text-xs text-white/50">${formatDate(item.createdAt)}</p>
+          </div>
+          <div class="${isPlus ? 'text-green-300' : 'text-red-300'} font-black">
+            ${isPlus ? '+' : ''}${item.cups} 杯
+          </div>
+        `;
+
+        ledgerBox.appendChild(div);
+      });
+    }
+
+    async function createRedeem() {
+      const cups = Number(document.getElementById('redeemCups').value);
+
+      const result = await api('createRedeem', {
+        userId: profile.userId,
+        cups
+      });
+
+      if (!result.ok) {
+        alert(result.message);
+        return;
+      }
+
+      document.getElementById('redeemBox').classList.remove('hidden');
+      document.getElementById('redeemCode').innerText = result.redeem.code;
+      document.getElementById('redeemInfo').innerText =
+        `本次兌換 ${result.redeem.cups} 杯，請於期限內完成核銷。`;
+    }
+
+    function formatDate(value) {
+      if (!value) return '';
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return value;
+      return d.toLocaleString('zh-TW');
+    }
+
+    main().catch(err => {
+      alert(err.message);
+      console.error(err);
+    });
+  </script>
+</body>
+</html>
