@@ -71,6 +71,12 @@
       object-fit: cover;
       border: 1px solid rgba(255,255,255,.18);
     }
+    .pending-item {
+      cursor: pointer;
+    }
+    .pending-item:hover {
+      background: rgba(255,255,255,.14);
+    }
   </style>
 </head>
 <body class="text-white">
@@ -156,6 +162,28 @@
             確認收款
           </button>
         </div>
+
+        <div class="mt-5">
+          <div class="flex items-center justify-between mb-3 gap-3">
+            <h3 class="text-lg font-black">待確認收款訂單</h3>
+            <button onclick="loadPendingOrders()" class="text-xs px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition shrink-0">
+              重新整理
+            </button>
+          </div>
+
+          <div class="mb-3">
+            <input
+              id="pendingSearchInput"
+              type="text"
+              placeholder="搜尋會員名字 / 訂單編號"
+              class="w-full rounded-2xl px-4 py-3 text-gray-900 bg-white"
+              oninput="filterPendingOrders()"
+            />
+          </div>
+
+          <div id="pendingOrdersMeta" class="text-xs text-white/50 mb-3 hidden"></div>
+          <div id="pendingOrders" class="space-y-2"></div>
+        </div>
       </section>
 
       <section class="glass rounded-3xl p-5 shadow-soft mb-5">
@@ -226,8 +254,8 @@
   </div>
 
   <script>
-    const LIFF_ID = '2006181829-rCL3W8YG';
-    const API_URL = 'https://script.google.com/macros/s/AKfycbz5hEAfjyygCSW0vcm2IIkKyAIR925upHs7OkX_64nAZWBCxrR7l5N51Kw_ouHhPYhb/exec';
+    const LIFF_ID = '請填入店員用 LIFF ID';
+    const API_URL = '請填入你的 GAS Web App /exec URL';
 
     let profile = null;
     let currentOrder = null;
@@ -236,6 +264,7 @@
     let html5QrScanner = null;
     let scanning = false;
     let lastScannedText = '';
+    let pendingOrdersCache = [];
 
     function showLoading(show) {
       const el = document.getElementById('loading');
@@ -312,6 +341,8 @@
         document.getElementById('staffStatus').innerText = '店員可操作';
         document.getElementById('staffStatus').className = 'px-3 py-1 rounded-full text-sm font-bold badge-paid';
         document.getElementById('staffApp').classList.remove('hidden');
+
+        await loadPendingOrders();
       } catch (err) {
         console.error(err);
         alert(err.message || '系統錯誤');
@@ -332,6 +363,101 @@
       if (m2) return m2[1];
 
       return '';
+    }
+
+    async function loadPendingOrders() {
+      try {
+        const box = document.getElementById('pendingOrders');
+        const meta = document.getElementById('pendingOrdersMeta');
+        box.innerHTML = '<div class="rounded-2xl bg-white/10 p-4 text-sm text-white/60">載入中...</div>';
+        meta.classList.add('hidden');
+        meta.innerText = '';
+
+        const result = await api('getPendingOrders', {
+          staffUserId: profile.userId,
+          limit: 0
+        });
+
+        if (!result.ok) {
+          throw new Error(result.message || '取得待付款訂單失敗');
+        }
+
+        pendingOrdersCache = Array.isArray(result.orders) ? result.orders : [];
+        filterPendingOrders();
+      } catch (err) {
+        console.error(err);
+        document.getElementById('pendingOrders').innerHTML =
+          '<div class="rounded-2xl bg-red-500/20 p-4 text-sm text-red-200">載入待付款訂單失敗：' + escapeHtml(err.message || '未知錯誤') + '</div>';
+      }
+    }
+
+    function filterPendingOrders() {
+      const keyword = String(document.getElementById('pendingSearchInput').value || '').trim().toLowerCase();
+
+      const filtered = pendingOrdersCache.filter(order => {
+        if (!keyword) return true;
+
+        const memberName = String(order.memberName || '').toLowerCase();
+        const orderId = String(order.orderId || '').toLowerCase();
+
+        return memberName.includes(keyword) || orderId.includes(keyword);
+      });
+
+      renderPendingOrders(filtered, keyword);
+    }
+
+    function renderPendingOrders(list, keyword) {
+      const box = document.getElementById('pendingOrders');
+      const meta = document.getElementById('pendingOrdersMeta');
+
+      box.innerHTML = '';
+
+      if (!pendingOrdersCache.length) {
+        meta.classList.add('hidden');
+        meta.innerText = '';
+        box.innerHTML = '<div class="rounded-2xl bg-white/10 p-4 text-sm text-white/50">目前沒有待確認收款訂單</div>';
+        return;
+      }
+
+      meta.classList.remove('hidden');
+      meta.innerText = keyword
+        ? '搜尋結果：' + list.length + ' / ' + pendingOrdersCache.length + ' 筆'
+        : '目前共 ' + pendingOrdersCache.length + ' 筆待確認收款訂單';
+
+      if (!list.length) {
+        box.innerHTML = '<div class="rounded-2xl bg-white/10 p-4 text-sm text-white/50">找不到符合條件的訂單</div>';
+        return;
+      }
+
+      list.forEach(order => {
+        const div = document.createElement('div');
+        div.className = 'pending-item rounded-2xl bg-white/10 p-4 transition';
+
+        div.innerHTML = `
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="font-bold">${escapeHtml(order.productName || '-')}</p>
+              <p class="text-sm text-white/70 mt-1">會員：${escapeHtml(order.memberName || '未命名會員')}</p>
+              <p class="text-sm text-white/60">杯數：${Number(order.cups || 0)} 杯｜金額：NT$${Number(order.amount || 0).toLocaleString('zh-TW')}</p>
+              <p class="text-xs text-white/40 mt-2">訂單編號：${escapeHtml(order.orderId || '-')}</p>
+              <p class="text-xs text-white/40">建立時間：${formatDate(order.createdAt)}</p>
+            </div>
+            <div class="shrink-0">
+              <span class="inline-block px-3 py-1 rounded-full text-xs font-bold badge-pending">待付款</span>
+            </div>
+          </div>
+        `;
+
+        div.onclick = () => selectPendingOrder(order);
+        box.appendChild(div);
+      });
+    }
+
+    function selectPendingOrder(order) {
+      currentOrder = order;
+      document.getElementById('orderIdInput').value = order.orderId || '';
+      renderOrder(order);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     async function queryOrder() {
@@ -434,6 +560,8 @@
         } else {
           await queryOrder();
         }
+
+        await loadPendingOrders();
       } catch (err) {
         console.error(err);
         alert(err.message || '確認收款失敗');
@@ -626,6 +754,15 @@
       const d = new Date(value);
       if (isNaN(d.getTime())) return String(value);
       return d.toLocaleString('zh-TW');
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
     }
 
     window.addEventListener('beforeunload', function () {
