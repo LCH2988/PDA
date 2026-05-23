@@ -105,7 +105,6 @@
   .divider{border:none;border-top:1px solid var(--border);margin:16px 0}
   .empty{text-align:center;padding:48px 20px;color:var(--muted)}
   .empty .ei{font-size:56px;margin-bottom:12px}
-  textarea.fc{resize:vertical;min-height:100px}
   </style>
 </head>
 <body>
@@ -173,11 +172,10 @@
 
 <script>
 // ============================================================
-// 前端固定設定：請改成你的實際值
+// 前端固定設定：請改成你的實際 URL
 // ============================================================
 const LIFF_ID  = '2007905012-dQfXClGM';
 const API_BASE = 'https://script.google.com/macros/s/AKfycbxN8trzxpDvQM4VP5eCgRohr1dfdhaoFFFoCWLhPckOTe10wLIGVqOiTkrNJoFW1LcM/exec';
-const ADMIN_API_KEY = '85202581';
 
 // ============================================================
 // Core helpers
@@ -208,14 +206,14 @@ async function api(action, data = {}) {
   }
 
   if (!res.ok) {
-    throw new Error(json.message || json.error || `HTTP ${res.status}`);
+    throw new Error(json.error || `HTTP ${res.status}`);
   }
 
   return json;
 }
 
 // ============================================================
-// App state
+// App 狀態
 // ============================================================
 const APP = {
   user: null,
@@ -231,18 +229,8 @@ function isAdminUser(u) {
   return !!(u && ADMIN_TYPES.includes(u.type));
 }
 
-function adminPayload(extra = {}) {
-  return {
-    apiKey: ADMIN_API_KEY,
-    operatorId: APP.user?.id || '',
-    operatorPhone: APP.user?.phone || '',
-    operator: APP.user?.name || '',
-    ...extra
-  };
-}
-
 // ============================================================
-// Init
+// 初始化
 // ============================================================
 window.addEventListener('DOMContentLoaded', () => {
   const saved = sessionStorage.getItem('parkUser');
@@ -278,7 +266,7 @@ function initLiff() {
 }
 
 // ============================================================
-// Frame
+// 框架控制
 // ============================================================
 function showFrame() {
   document.getElementById('hdr').classList.remove('hidden');
@@ -306,7 +294,7 @@ function setMain(html) { document.getElementById('main').innerHTML = html; }
 function showBack(v) { document.getElementById('btnBack').classList.toggle('hidden', !v); }
 
 // ============================================================
-// Router
+// 路由
 // ============================================================
 const ROUTES = {
   home: renderHome,
@@ -357,7 +345,7 @@ function updateNavActive(page) {
 }
 
 // ============================================================
-// Menu
+// 選單
 // ============================================================
 function openMenu() {
   document.getElementById('overlay').classList.remove('hidden');
@@ -389,10 +377,9 @@ function showLoad() { document.getElementById('loading').classList.remove('hidde
 function hideLoad() { document.getElementById('loading').classList.add('hidden'); }
 
 // ============================================================
-// Logout
+// 登出
 // ============================================================
-async function logout() {
-  try { await api('auth.logout', {}); } catch(e) {}
+function logout() {
   sessionStorage.removeItem('parkUser');
   APP.user = null;
   APP.isAdmin = false;
@@ -420,7 +407,16 @@ function closeModal() {
 }
 
 // ============================================================
-// Auth render
+// Button picker
+// ============================================================
+function pickBtn(prefix, val, hiddenId) {
+  document.querySelectorAll(`[id^="${prefix}"]`).forEach(b => b.classList.remove('sel'));
+  document.getElementById(`${prefix}${val}`)?.classList.add('sel');
+  document.getElementById(hiddenId).value = val;
+}
+
+// ============================================================
+// Login/Register
 // ============================================================
 function renderLogin() {
   hideFrame();
@@ -430,6 +426,7 @@ function renderLogin() {
       <div class="logo-icon">🌸</div>
       <h1>台灣帕金森病友<br>權益促進會</h1>
       <p>會員管理系統</p>
+    </div>
     <div class="card">
       <p class="card-title">🔑 請選擇登入方式</p>
       <div class="cg">
@@ -479,7 +476,8 @@ async function doPhoneLogin() {
     hideLoad();
     if (res.success) afterLogin(res.member);
     else toast(res.message || '登入失敗', 'e');
-  } catch (e) {hideLoad();
+  } catch (e) {
+    hideLoad();
     toast(e.message || '連線失敗，請稍後再試', 'e');
   }
 }
@@ -497,10 +495,7 @@ async function doLineLogin() {
       return;
     }
     const profile = await liff.getProfile();
-    const res = await api('auth.loginByLine', {
-      lineId: profile.userId,
-      lineName: profile.displayName
-    });
+    const res = await api('auth.loginByLine', { lineId: profile.userId, lineName: profile.displayName });
     hideLoad();
     if (res.success) {
       if (res.isFirstLogin) renderLineFirstLogin(profile.userId, profile.displayName);
@@ -552,6 +547,16 @@ async function doLineFirstLogin(lineId, lineName) {
     hideLoad();
     toast('連線失敗', 'e');
   }
+}
+
+function afterLogin(member) {
+  APP.user = member;
+  APP.isAdmin = isAdminUser(member);
+  APP.history = [];
+  sessionStorage.setItem('parkUser', JSON.stringify(member));
+  showFrame();
+  go('home', {}, false);
+  toast(`歡迎回來，${member.name}！`, 's');
 }
 
 function renderRegister() {
@@ -631,7 +636,7 @@ async function doLineRegister() {
       <div class="hero"><h2>💚 LINE 快速註冊</h2></div>
       <div class="card">
         <div class="fg">
-          <label class="flabel">LINE 名稱</label>
+          <label class="flabel">
           <input class="fc" value="${esc(profile.displayName || '')}" disabled style="background:#f4f6f9">
         </div>
         <div class="fg">
@@ -676,61 +681,31 @@ async function submitLineRegister(lineId, lineName) {
   }
 }
 
-function afterLogin(member) {
-  APP.user = member;
-  APP.isAdmin = isAdminUser(member);
-  APP.history = [];
-  sessionStorage.setItem('parkUser', JSON.stringify(member));
-  showFrame();
-  go('home', {}, false);
-  toast(`歡迎回來，${member.name}！`, 's');
-}
-
 // ============================================================
 // Home
 // ============================================================
-async function renderHome() {
+function renderHome() {
   setTitle('首頁');
-
   const u = APP.user || {};
+  const isAdmin = APP.isAdmin;
+
   setMain(`
     <div class="hero">
       <h2>您好，${esc(u.name || '會員')}</h2>
-      <p>${APP.isAdmin ? '管理功能已啟用' : '歡迎使用會員系統'}</p>
+      <p>${isAdmin ? '管理功能已啟用' : '歡迎使用會員系統'}</p>
     </div>
 
     <div class="sg">
       <div class="sc">
         <div class="si">👤</div>
         <div class="sv">${esc(u.type || '會員')}</div>
-        <div class="sl">身份別</div>
-      </div>
-      <div class="sc">
-        <div class="si">📌</div>
-        <div class="sv">${esc(u.status || '正常')}</div>
-        <div class="sl">會籍狀態</div>
+        <div class="sl">會員身份</div>
       </div>
       <div class="sc">
         <div class="si">💳</div>
-        <div class="sv" id="homePayStatus">--</div>
-        <div class="sl">繳費狀態</div>
+        <div class="sv">${esc(u.status || '正常')}</div>
+        <div class="sl">會籍狀態</div>
       </div>
-      <div class="sc">
-        <div class="si">❤️</div>
-        <div class="sv" id="homeDonateCount">--</div>
-        <div class="sl">捐款次數</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">📊 會員摘要</div>
-      <ul class="il">
-        <li class="ii"><span class="ilb">繳費總次數</span><span class="ilv" id="sumPaymentCount">0</span></li>
-        <li class="ii"><span class="ilb">繳費總金額</span><span class="ilv" id="sumPaymentTotal">NT$ 0</span></li>
-        <li class="ii"><span class="ilb">最近繳費日期</span><span class="ilv" id="sumLatestPayment">-</span></li>
-        <li class="ii"><span class="ilb">捐款次數</span><span class="ilv" id="sumDonationCount">0</span></li>
-        <li class="ii"><span class="ilb">捐款總金額</span><span class="ilv" id="sumDonationTotal">NT$ 0</span></li>
-      </ul>
     </div>
 
     <div class="card">
@@ -738,151 +713,39 @@ async function renderHome() {
       <button class="btn btn-p" onclick="go('member')">👤 我的資料</button>
       <button class="btn btn-a" onclick="go('payments')">💳 繳費記錄</button>
       <button class="btn btn-s" onclick="go('donations')">❤️ 捐款記錄</button>
-      ${APP.isAdmin ? `
+      ${isAdmin ? `
         <button class="btn btn-o" onclick="go('memberMgmt')">👥 會員管理</button>
         <button class="btn btn-o" onclick="go('finance')">💰 財務管理</button>
-        <button class="btn btn-o" onclick="go('budget')">📊 預算管理</button>
         <button class="btn btn-o" onclick="go('report')">📋 財務報表</button>
       ` : ''}
     </div>
+
+    <div class="card">
+      <div class="card-title">📢 公告</div>
+      <p class="muted">歡迎使用台灣帕金森病友權益促進會會員管理系統。</p>
+    </div>
   `);
-
-  try {
-    const res = await api('member.summary', { memberId: APP.user?.id || '' });
-    if (res.success && res.summary) {
-      const s = res.summary;
-      document.getElementById('homePayStatus').textContent = s.paymentStatus || '--';
-      document.getElementById('homeDonateCount').textContent = s.donationCount ?? 0;
-      document.getElementById('sumPaymentCount').textContent = s.paymentCount ?? 0;
-      document.getElementById('sumPaymentTotal').textContent = `NT$ ${Number(s.paymentTotal || 0).toLocaleString()}`;
-      document.getElementById('sumLatestPayment').textContent = s.latestPaymentDate || '-';
-      document.getElementById('sumDonationCount').textContent = s.donationCount ?? 0;
-      document.getElementById('sumDonationTotal').textContent = `NT$ ${Number(s.donationTotal || 0).toLocaleString()}`;
-    }
-  } catch (e) {}
 }
 
 // ============================================================
-// Member profile
+// Member Profile
 // ============================================================
-async function renderMemberProfile() {
+function renderMemberProfile() {
   setTitle('我的資料');
-  setMain(`<div class="card tc muted">讀取中...</div>`);
+  const u = APP.user || {};
 
-  try {
-    const res = await api('member.getProfile', { memberId: APP.user?.id || '' });
-    if (!res.success) throw new Error(res.message || '讀取失敗');
-
-    const u = res.member || {};
-    APP.user = { ...APP.user, ...u };
-    sessionStorage.setItem('parkUser', JSON.stringify(APP.user));
-    document.getElementById('menuName').textContent = APP.user?.name || '';
-    document.getElementById('menuType').textContent = APP.user?.type || '';
-
-    setMain(`
-      <div class="card">
-        <div class="card-title">👤 會員資料</div>
-        <ul class="il">
-          <li class="ii"><span class="ilb">姓名</span><span class="ilv">${esc(u.name || '')}</span></li>
-          <li class="ii"><span class="ilb">電話</span><span class="ilv">${esc(u.phone || '')}</span></li>
-          <li class="ii"><span class="ilb">地址</span><span class="ilv">${esc(u.address || '-')}</span></li>
-          <li class="ii"><span class="ilb">生日</span><span class="ilv">${esc(u.birthday || '-')}</span></li>
-          <li class="ii"><span class="ilb">確診年份</span><span class="ilv">${esc(u.diagnosedYear || '-')}</span></li>
-          <li class="ii"><span class="ilb">會員類型</span><span class="ilv">${esc(u.memberType || '-')}</span></li>
-          <li class="ii"><span class="ilb">就診醫院</span><span class="ilv">${esc(u.hospital || '-')}</span></li>
-          <li class="ii"><span class="ilb">主治醫師</span><span class="ilv">${esc(u.doctor || '-')}</span></li>
-          <li class="ii"><span class="ilb">是否手術</span><span class="ilv">${esc(u.hadSurgery || '-')}</span></li>
-          <li class="ii"><span class="ilb">手術名稱</span><span class="ilv">${esc(u.surgeryName || '-')}</span></li>
-          <li class="ii"><span class="ilb">最大困擾</span><span class="ilv">${esc(u.mainProblem || '-')}</span></li>
-          <li class="ii"><span class="ilb">最常運動</span><span class="ilv">${esc(u.favoriteExercise || '-')}</span></li>
-          <li class="ii"><span class="ilb">備註</span><span class="ilv">${esc(u.note || '-')}</span></li>
-          <li class="ii"><span class="ilb">身份別</span><span class="ilv">${esc(u.type || '-')}</span></li>
-          <li class="ii"><span class="ilb">狀態</span><span class="ilv">${esc(u.status || '-')}</span></li>
-        </ul>
-        <button class="btn btn-p mt16" onclick="renderEditProfile()">✏️ 編輯個人資料</button>
-      </div>
-    `);
-  } catch (e) {
-    setMain(`<div class="card tc" style="color:var(--danger)">讀取失敗：${esc(e.message)}</div>`);
-  }
-}
-
-async function renderEditProfile() {
-  setTitle('編輯個人資料');
-  setMain(`<div class="card tc muted">讀取中...</div>`);
-
-  try {
-    const res = await api('member.getProfile', { memberId: APP.user?.id || '' });
-    if (!res.success) throw new Error(res.message || '讀取失敗');
-
-    const u = res.member || {};
-    setMain(`
-      <div class="card">
-        <div class="card-title">✏️ 編輯個人資料</div>
-
-        <div class="fg"><label class="flabel">姓名<span class="req">*</span></label><input id="pfName" class="fc" value="${esc(u.name || '')}"></div>
-        <div class="fg"><label class="flabel">電話<span class="req">*</span></label><input id="pfPhone" class="fc" value="${esc(u.phone || '')}" type="tel"></div>
-        <div class="fg"><label class="flabel">地址</label><input id="pfAddress" class="fc" value="${esc(u.address || '')}"></div>
-        <div class="fg"><label class="flabel">生日</label><input id="pfBirthday" class="fc" value="${esc(u.birthday || '')}" type="date"></div>
-        <div class="fg"><label class="flabel">確診於西元年</label><input id="pfDiagnosedYear" class="fc" value="${esc(u.diagnosedYear || '')}" type="number" placeholder="例：2020"></div>
-        <div class="fg"><label class="flabel">會員類型</label><input id="pfMemberType" class="fc" value="${esc(u.memberType || '')}" placeholder="例：一般會員"></div>
-        <div class="fg"><label class="flabel">就診醫院</label><input id="pfHospital" class="fc" value="${esc(u.hospital || '')}"></div>
-        <div class="fg"><label class="flabel">主治醫師</label><input id="pfDoctor" class="fc" value="${esc(u.doctor || '')}"></div>
-        <div class="fg"><label class="flabel">是否做過手術</label><select id="pfHadSurgery" class="fc"><option value="否" ${u.hadSurgery === '否' ? 'selected' : ''}>否</option><option value="是" ${u.hadSurgery === '是' ? 'selected' : ''}>是</option></select></div>
-        <div class="fg"><label class="flabel">手術名稱</label><input id="pfSurgeryName" class="fc" value="${esc(u.surgeryName || '')}"></div>
-        <div class="fg"><label class="flabel">最大困擾</label><input id="pfMainProblem" class="fc" value="${esc(u.mainProblem || '')}"></div>
-        <div class="fg"><label class="flabel">最常做的運動</label><input id="pfFavoriteExercise" class="fc" value="${esc(u.favoriteExercise || '')}"></div>
-        <div class="fg"><label class="flabel">備註</label><textarea id="pfNote" class="fc" rows="4">${esc(u.note || '')}</textarea></div>
-
-        <button class="btn btn-p" onclick="saveProfile()">✅ 儲存資料</button>
-        <button class="btn btn-o mt8" onclick="go('member', {}, false)">← 返回</button>
-      </div>
-    `);
-  } catch (e) {
-    setMain(`<div class="card tc" style="color:var(--danger)">讀取失敗：${esc(e.message)}</div>`);
-  }
-}
-
-async function saveProfile() {
-  const data = {
-    memberId: APP.user?.id || '',
-    name: document.getElementById('pfName').value.trim(),
-    phone: document.getElementById('pfPhone').value.trim(),
-    address: document.getElementById('pfAddress').value.trim(),
-    birthday: document.getElementById('pfBirthday').value.trim(),
-    diagnosedYear: document.getElementById('pfDiagnosedYear').value.trim(),
-    memberType: document.getElementById('pfMemberType').value.trim(),
-    hospital: document.getElementById('pfHospital').value.trim(),
-    doctor: document.getElementById('pfDoctor').value.trim(),
-    hadSurgery: document.getElementById('pfHadSurgery').value,
-    surgeryName: document.getElementById('pfSurgeryName').value.trim(),
-    mainProblem: document.getElementById('pfMainProblem').value.trim(),
-    favoriteExercise: document.getElementById('pfFavoriteExercise').value.trim(),
-    note: document.getElementById('pfNote').value.trim()
-  };
-
-  if (!data.name || !data.phone) {
-    toast('姓名與電話不可空白', 'e');
-    return;
-  }
-
-  showLoad();
-  try {
-    const res = await api('member.updateProfile', data);
-    hideLoad();
-    if (!res.success) {
-      toast(res.message || '儲存失敗', 'e');
-      return;
-    }
-    APP.user = { ...APP.user, ...(res.member || {}) };
-    sessionStorage.setItem('parkUser', JSON.stringify(APP.user));
-    document.getElementById('menuName').textContent = APP.user?.name || '';
-    toast('個人資料已更新', 's');
-    go('member', {}, false);
-  } catch (e) {
-    hideLoad();
-    toast('連線失敗', 'e');
-  }
+  setMain(`
+    <div class="card">
+      <div class="card-title">👤 會員基本資料</div>
+      <ul class="il">
+        <li class="ii"><span class="ilb">姓名</span><span class="ilv">${esc(u.name || '')}</span></li>
+        <li class="ii"><span class="ilb">身份別</span><span class="ilv">${esc(u.type || '會員')}</span></li>
+        <li class="ii"><span class="ilb">電話</span><span class="ilv">${esc(u.phone || '')}</span></li>
+        <li class="ii"><span class="ilb">LINE 名稱</span><span class="ilv">${esc(u.lineName || '-')}</span></li>
+        <li class="ii"><span class="ilb">會員狀態</span><span class="ilv"><span class="badge bs">${esc(u.status || '正常')}</span></span></li>
+      </ul>
+    </div>
+  `);
 }
 
 // ============================================================
@@ -893,14 +756,16 @@ async function renderPayments() {
   setMain(`<div class="card tc muted">讀取中...</div>`);
 
   try {
-    const res = await api('payment.list', {
-      memberId: APP.user?.id || '',
-      phone: APP.user?.phone || ''
-    });
-
+    const res = await api('payment.list', { memberId: APP.user?.id || '', phone: APP.user?.phone || '' });
     const rows = Array.isArray(res.items) ? res.items : [];
+
     if (!rows.length) {
-      setMain(`<div class="empty"><div class="ei">💳</div><div>尚無繳費記錄</div></div>`);
+      setMain(`
+        <div class="empty">
+          <div class="ei">💳</div>
+          <div>尚無繳費記錄</div>
+        </div>
+      `);
       return;
     }
 
@@ -910,8 +775,7 @@ async function renderPayments() {
           <li class="ri">
             <div class="rlt">
               <div class="rt">${esc(r.item || '會費')}</div>
-              <div class="rs">${esc(r.date || '')}／${esc(r.year || '')}</div>
-              <div class="rs">${esc(r.note || '')}</div>
+              <div class="rs">${esc(r.date || '')}</div>
             </div>
             <div class="rr">
               <div class="ra">NT$ ${Number(r.amount || 0).toLocaleString()}</div>
@@ -931,14 +795,16 @@ async function renderDonations() {
   setMain(`<div class="card tc muted">讀取中...</div>`);
 
   try {
-    const res = await api('donation.list', {
-      memberId: APP.user?.id || '',
-      phone: APP.user?.phone || ''
-    });
-
+    const res = await api('donation.list', { memberId: APP.user?.id || '', phone: APP.user?.phone || '' });
     const rows = Array.isArray(res.items) ? res.items : [];
+
     if (!rows.length) {
-      setMain(`<div class="empty"><div class="ei">❤️</div><div>尚無捐款記錄</div></div>`);
+      setMain(`
+        <div class="empty">
+          <div class="ei">❤️</div>
+          <div>尚無捐款記錄</div>
+        </div>
+      `);
       return;
     }
 
@@ -947,9 +813,8 @@ async function renderDonations() {
         ${rows.map(r => `
           <li class="ri">
             <div class="rlt">
-              <div class="rt">${esc(r.item || '一般捐款')}</div>
+              <div class="rt">${esc(r.item || '愛心捐款')}</div>
               <div class="rs">${esc(r.date || '')}</div>
-              <div class="rs">收據：${esc(r.receiptNo || '-')}</div>
             </div>
             <div class="rr">
               <div class="ra">NT$ ${Number(r.amount || 0).toLocaleString()}</div>
@@ -965,7 +830,7 @@ async function renderDonations() {
 }
 
 // ============================================================
-// Guard
+// Admin pages
 // ============================================================
 function guardAdmin() {
   if (!APP.isAdmin) {
@@ -976,282 +841,106 @@ function guardAdmin() {
   return true;
 }
 
-// ============================================================
-// Member Management
-// ============================================================
 function renderMemberMgmt() {
   if (!guardAdmin()) return;
   setTitle('會員管理');
   setMain(`
     <div class="card">
       <div class="card-title">👥 會員管理</div>
-      <div class="fg">
-        <label class="flabel">搜尋會員</label>
-        <input id="memberKeyword" class="fc" type="text" placeholder="輸入姓名、電話、醫院、身份別">
-      </div>
-      <button class="btn btn-p" onclick="doSearchMembers()">🔍 搜尋</button>
-      <button class="btn btn-a" onclick="go('addMember')">➕ 新增會員</button>
-      <button class="btn btn-o" onclick="go('addStaff')">👔 新增管理人員/工作人員</button>
-    </div>
-    <div id="memberSearchResult"></div>
-  `);
-}
-
-async function doSearchMembers() {
-  const keyword = document.getElementById('memberKeyword').value.trim();
-  const wrap = document.getElementById('memberSearchResult');
-  wrap.innerHTML = `<div class="card tc muted">搜尋中...</div>`;
-
-  try {
-    const res = await api('member.search', adminPayload({ keyword }));
-    const rows = Array.isArray(res.items) ? res.items : [];
-
-    if (!rows.length) {
-      wrap.innerHTML = `<div class="empty"><div class="ei">👥</div><div>查無資料</div></div>`;
-      return;
-    }
-
-    wrap.innerHTML = rows.map(m => `
-      <div class="card">
-        <ul class="il">
-          <li class="ii"><span class="ilb">姓名</span><span class="ilv">${esc(m.name || '')}</span></li>
-          <li class="ii"><span class="ilb">電話</span><span class="ilv">${esc(m.phone || '')}</span></li>
-          <li class="ii"><span class="ilb">身份別</span><span class="ilv">${esc(m.type || '')}</span></li>
-          <li class="ii"><span class="ilb">會員類型</span><span class="ilv">${esc(m.memberType || '')}</span></li>
-          <li class="ii"><span class="ilb">狀態</span><span class="ilv">${esc(m.status || '')}</span></li>
-        </ul>
-        <button class="btn btn-sm btn-p mt16" onclick="renderAdminEditMember('${encodeURIComponent(JSON.stringify(m))}')">✏️ 編輯</button>
-      </div>
-    `).join('');
-  } catch (e) {
-    wrap.innerHTML = `<div class="card tc" style="color:var(--danger)">搜尋失敗：${esc(e.message)}</div>`;
-  }
-}
-
-function renderAdminEditMember(encoded) {
-  const m = JSON.parse(decodeURIComponent(encoded));
-  openModal(`
-    <div class="mtitle">✏️ 編輯會員</div>
-
-    <div class="fg"><label class="flabel">姓名</label><input id="amName" class="fc" value="${esc(m.name || '')}"></div>
-    <div class="fg"><label class="flabel">電話</label><input id="amPhone" class="fc" value="${esc(m.phone || '')}"></div>
-    <div class="fg"><label class="flabel">地址</label><input id="amAddress" class="fc" value="${esc(m.address || '')}"></div>
-    <div class="fg"><label class="flabel">生日</label><input id="amBirthday" class="fc" type="date" value="${esc(m.birthday || '')}"></div>
-    <div class="fg"><label class="flabel">確診年份</label><input id="amDiagnosedYear" class="fc" value="${esc(m.diagnosedYear || '')}"></div>
-    <div class="fg"><label class="flabel">會員類型</label><input id="amMemberType" class="fc" value="${esc(m.memberType || '')}"></div>
-    <div class="fg"><label class="flabel">就診醫院</label><input id="amHospital" class="fc" value="${esc(m.hospital || '')}"></div>
-    <div class="fg"><label class="flabel">主治醫師</label><input id="amDoctor" class="fc" value="${esc(m.doctor || '')}"></div>
-    <div class="fg"><label class="flabel">是否手術</label><select id="amHadSurgery" class="fc"><option value="否" ${(m.hadSurgery || '') === '否' ? 'selected' : ''}>否</option><option value="是" ${(m.hadSurgery || '') === '是' ? 'selected' : ''}>是</option></select></div>
-    <div class="fg"><label class="flabel">手術名稱</label><input id="amSurgeryName" class="fc" value="${esc(m.surgeryName || '')}"></div>
-    <div class="fg"><label class="flabel">最大困擾</label><input id="amMainProblem" class="fc" value="${esc(m.mainProblem || '')}"></div>
-    <div class="fg"><label class="flabel">最常運動</label><input id="amFavoriteExercise" class="fc" value="${esc(m.favoriteExercise || '')}"></div>
-    <div class="fg"><label class="flabel">備註</label><textarea id="amNote" class="fc" rows="3">${esc(m.note || '')}</textarea></div>
-    <div class="fg"><label class="flabel">身份別</label><input id="amType" class="fc" value="${esc(m.type || '')}"></div>
-    <div class="fg"><label class="flabel">狀態</label><select id="amStatus" class="fc"><option value="正常" ${(m.status || '') === '正常' ? 'selected' : ''}>正常</option><option value="停用" ${(m.status || '') === '停用' ? 'selected' : ''}>停用</option></select></div>
-
-    <button class="btn btn-p" onclick="submitAdminEditMember('${esc(m.id)}')">✅ 儲存</button>
-    <button class="btn btn-o mt8" onclick="closeModal()">取消</button>
-  `);
-}
-
-async function submitAdminEditMember(memberId) {
-  const data = adminPayload({
-    memberId,
-    name: document.getElementById('amName').value.trim(),
-    phone: document.getElementById('amPhone').value.trim(),
-    address: document.getElementById('amAddress').value.trim(),
-    birthday: document.getElementById('amBirthday').value.trim(),
-    diagnosedYear: document.getElementById('amDiagnosedYear').value.trim(),
-    memberType: document.getElementById('amMemberType').value.trim(),
-    hospital: document.getElementById('amHospital').value.trim(),
-    doctor: document.getElementById('amDoctor').value.trim(),
-    hadSurgery: document.getElementById('amHadSurgery').value,
-    surgeryName: document.getElementById('amSurgeryName').value.trim(),
-    mainProblem: document.getElementById('amMainProblem').value.trim(),
-    favoriteExercise: document.getElementById('amFavoriteExercise').value.trim(),
-    note: document.getElementById('amNote').value.trim(),
-    type: document.getElementById('amType').value.trim(),
-    status: document.getElementById('amStatus').value
-  });
-
-  showLoad();
-  try {
-    const res = await api('member.adminUpdate', data);
-    hideLoad();
-    if (res.success) {
-      toast('會員資料已更新', 's');
-      closeModal();
-      doSearchMembers();
-    } else {
-      toast(res.message || '更新失敗', 'e');
-    }
-  } catch (e) {
-    hideLoad();
-    toast('連線失敗', 'e');
-  }
-}
-
-function renderAddMember() {
-  if (!guardAdmin()) return;
-  setTitle('新增會員');
-  setMain(`
-    <div class="card">
-      <div class="card-title">➕ 新增會員</div>
-      <div class="fg"><label class="flabel">姓名<span class="req">*</span></label><input id="newMemberName" class="fc"></div>
-      <div class="fg"><label class="flabel">電話<span class="req">*</span></label><input id="newMemberPhone" class="fc" type="tel"></div>
-      <div class="fg"><label class="flabel">地址</label><input id="newMemberAddress" class="fc"></div>
-      <div class="fg"><label class="flabel">生日</label><input id="newMemberBirthday" class="fc" type="date"></div>
-      <div class="fg"><label class="flabel">確診年份</label><input id="newMemberDiagnosedYear" class="fc" type="number"></div>
-      <div class="fg"><label class="flabel">會員類型</label><input id="newMemberType2" class="fc" placeholder="例：一般會員"></div>
-      <div class="fg"><label class="flabel">就診醫院</label><input id="newMemberHospital" class="fc"></div>
-      <div class="fg"><label class="flabel">主治醫師</label><input id="newMemberDoctor" class="fc"></div>
-      <div class="fg"><label class="flabel">是否手術</label><select id="newMemberHadSurgery" class="fc"><option value="否">否</option><option value="是">是</option></select></div>
-      <div class="fg"><label class="flabel">手術名稱</label><input id="newMemberSurgeryName" class="fc"></div>
-      <div class="fg"><label class="flabel">最大困擾</label><input id="newMemberMainProblem" class="fc"></div>
-      <div class="fg"><label class="flabel">最常運動</label><input id="newMemberFavoriteExercise" class="fc"></div>
-      <div class="fg"><label class="flabel">備註</label><textarea id="newMemberNote" class="fc" rows="3"></textarea></div>
-      <div class="fg"><label class="flabel">身份別</label><input id="newMemberIdentity" class="fc" value="會員"></div>
-      <button class="btn btn-p" onclick="submitAddMember()">✅ 新增會員</button>
+      <button class="btn btn-p" onclick="go('addMember')">➕ 新增會員</button>
+      <button class="btn btn-a" onclick="go('addStaff')">👔 新增工作人員</button>
     </div>
   `);
 }
 
-async function submitAddMember() {
-  const data = adminPayload({
-    name: document.getElementById('newMemberName').value.trim(),
-    phone: document.getElementById('newMemberPhone').value.trim(),
-    address: document.getElementById('newMemberAddress').value.trim(),
-    birthday: document.getElementById('newMemberBirthday').value.trim(),
-    diagnosedYear: document.getElementById('newMemberDiagnosedYear').value.trim(),
-    memberType: document.getElementById('newMemberType2').value.trim(),
-    hospital: document.getElementById('newMemberHospital').value.trim(),
-    doctor: document.getElementById('newMemberDoctor').value.trim(),
-    hadSurgery: document.getElementById('newMemberHadSurgery').value,
-    surgeryName: document.getElementById('newMemberSurgeryName').value.trim(),
-    mainProblem: document.getElementById('newMemberMainProblem').value.trim(),
-    favoriteExercise: document.getElementById('newMemberFavoriteExercise').value.trim(),
-    note: document.getElementById('newMemberNote').value.trim(),
-    type: document.getElementById('newMemberIdentity').value.trim(),
-    status: '正常'
-  });
-
-  if (!data.name || !data.phone) {
-    toast('請填寫姓名與電話', 'e');
-    return;
-  }
-
-  showLoad();
-  try {
-    const res = await api('member.add', data);
-    hideLoad();
-    if (res.success) {
-      toast('會員已新增', 's');
-      go('memberMgmt', {}, false);
-    } else {
-      toast(res.message || '新增失敗', 'e');
-    }
-  } catch (e) {
-    hideLoad();
-    toast('連線失敗', 'e');
-  }
-}
-
-function renderAddStaff() {
-  if (!guardAdmin()) return;
-  setTitle('新增管理人員');
-  setMain(`
-    <div class="card">
-      <div class="card-title">👔 新增管理人員</div>
-      <div class="fg"><label class="flabel">姓名<span class="req">*</span></label><input id="adName" class="fc"></div>
-      <div class="fg"><label class="flabel">電話<span class="req">*</span></label><input id="adPhone" class="fc" type="tel"></div>
-      <div class="fg"><label class="flabel">角色<span class="req">*</span></label><input id="adRole" class="fc" placeholder="例：會計"></div>
-      <div class="fg"><label class="flabel">LINE ID</label><input id="adLineId" class="fc"></div>
-      <div class="fg"><label class="flabel">LINE 名稱</label><input id="adLineName" class="fc"></div>
-      <button class="btn btn-a" onclick="submitAddStaff()">✅ 新增管理人員</button>
-    </div>
-  `);
-}
-
-async function submitAddStaff() {
-  const data = adminPayload({
-    name: document.getElementById('adName').value.trim(),
-    phone: document.getElementById('adPhone').value.trim(),
-    role: document.getElementById('adRole').value.trim(),
-    lineId: document.getElementById('adLineId').value.trim(),
-    lineName: document.getElementById('adLineName').value.trim()
-  });
-
-  if (!data.name || !data.phone || !data.role) {
-    toast('請填寫完整資料', 'e');
-    return;
-  }
-
-  showLoad();
-  try {
-    const res = await api('admin.add', data);
-    hideLoad();
-    if (res.success) {
-      toast('管理人員已新增', 's');
-      go('memberMgmt', {}, false);
-    } else {
-      toast(res.message || '新增失敗', 'e');
-    }
-  } catch (e) {
-    hideLoad();
-    toast('連線失敗', 'e');
-  }
-}
-
-// ============================================================
-// Finance
-// ============================================================
 function renderFinance() {
   if (!guardAdmin()) return;
   setTitle('財務管理');
   setMain(`
     <div class="card">
       <div class="card-title">💰 財務管理</div>
-      <button class="btn btn-s" onclick="go('addIncome')">➕ 新增收入</button>
-      <button class="btn btn-d" onclick="go('addExpense')">➖ 新增支出</button>
-      <button class="btn btn-a" onclick="go('addPayment')">💳 新增會員繳費</button>
-      <button class="btn btn-o" onclick="go('addDonation')">❤️ 新增捐款記錄</button>
+      <button class="btn btn-s" onclick="go('addIncome')">➕ 登錄收入</button>
+      <button class="btn btn-d" onclick="go('addExpense')">➖ 登錄支出</button>
+      <button class="btn btn-a" onclick="go('addPayment')">💳 登錄繳費</button>
+      <button class="btn btn-o" onclick="go('addDonation')">❤️ 登錄捐款</button>
     </div>
   `);
 }
 
-function renderAddIncome() {
+function renderBudget() {
   if (!guardAdmin()) return;
-  setTitle('新增收入');
+  setTitle('預算管理');
   setMain(`
     <div class="card">
-      <div class="card-title">➕ 新增收入</div>
-      <div class="fg"><label class="flabel">會計科目</label><input id="incomeAccount" class="fc" placeholder="例：活動收入"></div>
-      <div class="fg"><label class="flabel">收入項目<span class="req">*</span></label><input id="incomeItem" class="fc"></div>
-      <div class="fg"><label class="flabel">金額<span class="req">*</span></label><input id="incomeAmount" class="fc" type="number"></div>
-      <div class="fg"><label class="flabel">日期</label><input id="incomeDate" class="fc" type="date"></div>
-      <div class="fg"><label class="flabel">備註</label><textarea id="incomeNote" class="fc" rows="3"></textarea></div>
+      <div class="card-title">📊 預算管理</div>
+      <button class="btn btn-p" onclick="go('addBudget')">➕ 新增預算</button>
+      <p class="muted mt16">可依實際需求串接後端預算資料。</p>
+    </div>
+  `);
+}
+
+function renderReport() {
+  if (!guardAdmin()) return;
+  setTitle('財務報表');
+  setMain(`
+    <div class="card">
+      <div class="card-title">📋 財務報表</div>
+      <p class="muted">此頁可串接 Google Apps Script 產生統計報表。</p>
+    </div>
+  `);
+}
+
+function renderSettings() {
+  if (!guardAdmin()) return;
+  setTitle('系統設定');
+  setMain(`
+    <div class="card">
+      <div class="card-title">⚙️ 系統設定</div>
+      <button class="btn btn-p" onclick="go('addAccount')">👤 新增管理帳號</button>
+      <button class="btn btn-o" onclick="go('sysConfig')">🛠️ 系統參數設定</button>
+    </div>
+  `);
+}
+
+// ============================================================
+// Forms
+// ============================================================
+function renderAddIncome() {
+  if (!guardAdmin()) return;
+  setTitle('登錄收入');
+  setMain(`
+    <div class="card">
+      <div class="card-title">➕ 登錄收入</div>
+      <div class="fg">
+        <label class="flabel">收入項目<span class="req">*</span></label>
+        <input id="incomeItem" class="fc" type="text" placeholder="例：活動收入">
+      </div>
+      <div class="fg">
+        <label class="flabel">金額<span class="req">*</span></label>
+        <input id="incomeAmount" class="fc" type="number" placeholder="請輸入金額">
+      </div>
+      <div class="fg">
+        <label class="flabel">備註</label>
+        <input id="incomeNote" class="fc" type="text" placeholder="選填">
+      </div>
       <button class="btn btn-s" onclick="submitIncome()">✅ 儲存收入</button>
     </div>
   `);
 }
 
 async function submitIncome() {
-  const data = adminPayload({
-    accountName: document.getElementById('incomeAccount').value.trim(),
-    item: document.getElementById('incomeItem').value.trim(),
-    amount: Number(document.getElementById('incomeAmount').value || 0),
-    date: document.getElementById('incomeDate').value.trim(),
-    note: document.getElementById('incomeNote').value.trim()
-  });
+  const item = document.getElementById('incomeItem').value.trim();
+  const amount = Number(document.getElementById('incomeAmount').value || 0);
+  const note = document.getElementById('incomeNote').value.trim();
 
-  if (!data.item || data.amount <= 0) {
+  if (!item || amount <= 0) {
     toast('請填寫完整資料', 'e');
     return;
   }
 
   showLoad();
   try {
-    const res = await api('finance.addIncome', data);
+    const res = await api('finance.addIncome', { item, amount, note, operator: APP.user?.name || '' });
     hideLoad();
     if (res.success) {
       toast('收入已儲存', 's');
@@ -1267,40 +956,43 @@ async function submitIncome() {
 
 function renderAddExpense() {
   if (!guardAdmin()) return;
-  setTitle('新增支出');
+  setTitle('登錄支出');
   setMain(`
     <div class="card">
-      <div class="card-title">➖ 新增支出</div>
-      <div class="fg"><label class="flabel">會計科目</label><input id="expenseAccount" class="fc" placeholder="例：行政支出"></div>
-      <div class="fg"><label class="flabel">支出項目<span class="req">*</span></label><input id="expenseItem" class="fc"></div>
-      <div class="fg"><label class="flabel">金額<span class="req">*</span></label><input id="expenseAmount" class="fc" type="number"></div>
-      <div class="fg"><label class="flabel">日期</label><input id="expenseDate" class="fc" type="date"></div>
-      <div class="fg"><label class="flabel">備註</label><textarea id="expenseNote" class="fc" rows="3"></textarea></div>
+      <div class="card-title">➖ 登錄支出</div>
+      <div class="fg">
+        <label class="flabel">支出項目<span class="req">*</span></label>
+        <input id="expenseItem" class="fc" type="text" placeholder="例：場地費">
+      </div>
+      <div class="fg">
+        <label class="flabel">金額<span class="req">*</span></label>
+        <input id="expenseAmount" class="fc" type="number" placeholder="請輸入金額">
+      </div>
+      <div class="fg">
+        <label class="flabel">備註</label>
+        <input id="expenseNote" class="fc" type="text" placeholder="選填">
+      </div>
       <button class="btn btn-d" onclick="submitExpense()">✅ 儲存支出</button>
     </div>
   `);
 }
 
 async function submitExpense() {
-  const data = adminPayload({
-    accountName: document.getElementById('expenseAccount').value.trim(),
-    item: document.getElementById('expenseItem').value.trim(),
-    amount: Number(document.getElementById('expenseAmount').value || 0),
-    date: document.getElementById('expenseDate').value.trim(),
-    note: document.getElementById('expenseNote').value.trim()
-  });
+  const item = document.getElementById('expenseItem').value.trim();
+  const amount = Number(document.getElementById('expenseAmount').value || 0);
+  const note = document.getElementById('expenseNote').value.trim();
 
-  if (!data.item || data.amount <= 0) {
+  if (!item || amount <= 0) {
     toast('請填寫完整資料', 'e');
     return;
   }
 
   showLoad();
   try {
-    const res = await api('finance.addExpense', data);
+    const res = await api('finance.addExpense', { item, amount, note, operator: APP.user?.name || '' });
     hideLoad();
     if (res.success) {
-      toast(res.voucherNo ? `支出已儲存，傳票：${res.voucherNo}` : '支出已儲存', 's');
+      toast('支出已儲存', 's');
       go('finance', {}, false);
     } else {
       toast(res.message || '儲存失敗', 'e');
@@ -1313,49 +1005,46 @@ async function submitExpense() {
 
 function renderAddPayment() {
   if (!guardAdmin()) return;
-  setTitle('新增會員繳費');
+  setTitle('登錄繳費');
   setMain(`
     <div class="card">
-      <div class="card-title">💳 新增會員繳費</div>
-      <div class="fg"><label class="flabel">會員編號</label><input id="payMemberId" class="fc" placeholder="可留空"></div>
-      <div class="fg"><label class="flabel">會員姓名<span class="req">*</span></label><input id="payName" class="fc"></div>
-      <div class="fg"><label class="flabel">項目</label><input id="payItem" class="fc" value="會費"></div>
-      <div class="fg"><label class="flabel">金額<span class="req">*</span></label><input id="payAmount" class="fc" type="number"></div>
-      <div class="fg"><label class="flabel">方式</label><input id="payMethod" class="fc" value="現金"></div>
-      <div class="fg"><label class="flabel">日期</label><input id="payDate" class="fc" type="date"></div>
-      <div class="fg"><label class="flabel">年度</label><input id="payYear" class="fc" type="number" value="${new Date().getFullYear()}"></div>
-      <div class="fg"><label class="flabel">備註</label><textarea id="payNote" class="fc" rows="3"></textarea></div>
+      <div class="card-title">💳 登錄繳費</div>
+      <div class="fg">
+        <label class="flabel">會員姓名<span class="req">*</span></label>
+        <input id="payName" class="fc" type="text" placeholder="請輸入會員姓名">
+      </div>
+      <div class="fg">
+        <label class="flabel">金額<span class="req">*</span></label>
+        <input id="payAmount" class="fc" type="number" placeholder="請輸入金額">
+      </div>
+      <div class="fg">
+        <label class="flabel">項目</label>
+        <input id="payItem" class="fc" type="text" placeholder="例：常年會費">
+      </div>
       <button class="btn btn-a" onclick="submitPayment()">✅ 儲存繳費</button>
     </div>
   `);
 }
 
 async function submitPayment() {
-  const data = adminPayload({
-    memberId: document.getElementById('payMemberId').value.trim(),
-    name: document.getElementById('payName').value.trim(),
-    item: document.getElementById('payItem').value.trim(),
-    amount: Number(document.getElementById('payAmount').value || 0),
-    method: document.getElementById('payMethod').value.trim(),
-    date: document.getElementById('payDate').value.trim(),
-    year: document.getElementById('payYear').value.trim(),
-    note: document.getElementById('payNote').value.trim()
-  });
+  const name = document.getElementById('payName').value.trim();
+  const amount = Number(document.getElementById('payAmount').value || 0);
+  const item = document.getElementById('payItem').value.trim() || '會費';
 
-  if (!data.name || data.amount <= 0) {
+  if (!name || amount <= 0) {
     toast('請填寫完整資料', 'e');
     return;
   }
 
   showLoad();
   try {
-    const res = await api('payment.add', data);
+    const res = await api('payment.add', { name, amount, item, operator: APP.user?.name || '' });
     hideLoad();
     if (res.success) {
-      toast('會員繳費已新增', 's');
+      toast('繳費已登錄', 's');
       go('finance', {}, false);
     } else {
-      toast(res.message || '新增失敗', 'e');
+      toast(res.message || '儲存失敗', 'e');
     }
   } catch (e) {
     hideLoad();
@@ -1365,101 +1054,50 @@ async function submitPayment() {
 
 function renderAddDonation() {
   if (!guardAdmin()) return;
-  setTitle('新增捐款記錄');
+  setTitle('登錄捐款');
   setMain(`
     <div class="card">
-      <div class="card-title">❤️ 新增捐款記錄</div>
-      <div class="fg"><label class="flabel">會員編號</label><input id="donMemberId" class="fc" placeholder="可留空"></div>
-      <div class="fg"><label class="flabel">姓名<span class="req">*</span></label><input id="donName" class="fc"></div>
-      <div class="fg"><label class="flabel">電話</label><input id="donPhone" class="fc" type="tel"></div>
-      <div class="fg"><label class="flabel">項目</label><input id="donItem" class="fc" value="一般捐款"></div>
-      <div class="fg"><label class="flabel">金額<span class="req">*</span></label><input id="donAmount" class="fc" type="number"></div>
-      <div class="fg"><label class="flabel">方式</label><input id="donMethod" class="fc" value="現金"></div>
-      <div class="fg"><label class="flabel">日期</label><input id="donDate" class="fc" type="date"></div>
-      <div class="fg"><label class="flabel">收據編號</label><input id="donReceiptNo" class="fc"></div>
-      <div class="fg"><label class="flabel">備註</label><textarea id="donNote" class="fc" rows="3"></textarea></div>
+      <div class="card-title">❤️ 登錄捐款</div>
+      <div class="fg">
+        <label class="flabel">捐款人姓名<span class="req">*</span></label>
+        <input id="donorName" class="fc" type="text" placeholder="請輸入姓名">
+      </div>
+      <div class="fg">
+        <label class="flabel">金額<span class="req">*</span></label>
+        <input id="donAmount" class="fc" type="number" placeholder="請輸入金額">
+      </div>
+      <div class="fg">
+        <label class="flabel">項目</label>
+        <input id="donItem" class="fc" type="text" placeholder="例：一般捐款">
+      </div>
       <button class="btn btn-s" onclick="submitDonation()">✅ 儲存捐款</button>
     </div>
   `);
 }
 
 async function submitDonation() {
-  const data = adminPayload({
-    memberId: document.getElementById('donMemberId').value.trim(),
-    name: document.getElementById('donName').value.trim(),
-    phone: document.getElementById('donPhone').value.trim(),
-    item: document.getElementById('donItem').value.trim(),
-    amount: Number(document.getElementById('donAmount').value || 0),
-    method: document.getElementById('donMethod').value.trim(),
-    date: document.getElementById('donDate').value.trim(),
-    receiptNo: document.getElementById('donReceiptNo').value.trim(),
-    note: document.getElementById('donNote').value.trim()
-  });
+  const name = document.getElementById('donorName').value.trim();
+  const amount = Number(document.getElementById('donAmount').value || 0);
+  const item = document.getElementById('donItem').value.trim() || '一般捐款';
 
-  if (!data.name || data.amount <= 0) {
+  if (!name || amount <= 0) {
     toast('請填寫完整資料', 'e');
     return;
   }
 
   showLoad();
   try {
-    const res = await api('donation.add', data);
+    const res = await api('donation.add', { name, amount, item, operator: APP.user?.name || '' });
     hideLoad();
     if (res.success) {
-      toast('捐款記錄已新增', 's');
+      toast('捐款已登錄', 's');
       go('finance', {}, false);
     } else {
-      toast(res.message || '新增失敗', 'e');
+      toast(res.message || '儲存失敗', 'e');
     }
   } catch (e) {
     hideLoad();
     toast('連線失敗', 'e');
-  }
-}
-
-// ============================================================
-// Budget
-// ============================================================
-async function renderBudget() {
-  if (!guardAdmin()) return;
-  setTitle('預算管理');
-  setMain(`
-    <div class="card">
-      <div class="card-title">📊 預算管理</div>
-      <button class="btn btn-p" onclick="go('addBudget')">➕ 新增預算</button>
-    </div>
-    <div id="budgetListWrap" class="card tc muted">讀取中...</div>
-  `);
-
-  try {
-    const res = await api('budget.list', adminPayload({ year: String(new Date().getFullYear()) }));
-    const rows = Array.isArray(res.items) ? res.items : [];
-
-    const wrap = document.getElementById('budgetListWrap');
-    if (!rows.length) {
-      wrap.innerHTML = `<div class="empty"><div class="ei">📊</div><div>尚無預算資料</div></div>`;
-      return;
-    }
-
-    wrap.innerHTML = `
-      <div class="card-title">📈 預算進度</div>
-      ${rows.map(r => {
-        const amount = Number(r.amount || 0);
-        const used = Number(r.used || 0);
-        const rate = amount > 0 ? Math.round((used / amount) * 100) : 0;
-        const cls = rate > 100 ? 'over' : rate >= 80 ? 'warn' : 'ok';
-        return `
-          <div class="mt16">
-            <div class="bold">${esc(r.name || '')}（${esc(r.year || '')}）</div>
-            <div class="bbl"><span>已用 NT$ ${used.toLocaleString()}</span><span>預算 NT$ ${amount.toLocaleString()}</span></div>
-            <div class="bbg"><div class="bbf ${cls}" style="width:${Math.min(rate, 100)}%"></div></div>
-            <div class="bbl"><span>${esc(r.note || '')}</span><span>${esc(r.progress || (rate + '%'))}</span></div>
-          </div>
-        `;
-      }).join('')}
-    `;
-  } catch (e) {
-    document.getElementById('budgetListWrap').innerHTML = `<div class="tc" style="color:var(--danger)">讀取失敗：${esc(e.message)}</div>`;
   }
 }
 
@@ -1468,36 +1106,80 @@ function renderAddBudget() {
   setTitle('新增預算');
   setMain(`
     <div class="card">
-      <div class="card-title">➕ 新增預算</div>
-      <div class="fg"><label class="flabel">年度<span class="req">*</span></label><input id="budgetYear" class="fc" type="number" value="${new Date().getFullYear()}"></div>
-      <div class="fg"><label class="flabel">名稱<span class="req">*</span></label><input id="budgetName" class="fc"></div>
-      <div class="fg"><label class="flabel">預算金額<span class="req">*</span></label><input id="budgetAmount" class="fc" type="number"></div>
-      <div class="fg"><label class="flabel">備註</label><textarea id="budgetNote" class="fc" rows="3"></textarea></div>
+      <div class="card-title">📊 新增預算</div>
+      <div class="fg">
+        <label class="flabel">預算名稱<span class="req">*</span></label>
+        <input id="budgetName" class="fc" type="text" placeholder="例：年度活動預算">
+      </div>
+      <div class="fg">
+        <label class="flabel">預算金額<span class="req">*</span></label>
+        <input id="budgetAmount" class="fc" type="number" placeholder="請輸入金額">
+      </div>
       <button class="btn btn-p" onclick="submitBudget()">✅ 儲存預算</button>
     </div>
   `);
 }
 
 async function submitBudget() {
-  const data = adminPayload({
-    year: document.getElementById('budgetYear').value.trim(),
-    name: document.getElementById('budgetName').value.trim(),
-    amount: Number(document.getElementById('budgetAmount').value || 0),
-    note: document.getElementById('budgetNote').value.trim()
-  });
+  const name = document.getElementById('budgetName').value.trim();
+  const amount = Number(document.getElementById('budgetAmount').value || 0);
 
-  if (!data.name || data.amount <= 0) {
+  if (!name || amount <= 0) {
     toast('請填寫完整資料', 'e');
     return;
   }
 
   showLoad();
   try {
-    const res = await api('budget.add', data);
+    const res = await api('budget.add', { name, amount, operator: APP.user?.name || '' });
     hideLoad();
     if (res.success) {
-      toast('預算已新增', 's');
+      toast('預算已儲存', 's');
       go('budget', {}, false);
+    } else {
+      toast(res.message || '儲存失敗', 'e');
+    }
+  } catch (e) {
+    hideLoad();
+    toast('連線失敗', 'e');
+  }
+}
+
+function renderAddMember() {
+  if (!guardAdmin()) return;
+  setTitle('新增會員');
+  setMain(`
+    <div class="card">
+      <div class="card-title">➕ 新增會員</div>
+      <div class="fg">
+        <label class="flabel">姓名<span class="req">*</span></label>
+        <input id="newMemberName" class="fc" type="text" placeholder="請輸入姓名">
+      </div>
+      <div class="fg">
+        <label class="flabel">電話<span class="req">*</span></label>
+        <input id="newMemberPhone" class="fc" type="tel" placeholder="例：0912345678">
+      </div>
+      <button class="btn btn-p" onclick="submitAddMember()">✅ 新增會員</button>
+    </div>
+  `);
+}
+
+async function submitAddMember() {
+  const name = document.getElementById('newMemberName').value.trim();
+  const phone = document.getElementById('newMemberPhone').value.trim();
+
+  if (!name || !phone) {
+    toast('請填寫完整資料', 'e');
+    return;
+  }
+
+  showLoad();
+  try {
+    const res = await api('member.add', { name, phone, type: '會員', operator: APP.user?.name || '' });
+    hideLoad();
+    if (res.success) {
+      toast('會員已新增', 's');
+      go('memberMgmt', {}, false);
     } else {
       toast(res.message || '新增失敗', 'e');
     }
@@ -1507,256 +1189,78 @@ async function submitBudget() {
   }
 }
 
-// ============================================================
-// Report
-// ============================================================
-function renderReport() {
+function renderAddStaff() {
   if (!guardAdmin()) return;
-  setTitle('財務報表');
+  setTitle('新增工作人員');
   setMain(`
     <div class="card">
-      <div class="card-title">📋 財務報表</div>
-      <div class="fg"><label class="flabel">年度</label><input id="reportYear" class="fc" type="number" value="${new Date().getFullYear()}"></div>
-      <div class="fg"><label class="flabel">開始日期</label><input id="reportStartDate" class="fc" type="date"></div>
-      <div class="fg"><label class="flabel">結束日期</label><input id="reportEndDate" class="fc" type="date"></div>
-      <button class="btn btn-p" onclick="queryFinanceReport()">🔍 查詢報表</button>
-      <button class="btn btn-a" onclick="createFinanceReportSheet()">📄 產生 Sheets 報表</button>
+      <div class="card-title">👔 新增工作人員</div>
+      <div class="fg">
+        <label class="flabel">姓名<span class="req">*</span></label>
+        <input id="newStaffName" class="fc" type="text" placeholder="請輸入姓名">
+      </div>
+      <div class="fg">
+        <label class="flabel">電話<span class="req">*</span></label>
+        <input id="newStaffPhone" class="fc" type="tel" placeholder="例：0912345678">
+      </div>
+      <div class="fg">
+        <label class="flabel">職稱<span class="req">*</span></label>
+        <input id="newStaffType" class="fc" type="text" placeholder="例：總幹事">
+      </div>
+      <button class="btn btn-a" onclick="submitAddStaff()">✅ 新增工作人員</button>
     </div>
-    <div id="reportResult"></div>
   `);
 }
 
-async function queryFinanceReport() {
-  const data = adminPayload({
-    year: document.getElementById('reportYear').value.trim(),
-    startDate: document.getElementById('reportStartDate').value.trim(),
-    endDate: document.getElementById('reportEndDate').value.trim()
-  });
+async function submitAddStaff() {
+  const name = document.getElementById('newStaffName').value.trim();
+  const phone = document.getElementById('newStaffPhone').value.trim();
+  const type = document.getElementById('newStaffType').value.trim();
 
-  const wrap = document.getElementById('reportResult');
-  wrap.innerHTML = `<div class="card tc muted">查詢中...</div>`;
-
-  try {
-    const res = await api('finance.report', data);
-    if (!res.success) throw new Error(res.message || '查詢失敗');
-
-    const r = res.report || {};
-    const items = Array.isArray(r.items) ? r.items : [];
-
-    wrap.innerHTML = `
-      <div class="sg">
-        <div class="sc"><div class="si">⬆️</div><div class="sv">NT$ ${Number(r.incomeTotal || 0).toLocaleString()}</div><div class="sl">收入合計</div></div>
-        <div class="sc"><div class="si">⬇️</div><div class="sv">NT$ ${Number(r.expenseTotal || 0).toLocaleString()}</div><div class="sl">支出合計</div></div>
-      </div>
-      <div class="card">
-        <div class="card-title">📌 結餘：NT$ ${Number(r.balance || 0).toLocaleString()}</div>
-        ${items.length ? `
-          <div class="tw">
-            <table>
-              <thead>
-                <tr><th>日期</th><th>類型</th><th>科目</th><th>項目</th><th>金額</th><th>傳票</th></tr>
-              </thead>
-              <tbody>
-                ${items.map(x => `
-                  <tr>
-                    <td>${esc(x.date || '')}</td>
-                    <td>${esc(x.type || '')}</td>
-                    <td>${esc(x.accountName || '')}</td>
-                    <td>${esc(x.item || '')}</td>
-                    <td class="tr">${Number(x.amount || 0).toLocaleString()}</td>
-                    <td>${esc(x.voucherNo || '')}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        ` : `<div class="empty"><div class="ei">📄</div><div>查無資料</div></div>`}
-      </div>
-    `;
-  } catch (e) {
-    wrap.innerHTML = `<div class="card tc" style="color:var(--danger)">查詢失敗：${esc(e.message)}</div>`;
+  if (!name || !phone || !type) {
+    toast('請填寫完整資料', 'e');
+    return;
   }
-}
-
-async function createFinanceReportSheet() {
-  const data = adminPayload({
-    year: document.getElementById('reportYear').value.trim(),
-    startDate: document.getElementById('reportStartDate').value.trim(),
-    endDate: document.getElementById('reportEndDate').value.trim()
-  });
 
   showLoad();
   try {
-    const res = await api('finance.reportSheet', data);
+    const res = await api('member.add', { name, phone, type, operator: APP.user?.name || '' });
     hideLoad();
-    if (res.success) toast(`報表已產生：${res.sheetName}`, 's');
-    else toast(res.message || '產生失敗', 'e');
+    if (res.success) {
+      toast('工作人員已新增', 's');
+      go('memberMgmt', {}, false);
+    } else {
+      toast(res.message || '新增失敗', 'e');
+    }
   } catch (e) {
     hideLoad();
     toast('連線失敗', 'e');
-  }
-}
-
-// ============================================================
-// Settings / Account / Backup
-// ============================================================
-function renderSettings() {
-  if (!guardAdmin()) return;
-  setTitle('系統設定');
-  setMain(`
-    <div class="card">
-      <div class="card-title">⚙️ 系統設定</div>
-      <button class="btn btn-p" onclick="go('addAccount')">📚 新增會計科目</button>
-      <button class="btn btn-a" onclick="go('sysConfig')">🛠️ 系統基本設定</button>
-      <button class="btn btn-s" onclick="runBackupNow()">💾 資料備份</button>
-    </div>
-    <div id="settingsInfoWrap" class="card tc muted">讀取中...</div>
-  `);
-
-  loadSettingsPreview();
-}
-
-async function loadSettingsPreview() {
-  const wrap = document.getElementById('settingsInfoWrap');
-  if (!wrap) return;
-
-  try {
-    const res = await api('settings.get', adminPayload());
-    const rows = Array.isArray(res.items) ? res.items : [];
-    if (!rows.length) {
-      wrap.innerHTML = `<div class="empty"><div class="ei">⚙️</div><div>尚無系統設定</div></div>`;
-      return;
-    }
-
-    wrap.innerHTML = `
-      <div class="card-title">🧾 目前設定</div>
-      <ul class="il">
-        ${rows.map(r => `
-          <li class="ii">
-            <span class="ilb">${esc(r.key || '')}</span>
-            <span class="ilv">${esc(r.value || '')}</span>
-          </li>
-        `).join('')}
-      </ul>
-    `;
-  } catch (e) {
-    wrap.innerHTML = `<div class="tc" style="color:var(--danger)">讀取失敗：${esc(e.message)}</div>`;
   }
 }
 
 function renderAddAccount() {
   if (!guardAdmin()) return;
-  setTitle('新增會計科目');
+  setTitle('新增管理帳號');
   setMain(`
     <div class="card">
-      <div class="card-title">📚 新增會計科目</div>
-      <div class="fg"><label class="flabel">科目代碼<span class="req">*</span></label><input id="accCode" class="fc"></div>
-      <div class="fg"><label class="flabel">科目名稱<span class="req">*</span></label><input id="accName" class="fc"></div>
-      <div class="fg"><label class="flabel">類型<span class="req">*</span></label><select id="accType" class="fc"><option value="收入">收入</option><option value="支出">支出</option><option value="資產">資產</option><option value="負債">負債</option></select></div>
-      <div class="fg"><label class="flabel">備註</label><textarea id="accNote" class="fc" rows="3"></textarea></div>
-      <button class="btn btn-p" onclick="submitAddAccount()">✅ 新增科目</button>
+      <div class="card-title">👤 新增管理帳號</div>
+      <p class="muted">此功能可依你的後端權限架構再擴充。</p>
     </div>
   `);
 }
 
-async function submitAddAccount() {
-  const data = adminPayload({
-    code: document.getElementById('accCode').value.trim(),
-    name: document.getElementById('accName').value.trim(),
-    type: document.getElementById('accType').value,
-    note: document.getElementById('accNote').value.trim()
-  });
-
-  if (!data.code || !data.name || !data.type) {
-    toast('請填寫完整資料', 'e');
-    return;
-  }
-
-  showLoad();
-  try {
-    const res = await api('account.add', data);
-    hideLoad();
-    if (res.success) {
-      toast('會計科目已新增', 's');
-      go('settings', {}, false);
-    } else {
-      toast(res.message || '新增失敗', 'e');
-    }
-  } catch (e) {
-    hideLoad();
-    toast('連線失敗', 'e');
-  }
-}
-
-async function renderSysConfig() {
+function renderSysConfig() {
   if (!guardAdmin()) return;
-  setTitle('系統基本設定');
-  setMain(`<div class="card tc muted">讀取中...</div>`);
-
-  try {
-    const res = await api('settings.get', adminPayload());
-    const rows = Array.isArray(res.items) ? res.items : [];
-
-    const findValue = k => (rows.find(x => x.key === k)?.value || '');
-    const findNote = k => (rows.find(x => x.key === k)?.note || '');
-
-    setMain(`
-      <div class="card">
-        <div class="card-title">🛠️ 系統基本設定</div>
-        <div class="fg"><label class="flabel">API_KEY</label><input id="cfgApiKey" class="fc" value="${esc(findValue('API_KEY'))}"></div>
-        <div class="fg"><label class="flabel">組織名稱</label><input id="cfgOrgName" class="fc" value="${esc(findValue('ORG_NAME'))}"></div>
-        <div class="fg"><label class="flabel">API_KEY 備註</label><input id="cfgApiKeyNote" class="fc" value="${esc(findNote('API_KEY'))}"></div>
-        <div class="fg"><label class="flabel">組織名稱備註</label><input id="cfgOrgNameNote" class="fc" value="${esc(findNote('ORG_NAME'))}"></div>
-        <button class="btn btn-p" onclick="submitSysConfig()">✅ 儲存設定</button>
-      </div>
-    `);
-  } catch (e) {
-    setMain(`<div class="card tc" style="color:var(--danger)">讀取失敗：${esc(e.message)}</div>`);
-  }
-}
-
-async function submitSysConfig() {
-  const items = [
-    {
-      key: 'API_KEY',
-      value: document.getElementById('cfgApiKey').value.trim(),
-      note: document.getElementById('cfgApiKeyNote').value.trim()
-    },
-    {
-      key: 'ORG_NAME',
-      value: document.getElementById('cfgOrgName').value.trim(),
-      note: document.getElementById('cfgOrgNameNote').value.trim()
-    }
-  ];
-
-  showLoad();
-  try {
-    const res = await api('settings.set', adminPayload({ items }));
-    hideLoad();
-    if (res.success) {
-      toast('系統設定已更新', 's');
-      go('settings', {}, false);
-    } else {
-      toast(res.message || '更新失敗', 'e');
-    }
-  } catch (e) {
-    hideLoad();
-    toast('連線失敗', 'e');
-  }
-}
-
-async function runBackupNow() {
-  if (!guardAdmin()) return;
-  showLoad();
-  try {
-    const res = await api('backup.run', adminPayload({ note: '由前端手動執行備份' }));
-    hideLoad();
-    if (res.success) toast(`備份完成：${res.fileName}`, 's');
-    else toast(res.message || '備份失敗', 'e');
-  } catch (e) {
-    hideLoad();
-    toast('連線失敗', 'e');
-  }
+  setTitle('系統參數設定');
+  setMain(`
+    <div class="card">
+      <div class="card-title">🛠️ 系統參數</div>
+      <ul class="il">
+        <li class="ii"><span class="ilb">LIFF ID</span><span class="ilv">${esc(LIFF_ID)}</span></li>
+        <li class="ii"><span class="ilb">API BASE</span><span class="ilv">${esc(API_BASE)}</span></li>
+      </ul>
+    </div>
+  `);
 }
 </script>
 </body>
