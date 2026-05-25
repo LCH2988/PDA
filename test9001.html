@@ -1,805 +1,857 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>家庭相簿</title>
-  <style>
-    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-    :root {
-      --red:#d63031; --green:#00b894; --blue:#0984e3; --orange:#e17055;
-      --bg:#f2ede8; --card:#fff; --text:#1a1a1a; --sub:#555;
-      --border:#ddd; --radius:18px; --shadow:0 4px 16px rgba(0,0,0,0.12);
-    }
-    html { font-size:18px; }
-    body { font-family:'Microsoft JhengHei','PingFang TC','Noto Sans TC',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; padding-bottom:120px; }
-
-    header { background:var(--red); padding:16px 18px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:100; box-shadow:0 3px 10px rgba(0,0,0,0.2); }
-    .logo { font-size:1.5rem; font-weight:900; color:#fff; letter-spacing:1px; }
-    .stats-badge { background:rgba(255,255,255,0.25); color:#fff; border-radius:50px; padding:6px 14px; font-size:1rem; font-weight:700; }
-
-    .album-bar { background:#fff; border-bottom:2px solid var(--border); padding:12px 14px; display:flex; gap:10px; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
-    .album-bar::-webkit-scrollbar { display:none; }
-    .album-tab { flex-shrink:0; padding:11px 20px; border-radius:50px; border:3px solid var(--border); background:#f8f8f8; color:var(--sub); font-size:1.05rem; font-weight:700; cursor:pointer; white-space:nowrap; min-height:50px; display:flex; align-items:center; transition:all 0.2s; }
-    .album-tab.active { background:var(--red); border-color:var(--red); color:#fff; box-shadow:0 4px 12px rgba(214,48,49,0.35); }
-
-    .action-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:14px 14px 8px; }
-    .action-btn { background:var(--card); border:3px solid var(--border); border-radius:var(--radius); padding:16px 10px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; cursor:pointer; box-shadow:var(--shadow); transition:all 0.18s; min-height:88px; }
-    .action-btn:active { transform:scale(0.95); }
-    .action-btn .ab-icon { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.4rem; font-weight:900; color:#fff; }
-    .action-btn .ab-label { font-size:1rem; font-weight:800; text-align:center; }
-    .action-btn.red    { border-color:var(--red); }    .action-btn.red    .ab-icon { background:var(--red); }    .action-btn.red    .ab-label { color:var(--red); }
-    .action-btn.green  { border-color:var(--green); }  .action-btn.green  .ab-icon { background:var(--green); }  .action-btn.green  .ab-label { color:var(--green); }
-    .action-btn.blue   { border-color:var(--blue); }   .action-btn.blue   .ab-icon { background:var(--blue); }   .action-btn.blue   .ab-label { color:var(--blue); }
-    .action-btn.orange { border-color:var(--orange); } .action-btn.orange .ab-icon { background:var(--orange); } .action-btn.orange .ab-label { color:var(--orange); }
-
-    .section-title { font-size:1.1rem; font-weight:800; color:var(--sub); padding:10px 16px 6px; }
-    .photo-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; padding:4px 12px 20px; }
-    .photo-card { background:var(--card); border-radius:16px; overflow:hidden; box-shadow:var(--shadow); border:3px solid transparent; cursor:pointer; transition:all 0.2s; position:relative; animation:fadeUp 0.35s ease; }
-    .photo-card:active { transform:scale(0.97); }
-    .photo-card.selected { border-color:var(--red); box-shadow:0 0 0 4px rgba(214,48,49,0.22); }
-    .card-check { position:absolute; top:8px; left:8px; z-index:5; width:30px; height:30px; border-radius:50%; border:3px solid #fff; background:rgba(0,0,0,0.3); display:none; align-items:center; justify-content:center; font-size:1rem; color:#fff; font-weight:900; }
-    .select-mode .card-check { display:flex; }
-    .photo-card.selected .card-check { background:var(--red); border-color:var(--red); }
-    .photo-card.selected .card-check::after { content:'V'; }
-    .img-wrap { width:100%; aspect-ratio:1; overflow:hidden; background:#e8e8e8; }
-    .img-wrap img { width:100%; height:100%; object-fit:cover; pointer-events:none; transition:transform 0.3s; }
-    .photo-card:active .img-wrap img { transform:scale(1.05); }
-    .card-info { padding:10px 12px 12px; }
-    .card-name { font-size:0.95rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); margin-bottom:3px; }
-    .card-date { font-size:0.85rem; color:var(--sub); }
-
-    .loading { text-align:center; padding:60px 20px; display:flex; flex-direction:column; align-items:center; gap:16px; }
-    .spinner { width:54px; height:54px; border:5px solid #ddd; border-top-color:var(--red); border-radius:50%; animation:spin 0.8s linear infinite; }
-    .loading p { font-size:1.15rem; color:var(--sub); font-weight:700; }
-    .empty-state { text-align:center; padding:60px 20px; display:flex; flex-direction:column; align-items:center; gap:12px; }
-    .empty-icon { width:72px; height:72px; border-radius:50%; background:#eee; display:flex; align-items:center; justify-content:center; font-size:2rem; font-weight:900; color:#aaa; }
-    .empty-state h3 { font-size:1.25rem; font-weight:800; color:var(--sub); }
-    .empty-state p  { font-size:1rem; color:#aaa; }
-
-    .select-bar { display:none; position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:3px solid var(--red); padding:12px 14px 24px; box-shadow:0 -4px 20px rgba(0,0,0,0.15); z-index:200; flex-direction:column; gap:10px; }
-    .select-bar.show { display:flex; }
-    .select-bar-info { font-size:1.15rem; font-weight:800; color:var(--red); text-align:center; }
-    .select-bar-btns { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
-    .sel-btn { padding:14px 6px; border-radius:14px; border:none; font-size:0.95rem; font-weight:800; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:5px; transition:opacity 0.2s; font-family:inherit; }
-    .sel-btn:active { opacity:0.75; }
-    .sel-btn .si { font-size:1.4rem; }
-    .sel-btn.dl  { background:var(--green); color:#fff; }
-    .sel-btn.all { background:var(--blue);  color:#fff; }
-    .sel-btn.cls { background:#888;         color:#fff; }
-
-    #lightbox { display:none; position:fixed; inset:0; background:#000; z-index:9999; flex-direction:column; }
-    #lightbox.open { display:flex; }
-    #lbTop { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:rgba(0,0,0,0.7); flex-shrink:0; }
-    #lbCounter { font-size:1.15rem; font-weight:800; color:#fff; }
-    #lbCloseBtn { width:50px; height:50px; border-radius:50%; border:3px solid rgba(255,255,255,0.5); background:rgba(255,255,255,0.15); color:#fff; font-size:1.3rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    #lbThumbs { display:flex; gap:8px; padding:10px 14px; overflow-x:auto; scrollbar-width:none; flex-shrink:0; background:rgba(0,0,0,0.5); }
-    #lbThumbs::-webkit-scrollbar { display:none; }
-    .lb-thumb { width:58px; height:58px; flex-shrink:0; border-radius:10px; overflow:hidden; border:3px solid transparent; cursor:pointer; opacity:0.5; transition:all 0.2s; }
-    .lb-thumb img { width:100%; height:100%; object-fit:cover; }
-    .lb-thumb.active { border-color:var(--red); opacity:1; transform:scale(1.08); }
-    #lbImgArea { flex:1; position:relative; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-    #lbImg { max-width:100%; max-height:100%; object-fit:contain; display:none; }
-    #lbImg.loaded { display:block; }
-    #lbSpinner { width:58px; height:58px; border:5px solid rgba(255,255,255,0.2); border-top-color:var(--red); border-radius:50%; animation:spin 0.8s linear infinite; position:absolute; }
-    #lbSpinner.hide { display:none; }
-    .lb-nav-btn { position:absolute; top:50%; transform:translateY(-50%); width:52px; height:80px; border-radius:12px; border:none; background:rgba(255,255,255,0.18); color:#fff; font-size:2rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:10; backdrop-filter:blur(4px); transition:background 0.2s; }
-    .lb-nav-btn:active { background:rgba(214,48,49,0.6); }
-    #lbPrev { left:8px; } #lbNext { right:8px; }
-    #lbBottom { background:rgba(0,0,0,0.75); padding:14px 16px 24px; flex-shrink:0; }
-    #lbName { font-size:1.1rem; font-weight:800; color:#fff; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    #lbMeta { font-size:0.9rem; color:rgba(255,255,255,0.6); margin-bottom:14px; }
-    #lbActions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    .lb-action-btn { padding:16px; border-radius:14px; border:none; font-size:1.05rem; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; transition:opacity 0.2s; font-family:inherit; }
-    .lb-action-btn:active { opacity:0.75; }
-    .lb-action-btn.dl  { background:var(--green); color:#fff; }
-    .lb-action-btn.cls { background:rgba(255,255,255,0.2); color:#fff; }
-
-    .modal-back { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:10000; align-items:flex-end; justify-content:center; }
-    .modal-back.open { display:flex; }
-    .modal-sheet { background:#fff; width:100%; max-height:88vh; border-radius:26px 26px 0 0; padding:22px 18px 40px; overflow-y:auto; animation:slideUp 0.3s ease; }
-    .sheet-handle { width:46px; height:5px; border-radius:3px; background:#ddd; margin:0 auto 18px; }
-    .sheet-title { font-size:1.35rem; font-weight:900; color:var(--text); margin-bottom:18px; }
-    .field { margin-bottom:16px; }
-    .field label { display:block; font-size:1rem; font-weight:800; color:var(--sub); margin-bottom:7px; }
-    .field input, .field textarea, .field select { width:100%; padding:15px; border:3px solid var(--border); border-radius:14px; font-size:1.05rem; font-family:inherit; color:var(--text); background:#fafafa; outline:none; transition:border-color 0.2s; }
-    .field input:focus, .field textarea:focus, .field select:focus { border-color:var(--red); }
-    .field textarea { resize:vertical; min-height:80px; }
-    .sheet-btn { width:100%; padding:18px; border-radius:16px; border:none; font-size:1.2rem; font-weight:900; cursor:pointer; margin-top:8px; display:flex; align-items:center; justify-content:center; gap:8px; transition:opacity 0.2s; font-family:inherit; }
-    .sheet-btn:active { opacity:0.8; }
-    .sheet-btn.confirm { background:var(--red);   color:#fff; }
-    .sheet-btn.cancel  { background:#eee;         color:var(--sub); margin-top:10px; }
-    .sheet-btn.upload  { background:var(--green); color:#fff; }
-    .sheet-btn:disabled { opacity:0.4; cursor:not-allowed; }
-
-    .upload-zone { border:3px dashed #ccc; border-radius:16px; padding:30px 18px; text-align:center; cursor:pointer; transition:all 0.2s; margin-bottom:14px; background:#fafafa; }
-    .upload-zone.drag-over { border-color:var(--red); background:#fff5f5; }
-    .upload-zone .uz-icon { width:56px; height:56px; border-radius:50%; background:#eee; display:flex; align-items:center; justify-content:center; font-size:1.6rem; font-weight:900; color:#888; margin:0 auto 10px; }
-    .upload-zone p { font-size:1.05rem; color:var(--sub); font-weight:700; }
-    .upload-zone input { display:none; }
-    .upload-preview { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px; }
-    .prev-item { aspect-ratio:1; border-radius:10px; overflow:hidden; position:relative; }
-    .prev-item img { width:100%; height:100%; object-fit:cover; }
-    .prev-item .rm { position:absolute; top:3px; right:3px; width:20px; height:20px; border-radius:50%; background:var(--red); border:none; color:#fff; font-size:0.7rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-
-    #progressModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10002; align-items:center; justify-content:center; }
-    #progressModal.open { display:flex; }
-    .prog-box { background:#fff; border-radius:22px; padding:30px 26px; width:86%; max-width:340px; text-align:center; box-shadow:0 12px 40px rgba(0,0,0,0.2); }
-    .prog-box h3 { font-size:1.25rem; font-weight:900; margin-bottom:16px; }
-    .prog-wrap { background:#eee; border-radius:50px; height:13px; overflow:hidden; margin-bottom:10px; }
-    .prog-fill { height:100%; background:linear-gradient(90deg,var(--red),var(--orange)); border-radius:50px; transition:width 0.3s; }
-    .prog-text { font-size:0.95rem; color:var(--sub); font-weight:700; }
-
-    @keyframes spin    { to { transform:rotate(360deg); } }
-    @keyframes fadeUp  { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes slideUp { from { transform:translateY(100%); } to { transform:translateY(0); } }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台灣帕金森病友權益促進會 — 管理系統功能說明</title>
+<style>
+  :root{--blue:#2563eb;--blue-l:#eff6ff;--blue-d:#1e40af;--green:#16a34a;--green-l:#f0fdf4;--red:#dc2626;--red-l:#fef2f2;--orange:#ea580c;--orange-l:#fff7ed;--purple:#7c3aed;--purple-l:#f5f3ff;--gray:#6b7280;--gray-l:#f9fafb;--border:#e5e7eb;--shadow:0 2px 12px rgba(0,0,0,.08);--r:14px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Microsoft JhengHei','PingFang TC',sans-serif;background:#f1f5f9;color:#1e293b;font-size:16px;line-height:1.7}
+  .site-header{background:linear-gradient(135deg,#1e40af,#2563eb,#3b82f6);color:white;position:sticky;top:0;z-index:100;box-shadow:0 4px 20px rgba(37,99,235,.4)}
+  .hdr{max-width:1200px;margin:auto;padding:16px 24px;display:flex;align-items:center;gap:14px}
+  .hdr-logo{width:48px;height:48px;background:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+  .hdr-text h1{font-size:18px;font-weight:700;letter-spacing:1px}
+  .hdr-text p{font-size:12px;opacity:.85;margin-top:2px}
+  .hdr-badge{margin-left:auto;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:20px;padding:5px 14px;font-size:12px;white-space:nowrap}
+  .toc{background:white;border-bottom:2px solid var(--border);overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .toc::-webkit-scrollbar{height:3px}
+  .toc::-webkit-scrollbar-thumb{background:var(--blue);border-radius:2px}
+  .toc-inner{max-width:1200px;margin:auto;padding:0 12px;display:inline-flex}
+  .toc a{display:inline-flex;align-items:center;gap:5px;padding:13px 16px;font-size:13px;font-weight:600;color:var(--gray);text-decoration:none;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap}
+  .toc a:hover,.toc a.active{color:var(--blue);border-bottom-color:var(--blue);background:var(--blue-l)}
+  .wrap{max-width:1200px;margin:0 auto;padding:28px 18px 60px}
+  .hero{background:linear-gradient(135deg,#1e40af,#2563eb,#0ea5e9);color:white;border-radius:20px;padding:44px 36px;margin-bottom:36px;position:relative;overflow:hidden}
+  .hero::before{content:'';position:absolute;top:-60px;right:-60px;width:280px;height:280px;background:rgba(255,255,255,.06);border-radius:50%}
+  .hero h2{font-size:26px;font-weight:800;margin-bottom:10px;position:relative}
+  .hero p{font-size:16px;opacity:.9;max-width:580px;line-height:1.8;position:relative}
+  .hero-stats{display:flex;gap:16px;margin-top:28px;flex-wrap:wrap;position:relative}
+  .hstat{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);border-radius:12px;padding:14px 20px;text-align:center;backdrop-filter:blur(4px)}
+  .hstat .n{font-size:26px;font-weight:800}
+  .hstat .l{font-size:12px;opacity:.85;margin-top:2px}
+  .sec{margin-bottom:44px;scroll-margin-top:90px}
+  .sec-hdr{display:flex;align-items:center;gap:12px;margin-bottom:22px;padding-bottom:14px;border-bottom:2px solid var(--border)}
+  .sec-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+  .sec-title{font-size:21px;font-weight:700}
+  .sec-sub{font-size:13px;color:var(--gray);margin-top:2px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px}
+  .grid-2{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:18px}
+  .card{background:white;border-radius:var(--r);padding:22px;box-shadow:var(--shadow);border:1px solid var(--border);transition:transform .2s,box-shadow .2s}
+  .card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+  .card-ico{font-size:30px;margin-bottom:12px;display:block}
+  .card h3{font-size:17px;font-weight:700;margin-bottom:8px}
+  .card p{font-size:13px;color:#475569;line-height:1.7}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;margin-top:10px;background:var(--blue-l);color:var(--blue)}
+  .tag.g{background:var(--green-l);color:var(--green)}
+  .tag.r{background:var(--red-l);color:var(--red)}
+  .tag.o{background:var(--orange-l);color:var(--orange)}
+  .tag.p{background:var(--purple-l);color:var(--purple)}
+  .steps{display:flex;flex-direction:column}
+  .step{display:flex;gap:16px;position:relative}
+  .step:not(:last-child)::before{content:'';position:absolute;left:17px;top:44px;bottom:0;width:2px;background:linear-gradient(to bottom,var(--blue),var(--border))}
+  .step-n{width:36px;height:36px;border-radius:50%;background:var(--blue);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0;z-index:1;box-shadow:0 2px 8px rgba(37,99,235,.4)}
+  .step-b{background:white;border-radius:var(--r);padding:16px 20px;margin-bottom:14px;flex:1;box-shadow:var(--shadow);border:1px solid var(--border)}
+  .step-b h4{font-size:15px;font-weight:700;margin-bottom:6px;color:var(--blue)}
+  .step-b p{font-size:13px;color:#475569}
+  .step-b ul{margin:6px 0 0 16px}
+  .step-b li{font-size:13px;color:#475569;margin-bottom:3px}
+  .tbl{background:white;border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;border:1px solid var(--border)}
+  table{width:100%;border-collapse:collapse}
+  thead{background:linear-gradient(135deg,var(--blue),#3b82f6)}
+  thead th{color:white;padding:12px 16px;text-align:left;font-size:13px;font-weight:600}
+  tbody tr:nth-child(even){background:#f8fafc}
+  tbody tr:hover{background:var(--blue-l)}
+  tbody td{padding:11px 16px;font-size:13px;border-bottom:1px solid var(--border);color:#374151}
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+  .b-bl{background:var(--blue-l);color:var(--blue)}
+  .b-gr{background:var(--green-l);color:var(--green)}
+  .b-rd{background:var(--red-l);color:var(--red)}
+  .b-or{background:var(--orange-l);color:var(--orange)}
+  .b-gy{background:#f3f4f6;color:#6b7280}
+  .b-pu{background:var(--purple-l);color:var(--purple)}
+  .alert{border-radius:12px;padding:14px 18px;margin:14px 0;display:flex;gap:10px;align-items:flex-start;font-size:13px}
+  .alert-ico{font-size:18px;flex-shrink:0;margin-top:1px}
+  .al-bl{background:var(--blue-l);border-left:4px solid var(--blue);color:#1e40af}
+  .al-gr{background:var(--green-l);border-left:4px solid var(--green);color:#14532d}
+  .al-or{background:var(--orange-l);border-left:4px solid var(--orange);color:#7c2d12}
+  .al-rd{background:var(--red-l);border-left:4px solid var(--red);color:#7f1d1d}
+  .acc{background:white;border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden;margin-bottom:16px}
+  .acc-hdr{padding:16px 22px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;transition:background .2s}
+  .acc-hdr:hover{background:var(--gray-l)}
+  .acc-ico{font-size:22px}
+  .acc-title{font-size:16px;font-weight:700;flex:1}
+  .acc-sub{font-size:12px;color:var(--gray)}
+  .acc-arr{font-size:16px;color:var(--gray);transition:transform .3s;margin-left:auto}
+  .acc-hdr.open .acc-arr{transform:rotate(180deg)}
+  .acc-body{max-height:0;overflow:hidden;transition:max-height .5s ease,padding .3s;padding:0 22px}
+  .acc-body.open{max-height:4000px;padding:0 22px 22px}
+  .role-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+  .role-card{border-radius:12px;padding:16px;text-align:center;border:2px solid transparent;transition:all .2s}
+  .role-card:hover{transform:translateY(-2px)}
+  .role-card .ri{font-size:28px;margin-bottom:6px}
+  .role-card .rt{font-size:14px;font-weight:700;margin-bottom:3px}
+  .role-card .rl{font-size:11px;opacity:.8;margin-bottom:6px}
+  .role-card ul{font-size:11px;text-align:left;list-style:none}
+  .role-card li{margin-bottom:2px}
+  .role-card li::before{content:'✓ ';font-weight:700}
+  .perm-wrap{overflow-x:auto}
+  .perm-wrap table{min-width:680px}
+  .perm-wrap td,.perm-wrap th{text-align:center;padding:9px 10px;font-size:12px}
+  .perm-wrap td:first-child{text-align:left;font-weight:600;white-space:nowrap}
+  .ck{color:var(--green);font-size:15px}
+  .cx{color:#d1d5db;font-size:15px}
+  .cp{color:var(--orange);font-size:11px;font-weight:600}
+  .phone{width:228px;border:7px solid #1e293b;border-radius:34px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.3);margin:0 auto;background:white}
+  .ph-notch{background:#1e293b;height:22px;display:flex;align-items:center;justify-content:center}
+  .ph-dot{width:50px;height:8px;background:#374151;border-radius:10px}
+  .ph-screen{padding:12px;min-height:420px;background:#f8fafc;display:flex;flex-direction:column;gap:7px}
+  .ph-hdr{background:var(--blue);color:white;padding:9px;border-radius:8px;text-align:center;font-size:11px;font-weight:700}
+  .ph-btn{padding:10px;border-radius:8px;text-align:center;font-size:11px;font-weight:600}
+  .ph-btn.pri{background:var(--blue);color:white}
+  .ph-btn.out{background:white;color:var(--blue);border:2px solid var(--blue)}
+  .ph-btn.grn{background:var(--green);color:white}
+  .ph-btn.red{background:var(--red);color:white}
+  .ph-btn.org{background:var(--orange);color:white}
+  .ph-inp{background:white;border:1.5px solid var(--border);border-radius:7px;padding:8px 10px;font-size:10px;color:#94a3b8;width:100%}
+  .ph-lbl{font-size:10px;font-weight:600;color:#64748b;margin-bottom:2px}
+  .ph-card{background:white;border-radius:8px;padding:9px;box-shadow:0 1px 4px rgba(0,0,0,.08);font-size:10px;color:#374151}
+  .ph-row{display:flex;justify-content:space-between;align-items:center;font-size:10px;margin-bottom:3px}
+  .ph-nav{display:flex;background:white;border-top:1px solid var(--border);margin-top:auto;padding:5px 0}
+  .ph-ni{flex:1;text-align:center;font-size:9px;color:var(--gray);padding:2px}
+  .ph-ni.a{color:var(--blue)}
+  .ph-ni span{font-size:15px;display:block}
+  .screens-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:24px;justify-items:center}
+  .scr-lbl{text-align:center;font-size:13px;font-weight:600;color:var(--gray);margin-top:10px}
+  .dep-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px;margin-top:16px}
+  .dep-card{background:white;border-radius:var(--r);padding:20px;box-shadow:var(--shadow);border:1px solid var(--border);position:relative;margin-top:14px}
+  .dep-num{position:absolute;top:-13px;left:16px;width:28px;height:28px;background:var(--blue);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;box-shadow:0 2px 8px rgba(37,99,235,.4)}
+  .dep-card h4{font-size:14px;font-weight:700;margin-bottom:8px;margin-top:6px}
+  .dep-card ol{padding-left:15px}
+  .dep-card li{font-size:12px;color:#475569;margin-bottom:5px;line-height:1.6}
+  .dep-card code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:11px;font-family:monospace;color:var(--blue-d)}
+  .chk{background:white;border-radius:var(--r);box-shadow:var(--shadow);padding:20px;border:1px solid var(--border)}
+  .chk-item{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+  .chk-item:last-child{border-bottom:none}
+  .chk-box{width:22px;height:22px;border-radius:6px;background:var(--green-l);border:2px solid var(--green);display:flex;align-items:center;justify-content:center;color:var(--green);font-size:13px;flex-shrink:0;margin-top:1px}
+  .chk-main{font-size:14px;font-weight:600}
+  .chk-note{font-size:11px;color:var(--gray);margin-top:2px}
+  .faq{background:white;border-radius:12px;margin-bottom:10px;box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden}
+  .faq-q{padding:15px 18px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none;transition:background .2s}
+  .faq-q:hover{background:var(--gray-l)}
+  .faq-q .fq-ico{color:var(--blue);font-size:16px}
+  .faq-q .fq-arr{margin-left:auto;color:var(--gray);transition:transform .3s}
+  .faq-q.open .fq-arr{transform:rotate(180deg)}
+  .faq-a{max-height:0;overflow:hidden;transition:max-height .4s ease,padding .3s;font-size:13px;color:#475569;line-height:1.8;padding:0 18px;background:var(--gray-l)}
+  .faq-a.open{max-height:600px;padding:14px 18px}
+  .divider{border:none;border-top:1px dashed var(--border);margin:20px 0}
+  footer{background:#1e293b;color:#94a3b8;text-align:center;padding:28px 20px;font-size:13px}
+  footer strong{color:white}
+  footer a{color:#60a5fa;text-decoration:none}
+  @media(max-width:640px){
+    .hero{padding:28px 20px}.hero h2{font-size:20px}
+    .grid,.grid-2{grid-template-columns:1fr}
+    .role-grid{grid-template-columns:1fr 1fr}
+    .screens-grid{grid-template-columns:1fr}
+    .dep-grid{grid-template-columns:1fr}
+    .hdr-badge{display:none}
+    .hdr-text h1{font-size:15px}
+  }
+  @media print{
+    .toc,.site-header{position:static}
+    .acc-body{max-height:none!important;padding:0 22px 22px!important}
+    .faq-a{max-height:none!important;padding:14px 18px!important}
+  }
+</style>
 </head>
 <body>
 
-<header>
-  <div class="logo">家庭相簿</div>
-  <div class="stats-badge" id="stats">載入中</div>
+<header class="site-header">
+  <div class="hdr">
+    <div class="hdr-logo">🎗️</div>
+    <div class="hdr-text">
+      <h1>台灣帕金森病友權益促進會</h1>
+      <p>數位管理系統 — 完整功能介紹與操作說明</p>
+    </div>
+    <div class="hdr-badge">📅 2026 年版</div>
+  </div>
 </header>
 
-<div class="album-bar" id="albumBar">
-  <div class="album-tab active" onclick="loadFolder(null,this)">全部相片</div>
-</div>
+<nav class="toc">
+  <div class="toc-inner">
+    <a href="#overview">🏠 系統總覽</a>
+    <a href="#login">🔐 登入系統</a>
+    <a href="#member">👤 會員管理</a>
+    <a href="#finance">💰 財務管理</a>
+    <a href="#report">📊 報表功能</a>
+    <a href="#setting">⚙️ 系統設定</a>
+    <a href="#permission">🛡️ 權限分級</a>
+    <a href="#screens">📱 操作畫面</a>
+    <a href="#deploy">🚀 部署說明</a>
+    <a href="#faq">❓ 常見問題</a>
+  </div>
+</nav>
 
-<div class="action-row">
-  <button class="action-btn blue"   onclick="openCreateAlbumModal()"><div class="ab-icon">+</div><div class="ab-label">新增相簿</div></button>
-  <button class="action-btn green"  onclick="openUploadModal()"><div class="ab-icon">↑</div><div class="ab-label">上傳相片</div></button>
-  <button class="action-btn orange" onclick="toggleSelectMode()"><div class="ab-icon" id="selIcon">☑</div><div class="ab-label" id="selLabel">選取下載</div></button>
-  <button class="action-btn red"    onclick="downloadAlbum()"><div class="ab-icon">↓</div><div class="ab-label">下載相簿</div></button>
-</div>
+<div class="wrap">
 
-<div class="section-title">相片</div>
-<div id="gallery">
-  <div class="loading"><div class="spinner"></div><p>正在載入相片...</p></div>
-</div>
-
-<div class="select-bar" id="selectBar">
-  <div class="select-bar-info" id="selCount">已選 0 張相片</div>
-  <div class="select-bar-btns">
-    <button class="sel-btn dl"  onclick="batchDownload()"><span class="si">↓</span>下載選取</button>
-    <button class="sel-btn all" onclick="selectAll()"><span class="si">V</span>全部選取</button>
-    <button class="sel-btn cls" onclick="clearSelection()"><span class="si">X</span>取消選取</button>
+<div class="hero">
+  <h2>🎗️ 台灣帕金森病友權益促進會<br>數位管理系統</h2>
+  <p>專為帕金森病友設計的無障礙管理平台，整合會員管理、財務管理、LINE 登入、自動收據、報表下載等完整功能，讓協會運作更有效率。</p>
+  <div class="hero-stats">
+    <div class="hstat"><div class="n">6</div><div class="l">功能模組</div></div>
+    <div class="hstat"><div class="n">7</div><div class="l">管理角色</div></div>
+    <div class="hstat"><div class="n">10</div><div class="l">資料工作表</div></div>
+    <div class="hstat"><div class="n">30+</div><div class="l">API 端點</div></div>
+    <div class="hstat"><div class="n">PWA</div><div class="l">可裝 APP</div></div>
+    <div class="hstat"><div class="n">♿</div><div class="l">無障礙設計</div></div>
   </div>
 </div>
 
-<div id="lightbox">
-  <div id="lbTop">
-    <div id="lbCounter">1 / 1</div>
-    <button id="lbCloseBtn">X</button>
+<!-- 1 系統總覽 -->
+<section class="sec" id="overview">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#eff6ff">🏠</div><div><div class="sec-title">系統總覽</div><div class="sec-sub">架構說明、技術選型與系統特色</div></div></div>
+  <div class="grid">
+    <div class="card"><span class="card-ico">🌐</span><h3>前端技術</h3><p>HTML5+CSS3+JS，部署於 <strong>GitHub Pages</strong>，免費穩定。支援 LINE LIFF SDK，可直接在 LINE 內開啟。</p><span class="tag">GitHub Pages</span></div>
+    <div class="card"><span class="card-ico">⚙️</span><h3>後端技術</h3><p>Google Apps Script (GAS) 作為後端 API，Web App 部署，<strong>免伺服器費用</strong>。資料存於 Google Sheets。</p><span class="tag g">Google Apps Script</span></div>
+    <div class="card"><span class="card-ico">📱</span><h3>PWA 離線支援</h3><p>支援 Progressive Web App，可安裝至手機桌面，離線仍可瀏覽快取頁面，網路恢復後自動同步。</p><span class="tag o">PWA</span></div>
+    <div class="card"><span class="card-ico">♿</span><h3>無障礙設計</h3><p>字體≥20px，按鈕高度≥60px，高對比配色，選擇題優先，減少文字輸入，適合手部顫抖的病友。</p><span class="tag p">WCAG 無障礙</span></div>
+    <div class="card"><span class="card-ico">🔒</span><h3>安全機制</h3><p>Session Token 驗證、RBAC 角色權限控管、操作日誌記錄、任期有效性驗證，確保資料安全。</p><span class="tag r">安全防護</span></div>
+    <div class="card"><span class="card-ico">📧</span><h3>自動通知</h3><p>繳費成功 Email 通知、捐款感謝信、預算超支警示、年度會費催繳 LINE Flex Message。</p><span class="tag g">自動化通知</span></div>
   </div>
-  <div id="lbThumbs"></div>
-  <div id="lbImgArea">
-    <div id="lbSpinner"></div>
-    <img id="lbImg" src="" alt="photo">
-    <button class="lb-nav-btn" id="lbPrev">&lt;</button>
-    <button class="lb-nav-btn" id="lbNext">&gt;</button>
+  <div class="alert al-bl" style="margin-top:20px"><span class="alert-ico">ℹ️</span><div><strong>系統架構：</strong>前端 GitHub Pages ↔ 後端 GAS Web App ↔ 資料庫 Google Sheets。所有 API 通訊使用 HTTPS POST JSON，Session Token 驗證身分。</div></div>
+  <div class="tbl" style="margin-top:20px"><table><thead><tr><th>工作表名稱</th><th>用途</th><th>主要欄位</th></tr></thead><tbody>
+    <tr><td>會員資料</td><td>會員基本資訊</td><td>個人ID、姓名、電話、LINE名稱、住址、加入日期、狀態</td></tr>
+    <tr><td>繳費紀錄</td><td>會費繳交明細</td><td>流水號、個人ID、年度、金額、繳費日期、方式、狀態</td></tr>
+    <tr><td>捐款紀錄</td><td>捐款明細</td><td>流水號、個人ID、金額、用途、捐款日期、收據號</td></tr>
+    <tr><td>收入明細</td><td>所有收入</td><td>憑證號、日期、科目、金額、來源、收據號、印章URL</td></tr>
+    <tr><td>支出明細</td><td>所有支出</td><td>憑證號、日期、科目、金額、類型、附件URL、傳票號</td></tr>
+    <tr><td>會計科目</td><td>科目維護</td><td>科目代號、名稱、類別、上層科目</td></tr>
+    <tr><td>帳戶設定</td><td>銀行/現金帳戶</td><td>帳戶代號、名稱、初始金額、現有餘額</td></tr>
+    <tr><td>預算設定</td><td>年度預算</td><td>年度、科目、預算金額、已使用、剩餘</td></tr>
+    <tr><td>管理人員</td><td>幹部設定</td><td>個人ID、姓名、職稱、權限等級、任期起迄</td></tr>
+    <tr><td>系統日誌</td><td>操作軌跡</td><td>時間、個人ID、動作、結果</td></tr>
+  </tbody></table></div>
+</section>
+
+<!-- 2 登入系統 -->
+<section class="sec" id="login">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#f0fdf4">🔐</div><div><div class="sec-title">登入系統</div><div class="sec-sub">註冊、電話登入、LINE LIFF 快速登入</div></div></div>
+  <div class="grid" style="margin-bottom:24px">
+    <div class="card"><span class="card-ico">📝</span><h3>一般電話註冊</h3><p>輸入<strong>姓名</strong>與<strong>電話號碼</strong>完成註冊。系統自動取電話後 9 碼作為個人 ID，適合無使用 LINE 的長輩。</p><span class="tag">電話後9碼=個人ID</span></div>
+    <div class="card"><span class="card-ico">💚</span><h3>LINE LIFF 快速註冊</h3><p>點擊「LINE 快速登入」，系統自動抓取 <strong>LINE ID</strong> 及 <strong>LINE 名稱</strong>。首次登入需實名制填寫姓名與電話（一次即可）。</p><span class="tag g">LINE ID=個人ID</span></div>
+    <div class="card"><span class="card-ico">🔑</span><h3>電話登入</h3><p>輸入<strong>姓名</strong>與<strong>電話後 9 碼</strong>即可登入。<strong>不需記憶密碼</strong>，操作簡單，適合長輩使用。</p><span class="tag o">免密碼登入</span></div>
+    <div class="card"><span class="card-ico">🟢</span><h3>LIFF 一鍵登入</h3><p>已有 LINE 帳號者，點擊「LINE 登入」一鍵進入系統。首次登入需完成實名制，之後直接進入主頁。</p><span class="tag g">一鍵登入</span></div>
   </div>
-  <div id="lbBottom">
-    <div id="lbName"></div>
-    <div id="lbMeta"></div>
-    <div id="lbActions">
-      <button class="lb-action-btn dl"  onclick="downloadCurrentPhoto()">下載這張</button>
-      <button class="lb-action-btn cls" onclick="closeLightbox()">關閉</button>
+  <div class="steps">
+    <div class="step"><div class="step-n">1</div><div class="step-b"><h4>開啟系統網址</h4><p>從瀏覽器開啟 GitHub Pages 網址，或從 LINE 點擊 LIFF 連結進入。建議加入書籤或安裝至手機桌面。</p></div></div>
+    <div class="step"><div class="step-n">2</div><div class="step-b"><h4>選擇登入方式</h4><ul><li>🟢 <strong>LINE 登入</strong>：點擊綠色按鈕，自動跳轉 LINE 授權</li><li>📞 <strong>電話登入</strong>：輸入姓名＋電話後 9 碼</li><li>📝 <strong>首次使用</strong>：點擊「立即註冊」</li></ul></div></div>
+    <div class="step"><div class="step-n">3</div><div class="step-b"><h4>首次 LINE 登入（實名制）</h4><p>系統偵測到新帳號，顯示實名制表單，填寫<strong>真實姓名</strong>與<strong>聯絡電話</strong>後完成綁定，之後登入不再需要填寫。</p></div></div>
+    <div class="step"><div class="step-n">4</div><div class="step-b"><h4>進入主頁</h4><p>登入成功後顯示主頁，依照使用者<strong>角色權限</strong>顯示對應功能選單。</p></div></div>
+  </div>
+</section>
+
+<!-- 3 會員管理 -->
+<section class="sec" id="member">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#f5f3ff">👤</div><div><div class="sec-title">會員管理模組</div><div class="sec-sub">個人資料維護、繳費管理、捐款紀錄</div></div></div>
+  <div class="acc"><div class="acc-hdr open" onclick="tog(this)"><span class="acc-ico">👤</span><div><div class="acc-title">個人資料維護</div><div class="acc-sub">查看與更新個人基本資訊</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body open"><div class="grid-2">
+    <div><p style="font-size:14px;font-weight:700;margin-bottom:10px">📋 可維護欄位</p>
+      <div class="tbl"><table><thead><tr><th>欄位</th><th>說明</th><th>可編輯</th></tr></thead><tbody>
+        <tr><td>姓名</td><td>真實姓名（身分證）</td><td><span class="badge b-gr">✓ 可改</span></td></tr>
+        <tr><td>電話</td><td>聯絡電話</td><td><span class="badge b-gr">✓ 可改</span></td></tr>
+        <tr><td>住址</td><td>通訊地址</td><td><span class="badge b-gr">✓ 可改</span></td></tr>
+        <tr><td>Email</td><td>電子郵件（收通知用）</td><td><span class="badge b-gr">✓ 可改</span></td></tr>
+        <tr><td>個人ID</td><td>電話後9碼或LINE ID</td><td><span class="badge b-gy">系統產生</span></td></tr>
+        <tr><td>加入日期</td><td>首次註冊時間</td><td><span class="badge b-gy">系統產生</span></td></tr>
+        <tr><td>會員狀態</td><td>正常/停權/退會</td><td><span class="badge b-or">管理員</span></td></tr>
+      </tbody></table></div>
+    </div>
+    <div><p style="font-size:14px;font-weight:700;margin-bottom:10px">🔧 操作步驟</p>
+      <div class="steps">
+        <div class="step"><div class="step-n" style="width:30px;height:30px;font-size:13px">1</div><div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">點擊底部「我的」</h4><p>進入個人資料頁面</p></div></div>
+        <div class="step"><div class="step-n" style="width:30px;height:30px;font-size:13px">2</div><div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">點擊「編輯資料」</h4><p>欄位變為可輸入狀態</p></div></div>
+        <div class="step"><div class="step-n" style="width:30px;height:30px;font-size:13px">3</div><div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">修改後點「儲存」</h4><p>系統顯示「更新成功」提示</p></div></div>
+      </div>
+    </div>
+  </div></div></div>
+  <div class="acc"><div class="acc-hdr" onclick="tog(this)"><span class="acc-ico">💳</span><div><div class="acc-title">繳費管理</div><div class="acc-sub">查看繳費歷史、狀態、下載收據</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body"><div class="alert al-bl"><span class="alert-ico">💡</span><div>會員可查看自己的所有繳費紀錄；出納/行政秘書長可代為登錄繳費並生成含印章收據。</div></div>
+    <div class="tbl" style="margin-top:14px"><table><thead><tr><th>欄位</th><th>說明</th></tr></thead><tbody>
+      <tr><td>流水號</td><td>系統自動產生（PY-20260101-001）</td></tr>
+      <tr><td>繳費年度</td><td>例：2026</td></tr>
+      <tr><td>金額</td><td>新台幣（元）</td></tr>
+      <tr><td>繳費日期</td><td>實際繳費日</td></tr>
+      <tr><td>繳費方式</td><td>現金 / 轉帳 / LINE Pay / 信用卡</td></tr>
+      <tr><td>狀態</td><td><span class="badge b-gr">已繳</span> / <span class="badge b-rd">未繳</span> / <span class="badge b-or">待確認</span></td></tr>
+      <tr><td>收據 PDF</td><td>含協會印章，可下載列印</td></tr>
+    </tbody></table></div>
+  </div></div>
+  <div class="acc"><div class="acc-hdr" onclick="tog(this)"><span class="acc-ico">❤️</span><div><div class="acc-title">捐款紀錄</div><div class="acc-sub">查看個人所有捐款明細與用途</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body">
+    <div class="tbl"><table><thead><tr><th>欄位</th><th>說明</th></tr></thead><tbody>
+      <tr><td>收據編號</td><td>DN-20260101-001（可申報抵稅）</td></tr>
+      <tr><td>捐款金額</td><td>新台幣（元）</td></tr>
+      <tr><td>捐款用途</td><td>病友關懷基金 / 醫療補助 / 活動舉辦</td></tr>
+      <tr><td>捐款日期</td><td>實際捐款日</td></tr>
+      <tr><td>收據 PDF</td><td>含協會印章，可用於報稅</td></tr>
+    </tbody></table></div>
+    <div class="alert al-gr" style="margin-top:14px"><span class="alert-ico">✅</span><div>捐款收據可作為<strong>綜合所得稅列舉扣除憑證</strong>，系統自動寄送至您的 Email。</div></div>
+  </div></div>
+</section>
+
+<!-- 4 財務管理 -->
+<section class="sec" id="finance">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#fff7ed">💰</div><div><div class="sec-title">財務管理模組</div><div class="sec-sub">收入、支出、預算、收據、傳票（需管理員權限）</div></div></div>
+  <div class="acc"><div class="acc-hdr open" onclick="tog(this)"><span class="acc-ico">📥</span><div><div class="acc-title">新增收入</div><div class="acc-sub">各管道收款確認、自動生成含印章收據</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body open"><div class="grid-2">
+    <div><p style="font-size:14px;font-weight:700;margin-bottom:10px">💰 收入類型</p>
+      <div class="tbl"><table><thead><tr><th>類型</th><th>科目</th><th>說明</th></tr></thead><tbody>
+        <tr><td>會費</td><td>會費收入</td><td>年度會員費</td></tr>
+        <tr><td>捐款</td><td>捐款收入</td><td>一般/指定捐款</td></tr>
+        <tr><td>補助</td><td>政府補助</td><td>政府計畫補助款</td></tr>
+        <tr><td>活動</td><td>活動收入</td><td>活動報名費</td></tr>
+        <tr><td>利息</td><td>利息收入</td><td>存款利息</td></tr>
+        <tr><td>其他</td><td>雜項收入</td><td>其他來源</td></tr>
+      </tbody></table></div>
+    </div>
+    <div><p style="font-size:14px;font-weight:700;margin-bottom:10px">📄 收據自動生成流程</p>
+      <div class="steps">
+        <div class="step"><div class="step-n" style="width:30px;height:30px;font-size:13px">1</div><div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">填寫收入資料</h4><p>日期、科目、金額、來源管道</p></div></div>
+        <div class="step"><div class="step-n" style="width:30px;height:30px;font-size:13px">2</div><div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">確認後自動生成收據</h4><p>系統產生 PDF，自動加蓋協會關防印章</p></div></div>
+        <div class="step"><div class="step-n" style="width:30px;height:30px;font-size:13px">3</div><div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">Email 自動寄送</h4><p>收據 PDF 自動寄至繳款人信箱</p></div></div>
+      </div>
     </div>
   </div>
-</div>
-
-<div class="modal-back" id="createAlbumModal">
-  <div class="modal-sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-title">新增相簿</div>
-    <div class="field"><label>相簿名稱（必填）</label><input type="text" id="albumName" placeholder="例：2024 過年家庭聚餐"></div>
-    <div class="field"><label>說明（可不填）</label><textarea id="albumDesc" placeholder="這個相簿的說明..."></textarea></div>
-    <button class="sheet-btn confirm" onclick="createAlbum()">建立相簿</button>
-    <button class="sheet-btn cancel"  onclick="closeModal('createAlbumModal')">取消</button>
-  </div>
-</div>
-
-<div class="modal-back" id="uploadModal">
-  <div class="modal-sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-title">上傳相片</div>
-    <div class="field">
-      <label>上傳到哪個相簿？</label>
-      <select id="uploadTarget"></select>
+  <div class="alert al-or" style="margin-top:14px"><span class="alert-ico">🖊️</span><div><strong>印章說明：</strong>收據 PDF 由系統自動加蓋協會關防印章（PNG 透明背景），印章圖檔由理事長在系統設定中上傳管理。</div></div>
+  </div></div>
+  <div class="acc"><div class="acc-hdr" onclick="tog(this)"><span class="acc-ico">📤</span><div><div class="acc-title">新增支出</div><div class="acc-sub">附件上傳、傳票開立、支出憑證生成</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body">
+    <div class="grid">
+      <div class="card"><span class="card-ico">📎</span><h3>附件上傳</h3><p>可上傳<strong>發票、收據、合約</strong>等附件（JPG/PNG/PDF），系統自動儲存至 Google Drive 並記錄連結。</p><span class="tag">Google Drive</span></div>
+      <div class="card"><span class="card-ico">📋</span><h3>傳票開立</h3><p>支出確認後自動生成<strong>支出傳票 PDF</strong>，包含傳票號、日期、科目、金額、核准/覆核/製單簽名欄。</p><span class="tag o">自動傳票</span></div>
+      <div class="card"><span class="card-ico">🏷️</span><h3>支出類型</h3><p>行政費用、活動費用、醫療補助、設備採購、人事費用、租金、水電、雜支等多種分類。</p><span class="tag p">多類型</span></div>
     </div>
-    <div class="upload-zone" id="uploadZone">
-      <div class="uz-icon">+</div>
-      <p>點這裡選擇相片</p>
-      <p style="font-size:0.88rem;color:#aaa;margin-top:6px;">可一次選多張</p>
-      <input type="file" id="fileInput" accept="image/*" multiple>
-    </div>
-    <div class="upload-preview" id="uploadPreview"></div>
-    <button class="sheet-btn upload" id="doUploadBtn" onclick="doUpload()" disabled>開始上傳</button>
-    <button class="sheet-btn cancel" onclick="closeModal('uploadModal')">取消</button>
-  </div>
-</div>
+    <div class="tbl" style="margin-top:16px"><table><thead><tr><th>支出欄位</th><th>說明</th><th>必填</th></tr></thead><tbody>
+      <tr><td>傳票號</td><td>系統自動產生 EX-YYYYMMDD-XXX</td><td><span class="badge b-gy">自動</span></td></tr>
+      <tr><td>日期</td><td>支出發生日期</td><td><span class="badge b-rd">必填</span></td></tr>
+      <tr><td>會計科目</td><td>下拉選單選擇</td><td><span class="badge b-rd">必填</span></td></tr>
+      <tr><td>金額</td><td>新台幣（元）</td><td><span class="badge b-rd">必填</span></td></tr>
+      <tr><td>支出類型</td><td>下拉選單選擇</td><td><span class="badge b-rd">必填</span></td></tr>
+      <tr><td>附件</td><td>發票/收據圖片或PDF</td><td><span class="badge b-or">建議填</span></td></tr>
+      <tr><td>備註</td><td>說明用途</td><td><span class="badge b-gy">選填</span></td></tr>
+    </tbody></table></div>
+  </div></div>
+  <div class="acc"><div class="acc-hdr" onclick="tog(this)"><span class="acc-ico">📊</span><div><div class="acc-title">預算管理</div><div class="acc-sub">年度預算設定、執行監控、超支警示</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body"><div class="grid">
+    <div class="card"><span class="card-ico">🎯</span><h3>預算設定</h3><p>依會計科目設定年度預算金額，可設定多個科目的預算上限，支援跨年度管理。</p></div>
+    <div class="card"><span class="card-ico">📈</span><h3>執行監控</h3><p>每筆支出自動扣減對應科目預算，即時顯示<strong>已用金額</strong>、<strong>剩餘金額</strong>、<strong>使用率百分比</strong>。</p></div>
+    <div class="card"><span class="card-ico">⚠️</span><h3>超支警示</h3><p>使用率達 <strong>80%</strong> 時，系統每日自動發送 Email 警示給理事長，避免超支。</p><span class="tag r">自動警示</span></div>
+  </div></div></div>
+  <div class="acc"><div class="acc-hdr" onclick="tog(this)"><span class="acc-ico">👥</span><div><div class="acc-title">會員管理（財務視角）</div><div class="acc-sub">查看編輯會員資料、代登錄繳費與捐款</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body">
+    <div class="alert al-bl"><span class="alert-ico">👤</span><div>行政秘書長、出納可查看所有會員清單，並代為登錄<strong>現金繳費</strong>或<strong>現金捐款</strong>，系統自動生成收據並寄送 Email。</div></div>
+    <div class="tbl" style="margin-top:14px"><table><thead><tr><th>功能</th><th>操作說明</th><th>所需權限</th></tr></thead><tbody>
+      <tr><td>查看會員清單</td><td>搜尋、篩選、排序</td><td><span class="badge b-bl">秘書長以上</span></td></tr>
+      <tr><td>編輯會員資料</td><td>修改基本資訊</td><td><span class="badge b-bl">秘書長以上</span></td></tr>
+      <tr><td>登錄繳費</td><td>選擇會員→填金額→確認</td><td><span class="badge b-bl">出納以上</span></td></tr>
+      <tr><td>登錄捐款</td><td>選擇會員→填金額/用途</td><td><span class="badge b-bl">出納以上</span></td></tr>
+      <tr><td>查看繳費狀態</td><td>顯示當年度是否已繳</td><td><span class="badge b-bl">秘書長以上</span></td></tr>
+      <tr><td>停權/退會</td><td>更改會員狀態</td><td><span class="badge b-or">總幹事以上</span></td></tr>
+    </tbody></table></div>
+  </div></div>
+</section>
 
-<div id="progressModal">
-  <div class="prog-box">
-    <h3 id="progressTitle">處理中...</h3>
-    <div class="prog-wrap"><div class="prog-fill" id="progressFill" style="width:0%"></div></div>
-    <div class="prog-text" id="progressText">請稍候</div>
+<!-- 5 報表功能 -->
+<section class="sec" id="report">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#fef2f2">📊</div><div><div class="sec-title">報表功能</div><div class="sec-sub">財務報表、圖表視覺化、年度報告 PDF 下載</div></div></div>
+  <div class="grid">
+    <div class="card"><span class="card-ico">📅</span><h3>月度收支報表</h3><p>依月份顯示收入與支出金額，自動生成<strong>長條圖</strong>，可下載 PDF 或 CSV 格式。</p><span class="tag">月度分析</span></div>
+    <div class="card"><span class="card-ico">🥧</span><h3>支出分類圓餅圖</h3><p>依會計科目分類顯示支出比例，3D 圓餅圖視覺化，快速了解各項支出佔比。</p><span class="tag o">視覺化圖表</span></div>
+    <div class="card"><span class="card-ico">📑</span><h3>年度財務報告</h3><p>完整年度收支報告，含摘要、月度圖表、支出分類，一鍵生成 <strong>PDF 下載</strong>。</p><span class="tag p">PDF 報告</span></div>
+    <div class="card"><span class="card-ico">📋</span><h3>會員繳費清單</h3><p>列出所有會員當年度繳費狀態，可篩選「已繳」「未繳」，匯出 CSV 方便追蹤。</p><span class="tag g">繳費追蹤</span></div>
+    <div class="card"><span class="card-ico">💝</span><h3>捐款彙總報表</h3><p>依用途分類統計捐款金額，顯示捐款人清單，可用於年度報告及感謝狀製作。</p><span class="tag r">捐款統計</span></div>
+    <div class="card"><span class="card-ico">🏦</span><h3>帳戶餘額報表</h3><p>顯示各帳戶（現金/銀行）目前餘額，與收支明細核對，確保帳目平衡。</p><span class="tag">帳戶管理</span></div>
   </div>
-</div>
+  <div class="alert al-gr" style="margin-top:20px"><span class="alert-ico">📥</span><div><strong>下載格式：</strong>所有報表支援 <strong>PDF</strong>（含圖表）及 <strong>CSV</strong>（可匯入 Excel）兩種格式。PDF 報表由 Google Docs 自動生成，儲存於 Google Drive 並提供下載連結。</div></div>
+</section>
+
+<!-- 6 系統設定 -->
+<section class="sec" id="setting">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#f5f3ff">⚙️</div><div><div class="sec-title">系統設定</div><div class="sec-sub">帳戶管理、會計科目、管理人員設定、印章上傳</div></div></div>
+  <div class="acc"><div class="acc-hdr open" onclick="tog(this)"><span class="acc-ico">🏦</span><div><div class="acc-title">帳戶管理</div><div class="acc-sub">建立帳戶、設定初始餘額</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body open"><div class="tbl"><table><thead><tr><th>欄位</th><th>說明</th><th>範例</th></tr></thead><tbody>
+    <tr><td>帳戶代號</td><td>自訂代號</td><td>CASH-001、BANK-001</td></tr>
+    <tr><td>帳戶名稱</td><td>帳戶描述</td><td>現金帳戶、台灣銀行存款</td></tr>
+    <tr><td>初始金額</td><td>建立時的起始餘額</td><td>NT$ 50,000</td></tr>
+    <tr><td>現有餘額</td><td>系統自動計算</td><td>即時更新</td></tr>
+  </tbody></table></div></div></div>
+  <div class="acc"><div class="acc-hdr" onclick="tog(this)"><span class="acc-ico">📒</span><div><div class="acc-title">會計科目</div><div class="acc-sub">建立與維護科目樹狀結構</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body">
+    <div class="tbl"><table><thead><tr><th>類別</th><th>科目範例</th></tr></thead><tbody>
+      <tr><td><span class="badge b-bl">資產</span></td><td>現金、銀行存款、應收款項、固定資產</td></tr>
+      <tr><td><span class="badge b-rd">負債</span></td><td>應付款項、預收款項</td></tr>
+      <tr><td><span class="badge b-gr">收入</span></td><td>會費收入、捐款收入、政府補助、活動收入、利息收入</td></tr>
+      <tr><td><span class="badge b-or">支出</span></td><td>行政費用、活動費用、醫療補助、人事費用、租金、水電費</td></tr>
+    </tbody></table></div>
+    <div class="alert al-bl" style="margin-top:14px"><span class="alert-ico">💡</span><div>科目採<strong>樹狀結構</strong>，可設定上層科目，例如「行政費用」下可有「文具費」、「郵資費」等子科目。</div></div>
+  </div></div>
+  <div class="acc"><div class="acc-hdr" onclick="tog(this)"><span class="acc-ico">👔</span><div><div class="acc-title">管理人員設定</div><div class="acc-sub">幹部職稱、權限等級、任期管理</div></div><span class="acc-arr">▼</span></div>
+  <div class="acc-body">
+    <div class="tbl"><table><thead><tr><th>職稱</th><th>英文代號</th><th>權限等級</th><th>任期管理</th></tr></thead><tbody>
+      <tr><td>理事長</td><td>chairman</td><td><span class="badge b-rd">Lv.9 最高</span></td><td>設定任期起迄日</td></tr>
+      <tr><td>理監事</td><td>director</td><td><span class="badge b-or">Lv.6</span></td><td>設定任期起迄日</td></tr>
+      <tr><td>總幹事</td><td>manager</td><td><span class="badge b-or">Lv.5</span></td><td>設定任期起迄日</td></tr>
+      <tr><td>會計</td><td>accountant</td><td><span class="badge b-bl">Lv.4</span></td><td>設定任期起迄日</td></tr>
+      <tr><td>出納</td><td>cashier</td><td><span class="badge b-bl">Lv.3</span></td><td>設定任期起迄日</td></tr>
+      <tr><td>行政秘書長</td><td>secretary</td><td><span class="badge b-gy">Lv.2</span></td><td>設定任期起迄日</td></tr>
+      <tr><td>一般會員</td><td>member</td><td><span class="badge b-gy">Lv.1</span></td><td>無任期限制</td></tr>
+    </tbody></table></div>
+    <div class="alert al-or" style="margin-top:14px"><span class="alert-ico">⏰</span><div><strong>任期驗證：</strong>系統每次 API 請求時自動驗證管理人員任期是否有效，任期到期後自動降為一般會員權限，確保人事異動後的安全性。</div></div>
+  </div></div>
+  <div class="acc"><div class="acc-hdr" onclick="tog(this)"><span class="acc-ico">🖊️</span><div><div class="acc-title">印章管理</div><div 
+<div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">準備印章圖檔</h4><p>使用掃描機或手機拍攝協會關防印章，存為 <strong>PNG 格式（透明背景）</strong>，建議尺寸 300×300px 以上。</p></div></div>
+      <div class="step"><div class="step-n" style="width:30px;height:30px;font-size:13px">2</div><div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">進入系統設定</h4><p>以<strong>理事長帳號</strong>登入 → 點擊「系統設定」→「印章管理」。</p></div></div>
+      <div class="step"><div class="step-n" style="width:30px;height:30px;font-size:13px">3</div><div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">上傳印章圖檔</h4><p>點擊「選擇檔案」→ 選取 PNG 圖檔 → 點擊「上傳印章」，系統儲存至 Google Drive 並記錄 File ID。</p></div></div>
+      <div class="step"><div class="step-n" style="width:30px;height:30px;font-size:13px">4</div><div class="step-b" style="padding:12px 16px"><h4 style="font-size:13px">驗證效果</h4><p>任意開立一張測試收據，確認 PDF 右下角出現印章圖樣，即表示設定成功。</p></div></div>
+    </div>
+    <div class="alert al-rd" style="margin-top:14px"><span class="alert-ico">🔐</span><div><strong>安全提醒：</strong>印章上傳功能僅限<strong>理事長（Lv.9）</strong>操作，其他人員無法存取此功能，確保印章安全。</div></div>
+  </div></div>
+</section>
+
+<!-- 7 權限分級 -->
+<section class="sec" id="permission">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#fef2f2">🛡️</div><div><div class="sec-title">權限分級系統</div><div class="sec-sub">RBAC 角色權限控管，7 種角色完整說明</div></div></div>
+
+  <div class="role-grid" style="margin-bottom:24px">
+    <div class="role-card" style="background:#fef2f2;border-color:#dc2626">
+      <div class="ri">👑</div><div class="rt">理事長</div><div class="rl" style="color:#dc2626">Lv.9 最高權限</div>
+      <ul><li>所有功能</li><li>系統設定</li><li>印章管理</li><li>人員管理</li><li>財務全覽</li></ul>
+    </div>
+    <div class="role-card" style="background:#fff7ed;border-color:#ea580c">
+      <div class="ri">🏛️</div><div class="rt">理監事</div><div class="rl" style="color:#ea580c">Lv.6</div>
+      <ul><li>查看所有資料</li><li>預算審核</li><li>報表查看</li><li>唯讀為主</li></ul>
+    </div>
+    <div class="role-card" style="background:#fff7ed;border-color:#ea580c">
+      <div class="ri">🗂️</div><div class="rt">總幹事</div><div class="rl" style="color:#ea580c">Lv.5</div>
+      <ul><li>會員管理</li><li>財務管理</li><li>報表下載</li><li>部分系統設定</li></ul>
+    </div>
+    <div class="role-card" style="background:#eff6ff;border-color:#2563eb">
+      <div class="ri">📒</div><div class="rt">會計</div><div class="rl" style="color:#2563eb">Lv.4</div>
+      <ul><li>收支管理</li><li>預算管理</li><li>傳票開立</li><li>完整報表</li></ul>
+    </div>
+    <div class="role-card" style="background:#eff6ff;border-color:#2563eb">
+      <div class="ri">💰</div><div class="rt">出納</div><div class="rl" style="color:#2563eb">Lv.3</div>
+      <ul><li>收入登錄</li><li>繳費登錄</li><li>捐款登錄</li><li>收據開立</li></ul>
+    </div>
+    <div class="role-card" style="background:#f9fafb;border-color:#9ca3af">
+      <div class="ri">📋</div><div class="rt">行政秘書長</div><div class="rl" style="color:#6b7280">Lv.2</div>
+      <ul><li>會員清單</li><li>繳費查詢</li><li>基本報表</li><li>代登繳費</li></ul>
+    </div>
+    <div class="role-card" style="background:#f0fdf4;border-color:#16a34a">
+      <div class="ri">👤</div><div class="rt">一般會員</div><div class="rl" style="color:#16a34a">Lv.1</div>
+      <ul><li>個人資料</li><li>自己繳費</li><li>自己捐款</li><li>下載收據</li></ul>
+    </div>
+  </div>
+
+  <p style="font-size:15px;font-weight:700;margin-bottom:14px">📊 權限功能對照矩陣</p>
+  <div class="perm-wrap">
+    <div class="tbl">
+      <table>
+        <thead><tr>
+          <th style="text-align:left">功能</th>
+          <th>一般會員<br>Lv.1</th>
+          <th>秘書長<br>Lv.2</th>
+          <th>出納<br>Lv.3</th>
+          <th>會計<br>Lv.4</th>
+          <th>總幹事<br>Lv.5</th>
+          <th>理監事<br>Lv.6</th>
+          <th>理事長<br>Lv.9</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>查看個人資料</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+          <tr><td>編輯個人資料</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+          <tr><td>查看自己繳費</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+          <tr><td>查看所有會員</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+          <tr><td>登錄繳費/捐款</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td></tr>
+          <tr><td>開立收據</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td></tr>
+          <tr><td>新增收入</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td></tr>
+          <tr><td>新增支出</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td></tr>
+          <tr><td>開立傳票</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td></tr>
+          <tr><td>預算設定</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+          <tr><td>查看報表</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+          <tr><td>年度財務報告</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+          <tr><td>會計科目設定</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td><td>❌</td><td>✅</td></tr>
+          <tr><td>管理人員設定</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td></tr>
+          <tr><td>印章上傳管理</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td></tr>
+          <tr><td>查看系統日誌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="alert al-bl" style="margin-top:16px"><span class="alert-ico">🔐</span><div><strong>Session 安全機制：</strong>每次登入產生 UUID Token，有效期 24 小時，每次 API 請求均驗證 Token 有效性。Token 過期後需重新登入，確保帳號安全。</div></div>
+</section>
+
+<!-- 8 操作畫面 -->
+<section class="sec" id="screens">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#f0fdf4">📱</div><div><div class="sec-title">操作畫面示意</div><div class="sec-sub">各主要頁面的手機畫面模擬</div></div></div>
+
+  <div class="screens-grid">
+
+    <!-- 登入頁 -->
+    <div>
+      <div class="phone">
+        <div class="ph-notch"><div class="ph-dot"></div></div>
+        <div class="ph-screen">
+          <div class="ph-hdr">🎗️ 台灣帕金森病友權益促進會</div>
+          <div style="text-align:center;font-size:11px;color:#64748b;padding:4px 0">請選擇登入方式</div>
+          <div class="ph-btn grn">💚 LINE 快速登入</div>
+          <div style="text-align:center;font-size:10px;color:#94a3b8;margin:2px 0">── 或 ──</div>
+          <div class="ph-lbl">姓名</div>
+          <div class="ph-inp">請輸入真實姓名</div>
+          <div class="ph-lbl">電話後 9 碼</div>
+          <div class="ph-inp">例：912345678</div>
+          <div class="ph-btn pri">🔑 電話登入</div>
+          <div class="ph-btn out">📝 立即註冊</div>
+          <div style="text-align:center;font-size:10px;color:#94a3b8;margin-top:4px">本系統採實名制，資料受到保護</div>
+        </div>
+      </div>
+      <div class="scr-lbl">🔐 登入頁面</div>
+    </div>
+
+    <!-- 主頁 -->
+    <div>
+      <div class="phone">
+        <div class="ph-notch"><div class="ph-dot"></div></div>
+        <div class="ph-screen">
+          <div class="ph-hdr">🏠 主頁</div>
+          <div class="ph-card">
+            <div class="ph-row"><span>👤 王小明 會員</span><span style="color:var(--green);font-weight:700">正常</span></div>
+            <div style="font-size:10px;color:#94a3b8">2026 年度會費：<span style="color:var(--green);font-weight:700">已繳 ✓</span></div>
+          </div>
+          <div class="ph-btn pri">💳 我的繳費紀錄</div>
+          <div class="ph-btn out">❤️ 我的捐款紀錄</div>
+          <div class="ph-btn out">👤 個人資料</div>
+          <div class="ph-btn" style="background:var(--purple-l);color:var(--purple)">📄 下載收據</div>
+          <div class="ph-card" style="margin-top:4px">
+            <div style="font-size:10px;font-weight:700;margin-bottom:4px">📢 最新公告</div>
+            <div style="font-size:10px;color:#64748b">2026 年度會員大會將於 6/15 舉行，請踴躍參加。</div>
+          </div>
+          <div class="ph-nav">
+            <div class="ph-ni a"><span>🏠</span>首頁</div>
+            <div class="ph-ni"><span>💳</span>繳費</div>
+            <div class="ph-ni"><span>❤️</span>捐款</div>
+            <div class="ph-ni"><span>👤</span>我的</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr-lbl">🏠 會員主頁</div>
+    </div>
+
+    <!-- 繳費紀錄 -->
+    <div>
+      <div class="phone">
+        <div class="ph-notch"><div class="ph-dot"></div></div>
+        <div class="ph-screen">
+          <div class="ph-hdr">💳 繳費紀錄</div>
+          <div class="ph-card">
+            <div class="ph-row"><span style="font-weight:700">2026 年度</span><span style="color:var(--green);font-weight:700">✅ 已繳</span></div>
+            <div class="ph-row"><span style="color:#64748b">NT$ 1,200</span><span style="color:#64748b">2026/03/15</span></div>
+            <div class="ph-row"><span style="color:#94a3b8">現金</span><span style="color:var(--blue);font-size:10px">📄 下載收據</span></div>
+          </div>
+          <div class="ph-card">
+            <div class="ph-row"><span style="font-weight:700">2025 年度</span><span style="color:var(--green);font-weight:700">✅ 已繳</span></div>
+            <div class="ph-row"><span style="color:#64748b">NT$ 1,200</span><span style="color:#64748b">2025/02/20</span></div>
+            <div class="ph-row"><span style="color:#94a3b8">轉帳</span><span style="color:var(--blue);font-size:10px">📄 下載收據</span></div>
+          </div>
+          <div class="ph-card">
+            <div class="ph-row"><span style="font-weight:700">2024 年度</span><span style="color:var(--green);font-weight:700">✅ 已繳</span></div>
+            <div class="ph-row"><span style="color:#64748b">NT$ 1,200</span><span style="color:#64748b">2024/01/10</span></div>
+            <div class="ph-row"><span style="color:#94a3b8">LINE Pay</span><span style="color:var(--blue);font-size:10px">📄 下載收據</span></div>
+          </div>
+          <div class="ph-nav">
+            <div class="ph-ni"><span>🏠</span>首頁</div>
+            <div class="ph-ni a"><span>💳</span>繳費</div>
+            <div class="ph-ni"><span>❤️</span>捐款</div>
+            <div class="ph-ni"><span>👤</span>我的</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr-lbl">💳 繳費紀錄頁</div>
+    </div>
+
+    <!-- 管理員財務 -->
+    <div>
+      <div class="phone">
+        <div class="ph-notch"><div class="ph-dot"></div></div>
+        <div class="ph-screen">
+          <div class="ph-hdr">💰 財務管理</div>
+          <div class="ph-card">
+            <div class="ph-row"><span style="font-weight:700;font-size:11px">2026 年度收支摘要</span></div>
+            <div class="ph-row" style="margin-top:4px"><span style="color:#64748b">總收入</span><span style="color:var(--green);font-weight:700">NT$ 285,000</span></div>
+            <div class="ph-row"><span style="color:#64748b">總支出</span><span style="color:var(--red);font-weight:700">NT$ 142,500</span></div>
+            <div class="ph-row" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px"><span style="font-weight:700">結餘</span><span style="color:var(--blue);font-weight:700">NT$ 142,500</span></div>
+          </div>
+          <div class="ph-btn pri">📥 新增收入</div>
+          <div class="ph-btn" style="background:var(--red-l);color:var(--red)">📤 新增支出</div>
+          <div class="ph-btn out">📊 查看預算</div>
+          <div class="ph-btn" style="background:var(--purple-l);color:var(--purple)">📑 產生報表</div>
+          <div class="ph-nav">
+            <div class="ph-ni"><span>🏠</span>首頁</div>
+            <div class="ph-ni"><span>👥</span>會員</div>
+            <div class="ph-ni a"><span>💰</span>財務</div>
+            <div class="ph-ni"><span>📊</span>報表</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr-lbl">💰 財務管理（管理員）</div>
+    </div>
+
+    <!-- 預算監控 -->
+    <div>
+      <div class="phone">
+        <div class="ph-notch"><div class="ph-dot"></div></div>
+        <div class="ph-screen">
+          <div class="ph-hdr">📊 預算執行監控</div>
+          <div class="ph-card">
+            <div style="font-weight:700;font-size:11px;margin-bottom:6px">行政費用</div>
+            <div style="background:#e5e7eb;border-radius:6px;height:8px;overflow:hidden"><div style="background:var(--orange);width:72%;height:100%;border-radius:6px"></div></div>
+            <div class="ph-row" style="margin-top:4px"><span style="color:#64748b">已用 NT$36,000</span><span style="color:var(--orange);font-weight:700">72%</span></div>
+          </div>
+          <div class="ph-card">
+            <div style="font-weight:700;font-size:11px;margin-bottom:6px">活動費用</div>
+            <div style="background:#e5e7eb;border-radius:6px;height:8px;overflow:hidden"><div style="background:var(--green);width:45%;height:100%;border-radius:6px"></div></div>
+            <div class="ph-row" style="margin-top:4px"><span style="color:#64748b">已用 NT$45,000</span><span style="color:var(--green);font-weight:700">45%</span></div>
+          </div>
+          <div class="ph-card">
+            <div style="font-weight:700;font-size:11px;margin-bottom:6px">醫療補助</div>
+            <div style="background:#e5e7eb;border-radius:6px;height:8px;overflow:hidden"><div style="background:var(--red);width:88%;height:100%;border-radius:6px"></div></div>
+            <div class="ph-row" style="margin-top:4px"><span style="color:#64748b">已用 NT$88,000</span><span style="color:var(--red);font-weight:700">⚠️ 88%</span></div>
+          </div>
+          <div class="ph-nav">
+            <div class="ph-ni"><span>🏠</span>首頁</div>
+            <div class="ph-ni"><span>👥</span>會員</div>
+            <div class="ph-ni"><span>💰</span>財務</div>
+            <div class="ph-ni a"><span>📊</span>報表</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr-lbl">📊 預算執行監控</div>
+    </div>
+
+    <!-- 系統設定 -->
+    <div>
+      <div class="phone">
+        <div class="ph-notch"><div class="ph-dot"></div></div>
+        <div class="ph-screen">
+          <div class="ph-hdr">⚙️ 系統設定</div>
+          <div style="font-size:10px;color:var(--red);font-weight:700;text-align:center;padding:4px;background:var(--red-l);border-radius:6px">👑 理事長專屬功能</div>
+          <div class="ph-btn pri">🏦 帳戶管理</div>
+          <div class="ph-btn out">📒 會計科目設定</div>
+          <div class="ph-btn out">👔 管理人員設定</div>
+          <div class="ph-btn" style="background:var(--orange-l);color:var(--orange)">🖊️ 印章上傳管理</div>
+          <div class="ph-btn" style="background:var(--purple-l);color:var(--purple)">📋 系統操作日誌</div>
+          <div class="ph-btn" style="background:var(--green-l);color:var(--green)">🔔 觸發器設定</div>
+          <div class="ph-nav">
+            <div class="ph-ni"><span>🏠</span>首頁</div>
+            <div class="ph-ni"><span>👥</span>會員</div>
+            <div class="ph-ni"><span>💰</span>財務</div>
+            <div class="ph-ni a"><span>⚙️</span>設定</div>
+          </div>
+        </div>
+      </div>
+      <div class="scr-lbl">⚙️ 系統設定（理事長）</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- 9 部署說明 -->
+<section class="sec" id="deploy">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#f0fdf4">🚀</div><div><div class="sec-title">部署說明</div><div class="sec-sub">從零開始上線的完整步驟</div></div></div>
+
+  <div class="dep-grid">
+    <div class="dep-card"><div class="dep-num">1</div>
+      <h4>📋 建立 Google Sheets</h4>
+      <ol>
+        <li>登入 Google 帳號，開啟 Google Sheets</li>
+        <li>新增試算表，命名為「帕金森協會管理系統」</li>
+        <li>依序建立 10 個工作表（會員資料、繳費紀錄、捐款紀錄、收入明細、支出明細、會計科目、帳戶設定、預算設定、管理人員、系統日誌）</li>
+        <li>記錄試算表 ID（網址列 <code>/d/</code> 後的字串）</li>
+      </ol>
+    </div>
+    <div class="dep-card"><div class="dep-num">2</div>
+      <h4>⚙️ 部署 Google Apps Script</h4>
+      <ol>
+        <li>在試算表中點選「擴充功能」→「Apps Script」</li>
+        <li>將所有 <code>.gs</code> 程式碼貼入對應檔案</li>
+        <li>修改 <code>Code.gs</code> 第 5 行的 <code>SHEET_ID</code></li>
+        <li>點選「部署」→「新增部署作業」→「網頁應用程式」</li>
+        <li>執行身分選「我」，存取權選「所有人」</li>
+        <li>複製部署後的 Web App URL</li>
+      </ol>
+    </div>
+    <div class="dep-card"><div class="dep-num">3</div>
+      <h4>🌐 部署前端至 GitHub Pages</h4>
+      <ol>
+        <li>在 GitHub 建立新 Repository（公開）</li>
+        <li>上傳 <code>index.html</code>、<code>manifest.json</code>、<code>service-worker.js</code>、<code>icons/</code> 資料夾</li>
+        <li>進入 Repository Settings → Pages → 選擇 main branch</li>
+        <li>等待約 1 分鐘，取得 <code>https://帳號.github.io/repo名稱/</code> 網址</li>
+      </ol>
+    </div>
+    <div class="dep-card"><div class="dep-num">4</div>
+      <h4>🔧 設定前端參數</h4>
+      <ol>
+        <li>開啟 <code>index.html</code>，找到第 10 行</li>
+        <li>將 <code>API_URL</code> 替換為步驟 2 的 Web App URL</li>
+        <li>將 <code>LIFF_ID</code> 替換為步驟 5 的 LIFF ID</li>
+        <li>儲存並推送至 GitHub</li>
+      </ol>
+    </div>
+    <div class="dep-card"><div class="dep-num">5</div>
+      <h4>💚 設定 LINE LIFF</h4>
+      <ol>
+        <li>前往 <code>developers.line.biz</code></li>
+        <li>建立 Provider → 新增 LINE Login Channel</li>
+        <li>切換至 LIFF 分頁 → Add LIFF app</li>
+        <li>Size 選 Full，Endpoint URL 填入 GitHub Pages 網址</li>
+        <li>Scope 勾選 <code>profile</code>、<code>openid</code>、<code>email</code></li>
+        <li>複製 LIFF ID（格式：<code>1234567890-AbCdEfGh</code>）</li>
+      </ol>
+    </div>
+    <div class="dep-card"><div class="dep-num">6</div>
+      <h4>🔔 設定自動觸發器</h4>
+      <ol>
+        <li>在 Apps Script 編輯器執行 <code>setupTriggers()</code> 函式一次</li>
+        <li>系統自動建立每日早上 9 點的預算檢查觸發器</li>
+        <li>確認「觸發器」頁面出現 <code>dailyBudgetCheck</code></li>
+        <li>測試：手動執行 <code>dailyBudgetCheck()</code> 確認 Email 正常寄出</li>
+      </ol>
+    </div>
+    <div class="dep-card"><div class="dep-num">7</div>
+      <h4>🖊️ 上傳協會印章</h4>
+      <ol>
+        <li>以理事長帳號登入系統</li>
+        <li>進入「系統設定」→「印章管理」</li>
+        <li>上傳 PNG 透明背景印章圖檔</li>
+        <li>測試開立一張收據，確認印章出現在 PDF 右下角</li>
+      </ol>
+    </div>
+    <div class="dep-card"><div class="dep-num">8</div>
+      <h4>👔 建立管理人員</h4>
+      <ol>
+        <li>在 Google Sheets「管理人員」工作表手動填入第一位理事長資料</li>
+        <li>填寫：個人ID（LINE ID 或電話後9碼）、姓名、職稱英文（chairman）、任期起迄</li>
+        <li>以該帳號登入系統，確認可進入系統設定</li>
+        <li>再透過系統介面新增其他管理人員</li>
+      </ol>
+    </div>
+  </div>
+
+  <div style="margin-top:28px">
+    <p style="font-size:15px;font-weight:700;margin-bottom:16px">✅ 上線前檢查清單</p>
+    <div class="chk">
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">Google Sheets 10 個工作表已建立</div><div class="chk-note">確認欄位標題與程式碼一致</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">Apps Script 已部署為 Web App</div><div class="chk-note">SHEET_ID 已替換，部署權限設為「所有人」</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">前端 API_URL 已替換</div><div class="chk-note">index.html 第 10 行填入正確的 GAS Web App URL</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">LIFF ID 已替換</div><div class="chk-note">LINE Developers 取得後填入 index.html</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">GitHub Pages 已啟用</div><div class="chk-note">確認網址可正常開啟</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">協會印章已上傳</div><div class="chk-note">以理事長帳號上傳 PNG 透明背景印章</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">管理人員已建立</div><div class="chk-note">至少建立理事長帳號，確認可登入系統設定</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">會計科目已設定</div><div class="chk-note">填入協會使用的收支科目</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">帳戶設定已完成</div><div class="chk-note">建立現金帳戶與銀行帳戶，填入初始餘額</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">自動觸發器已建立</div><div class="chk-note">執行 setupTriggers() 一次</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">Email 通知測試通過</div><div class="chk-note">測試繳費流程，確認 Email 正常寄出</div></div></div>
+      <div class="chk-item"><div class="chk-box">✓</div><div><div class="chk-main">PWA 可安裝至桌面</div><div class="chk-note">手機 Chrome 開啟網址，確認出現「加入主畫面」提示</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 常見問題 -->
+<section class="sec" id="faq">
+  <div class="sec-hdr"><div class="sec-icon" style="background:#fff7ed">❓</div><div><div class="sec-title">常見問題 FAQ</div><div class="sec-sub">使用上常見的疑問與解答</div></div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>LINE 登入後顯示「請重新登入」怎麼辦？<span class="fq-arr">▼</span></div>
+  <div class="faq-a">Session Token 有效期為 24 小時，超過後需重新登入。請點擊「LINE 登入」重新授權即可，資料不會遺失。若持續出現此問題，請確認手機時間設定是否正確。</div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>收據 PDF 沒有印章，怎麼處理？<span class="fq-arr">▼</span></div>
+  <div class="faq-a">請確認理事長已在「系統設定 → 印章管理」上傳印章圖檔。印章必須為 <strong>PNG 格式、透明背景</strong>。若已上傳但仍無印章，請重新上傳一次，或聯絡系統管理員確認 Google Drive 儲存空間是否足夠。</div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>繳費後沒有收到 Email 通知？<span class="fq-arr">▼</span></div>
+  <div class="faq-a">請確認：① 個人資料中已填寫正確的 Email 地址；② 查看垃圾郵件資料夾；③ 系統 Email 由 Google Apps Script 帳號發送，請將該地址加入白名單。若仍未收到，請聯絡行政秘書長確認繳費紀錄是否已登錄。</div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>我是出納，為什麼無法新增支出？<span class="fq-arr">▼</span></div>
+  <div class="faq-a">新增支出需要<strong>會計（Lv.4）以上</strong>的權限，出納（Lv.3）只能登錄收入、繳費與捐款。若需要新增支出，請聯絡會計或總幹事操作，或由理事長調整您的職稱權限。</div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>如何匯出會員名單給 Excel？<span class="fq-arr">▼</span></div>
+  <div class="faq-a">有兩種方式：① 在系統「報表功能」中下載 CSV 格式，用 Excel 開啟；② 直接開啟 Google Sheets 的「會員資料」工作表，點選「檔案 → 下載 → Microsoft Excel (.xlsx)」。建議使用方式 ② 取得最完整的資料。</div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>系統可以同時多人使用嗎？<span class="fq-arr">▼</span></div>
+  <div class="faq-a">可以。Google Apps Script 支援多人同時存取，但請注意：同一時間大量請求可能受到 Google 的每分鐘呼叫次數限制（約 100 次/分鐘）。一般協會使用規模不會達到此上限。若遇到「服務暫時無法使用」，稍等 1-2 分鐘後重試即可。</div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>資料會遺失嗎？如何備份？<span class="fq-iar">▼</span></div>
+  <div class="faq-a">Google Sheets 本身有版本歷史紀錄功能，可還原任意時間點的資料。建議額外設定每週自動備份：在 Apps Script 新增觸發器，每週一執行備份函式，將 Sheets 匯出為 Excel 並寄送至指定信箱。資料儲存於 Google 伺服器，安全性極高。</div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>手機畫面字體太小，可以調整嗎？<span class="fq-arr">▼</span></div>
+  <div class="faq-a">系統已針對無障礙設計，基本字體為 16-20px。若仍覺得太小，可使用手機的「輔助使用 → 字體大小」功能放大全系統字體，或在瀏覽器設定中調整文字縮放比例。系統採用相對單位設計，放大後版面不會跑版。</div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>如何更換新任理事長的帳號？<span class="fq-arr">▼</span></div>
+  <div class="faq-a">由現任理事長登入系統，進入「系統設定 → 管理人員設定」，將舊理事長的任期迄日設為今日，再新增新任理事長的個人ID與任期。系統會在下次登入時自動套用新的權限設定。新任理事長需重新上傳印章（若印章有更換）。</div></div>
+
+  <div class="faq"><div class="faq-q" onclick="togFaq(this)"><span class="fq-ico">❓</span>捐款收據可以用來報稅嗎？<span class="fq-arr">▼</span></div>
+  <div class="faq-a">可以。系統開立的捐款收據含有協會關防印章、收據編號、捐款金額、捐款人姓名等完整資訊，可作為<strong>綜合所得稅列舉扣除憑證</strong>。但請確認貴協會已取得財政部核准的捐贈扣除資格，並在收據上標示統一編號與核准文號。</div></div>
+
+</section>
+
+</div><!-- end .wrap -->
+
+<footer>
+  <div style="font-size:22px;margin-bottom:10px">🎗️</div>
+  <strong>社團法人台灣帕金森病友權益促進會</strong><br>
+  數位管理系統 v1.0 &nbsp;|&nbsp; 2026 年版<br>
+  <span style="margin-top:8px;display:block">技術架構：GitHub Pages + Google Apps Script + Google Sheets + LINE LIFF</span>
+  <span style="margin-top:6px;display:block;font-size:12px">本系統採用無障礙設計，符合 WCAG 2.1 AA 標準，專為帕金森病友打造</span>
+  <div style="margin-top:16px;display:flex;justify-content:center;gap:20px;flex-wrap:wrap">
+    <span>📧 系統問題請洽行政秘書長</span>
+    <span>📞 關懷專線：02-XXXX-XXXX</span>
+  </div>
+</footer>
 
 <script>
-  // =============================================
-  //  ★ 請換成您的 Apps Script 部署網址
-  // =============================================
-  var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxBo41Mn4dMBeQ1696VNFbR7zv56k0r0fxj8LLvZT0WHWGUE-X1LTn5RzvSFs_aM5Wd/exec';
-
-  // =============================================
-  //  JSONP 核心（所有請求統一走這裡）
-  // =============================================
-  var _cbIndex = 0;
-
-  function api(params, onSuccess, onError) {
-    var cbName = '_gasCb' + (++_cbIndex);
-    var timer;
-
-    window[cbName] = function(res) {
-      clearTimeout(timer);
-      var el = document.getElementById(cbName);
-      if (el) el.parentNode.removeChild(el);
-      delete window[cbName];
-      if (res && res.success) {
-        if (onSuccess) onSuccess(res);
-      } else {
-        var msg = (res && res.error) ? res.error : '未知錯誤';
-        if (onError) onError(msg); else alert('錯誤：' + msg);
-      }
-    };
-
-    timer = setTimeout(function() {
-      var el = document.getElementById(cbName);
-      if (el) el.parentNode.removeChild(el);
-      delete window[cbName];
-      var msg = '請求逾時，請稍後再試';
-      if (onError) onError(msg); else alert(msg);
-    }, 30000);
-
-    params.callback = cbName;
-    var parts = [];
-    for (var k in params) {
-      if (params.hasOwnProperty(k)) {
-        parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
-      }
-    }
-
-    var script = document.createElement('script');
-    script.id  = cbName;
-    script.src = SCRIPT_URL + '?' + parts.join('&');
-    script.onerror = function() {
-      clearTimeout(timer);
-      var el = document.getElementById(cbName);
-      if (el) el.parentNode.removeChild(el);
-      delete window[cbName];
-      var msg = '網路錯誤，請檢查部署網址';
-      if (onError) onError(msg); else alert(msg);
-    };
-    document.head.appendChild(script);
+  // Accordion toggle
+  function tog(hdr) {
+    hdr.classList.toggle('open');
+    const body = hdr.nextElementSibling;
+    body.classList.toggle('open');
   }
 
-  // =============================================
-  //  ★ 分塊上傳核心（純 JSONP，解決 CORS）
-  //    每塊 30,000 字元 Base64 ≈ 22KB 原始資料
-  // =============================================
-  var CHUNK_SIZE = 30000;
-
-  function uploadFileByChunks(file, folderId, onDone, onError) {
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      var base64   = e.target.result.split(',')[1];
-      var total    = Math.ceil(base64.length / CHUNK_SIZE);
-      var uploadId = 'up_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-      var idx      = 0;
-
-      function sendChunk() {
-        if (idx >= total) {
-          // 全部塊傳完 → 呼叫 commit 組合存檔
-          api({
-            action:     'uploadCommit',
-            uploadId:   uploadId,
-            chunkTotal: total,
-            name:       file.name,
-            mimeType:   file.type,
-            folderId:   folderId
-          }, onDone, onError);
-          return;
-        }
-        var piece = base64.slice(idx * CHUNK_SIZE, (idx + 1) * CHUNK_SIZE);
-        api({
-          action:     'uploadChunk',
-          uploadId:   uploadId,
-          chunkIndex: idx,
-          chunkTotal: total,
-          chunk:      piece
-        },
-        function() { idx++; sendChunk(); },
-        onError);
-      }
-      sendChunk();
-    };
-    reader.readAsDataURL(file);
+  // FAQ toggle
+  function togFaq(q) {
+    q.classList.toggle('open');
+    const a = q.nextElementSibling;
+    a.classList.toggle('open');
   }
 
-  // =============================================
-  //  State
-  // =============================================
-  var allPhotos       = [];
-  var filteredPhotos  = [];
-  var currentIndex    = 0;
-  var selectMode      = false;
-  var selectedIds     = {};
-  var selectedCount   = 0;
-  var currentFolderId = null;
-  var pendingFiles    = [];
-
-  window.onload = function() {
-    loadFolders();
-    loadAllPhotos();
-    initLightbox();
-    initUploadZone();
-    initModals();
-  };
-
-  // =============================================
-  //  Folders
-  // =============================================
-  function loadFolders() {
-    api({ action: 'getFolders' }, function(res) {
-      renderAlbumBar(res.folders);
-      populateUploadTarget(res.folders);
+  // Active nav highlight on scroll
+  const sections = document.querySelectorAll('.sec');
+  const navLinks = document.querySelectorAll('.toc a');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(s => {
+      if (window.scrollY >= s.offsetTop - 110) current = s.id;
     });
-  }
-
-  function renderAlbumBar(folders) {
-    var bar = document.getElementById('albumBar');
-    bar.innerHTML = '';
-    for (var i = 0; i < folders.length; i++) {
-      (function(f, idx) {
-        var el = document.createElement('div');
-        el.className   = 'album-tab' + (idx === 0 ? ' active' : '');
-        el.textContent = f.name;
-        el.onclick = function() { loadFolder(idx === 0 ? null : f.id, this); };
-        bar.appendChild(el);
-      })(folders[i], i);
-    }
-  }
-
-  function populateUploadTarget(folders) {
-    var sel = document.getElementById('uploadTarget');
-    sel.innerHTML = '';
-    for (var i = 0; i < folders.length; i++) {
-      var opt = document.createElement('option');
-      opt.value = folders[i].id;
-      opt.textContent = folders[i].name;
-      sel.appendChild(opt);
-    }
-  }
-
-  // =============================================
-  //  Photos
-  // =============================================
-  function loadAllPhotos() {
-    showLoading();
-    currentFolderId = null;
-    api({ action: 'getPhotos', folderId: '' }, handlePhotos, showError);
-  }
-
-  function loadFolder(folderId, tabEl) {
-    var tabs = document.querySelectorAll('.album-tab');
-    for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
-    tabEl.classList.add('active');
-    currentFolderId = folderId;
-    showLoading();
-    api({ action: 'getPhotos', folderId: folderId || '' }, handlePhotos, showError);
-  }
-
-  function handlePhotos(res) {
-    allPhotos      = res.photos;
-    filteredPhotos = allPhotos.slice();
-    selectedIds    = {};
-    selectedCount  = 0;
-    updateSelectBar();
-    document.getElementById('stats').textContent = res.total + ' 張';
-    renderGallery(filteredPhotos);
-  }
-
-  // =============================================
-  //  Gallery
-  // =============================================
-  function renderGallery(photos) {
-    var gallery = document.getElementById('gallery');
-    if (!photos.length) {
-      gallery.innerHTML = '<div class="empty-state"><div class="empty-icon">?</div><h3>這裡還沒有相片</h3><p>請點上方「上傳相片」按鈕</p></div>';
-      return;
-    }
-    var grid = document.createElement('div');
-    grid.className = 'photo-grid' + (selectMode ? ' select-mode' : '');
-    for (var i = 0; i < photos.length; i++) {
-      (function(photo, idx) {
-        var card = document.createElement('div');
-        card.className = 'photo-card' + (selectedIds[photo.id] ? ' selected' : '');
-        card.innerHTML =
-          '<div class="card-check"></div>' +
-          '<div class="img-wrap"><img src="' + photo.thumbnail + '" alt="photo" loading="lazy" onerror="this.src=\'https://placehold.co/300x300/f2ede8/d63031?text=X\'"></div>' +
-          '<div class="card-info"><div class="card-name">' + escHtml(photo.name) + '</div><div class="card-date">' + photo.date + '</div></div>';
-        card.addEventListener('click', function() {
-          if (selectMode) toggleSelect(photo.id, card);
-          else openLightbox(idx);
-        });
-        grid.appendChild(card);
-      })(photos[i], i);
-    }
-    gallery.innerHTML = '';
-    gallery.appendChild(grid);
-  }
-
-  function escHtml(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  // =============================================
-  //  Select Mode
-  // =============================================
-  function toggleSelectMode() {
-    selectMode = !selectMode;
-    document.getElementById('selIcon').textContent  = selectMode ? 'X' : '☑';
-    document.getElementById('selLabel').textContent = selectMode ? '結束選取' : '選取下載';
-    if (!selectMode) { selectedIds = {}; selectedCount = 0; }
-    updateSelectBar();
-    renderGallery(filteredPhotos);
-  }
-
-  function toggleSelect(id, card) {
-    if (selectedIds[id]) {
-      delete selectedIds[id]; selectedCount--;
-      card.classList.remove('selected');
-    } else {
-      selectedIds[id] = true; selectedCount++;
-      card.classList.add('selected');
-    }
-    updateSelectBar();
-  }
-
-  function selectAll() {
-    for (var i = 0; i < filteredPhotos.length; i++) selectedIds[filteredPhotos[i].id] = true;
-    selectedCount = filteredPhotos.length;
-    renderGallery(filteredPhotos);
-    updateSelectBar();
-  }
-
-  function clearSelection() {
-    selectedIds = {}; selectedCount = 0;
-    renderGallery(filteredPhotos);
-    updateSelectBar();
-  }
-
-  function updateSelectBar() {
-    var bar = document.getElementById('selectBar');
-    if (selectMode) bar.classList.add('show'); else bar.classList.remove('show');
-    document.getElementById('selCount').textContent = '已選 ' + selectedCount + ' 張相片';
-  }
-
-  // =============================================
-  //  Lightbox
-  // =============================================
-  function initLightbox() {
-    document.getElementById('lbCloseBtn').addEventListener('click', closeLightbox);
-    document.getElementById('lbPrev').addEventListener('click', function() { lbNavigate(-1); });
-    document.getElementById('lbNext').addEventListener('click', function() { lbNavigate(1); });
-    document.addEventListener('keydown', function(e) {
-      if (!document.getElementById('lightbox').classList.contains('open')) return;
-      if (e.key === 'ArrowLeft')  lbNavigate(-1);
-      if (e.key === 'ArrowRight') lbNavigate(1);
-      if (e.key === 'Escape')     closeLightbox();
+    navLinks.forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current);
     });
-    var tx = 0, ty = 0, lb = document.getElementById('lightbox');
-    lb.addEventListener('touchstart', function(e) { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive:true });
-    lb.addEventListener('touchend', function(e) {
-      var dx = tx - e.changedTouches[0].clientX;
-      var dy = ty - e.changedTouches[0].clientY;
-      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) lbNavigate(dx > 0 ? 1 : -1);
+  });
+
+  // Smooth scroll
+  navLinks.forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) target.scrollIntoView({ behavior: 'smooth' });
     });
-  }
-
-  function openLightbox(idx) {
-    currentIndex = idx;
-    document.getElementById('lightbox').classList.add('open');
-    document.body.style.overflow = 'hidden';
-    buildThumbs();
-    loadLbImage(idx);
-  }
-
-  function closeLightbox() {
-    document.getElementById('lightbox').classList.remove('open');
-    document.body.style.overflow = '';
-    var img = document.getElementById('lbImg');
-    img.src = ''; img.classList.remove('loaded');
-  }
-
-  function lbNavigate(dir) {
-    currentIndex = (currentIndex + dir + filteredPhotos.length) % filteredPhotos.length;
-    loadLbImage(currentIndex);
-    var ts = document.querySelectorAll('.lb-thumb');
-    for (var i = 0; i < ts.length; i++) {
-      if (i === currentIndex) ts[i].classList.add('active');
-      else ts[i].classList.remove('active');
-    }
-    var at = document.querySelector('.lb-thumb.active');
-    if (at) at.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
-  }
-
-  function loadLbImage(idx) {
-    var p   = filteredPhotos[idx];
-    var img = document.getElementById('lbImg');
-    var sp  = document.getElementById('lbSpinner');
-    document.getElementById('lbCounter').textContent = (idx + 1) + ' / ' + filteredPhotos.length;
-    document.getElementById('lbName').textContent    = p.name;
-    document.getElementById('lbMeta').textContent    = p.date + '  ' + p.size;
-    img.classList.remove('loaded'); img.src = ''; sp.classList.remove('hide');
-    api({ action: 'getImageBase64', fileId: p.id },
-      function(res) {
-        sp.classList.add('hide');
-        img.onload = function() { img.classList.add('loaded'); };
-        img.src = res.dataUrl;
-      },
-      function() {
-        sp.classList.add('hide');
-        img.src = 'https://placehold.co/600x600/f2ede8/d63031?text=X';
-        img.classList.add('loaded');
-      }
-    );
-  }
-
-  function buildThumbs() {
-    var wrap = document.getElementById('lbThumbs');
-    wrap.innerHTML = '';
-    for (var i = 0; i < filteredPhotos.length; i++) {
-      (function(ph, idx) {
-        var d = document.createElement('div');
-        d.className = 'lb-thumb' + (idx === currentIndex ? ' active' : '');
-        d.innerHTML = '<img src="' + ph.thumbnail + '" loading="lazy">';
-        d.addEventListener('click', (function(i2) {
-          return function(e) {
-            e.stopPropagation();
-            currentIndex = i2;
-            loadLbImage(i2);
-            var ts = document.querySelectorAll('.lb-thumb');
-            for (var j = 0; j < ts.length; j++) {
-              if (j === i2) ts[j].classList.add('active');
-              else ts[j].classList.remove('active');
-            }
-            d.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
-          };
-        })(idx));
-        wrap.appendChild(d);
-      })(filteredPhotos[i], i);
-    }
-  }
-
-  function downloadCurrentPhoto() { downloadByIndex(currentIndex); }
-
-  // =============================================
-  //  Download
-  // =============================================
-  function downloadByIndex(idx) {
-    var photo = filteredPhotos[idx];
-    showProgress('下載中...', 30, photo.name);
-    api({ action: 'getBatchBase64', ids: JSON.stringify([photo.id]) },
-      function(res) {
-        hideProgress();
-        triggerDownload(res.files[0].base64, res.files[0].mimeType, res.files[0].name);
-      },
-      function(err) { hideProgress(); alert('下載失敗：' + err); }
-    );
-  }
-
-  function batchDownload() {
-    var ids = Object.keys(selectedIds);
-    if (!ids.length) { alert('請先選取相片'); return; }
-    var total = ids.length, done = 0, CHUNK = 5;
-    showProgress('下載中...', 0, '共 ' + total + ' 張');
-    function doChunk(start) {
-      if (start >= total) { hideProgress(); return; }
-      api({ action: 'getBatchBase64', ids: JSON.stringify(ids.slice(start, start + CHUNK)) },
-        function(res) {
-          for (var i = 0; i < res.files.length; i++) {
-            triggerDownload(res.files[i].base64, res.files[i].mimeType, res.files[i].name);
-          }
-          done += res.files.length;
-          showProgress('下載中...', Math.round(done / total * 100), done + ' / ' + total + ' 張');
-          doChunk(start + CHUNK);
-        },
-        function(err) { hideProgress(); alert('下載失敗：' + err); }
-      );
-    }
-    doChunk(0);
-  }
-
-  function downloadAlbum() {
-    showProgress('打包相簿...', 10, '壓縮中，請稍候...');
-    api({ action: 'downloadAlbumZip', folderId: currentFolderId || '' },
-      function(res) { hideProgress(); triggerDownload(res.base64, res.mimeType, res.name); },
-      function(err) { hideProgress(); alert('失敗：' + err); }
-    );
-  }
-
-  function triggerDownload(base64, mimeType, filename) {
-    var bytes = atob(base64), arr = new Uint8Array(bytes.length);
-    for (var i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-    var url = URL.createObjectURL(new Blob([arr], { type: mimeType }));
-    var a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function() { URL.revokeObjectURL(url); }, 3000);
-  }
-
-  // =============================================
-  //  Create Album
-  // =============================================
-  function openCreateAlbumModal() { openModal('createAlbumModal'); }
-
-  function createAlbum() {
-    var name = document.getElementById('albumName').value.trim();
-    var desc = document.getElementById('albumDesc').value.trim();
-    if (!name) { alert('請輸入相簿名稱'); return; }
-    showProgress('建立中...', 50, name);
-    api({ action: 'createAlbum', name: name, description: desc },
-      function(res) {
-        hideProgress();
-        closeModal('createAlbumModal');
-        document.getElementById('albumName').value = '';
-        document.getElementById('albumDesc').value = '';
-        loadFolders();
-        alert('相簿「' + res.folder.name + '」建立成功！');
-      },
-      function(err) { hideProgress(); alert('建立失敗：' + err); }
-    );
-  }
-
-  // =============================================
-  //  Upload Zone
-  // =============================================
-  function initUploadZone() {
-    var zone  = document.getElementById('uploadZone');
-    var input = document.getElementById('fileInput');
-    zone.addEventListener('click', function() { input.click(); });
-    input.addEventListener('change', function(e) { addFiles(e.target.files); });
-    zone.addEventListener('dragover',  function(e) { e.preventDefault(); zone.classList.add('drag-over'); });
-    zone.addEventListener('dragleave', function()  { zone.classList.remove('drag-over'); });
-    zone.addEventListener('drop', function(e) {
-      e.preventDefault(); zone.classList.remove('drag-over'); addFiles(e.dataTransfer.files);
-    });
-  }
-
-  function addFiles(fileList) {
-    for (var i = 0; i < fileList.length; i++) {
-      var f = fileList[i];
-      if (!f.type.startsWith('image/')) continue;
-      var dup = false;
-      for (var j = 0; j < pendingFiles.length; j++) {
-        if (pendingFiles[j].name === f.name && pendingFiles[j].size === f.size) { dup = true; break; }
-      }
-      if (!dup) pendingFiles.push(f);
-    }
-    renderUploadPreview();
-    document.getElementById('doUploadBtn').disabled = pendingFiles.length === 0;
-  }
-
-  function renderUploadPreview() {
-    var wrap = document.getElementById('uploadPreview');
-    wrap.innerHTML = '';
-    for (var i = 0; i < pendingFiles.length; i++) {
-      (function(f, idx) {
-        var url  = URL.createObjectURL(f);
-        var item = document.createElement('div');
-        item.className = 'prev-item';
-        item.innerHTML = '<img src="' + url + '"><button class="rm">X</button>';
-        item.querySelector('.rm').addEventListener('click', function() {
-          pendingFiles.splice(idx, 1);
-          renderUploadPreview();
-          document.getElementById('doUploadBtn').disabled = pendingFiles.length === 0;
-        });
-        wrap.appendChild(item);
-      })(pendingFiles[i], i);
-    }
-  }
-
-  function openUploadModal() {
-    pendingFiles = [];
-    renderUploadPreview();
-    document.getElementById('doUploadBtn').disabled = true;
-    document.getElementById('fileInput').value = '';
-    openModal('uploadModal');
-  }
-
-  // =============================================
-  //  ★ 上傳主流程：逐張分塊上傳（純 JSONP）
-  // =============================================
-  function doUpload() {
-    if (!pendingFiles.length) return;
-    var folderId = document.getElementById('uploadTarget').value;
-    var total    = pendingFiles.length;
-    var done     = 0;
-    showProgress('上傳中...', 0, '共 ' + total + ' 張');
-    closeModal('uploadModal');
-
-    function uploadNext(idx) {
-      if (idx >= total) {
-        hideProgress();
-        pendingFiles = [];
-        var at = document.querySelector('.album-tab.active');
-        if (at) at.click(); else loadAllPhotos();
-        return;
-      }
-      var file = pendingFiles[idx];
-      showProgress(
-        '上傳中... (' + (idx + 1) + ' / ' + total + ')',
-        Math.round(idx / total * 100),
-        file.name
-      );
-      uploadFileByChunks(
-        file,
-        folderId,
-        function() {
-          done++;
-          showProgress('上傳中...', Math.round(done / total * 100), done + ' / ' + total + ' 張完成');
-          uploadNext(idx + 1);
-        },
-        function(err) {
-          hideProgress();
-          alert('上傳失敗（第 ' + (idx + 1) + ' 張）：' + err);
-        }
-      );
-    }
-    uploadNext(0);
-  }
-
-  // =============================================
-  //  Modal / Progress
-  // =============================================
-  function openModal(id)  { document.getElementById(id).classList.add('open');    document.body.style.overflow = 'hidden'; }
-  function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow = ''; }
-
-  function initModals() {
-    var backs = document.querySelectorAll('.modal-back');
-    for (var i = 0; i < backs.length; i++) {
-      (function(el) {
-        el.addEventListener('click', function(e) { if (e.target === el) closeModal(el.id); });
-      })(backs[i]);
-    }
-  }
-
-  function showProgress(title, pct, text) {
-    document.getElementById('progressTitle').textContent = title;
-    document.getElementById('progressFill').style.width  = pct + '%';
-    document.getElementById('progressText').textContent  = text;
-    document.getElementById('progressModal').classList.add('open');
-  }
-
-  function hideProgress() {
-    setTimeout(function() {
-      document.getElementById('progressModal').classList.remove('open');
-    }, 700);
-  }
-
-  function showLoading() {
-    document.getElementById('gallery').innerHTML =
-      '<div class="loading"><div class="spinner"></div><p>正在載入相片...</p></div>';
-  }
-
-  function showError(err) {
-    document.getElementById('gallery').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">!</div><h3>載入失敗</h3><p>' + escHtml(err) + '</p></div>';
-  }
+  });
 </script>
 </body>
 </html>
