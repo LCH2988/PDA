@@ -1355,7 +1355,7 @@
      * Google Apps Script Web App URL。
      * 請改成你的 /exec 部署網址。
      */
-    const API_BASE = 'https://script.google.com/macros/s/AKfycbzJ3mL-AdvKiF2VfYT519UroIAyDFkdswyQ4OyrcAwguap3K5CFTPWjWVPX2cmRCUXN/exec';
+    const API_BASE = 'https://script.google.com/macros/s/AKfycbx2N8n4lYrHynwMAqNRU0gy2Pp8n_51mxKKKvt3QH9KWWX5reeQ8AIWfQz-Ky41EiBj/exec';
 
     /**
      * LINE LIFF ID。
@@ -5160,94 +5160,254 @@
     }
 
 
-    /*******************************************************
-     * 24. 財務報表
+        /*******************************************************
+     * 24. 財務報表正式版：九大報表
      *******************************************************/
+
+    const REPORT_TYPES = [
+      {
+        key:'incomeExpenseStatement',
+        action:'report.incomeExpenseStatement',
+        name:'收支餘絀表',
+        icon:'📈'
+      },
+      {
+        key:'ledger',
+        action:'report.ledger',
+        name:'明細分類帳',
+        icon:'📒'
+      },
+      {
+        key:'journal',
+        action:'report.journal',
+        name:'收支分錄表',
+        icon:'🧾'
+      },
+      {
+        key:'budgetComparison',
+        action:'report.budgetComparison',
+        name:'預算決算比較表',
+        icon:'📊'
+      },
+      {
+        key:'fundraising',
+        action:'report.fundraising',
+        name:'勸募收支報告',
+        icon:'💝'
+      },
+      {
+        key:'bankReconciliation',
+        action:'report.bankReconciliation',
+        name:'銀行調節表',
+        icon:'🏦'
+      },
+      {
+        key:'balanceSheet',
+        action:'report.balanceSheet',
+        name:'資產負債表',
+        icon:'⚖️'
+      },
+      {
+        key:'netAssetChanges',
+        action:'report.netAssetChanges',
+        name:'淨資產變動表',
+        icon:'🔄'
+      },
+      {
+        key:'cashFlow',
+        action:'report.cashFlow',
+        name:'現金流量表',
+        icon:'💵'
+      }
+    ];
+
+    const REPORT_STATE = {
+      type:'incomeExpenseStatement',
+      latest:null,
+      latestAll:null
+    };
+
+    function getReportType(key){
+      return REPORT_TYPES.find(x => x.key === key) || REPORT_TYPES[0];
+    }
+
+    function moneyHtml(v){
+      const n = Number(v || 0);
+      return `<span class="${n < 0 ? 'danger' : 'money'}">${fmtMoney(n)}</span>`;
+    }
 
     function renderReportCenter(){
       if(!adminGuard()) return;
 
-      setMain(`
-        <section class="card">
-          <div class="card-title"><span>📈 財務報表</span></div>
+      const current = getReportType(REPORT_STATE.type);
 
-          ${guideBox('報表說明', [
-            '收入統計已登錄收入。',
-            '支出只統計已撥款支出。',
-            '本報表供內部管理參考，正式報表仍建議由會計師確認。'
+      setMain(`
+        <section class="hero">
+          <h1>📈 財務報表中心</h1>
+          <p>提供收支、分類帳、分錄、預算決算、勸募、銀行調節、資產負債、淨資產與現金流量等九大報表。</p>
+        </section>
+
+        <section class="card">
+          <div class="card-title">
+            <span>報表類型</span>
+            <small>${esc(current.name)}</small>
+          </div>
+
+          <div class="tabs">
+            ${REPORT_TYPES.map(x => `
+              <button class="tab ${x.key === REPORT_STATE.type ? 'active' : ''}" onclick="changeReportType('${x.key}')">
+                ${x.icon} ${x.name}
+              </button>
+            `).join('')}
+          </div>
+
+          ${guideBox('報表查詢說明', [
+            '可依年度、月份或自訂起訖日期查詢。',
+            '明細分類帳可加填科目代號或帳戶 ID。',
+            '勸募收支報告可使用關鍵字或專案名稱篩選。',
+            '支出僅列入已撥款資料。'
           ])}
+
+          <div class="row">
+            <select id="rpType" class="fc" onchange="changeReportType(this.value)">
+              ${REPORT_TYPES.map(x => `
+                <option value="${x.key}" ${x.key === REPORT_STATE.type ? 'selected' : ''}>${x.icon} ${x.name}</option>
+              `).join('')}
+            </select>
+          </div>
 
           <div class="row">
             <select id="rpYear" class="fc">${yearOptions()}</select>
             <select id="rpMonth" class="fc">${monthOptions('')}</select>
           </div>
 
-          <button class="btn btn-p" onclick="loadFinanceReport()">查詢報表</button>
-          <button class="btn btn-o" onclick="exportFinanceReport()">匯出 CSV</button>
+          <div class="row">
+            <input id="rpStartDate" class="fc" type="date" placeholder="起始日期">
+            <input id="rpEndDate" class="fc" type="date" placeholder="結束日期">
+          </div>
+
+          <div class="row">
+            <input id="rpSubjectCode" class="fc" placeholder="科目代號，可不填">
+            <input id="rpAccountId" class="fc" placeholder="帳戶 ID，可不填">
+          </div>
+
+          <div class="row">
+            <input id="rpProjectName" class="fc" placeholder="專案名稱，可不填">
+            <input id="rpKeyword" class="fc" placeholder="關鍵字，可不填">
+          </div>
+
+          <button class="btn btn-p" onclick="loadFinanceReport()">產生報表</button>
+          <button class="btn btn-o" onclick="exportFinanceReport()">匯出目前報表 CSV</button>
+          <button class="btn btn-o" onclick="loadAllFinanceReports()">一次產生全部報表</button>
+          <button class="btn btn-w" onclick="openBankReconModal()">新增銀行調節資料</button>
 
           <div id="reportArea" style="margin-top:12px">
-            <div class="empty">請查詢報表</div>
+            <div class="empty">請選擇條件後產生報表</div>
           </div>
         </section>
       `);
+    }
 
-      loadFinanceReport();
+    function changeReportType(type){
+      REPORT_STATE.type = type;
+      REPORT_STATE.latest = null;
+      REPORT_STATE.latestAll = null;
+      renderReportCenter();
+    }
+
+    function readReportFilter(){
+      return {
+        year:$('rpYear')?.value || new Date().getFullYear(),
+        month:$('rpMonth')?.value || '',
+        startDate:$('rpStartDate')?.value || '',
+        endDate:$('rpEndDate')?.value || '',
+        subjectCode:$('rpSubjectCode')?.value.trim() || '',
+        accountId:$('rpAccountId')?.value.trim() || '',
+        account:$('rpAccountId')?.value.trim() || '',
+        projectName:$('rpProjectName')?.value.trim() || '',
+        keyword:$('rpKeyword')?.value.trim() || ''
+      };
     }
 
     async function loadFinanceReport(){
       const area = $('reportArea');
+      const cfg = getReportType(REPORT_STATE.type);
+
+      if(area){
+        area.innerHTML = `<div class="empty">報表產生中...</div>`;
+      }
+
+      showLoad();
 
       try{
-        const res = await api('finance.report', {
-          year:$('rpYear').value,
-          month:$('rpMonth').value || null
-        });
+        const res = await api(cfg.action, readReportFilter());
+
+        hideLoad();
 
         if(!res.success){
-          area.innerHTML = `<div class="empty danger">${esc(res.message || '查詢失敗')}</div>`;
+          area.innerHTML = `<div class="empty danger">${esc(res.message || '報表產生失敗')}</div>`;
           return;
         }
 
-        const r = res.report || {};
+        REPORT_STATE.latest = res;
+        REPORT_STATE.latestAll = null;
 
-        const incomeRows = Object.entries(r.incomeBySubject || {}).map(([k,v]) => `
-          <div class="item">
-            <div class="item-h">
-              <div class="item-title">${esc(k)}</div>
-              <div class="money">${fmtMoney(v)}</div>
-            </div>
-          </div>
-        `).join('');
+        area.innerHTML = renderReportResult(res);
 
-        const expenseRows = Object.entries(r.expenseBySubject || {}).map(([k,v]) => `
-          <div class="item">
-            <div class="item-h">
-              <div class="item-title">${esc(k)}</div>
-              <div class="danger">${fmtMoney(v)}</div>
-            </div>
-          </div>
-        `).join('');
-
-        area.innerHTML = `
-          <div class="grid">
-            <div class="stat green"><div class="k">收入合計</div><div class="v" style="font-size:22px">${fmtMoney(r.totalIncome || 0)}</div></div>
-            <div class="stat red"><div class="k">支出合計</div><div class="v" style="font-size:22px">${fmtMoney(r.totalExpense || 0)}</div></div>
-            <div class="stat blue"><div class="k">本期餘額</div><div class="v" style="font-size:22px">${fmtMoney(r.netBalance || 0)}</div></div>
-          </div>
-
-          <div class="card" style="box-shadow:none;margin-top:12px">
-            <div class="card-title"><span>收入分類</span></div>
-            ${incomeRows || '<div class="empty">無收入</div>'}
-          </div>
-
-          <div class="card" style="box-shadow:none;margin-top:12px">
-            <div class="card-title"><span>支出分類</span></div>
-            ${expenseRows || '<div class="empty">無支出</div>'}
-          </div>
-        `;
+        toast('報表已產生','s');
 
       }catch(e){
-        area.innerHTML = `<div class="empty danger">查詢失敗：${esc(e.message)}</div>`;
+        hideLoad();
+        area.innerHTML = `<div class="empty danger">報表產生失敗：${esc(e.message)}</div>`;
+      }
+    }
+
+    async function loadAllFinanceReports(){
+      const area = $('reportArea');
+
+      if(area){
+        area.innerHTML = `<div class="empty">全部報表產生中...</div>`;
+      }
+
+      showLoad();
+
+      try{
+        const res = await api('report.all', readReportFilter());
+
+        hideLoad();
+
+        if(!res.success){
+          area.innerHTML = `<div class="empty danger">${esc(res.message || '全部報表產生失敗')}</div>`;
+          return;
+        }
+
+        REPORT_STATE.latest = null;
+        REPORT_STATE.latestAll = res;
+
+        const reports = res.reports || {};
+
+        area.innerHTML = `
+          <div class="card" style="box-shadow:none">
+            <div class="card-title"><span>📚 全部財務報表</span></div>
+            <div class="item-meta">產生時間：${esc(fmtDate(res.generatedAt || new Date()))}</div>
+          </div>
+
+          ${Object.keys(reports).map(k => {
+            const r = reports[k];
+
+            if(!r || !r.success){
+              return `<div class="card" style="box-shadow:none"><div class="empty danger">${esc(k)}：${esc(r?.message || '產生失敗')}</div></div>`;
+            }
+
+            return renderReportResult(r);
+          }).join('')}
+        `;
+
+        toast('全部報表已產生','s');
+
+      }catch(e){
+        hideLoad();
+        area.innerHTML = `<div class="empty danger">全部報表產生失敗：${esc(e.message)}</div>`;
       }
     }
 
@@ -5255,9 +5415,9 @@
       showLoad();
 
       try{
-        const res = await api('finance.exportCsv', {
-          year:$('rpYear').value,
-          month:$('rpMonth').value || null
+        const res = await api('report.exportCsv', {
+          ...readReportFilter(),
+          reportType:REPORT_STATE.type
         });
 
         hideLoad();
@@ -5268,11 +5428,382 @@
         }else{
           toast(res.message || '匯出失敗','e');
         }
+
       }catch(e){
         hideLoad();
         toast('匯出失敗：' + e.message,'e');
       }
     }
+
+    function renderReportResult(res){
+      const name = res.reportName || '';
+      const p = res.period || {};
+      const d = res.data || {};
+
+      return `
+        <div class="card" style="box-shadow:none">
+          <div class="report-head">
+            <h2>${esc(ORG_NAME)}</h2>
+            <h3>${esc(name)}</h3>
+            <p>${esc(p.titlePeriod || '')}｜產生時間：${esc(res.generatedAt || '')}</p>
+          </div>
+
+          ${renderReportBody(name, d)}
+        </div>
+      `;
+    }
+
+    function renderReportBody(name, d){
+      if(name === '收支餘絀表') return renderIncomeExpenseReport(d);
+      if(name === '明細分類帳') return renderLedgerReport(d);
+      if(name === '收支分錄表') return renderJournalReport(d);
+      if(name === '預算決算比較表') return renderBudgetComparisonReport(d);
+      if(name === '勸募收支報告') return renderFundraisingReport(d);
+      if(name === '銀行調節表') return renderBankReconReport(d);
+      if(name === '資產負債表') return renderBalanceSheetReport(d);
+      if(name === '淨資產變動表') return renderNetAssetChangesReport(d);
+      if(name === '現金流量表') return renderCashFlowReport(d);
+
+      return `<pre>${esc(JSON.stringify(d, null, 2))}</pre>`;
+    }
+
+    function renderSubjectTable(items){
+      if(!items || !items.length){
+        return `<div class="empty">無資料</div>`;
+      }
+
+      return simpleReportTable(
+        ['科目代號','科目名稱','筆數','金額'],
+        items.map(x => [
+          esc(x.subjectCode || ''),
+          esc(x.subjectName || ''),
+          esc(x.count || 0),
+          moneyHtml(x.amount)
+        ])
+      );
+    }
+
+    function renderIncomeExpenseReport(d){
+      return `
+        <div class="grid">
+          <div class="stat green"><div class="k">收入合計</div><div class="v">${fmtMoney(d.totalIncome || 0)}</div></div>
+          <div class="stat red"><div class="k">支出合計</div><div class="v">${fmtMoney(d.totalExpense || 0)}</div></div>
+        </div>
+
+        <div class="stat blue" style="margin-top:12px">
+          <div class="k">本期餘絀</div>
+          <div class="v">${fmtMoney(d.surplusDeficit || 0)}</div>
+        </div>
+
+        <div class="card" style="box-shadow:none;margin-top:12px">
+          <div class="card-title"><span>收入科目彙總</span></div>
+          ${renderSubjectTable(d.incomeBySubject || [])}
+        </div>
+
+        <div class="card" style="box-shadow:none;margin-top:12px">
+          <div class="card-title"><span>支出科目彙總</span></div>
+          ${renderSubjectTable(d.expenseBySubject || [])}
+        </div>
+      `;
+    }
+
+    function renderLedgerReport(d){
+      return `
+        <div class="grid">
+          <div class="stat green"><div class="k">借方合計</div><div class="v">${fmtMoney(d.totalDebit || 0)}</div></div>
+          <div class="stat red"><div class="k">貸方合計</div><div class="v">${fmtMoney(d.totalCredit || 0)}</div></div>
+        </div>
+
+        <div class="stat blue" style="margin-top:12px">
+          <div class="k">期末餘額</div>
+          <div class="v">${fmtMoney(d.endingBalance || 0)}</div>
+        </div>
+
+        ${simpleReportTable(
+          ['日期','類型','科目','摘要','帳戶','借方','貸方','累計餘額'],
+          (d.entries || []).map(x => [
+            esc(x.date || ''),
+            esc(x.type || ''),
+            esc((x.subjectCode || '') + ' ' + (x.subjectName || '')),
+            esc(x.description || ''),
+            esc(x.accountName || x.accountId || ''),
+            moneyHtml(x.debit),
+            moneyHtml(x.credit),
+            moneyHtml(x.runningBalance)
+          ])
+        )}
+      `;
+    }
+
+    function renderJournalReport(d){
+      if(!d.entries || !d.entries.length){
+        return `<div class="empty">無分錄資料</div>`;
+      }
+
+      return `
+        <div class="grid">
+          <div class="stat green"><div class="k">收入合計</div><div class="v">${fmtMoney(d.totalIncome || 0)}</div></div>
+          <div class="stat red"><div class="k">支出合計</div><div class="v">${fmtMoney(d.totalExpense || 0)}</div></div>
+        </div>
+
+        ${(d.entries || []).map(e => `
+          <div class="item" style="margin-top:12px">
+            <div class="item-title">${esc(e.date || '')}｜${esc(e.entryType || '')}｜${fmtMoney(e.amount || 0)}</div>
+            <div class="item-meta">${esc(e.description || '')}</div>
+            ${simpleReportTable(
+              ['借貸','科目代號','科目名稱','金額'],
+              (e.lines || []).map(line => [
+                esc(line.dc || ''),
+                esc(line.subjectCode || ''),
+                esc(line.subjectName || ''),
+                moneyHtml(line.amount)
+              ])
+            )}
+          </div>
+        `).join('')}
+      `;
+    }
+
+    function renderBudgetComparisonReport(d){
+      return `
+        <div class="grid">
+          <div class="stat blue"><div class="k">預算合計</div><div class="v">${fmtMoney(d.totalBudget || 0)}</div></div>
+          <div class="stat green"><div class="k">決算合計</div><div class="v">${fmtMoney(d.totalActual || 0)}</div></div>
+        </div>
+
+        <div class="stat orange" style="margin-top:12px">
+          <div class="k">差異</div>
+          <div class="v">${fmtMoney(d.totalDifference || 0)}</div>
+        </div>
+
+        ${simpleReportTable(
+          ['年度','科目','專案','預算','決算','差異','執行率'],
+          (d.items || []).map(x => [
+            esc(x.year || ''),
+            esc((x.subjectCode || '') + ' ' + (x.subjectName || '')),
+            esc(x.projectName || ''),
+            moneyHtml(x.budgetAmount),
+            moneyHtml(x.actualAmount),
+            moneyHtml(x.difference),
+            esc(x.usageRateText || '')
+          ])
+        )}
+      `;
+    }
+
+    function renderFundraisingReport(d){
+      return `
+        <div class="grid">
+          <div class="stat green"><div class="k">勸募收入</div><div class="v">${fmtMoney(d.totalRaised || 0)}</div></div>
+          <div class="stat red"><div class="k">勸募支出</div><div class="v">${fmtMoney(d.totalUsed || 0)}</div></div>
+        </div>
+
+        <div class="stat blue" style="margin-top:12px">
+          <div class="k">結餘</div>
+          <div class="v">${fmtMoney(d.remaining || 0)}</div>
+        </div>
+
+        <div class="card" style="box-shadow:none;margin-top:12px">
+          <div class="card-title"><span>勸募收入科目</span></div>
+          ${renderSubjectTable(d.incomeBySubject || [])}
+        </div>
+
+        <div class="card" style="box-shadow:none;margin-top:12px">
+          <div class="card-title"><span>勸募支出科目</span></div>
+          ${renderSubjectTable(d.expenseBySubject || [])}
+        </div>
+      `;
+    }
+
+    function renderBankReconReport(d){
+      return simpleReportTable(
+        ['帳戶','銀行','帳號','對帳日','銀行餘額','調整後餘額','系統餘額','差異','來源'],
+        (d.items || []).map(x => [
+          esc((x.accountId || '') + ' ' + (x.accountName || '')),
+          esc(x.bankName || ''),
+          esc(x.accountNo || ''),
+          esc(x.reconDate || ''),
+          x.bankBalance === '' ? '--' : moneyHtml(x.bankBalance),
+          x.adjustedBankBalance === '' ? '--' : moneyHtml(x.adjustedBankBalance),
+          moneyHtml(x.systemBalance),
+          x.difference === '' ? '--' : moneyHtml(x.difference),
+          esc(x.source || '')
+        ])
+      );
+    }
+
+    function renderBalanceSheetReport(d){
+      const assets = d.assets || {};
+      const liabilities = d.liabilities || {};
+      const netAssets = d.netAssets || {};
+
+      return `
+        <div class="grid">
+          <div class="stat blue"><div class="k">資產合計</div><div class="v">${fmtMoney(assets.totalAssets || 0)}</div></div>
+          <div class="stat red"><div class="k">負債合計</div><div class="v">${fmtMoney(liabilities.totalLiabilities || 0)}</div></div>
+        </div>
+
+        <div class="stat green" style="margin-top:12px">
+          <div class="k">淨資產合計</div>
+          <div class="v">${fmtMoney(netAssets.totalNetAssets || 0)}</div>
+        </div>
+
+        ${simpleReportTable(
+          ['資產項目','銀行','帳號','金額'],
+          (assets.cashAndBank || []).map(x => [
+            esc(x.accountName || ''),
+            esc(x.bankName || ''),
+            esc(x.accountNo || ''),
+            moneyHtml(x.balance)
+          ])
+        )}
+
+        <div class="guide" style="margin-top:12px">
+          檢查差額：${fmtMoney(d.checkBalance || 0)}<br>
+          ${esc(d.note || '')}
+        </div>
+      `;
+    }
+
+    function renderNetAssetChangesReport(d){
+      return `
+        <div class="grid">
+          <div class="stat blue"><div class="k">期初淨資產</div><div class="v">${fmtMoney(d.openingNetAssets || 0)}</div></div>
+          <div class="stat green"><div class="k">期末淨資產</div><div class="v">${fmtMoney(d.endingNetAssets || 0)}</div></div>
+        </div>
+
+        ${simpleReportTable(
+          ['項目','金額'],
+          [
+            ['期初淨資產', moneyHtml(d.openingNetAssets)],
+            ['本期收入', moneyHtml(d.totalIncome)],
+            ['本期支出', moneyHtml(d.totalExpense)],
+            ['本期餘絀', moneyHtml(d.currentSurplusDeficit)],
+            ['期末淨資產', moneyHtml(d.endingNetAssets)]
+          ]
+        )}
+
+        <div class="guide" style="margin-top:12px">${esc(d.note || '')}</div>
+      `;
+    }
+
+    function renderCashFlowReport(d){
+      return `
+        <div class="grid">
+          <div class="stat blue"><div class="k">期初現金</div><div class="v">${fmtMoney(d.openingCash || 0)}</div></div>
+          <div class="stat green"><div class="k">期末現金</div><div class="v">${fmtMoney(d.endingCash || 0)}</div></div>
+        </div>
+
+        ${simpleReportTable(
+          ['項目','金額'],
+          [
+            ['期初現金及約當現金', moneyHtml(d.openingCash)],
+            ['現金流入', moneyHtml(d.cashInflows)],
+            ['現金流出', moneyHtml(d.cashOutflows)],
+            ['本期現金淨增加 / 減少', moneyHtml(d.netCashFlow)],
+            ['期末現金及約當現金', moneyHtml(d.endingCash)]
+          ]
+        )}
+
+        <div class="card" style="box-shadow:none;margin-top:12px">
+          <div class="card-title"><span>現金流入科目</span></div>
+          ${renderSubjectTable(d.inflowsBySubject || [])}
+        </div>
+
+        <div class="card" style="box-shadow:none;margin-top:12px">
+          <div class="card-title"><span>現金流出科目</span></div>
+          ${renderSubjectTable(d.outflowsBySubject || [])}
+        </div>
+      `;
+    }
+
+    function openBankReconModal(){
+      openModal(`
+        <div class="mtitle">🏦 新增銀行調節資料</div>
+
+        ${guideBox('銀行調節說明', [
+          '請輸入帳戶 ID 與銀行實際帳面餘額。',
+          '系統會自動計算調整後銀行餘額與系統帳面餘額差異。',
+          '公式：銀行帳面餘額 - 未兌現支票 + 在途存款 + 其他調整。'
+        ])}
+
+        <div class="fg">
+          <label class="flabel">帳戶 ID<span class="req">*</span></label>
+          <input id="brAccountId" class="fc" placeholder="例如 A2026...">
+        </div>
+
+        <div class="fg">
+          <label class="flabel">對帳日期</label>
+          <input id="brDate" class="fc" type="date" value="${today()}">
+        </div>
+
+        <div class="fg">
+          <label class="flabel">銀行帳面餘額<span class="req">*</span></label>
+          <input id="brBankBalance" class="fc" type="number" value="0">
+        </div>
+
+        <div class="fg">
+          <label class="flabel">未兌現支票</label>
+          <input id="brOutstandingChecks" class="fc" type="number" value="0">
+        </div>
+
+        <div class="fg">
+          <label class="flabel">在途存款</label>
+          <input id="brDepositsInTransit" class="fc" type="number" value="0">
+        </div>
+
+        <div class="fg">
+          <label class="flabel">其他調整</label>
+          <input id="brOtherAdjustments" class="fc" type="number" value="0">
+        </div>
+
+        <div class="fg">
+          <label class="flabel">備註</label>
+          <input id="brNote" class="fc">
+        </div>
+
+        <button class="btn btn-s" onclick="submitBankRecon()">新增銀行調節資料</button>
+        <button class="btn btn-g" onclick="closeModal()">取消</button>
+      `);
+    }
+
+    async function submitBankRecon(){
+      const accountId = requireInput('brAccountId','帳戶 ID');
+
+      if(!accountId) return;
+
+      showLoad();
+
+      try{
+        const res = await api('report.bankReconciliationAdd', {
+          accountId,
+          reconDate:$('brDate').value,
+          bankBalance:$('brBankBalance').value,
+          outstandingChecks:$('brOutstandingChecks').value,
+          depositsInTransit:$('brDepositsInTransit').value,
+          otherAdjustments:$('brOtherAdjustments').value,
+          note:$('brNote').value.trim()
+        });
+
+        hideLoad();
+
+        if(!res.success){
+          toast(res.message || '新增失敗','e');
+          return;
+        }
+
+        closeModal();
+        toast('銀行調節資料已新增','s');
+
+        REPORT_STATE.type = 'bankReconciliation';
+        renderReportCenter();
+
+      }catch(e){
+        hideLoad();
+        toast('新增失敗：' + e.message,'e');
+      }
+    }
+
 
 
     /*******************************************************
