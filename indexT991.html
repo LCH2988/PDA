@@ -1355,7 +1355,7 @@
      * Google Apps Script Web App URL。
      * 請改成你的 /exec 部署網址。
      */
-    const API_BASE = 'https://script.google.com/macros/s/AKfycbx2N8n4lYrHynwMAqNRU0gy2Pp8n_51mxKKKvt3QH9KWWX5reeQ8AIWfQz-Ky41EiBj/exec';
+    const API_BASE = 'https://script.google.com/macros/s/AKfycbwzlBHV9KWomLPoJ0o738kdYCO5vUHc1u-9PIBqc-IM_JmxuvGxYAbAz30u98ljDPcs/exec';
 
     /**
      * LINE LIFF ID。
@@ -1416,8 +1416,10 @@
       accountManage:'navAdmin',
       reportCenter:'navAdmin',
       systemSetting:'navAdmin',
-      staffManage:'navAdmin'
+      staffManage:'navAdmin',
+      announceManage:'navAdmin'
     };
+
 
 
     /*******************************************************
@@ -2056,7 +2058,8 @@
       accountManage:renderAccountManage,
       reportCenter:renderReportCenter,
       staffManage:renderStaffManage,
-      systemSetting:renderSystemSetting
+      systemSetting:renderSystemSetting,
+      announceManage:renderAnnounceManage
     };
 
     function go(page, params = {}, push = true){
@@ -3495,7 +3498,9 @@
             <button class="btn btn-o" onclick="go('accountManage')">🏦 帳戶管理</button>
             <button class="btn btn-o" onclick="go('staffManage')">👔 管理人員</button>
             <button class="btn btn-p" onclick="go('reportCenter')">📈 財務報表</button>
+            <button class="btn btn-o" onclick="go('announceManage')">📢 公告管理</button>
             <button class="btn btn-g" onclick="go('systemSetting')">🔧 系統設定</button>
+
           </div>
         </section>
       `);
@@ -5803,6 +5808,365 @@
         toast('新增失敗：' + e.message,'e');
       }
     }
+
+        /*******************************************************
+     * 25-A. 公告管理
+     *******************************************************/
+
+    async function renderAnnounceManage(){
+      if(!adminGuard()) return;
+
+      setMain(`
+        <section class="hero">
+          <h1>📢 公告管理</h1>
+          <p>新增、查詢與管理協會公告。會員端可在「最新公告」頁面看到已發布的公告。</p>
+        </section>
+
+        <section class="card">
+          <div class="card-title">
+            <span>新增公告</span>
+          </div>
+
+          ${guideBox('公告說明', [
+            '標題與內容為必填。',
+            '對象選「全部」或「會員」，會員端即可看到。',
+            '置頂公告會優先顯示在公告列表最上方。',
+            '狀態選「草稿」則不會在前台顯示，可先存稿再發布。'
+          ])}
+
+          <div class="fg">
+            <label class="flabel">標題<span class="req">*</span></label>
+            <input id="annTitle" class="fc" placeholder="請輸入公告標題">
+          </div>
+
+          <div class="fg">
+            <label class="flabel">內容<span class="req">*</span></label>
+            <textarea id="annContent" class="fc" placeholder="請輸入公告內容"></textarea>
+          </div>
+
+          <div class="row">
+            <div style="flex:1">
+              <label class="flabel">分類</label>
+              <select id="annCategory" class="fc">
+                <option value="一般">一般</option>
+                <option value="活動">活動</option>
+                <option value="會務">會務</option>
+                <option value="財務">財務</option>
+                <option value="系統">系統</option>
+              </select>
+            </div>
+
+            <div style="flex:1">
+              <label class="flabel">對象</label>
+              <select id="annTarget" class="fc">
+                <option value="全部">全部</option>
+                <option value="會員">會員</option>
+                <option value="管理員">管理員</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <div style="flex:1">
+              <label class="flabel">公告日期</label>
+              <input id="annDate" class="fc" type="date" value="${today()}">
+            </div>
+
+            <div style="flex:1">
+              <label class="flabel">置頂</label>
+              <select id="annPinned" class="fc">
+                <option value="">不置頂</option>
+                <option value="Y">📌 置頂</option>
+              </select>
+            </div>
+
+            <div style="flex:1">
+              <label class="flabel">狀態</label>
+              <select id="annStatus" class="fc">
+                <option value="發布">發布</option>
+                <option value="草稿">草稿</option>
+              </select>
+            </div>
+          </div>
+
+          <button class="btn btn-s" onclick="submitAnnouncement()">✅ 發布公告</button>
+        </section>
+
+        <section class="card">
+          <div class="card-title">
+            <span>公告列表</span>
+            <small id="annCount"></small>
+          </div>
+
+          <div class="row">
+            <input id="annSearchKw" class="fc" placeholder="搜尋標題或內容關鍵字">
+            <button class="btn btn-p mini" onclick="loadAnnounceList()" style="flex:0 0 auto;width:auto">搜尋</button>
+          </div>
+
+          <div id="announceListArea" class="list" style="margin-top:12px">
+            <div class="empty">載入中...</div>
+          </div>
+        </section>
+      `);
+
+      loadAnnounceList();
+    }
+
+    async function submitAnnouncement(){
+      const title = requireInput('annTitle','標題');
+      const content = requireInput('annContent','內容');
+
+      if(!title || !content) return;
+
+      showLoad();
+
+      try{
+        const res = await api('announcement.add', {
+          title,
+          content,
+          category: $('annCategory').value,
+          target: $('annTarget').value,
+          date: $('annDate').value,
+          pinned: $('annPinned').value,
+          status: $('annStatus').value
+        });
+
+        hideLoad();
+
+        if(res.success){
+          toast('公告已發布','s');
+
+          $('annTitle').value = '';
+          $('annContent').value = '';
+          $('annPinned').value = '';
+          $('annStatus').value = '發布';
+
+          loadAnnounceList();
+        }else{
+          toast(res.message || '發布失敗','e');
+        }
+
+      }catch(e){
+        hideLoad();
+        toast('發布失敗：' + e.message,'e');
+      }
+    }
+
+    async function loadAnnounceList(){
+      const area = $('announceListArea');
+      const countEl = $('annCount');
+
+      if(!area) return;
+
+      area.innerHTML = `<div class="empty">載入中...</div>`;
+
+      try{
+        const res = await api('announcement.list', {
+          keyword: $('annSearchKw')?.value.trim() || ''
+        });
+
+        if(!res.success){
+          area.innerHTML = `<div class="empty danger">${esc(res.message || '載入失敗')}</div>`;
+          return;
+        }
+
+        const rows = res.items || [];
+
+        if(countEl){
+          countEl.textContent = '共 ' + rows.length + ' 則';
+        }
+
+        if(!rows.length){
+          area.innerHTML = `<div class="empty">尚無公告</div>`;
+          return;
+        }
+
+        area.innerHTML = rows.map(r => `
+          <div class="item">
+            <div class="item-h">
+              <div style="flex:1;min-width:0">
+                <div class="item-title">
+                  ${r.pinned === 'Y' ? '📌 ' : ''}${esc(r.title)}
+                </div>
+                <div class="item-meta" style="margin-top:6px">
+                  📅 ${esc(r.date || '--')}
+                  ｜🏷️ ${esc(r.category || '一般')}
+                  ｜👥 ${esc(r.target || '全部')}
+                </div>
+                <div class="item-meta" style="margin-top:8px;white-space:pre-wrap;line-height:1.8">
+                  ${esc(r.content || '')}
+                </div>
+              </div>
+
+              <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+                <span class="badge ${r.status === '發布' ? 'bs' : 'bw'}">
+                  ${r.status === '發布' ? '✅ 已發布' : '📝 草稿'}
+                </span>
+              </div>
+            </div>
+
+            <div class="item-actions">
+              <button class="btn btn-o mini" onclick="openEditAnnounce(${JSON.stringify(r).replace(/'/g,'&#39;')})">
+                ✏️ 編輯
+              </button>
+
+              ${r.status === '草稿' ? `
+                <button class="btn btn-s mini" onclick="publishAnnounce('${jsStr(r.id)}')">
+                  📢 發布
+                </button>
+              ` : `
+                <button class="btn btn-w mini" onclick="unpublishAnnounce('${jsStr(r.id)}')">
+                  📥 下架
+                </button>
+              `}
+
+              <button class="btn btn-d mini" onclick="deleteAnnounce('${jsStr(r.id)}')">
+                🗑️ 刪除
+              </button>
+            </div>
+          </div>
+        `).join('');
+
+      }catch(e){
+        area.innerHTML = `<div class="empty danger">載入失敗：${esc(e.message)}</div>`;
+      }
+    }
+
+    function openEditAnnounce(r){
+      openModal(`
+        <div class="mtitle">✏️ 編輯公告</div>
+
+        <div class="fg">
+          <label class="flabel">標題<span class="req">*</span></label>
+          <input id="editAnnTitle" class="fc" value="${esc(r.title || '')}">
+        </div>
+
+        <div class="fg">
+          <label class="flabel">內容<span class="req">*</span></label>
+          <textarea id="editAnnContent" class="fc">${esc(r.content || '')}</textarea>
+        </div>
+
+        <div class="row">
+          <div style="flex:1">
+            <label class="flabel">分類</label>
+            <select id="editAnnCategory" class="fc">
+              <option value="一般" ${r.category === '一般' ? 'selected' : ''}>一般</option>
+              <option value="活動" ${r.category === '活動' ? 'selected' : ''}>活動</option>
+              <option value="會務" ${r.category === '會務' ? 'selected' : ''}>會務</option>
+              <option value="財務" ${r.category === '財務' ? 'selected' : ''}>財務</option>
+              <option value="系統" ${r.category === '系統' ? 'selected' : ''}>系統</option>
+            </select>
+          </div>
+
+          <div style="flex:1">
+            <label class="flabel">對象</label>
+            <select id="editAnnTarget" class="fc">
+              <option value="全部" ${r.target === '全部' ? 'selected' : ''}>全部</option>
+              <option value="會員" ${r.target === '會員' ? 'selected' : ''}>會員</option>
+              <option value="管理員" ${r.target === '管理員' ? 'selected' : ''}>管理員</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div style="flex:1">
+            <label class="flabel">公告日期</label>
+            <input id="editAnnDate" class="fc" type="date" value="${esc(r.date || '')}">
+          </div>
+
+          <div style="flex:1">
+            <label class="flabel">置頂</label>
+            <select id="editAnnPinned" class="fc">
+              <option value="" ${!r.pinned || r.pinned !== 'Y' ? 'selected' : ''}>不置頂</option>
+              <option value="Y" ${r.pinned === 'Y' ? 'selected' : ''}>📌 置頂</option>
+            </select>
+          </div>
+
+          <div style="flex:1">
+            <label class="flabel">狀態</label>
+            <select id="editAnnStatus" class="fc">
+              <option value="發布" ${r.status === '發布' ? 'selected' : ''}>發布</option>
+              <option value="草稿" ${r.status === '草稿' ? 'selected' : ''}>草稿</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="btn btn-s" onclick="submitEditAnnounce('${jsStr(r.id)}')">儲存修改</button>
+        <button class="btn btn-g" onclick="closeModal()">取消</button>
+      `);
+    }
+
+    async function submitEditAnnounce(id){
+      const title = requireInput('editAnnTitle','標題');
+      const content = requireInput('editAnnContent','內容');
+
+      if(!title || !content) return;
+
+      showLoad();
+
+      try{
+        const res = await api('announcement.update', {
+          id,
+          title,
+          content,
+          category: $('editAnnCategory').value,
+          target: $('editAnnTarget').value,
+          date: $('editAnnDate').value,
+          pinned: $('editAnnPinned').value,
+          status: $('editAnnStatus').value
+        });
+
+        hideLoad();
+
+        if(res.success){
+          closeModal();
+          toast('公告已更新','s');
+          loadAnnounceList();
+        }else{
+          toast(res.message || '更新失敗','e');
+        }
+
+      }catch(e){
+        hideLoad();
+        toast('更新失敗：' + e.message,'e');
+      }
+    }
+
+    async function publishAnnounce(id){
+      if(!confirm('確定發布此公告？')) return;
+
+      await runApi('announcement.update', {
+        id,
+        status:'發布'
+      }, () => {
+        toast('公告已發布','s');
+        loadAnnounceList();
+      });
+    }
+
+    async function unpublishAnnounce(id){
+      if(!confirm('確定下架此公告？下架後會員端將看不到此公告。')) return;
+
+      await runApi('announcement.update', {
+        id,
+        status:'草稿'
+      }, () => {
+        toast('公告已下架','s');
+        loadAnnounceList();
+      });
+    }
+
+    async function deleteAnnounce(id){
+      if(!confirmCritical('確定刪除此公告？刪除後無法復原。')) return;
+
+      await runApi('announcement.delete', {
+        id
+      }, () => {
+        toast('公告已刪除','s');
+        loadAnnounceList();
+      });
+    }
+
 
 
 
