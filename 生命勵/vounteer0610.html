@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>志工任務管理</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    :root{--primary:#4A90D9;--secondary:#5CB85C;--warning:#F0AD4E;--danger:#D9534F;--radius:14px;--shadow:0 4px 16px rgba(0,0,0,.10)}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Noto Sans TC',sans-serif;background:#F0F4F8;color:#2C3E50}
+    .header{background:linear-gradient(135deg,#5CB85C,#388E3C);color:#fff;
+      padding:16px 20px;display:flex;align-items:center;gap:12px;
+      position:sticky;top:0;z-index:100;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+    .header h1{font-size:17px;font-weight:700;flex:1}
+    .header .avatar{width:34px;height:34px;border-radius:50%;border:2px solid #fff;object-fit:cover}
+    .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;
+      display:flex;border-top:1px solid #E0E0E0;z-index:100;
+      padding-bottom:env(safe-area-inset-bottom)}
+    .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;
+      padding:10px 0;cursor:pointer;transition:color .2s;font-size:10px;color:#999}
+    .nav-item.active{color:var(--secondary)}
+    .nav-item svg{width:22px;height:22px;margin-bottom:3px}
+    .main{padding:16px;padding-bottom:80px}
+    .page{display:none}.page.active{display:block}
+    .section-title{font-size:16px;font-weight:700;margin-bottom:12px}
+    .card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:14px}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .card-title{font-size:15px;font-weight:700}
+
+    /* Profile Banner */
+    .profile-banner{background:linear-gradient(135deg,var(--secondary),#388E3C);
+      border-radius:var(--radius);padding:20px;color:#fff;text-align:center;margin-bottom:16px}
+    .profile-banner img{width:64px;height:64px;border-radius:50%;border:3px solid #fff;margin-bottom:10px}
+    .profile-banner .name{font-size:18px;font-weight:700}
+    .profile-banner .role-badge{display:inline-block;background:rgba(255,255,255,.25);
+      border-radius:12px;padding:3px 12px;font-size:12px;margin-top:6px}
+    .vol-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+    .vol-stat{background:#fff;border-radius:12px;padding:12px;text-align:center;box-shadow:var(--shadow)}
+    .vol-stat .num{font-size:22px;font-weight:700;color:var(--secondary)}
+    .vol-stat .lbl{font-size:11px;color:#888;margin-top:3px}
+
+    /* Task Cards */
+    .task-card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);
+      margin-bottom:12px;overflow:hidden;transition:transform .15s}
+    .task-card:active{transform:scale(.98)}
+    .task-card-header{padding:14px 16px 10px;display:flex;align-items:flex-start;gap:12px}
+    .task-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;
+      justify-content:center;font-size:22px;flex-shrink:0}
+    .task-icon.assigned{background:#FFF3E0}
+    .task-icon.accepted{background:#E8F5E9}
+    .task-icon.done{background:#E3F2FD}
+    .task-info{flex:1}
+    .task-name{font-size:15px;font-weight:700;margin-bottom:4px}
+    .task-meta{font-size:12px;color:#888;line-height:1.6}
+    .task-card-footer{padding:10px 16px 14px;border-top:1px solid #F5F5F5;
+      display:flex;gap:8px;align-items:center;justify-content:space-between}
+    .status-chip{padding:4px 12px;border-radius:10px;font-size:12px;font-weight:700}
+    .chip-orange{background:#FFF3E0;color:#E65100}
+    .chip-green{background:#E8F5E9;color:#2E7D32}
+    .chip-blue{background:#E3F2FD;color:#1565C0}
+    .chip-gray{background:#F5F5F5;color:#757575}
+
+    /* Activity Cards for volunteer */
+    .act-card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);
+      padding:14px;margin-bottom:12px;display:flex;gap:12px;align-items:center}
+    .act-date-box{min-width:48px;text-align:center;background:var(--secondary);
+      color:#fff;border-radius:10px;padding:8px 4px;flex-shrink:0}
+    .act-date-box .month{font-size:10px;opacity:.85}
+    .act-date-box .day{font-size:22px;font-weight:700;line-height:1}
+    .act-info{flex:1}
+    .act-title{font-size:14px;font-weight:700;margin-bottom:4px}
+    .act-meta{font-size:12px;color:#888;line-height:1.6}
+
+    /* Notification List */
+    .notif-item{padding:14px;border-bottom:1px solid #F0F0F0;display:flex;gap:12px}
+    .notif-item:last-child{border-bottom:none}
+    .notif-dot{width:10px;height:10px;border-radius:50%;background:var(--secondary);
+      flex-shrink:0;margin-top:5px}
+    .notif-dot.read{background:#DDD}
+    .notif-content .notif-msg{font-size:13px;line-height:1.5;margin-bottom:4px}
+    .notif-content .notif-time{font-size:11px;color:#AAA}
+
+    /* Availability Editor */
+    .avail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}
+    .avail-chip{padding:10px;border:2px solid #DDD;border-radius:10px;
+      text-align:center;font-size:13px;cursor:pointer;transition:all .2s}
+    .avail-chip.selected{border-color:var(--secondary);background:#E8F5E9;color:#2E7D32;font-weight:700}
+
+    /* Buttons */
+    .btn{padding:9px 16px;border-radius:9px;border:none;font-size:13px;font-weight:700;
+      cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:5px}
+    .btn-primary{background:var(--primary);color:#fff}
+    .btn-success{background:var(--secondary);color:#fff}
+    .btn-warning{background:var(--warning);color:#fff}
+    .btn-danger{background:var(--danger);color:#fff}
+    .btn-outline{background:#fff;color:var(--secondary);border:2px solid var(--secondary)}
+    .btn-gray{background:#EEE;color:#666}
+    .btn-block{width:100%;justify-content:center;padding:12px}
+    .btn:disabled{background:#CCC;cursor:not-allowed;color:#999}
+
+    /* Modal */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+      z-index:200;align-items:flex-end;justify-content:center}
+    .modal-overlay.show{display:flex}
+    .modal{background:#fff;border-radius:14px 14px 0 0;width:100%;
+      max-height:90vh;overflow-y:auto;padding:20px;animation:slideUp .3s ease}
+    @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+    .modal-handle{width:40px;height:4px;background:#DDD;border-radius:2px;margin:0 auto 16px}
+    .modal-title{font-size:17px;font-weight:700;margin-bottom:14px}
+    .form-group{margin-bottom:12px}
+    .form-group label{font-size:12px;color:#555;display:block;margin-bottom:5px;font-weight:600}
+    .form-control{width:100%;padding:10px 12px;border:1.5px solid #DDD;
+      border-radius:9px;font-size:13px;background:#fff}
+    .form-control:focus{outline:none;border-color:var(--secondary)}
+    textarea.form-control{resize:vertical;min-height:80px}
+
+    /* Toast */
+    .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+      background:#333;color:#fff;padding:10px 20px;border-radius:20px;
+      font-size:13px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+    .toast.show{opacity:1}
+    .toast.success{background:#2E7D32}
+    .toast.error{background:#C62828}
+
+    /* Loading */
+    .loading{display:flex;align-items:center;justify-content:center;
+      padding:30px;flex-direction:column;gap:10px;color:#888}
+    .spinner{width:32px;height:32px;border:3px solid #EEE;
+      border-top-color:var(--secondary);border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .empty-state{text-align:center;padding:30px;color:#AAA}
+    .empty-state .emoji{font-size:40px;margin-bottom:10px}
+    .divider{height:1px;background:#EEE;margin:12px 0}
+    .info-row{display:flex;justify-content:space-between;padding:6px 0;
+      border-bottom:1px solid #F5F5F5;font-size:13px}
+    .info-row:last-child{border-bottom:none}
+    .info-row .lbl{color:#888}
+    .info-row .val{font-weight:600}
+    .tag{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;margin:2px}
+    .tag-green{background:#E8F5E9;color:#2E7D32}
+    .tag-blue{background:#E3F2FD;color:#1565C0}
+    .tag-orange{background:#FFF3E0;color:#E65100}
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <span style="font-size:22px">🙋</span>
+  <h1>志工任務中心</h1>
+  <img id="volAvatar" class="avatar" src="https://via.placeholder.com/34" alt="">
+</div>
+
+<div class="main">
+
+  <!-- ── 任務頁 ── -->
+  <div id="page-tasks" class="page active">
+    <div class="section-title">📋 我的任務</div>
+
+    <!-- 任務篩選 -->
+    <div style="display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;scrollbar-width:none">
+      <button class="btn btn-success" id="filter-all"      onclick="filterTasks('all')">全部</button>
+      <button class="btn btn-gray"    id="filter-assigned" onclick="filterTasks('assigned')">待接受</button>
+      <button class="btn btn-gray"    id="filter-accepted" onclick="filterTasks('accepted')">進行中</button>
+      <button class="btn btn-gray"    id="filter-done"     onclick="filterTasks('done')">已完成</button>
+    </div>
+
+    <div id="taskList">
+      <div class="loading"><div class="spinner"></div><span>載入任務中...</span></div>
+    </div>
+  </div>
+
+  <!-- ── 活動頁 ── -->
+  <div id="page-activities" class="page">
+    <div class="section-title">🏅 可報名志工的活動</div>
+    <div id="volActivityList">
+      <div class="loading"><div class="spinner"></div><span>載入中...</span></div>
+    </div>
+  </div>
+
+  <!-- ── 通知頁 ── -->
+  <div id="page-notifications" class="page">
+    <div class="section-title">🔔 通知中心</div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div id="notificationList">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 個人頁 ── -->
+  <div id="page-profile" class="page">
+    <div id="volProfileContent">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- Bottom Nav -->
+<nav class="bottom-nav">
+  <div class="nav-item active" id="nav-tasks" onclick="showPage('tasks')">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+    我的任務
+  </div>
+  <div class="nav-item" id="nav-activities" onclick="showPage('activities');loadVolActivities()">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+    活動
+  </div>
+  <div class="nav-item" id="nav-notifications" onclick="showPage('notifications');loadNotifications()">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+    通知
+  </div>
+  <div class="nav-item" id="nav-profile" onclick="showPage('profile');loadVolProfile()">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+    我的
+  </div>
+</nav>
+
+<!-- 任務詳情 Modal -->
+<div class="modal-overlay" id="taskDetailModal" onclick="closeModalOutside(event,'taskDetailModal')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div id="taskDetailContent"></div>
+  </div>
+</div>
+
+<!-- 編輯資料 Modal -->
+<div class="modal-overlay" id="editVolModal" onclick="closeModalOutside(event,'editVolModal')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div id="editVolContent"></div>
+  </div>
+</div>
+
+<!-- 活動詳情 Modal -->
+<div class="modal-overlay" id="actDetailModal" onclick="closeModalOutside(event,'actDetailModal')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div id="actDetailContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyhoYiT3Lh7_yujQgSAI51j4wjVpSFPjnDv8TkuekbU8GqfFgfdm2fnxWJjXNgGIlm6/exec';
+let volUser     = null;
+let volData     = null;
+let allTasks    = [];
+let currentFilter = 'all';
+// 模擬通知（實際可從 GAS 取得）
+let notifications = [];
+
+// ── 初始化 ────────────────────────────────────────────────────
+async function initVol() {
+  try {
+    await liff.init({ liffId: '2005891423-hTZ5rhmd' });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const profile = await liff.getProfile();
+    document.getElementById('volAvatar').src = profile.pictureUrl || '';
+
+    const res = await callAPI('loginUser', { lineId: profile.userId });
+    if (!res.success) { showToast('請先在主系統完成註冊', 'error'); return; }
+
+    volUser = { ...res.user, pictureUrl: profile.pictureUrl };
+
+    if (volUser.role !== 'volunteer' && volUser.role !== 'admin') {
+      showRegisterVolunteer();
+      return;
+    }
+    loadMyTasks();
+    loadVolStats();
+  } catch(e) { showToast('初始化失敗：' + e.message, 'error'); }
+}
+
+async function callAPI(action, data = {}) {
+  try {
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action, data })
+    });
+    return await res.json();
+  } catch(e) { return { success:false, message: e.message }; }
+}
+
+function openModal(id)  { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function closeModalOutside(e, id) {
+  if (e.target === document.getElementById(id)) closeModal(id);
+}
+
+function showToast(msg, type='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast show ' + type;
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page)?.classList.add('active');
+  document.getElementById('nav-' + page)?.classList.add('active');
+}
+
+// ── 載入我的任務 ──────────────────────────────────────────────
+async function loadMyTasks() {
+  const container = document.getElementById('taskList');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>載入中...</span></div>';
+
+  // 先取得志工 volId
+  const volRes = await callAPI('getVolunteers', {});
+  const vol = volRes.volunteers?.find(v => v.userId === volUser.userId);
+  if (!vol) { container.innerHTML = '<div class="empty-state"><div class="emoji">🙋</div><p>找不到志工資料</p></div>'; return; }
+  volData = vol;
+
+  const res = await callAPI('getVolTasks', { volId: vol.volId });
+  allTasks = res.tasks || [];
+  renderTasks(allTasks);
+}
+
+function filterTasks(status) {
+  currentFilter = status;
+  document.querySelectorAll('[id^="filter-"]').forEach(b => {
+    b.className = b.id === 'filter-' + status ? 'btn btn-success' : 'btn btn-gray';
+  });
+  const filtered = status === 'all' ? allTasks : allTasks.filter(t => t.status === status);
+  renderTasks(filtered);
+}
+
+function renderTasks(tasks) {
+  const container = document.getElementById('taskList');
+  if (!tasks.length) {
+    container.innerHTML = `<div class="empty-state"><div class="emoji">${currentFilter==='done'?'🎉':'📋'}</div>
+      <p>${currentFilter==='done'?'尚無已完成任務':'目前沒有任務'}</p></div>`;
+    return;
+  }
+  const STATUS_ICON = { assigned:'📌', accepted:'⚡', done:'✅' };
+  const STATUS_CLS  = { assigned:'chip-orange', accepted:'chip-green', done:'chip-blue' };
+  const STATUS_LBL  = { assigned:'待接受', accepted:'進行中', done:'已完成' };
+
+  container.innerHTML = tasks.map(t => `
+    <div class="task-card" onclick="showTaskDetail('${t.taskId}')">
+      <div class="task-card-header">
+        <div class="task-icon ${t.status}">${STATUS_ICON[t.status]||'📋'}</div>
+        <div class="task-info">
+          <div class="task-name">${t.taskName}</div>
+          <div class="task-meta">
+            ⏰ ${t.startTime||'—'} ~ ${t.endTime||'—'}<br>
+            ${t.taskDesc ? '📝 ' + t.taskDesc.substring(0,40) + (t.taskDesc.length>40?'...':'') : ''}
+          </div>
+        </div>
+      </div>
+      <div class="task-card-footer">
+        <span class="status-chip ${STATUS_CLS[t.status]||'chip-gray'}">${STATUS_LBL[t.status]||t.status}</span>
+        ${t.status === 'assigned'
+          ? `<button class="btn btn-success" style="padding:6px 14px;font-size:12px"
+              onclick="event.stopPropagation();acceptTask('${t.taskId}')">✅ 接受任務</button>`
+          : t.status === 'accepted'
+          ? `<button class="btn btn-primary" style="padding:6px 14px;font-size:12px"
+              onclick="event.stopPropagation();completeTask('${t.taskId}')">🏁 完成任務</button>`
+          : `<span style="font-size:12px;color:#888">已完成 🎉</span>`}
+      </div>
+    </div>`).join('');
+}
+
+// ── 任務詳情 ──────────────────────────────────────────────────
+function showTaskDetail(taskId) {
+  const task = allTasks.find(t => t.taskId === taskId);
+  if (!task) return;
+  const STATUS_LBL = { assigned:'待接受', accepted:'進行中', done:'已完成' };
+  const STATUS_CLS = { assigned:'chip-orange', accepted:'chip-green', done:'chip-blue' };
+
+  document.getElementById('taskDetailContent').innerHTML = `
+    <h2 class="modal-title">📋 任務詳情</h2>
+    <div class="card" style="box-shadow:none;border:1px solid #EEE;padding:14px">
+      <div class="info-row"><span class="lbl">任務名稱</span><span class="val">${task.taskName}</span></div>
+      <div class="info-row"><span class="lbl">執行時間</span><span class="val">${task.startTime||'—'} ~ ${task.endTime||'—'}</span></div>
+      <div class="info-row"><span class="lbl">任務狀態</span>
+        <span class="status-chip ${STATUS_CLS[task.status]||''}">${STATUS_LBL[task.status]||task.status}</span></div>
+      <div class="info-row"><span class="lbl">任務編號</span><span class="val" style="font-size:11px">${task.taskId}</span></div>
+    </div>
+    ${task.taskDesc ? `
+      <div style="margin:12px 0">
+        <div style="font-size:12px;color:#888;margin-bottom:6px">📝 任務說明</div>
+        <div style="background:#F8F9FA;border-radius:10px;padding:12px;font-size:13px;line-height:1.6">${task.taskDesc}</div>
+      </div>` : ''}
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+      ${task.status === 'assigned'
+        ? `<button class="btn btn-success btn-block" onclick="acceptTask('${task.taskId}');closeModal('taskDetailModal')">✅ 接受此任務</button>`
+        : ''}
+      ${task.status === 'accepted'
+        ? `<button class="btn btn-primary btn-block" onclick="completeTask('${task.taskId}');closeModal('taskDetailModal')">🏁 標記為已完成</button>`
+        : ''}
+      <button class="btn btn-gray btn-block" onclick="closeModal('taskDetailModal')">關閉</button>
+    </div>`;
+  openModal('taskDetailModal');
+}
+
+// ── 接受 / 完成任務 ───────────────────────────────────────────
+async function acceptTask(taskId) {
+  const res = await callAPI('updateTaskStatus', { taskId, status: 'accepted' });
+  showToast(res.success ? '✅ 已接受任務！' : res.message, res.success ? 'success' : 'error');
+  if (res.success) {
+    const t = allTasks.find(t => t.taskId === taskId);
+    if (t) t.status = 'accepted';
+    renderTasks(currentFilter === 'all' ? allTasks : allTasks.filter(t => t.status === currentFilter));
+    loadVolStats();
+  }
+}
+
+async function completeTask(taskId) {
+  if (!confirm('確認完成此任務？')) return;
+  const res = await callAPI('updateTaskStatus', { taskId, status: 'done' });
+  showToast(res.success ? '🎉 任務已完成！' : res.message, res.success ? 'success' : 'error');
+  if (res.success) {
+    const t = allTasks.find(t => t.taskId === taskId);
+    if (t) t.status = 'done';
+    renderTasks(currentFilter === 'all' ? allTasks : allTasks.filter(t => t.status === currentFilter));
+    loadVolStats();
+  }
+}
+
+// ── 志工統計 ──────────────────────────────────────────────────
+async function loadVolStats() {
+  const res = await callAPI('getVolTasks', { volId: volData?.volId });
+  const tasks = res.tasks || [];
+  const done     = tasks.filter(t => t.status === 'done').length;
+  const accepted = tasks.filter(t => t.status === 'accepted').length;
+  const total    = tasks.length;
+  // 統計資料存入 volData
+  if (volData) { volData._stats = { total, done, accepted }; }
+}
+
+// ── 可報名活動列表 ────────────────────────────────────────────
+async function loadVolActivities() {
+  const container = document.getElementById('volActivityList');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>載入中...</span></div>';
+  const res = await callAPI('getActivities', { status: 'active' });
+  const acts = (res.activities || []).filter(a => parseInt(a.volunteerNeeded) > 0);
+  if (!acts.length) {
+    container.innerHTML = '<div class="empty-state"><div class="emoji">🏖️</div><p>目前沒有需要志工的活動</p></div>';
+    return;
+  }
+  container.innerHTML = acts.map(a => {
+    const d = a.date ? new Date(a.date) : null;
+    const month = d ? d.toLocaleDateString('zh-TW',{month:'short'}) : '';
+    const day   = d ? d.getDate() : '—';
+    return `
+      <div class="act-card" onclick="showVolActDetail('${a.activityId}')">
+        <div class="act-date-box">
+          <div class="month">${month}</div>
+          <div class="day">${day}</div>
+        </div>
+        <div class="act-info">
+          <div class="act-title">${a.title}</div>
+          <div class="act-meta">⏰ ${a.startTime||''} ~ ${a.endTime||''}</div>
+          <div class="act-meta">📍 ${a.subVenue||a.location||'—'}</div>
+          <div class="act-meta" style="margin-top:4px">
+            <span class="tag tag-orange">🙋 需要 ${a.volunteerNeeded} 位志工</span>
+          </div>
+        </div>
+        <span style="font-size:20px;color:#CCC">›</span>
+      </div>`;
+  }).join('');
+}
+
+async function showVolActDetail(activityId) {
+  openModal('actDetailModal');
+  document.getElementById('actDetailContent').innerHTML =
+    '<div class="loading"><div class="spinner"></div></div>';
+  const res = await callAPI('getActivityDetail', { activityId });
+  if (!res.success) { document.getElementById('actDetailContent').innerHTML = '<p>載入失敗</p>'; return; }
+  const a = res.activity;
+  document.getElementById('actDetailContent').innerHTML = `
+    <h2 class="modal-title">🏅 ${a.title}</h2>
+    <div class="card" style="box-shadow:none;border:1px solid #EEE;padding:14px;margin-bottom:12px">
+      <div class="info-row"><span class="lbl">📅 日期</span><span class="val">${a.date||'—'}</span></div>
+      <div class="info-row"><span class="lbl">⏰ 時間</span><span class="val">${a.startTime||''} ~ ${a.endTime||''}</span></div>
+      <div class="info-row"><span class="lbl">📍 地點</span><span class="val">${a.subVenue||a.location||'—'}</span></div>
+      <div class="info-row"><span class="lbl">🙋 需要志工</span><span class="val">${a.volunteerNeeded} 人</span></div>
+    </div>
+    ${a.description ? `<div style="background:#F8F9FA;border-radius:10px;padding:12px;font-size:13px;line-height:1.6;margin-bottom:12px">${a.description}</div>` : ''}
+    <p style="font-size:13px;color:#888;margin-bottom:12px">如有意願擔任此活動志工，請聯絡管理員或等待任務指派通知。</p>
+    <button class="btn btn-outline btn-block" onclick="closeModal('actDetailModal')">關閉</button>`;
+}
+
+// ── 通知中心 ──────────────────────────────────────────────────
+async function loadNotifications() {
+  // 模擬通知資料（實際可建立 Notifications Sheet）
+  const container = document.getElementById('notificationList');
+  if (!notifications.length) {
+    notifications = [
+      { id:1, msg:'🎉 歡迎加入志工團隊！請隨時關注任務指派通知。', time:'剛剛', read:false },
+      { id:2, msg:'📢 提醒：請確認您的可配合時段是否正確。', time:'1 小時前', read:false },
+    ];
+  }
+  container.innerHTML = notifications.map(n => `
+    <div class="notif-item" onclick="markRead(${n.id})">
+      <div class="notif-dot ${n.read?'read':''}"></div>
+      <div class="notif-content">
+        <div class="notif-msg">${n.msg}</div>
+        <div class="notif-time">${n.time}</div>
+      </div>
+    </div>`).join('') ||
+    '<div class="empty-state"><div class="emoji">🔔</div><p>目前沒有通知</p></div>';
+}
+
+function markRead(id) {
+  const n = notifications.find(n => n.id === id);
+  if (n) { n.read = true; loadNotifications(); }
+}
+
+// ── 個人資料頁 ────────────────────────────────────────────────
+async function loadVolProfile() {
+  const container = document.getElementById('volProfileContent');
+  if (!volUser) { container.innerHTML = '<div class="empty-state"><div class="emoji">🔒</div><p>請先登入</p></div>'; return; }
+
+  const tasksRes = await callAPI('getVolTasks', { volId: volData?.volId });
+  const tasks = tasksRes.tasks || [];
+  const done  = tasks.filter(t => t.status === 'done').length;
+  const total = tasks.length;
+
+  container.innerHTML = `
+    <div class="profile-banner">
+      <img src="${volUser.pictureUrl||'https://via.placeholder.com/64'}" alt="">
+      <div class="name">${volUser.name}</div>
+      <div class="role-badge">🙋 志工</div>
+    </div>
+    <div class="vol-stats">
+      <div class="vol-stat"><div class="num">${total}</div><div class="lbl">總任務數</div></div>
+      <div class="vol-stat"><div class="num">${done}</div><div class="lbl">已完成</div></div>
+      <div class="vol-stat"><div class="num">${total-done}</div><div class="lbl">待處理</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">👤 基本資料</span>
+        <button class="btn btn-outline" style="padding:6px 12px;font-size:12px" onclick="showEditVol()">✏️ 編輯</button>
+      </div>
+      <div class="info-row"><span class="lbl">姓名</span><span class="val">${volUser.name}</span></div>
+      <div class="info-row"><span class="lbl">電話</span><span class="val">${volUser.phone||'—'}</span></div>
+      <div class="info-row"><span class="lbl">Email</span><span class="val">${volUser.email||'—'}</span></div>
+      <div class="info-row"><span class="lbl">障礙類別</span><span class="val">${volUser.disability||'無'}</span></div>
+    </div>
+    ${volData ? `
+    <div class="card">
+      <div class="card-title" style="margin-bottom:10px">🛠️ 志工資料</div>
+      <div class="info-row"><span class="lbl">專長技能</span>
+        <span>${(volData.skills||'').split(',').filter(Boolean).map(s=>`<span class="tag tag-green">${s}</span>`).join('')||'—'}</span></div>
+      <div class="info-row"><span class="lbl">可配合時段</span>
+        <span>${(volData.availability||'').split(',').filter(Boolean).map(s=>`<span class="tag tag-blue">${s}</span>`).join('')||'—'}</span></div>
+    </div>` : ''}
+    <div class="card">
+      <div class="card-title" style="margin-bottom:10px">⚙️ 設定</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-outline btn-block" onclick="showEditAvailability()">🕐 更新可配合時段</button>
+        <button class="btn btn-gray btn-block" onclick="showEditVol()">✏️ 編輯基本資料</button>
+      </div>
+    </div>`;
+}
+
+// ── 編輯志工資料 ──────────────────────────────────────────────
+function showEditVol() {
+  if (!volUser) return;
+  document.getElementById('editVolContent').innerHTML = `
+    <h2 class="modal-title">✏️ 編輯個人資料</h2>
+    <div class="form-group"><label>姓名</label>
+      <input class="form-control" id="ev_name" value="${volUser.name||''}"></div>
+    <div class="form-group"><label>手機號碼</label>
+      <input class="form-control" id="ev_phone" value="${volUser.phone||''}" type="tel"></div>
+    <div class="form-group"><label>Email</label>
+      <input class="form-control" id="ev_email" value="${volUser.email||''}" type="email"></div>
+    <div class="form-group"><label>緊急聯絡人</label>
+      <input class="form-control" id="ev_ec_name" value="${volUser.emergencyContact||''}"></div>
+    <div class="form-group"><label>緊急聯絡電話</label>
+      <input class="form-control" id="ev_ec_phone" value="${volUser.emergencyPhone||''}" type="tel"></div>
+    <button class="btn btn-success btn-block" onclick="saveVolProfile()">💾 儲存</button>
+    <button class="btn btn-gray btn-block" style="margin-top:8px" onclick="closeModal('editVolModal')">取消</button>`;
+  openModal('editVolModal');
+}
+
+async function saveVolProfile() {
+  const res = await callAPI('updateUserProfile', {
+    userId:           volUser.userId,
+    name:             document.getElementById('ev_name').value.trim(),
+    phone:            document.getElementById('ev_phone').value.trim(),
+    email:            document.getElementById('ev_email').value.trim(),
+    emergencyContact: document.getElementById('ev_ec_name').value.trim(),
+    emergencyPhone:   document.getElementById('ev_ec_phone').value.trim(),
+  });
+  if (res.success) {
+    volUser.name = document.getElementById('ev_name').value.trim();
+    closeModal('editVolModal');
+    showToast('✅ 資料已更新', 'success');
+    loadVolProfile();
+  } else { showToast(res.message, 'error'); }
+}
+
+// ── 更新可配合時段 ────────────────────────────────────────────
+function showEditAvailability() {
+  const current = (volData?.availability||'').split(',').filter(Boolean);
+  const options = ['平日上午','平日下午','假日上午','假日下午','彈性配合'];
+  document.getElementById('editVolContent').innerHTML = `
+    <h2 class="modal-title">🕐 更新可配合時段</h2>
+    <div class="avail-grid">
+      ${options.map(o => `
+        <div class="avail-chip ${current.includes(o)?'selected':''}" onclick="toggleAvail(this,'${o}')">
+          ${o}
+        </div>`).join('')}
+    </div>
+    <button class="btn btn-success btn-block" style="margin-top:16px" onclick="saveAvailability()">💾 儲存時段</button>
+    <button class="btn btn-gray btn-block" style="margin-top:8px" onclick="closeModal('editVolModal')">取消</button>`;
+  openModal('editVolModal');
+}
+
+function toggleAvail(el, val) {
+  el.classList.toggle('selected');
+}
+
+async function saveAvailability() {
+  const selected = [...document.querySelectorAll('.avail-chip.selected')].map(el => el.textContent.trim());
+  if (!volData) return;
+  const res = await callAPI('updateVolunteerAvailability', {
+    volId: volData.volId, availability: selected
+  });
+  if (res.success) {
+    volData.availability = selected.join(',');
+    closeModal('editVolModal');
+    showToast('✅ 時段已更新', 'success');
+    loadVolProfile();
+  } else { showToast(res.message, 'error'); }
+}
+
+// ── 首次志工申請 ──────────────────────────────────────────────
+function showRegisterVolunteer() {
+  document.getElementById('volProfileContent').innerHTML = `
+    <div style="text-align:center;padding:40px 20px">
+      <div style="font-size:60px;margin-bottom:16px">🙋</div>
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:8px">您尚未成為志工</h2>
+      <p style="font-size:13px;color:#888;margin-bottom:24px">請先在主系統申請成為志工</p>
+      <button class="btn btn-success" style="padding:12px 32px;font-size:15px"
+        onclick="liff.openWindow({url:'YOUR_MAIN_LIFF_URL',external:false})">
+        前往主系統申請
+      </button>
+    </div>`;
+  showPage('profile');
+}
+
+// ── 初始化 ────────────────────────────────────────────────────
+window.addEventListener('load', initVol);
+</script>
+</body>
+</html>
