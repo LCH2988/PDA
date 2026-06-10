@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>活動報名管理系統</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    :root {
+      --primary:#4A90D9; --secondary:#5CB85C; --warning:#F0AD4E;
+      --danger:#D9534F; --dark:#2C3E50; --light:#F8F9FA;
+      --radius:16px; --shadow:0 4px 20px rgba(0,0,0,.10);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Noto Sans TC',sans-serif;background:#F0F4F8;color:var(--dark)}
+    .header{background:linear-gradient(135deg,var(--primary),#2C6FAC);color:#fff;padding:16px 20px;
+      display:flex;align-items:center;justify-content:space-between;
+      position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(74,144,217,.3)}
+    .header h1{font-size:18px;font-weight:700}
+    .header .avatar{width:36px;height:36px;border-radius:50%;border:2px solid #fff;cursor:pointer;object-fit:cover}
+    .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;
+      display:flex;border-top:1px solid #E0E0E0;z-index:100;
+      padding-bottom:env(safe-area-inset-bottom)}
+    .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;
+      padding:10px 0;cursor:pointer;transition:color .2s;font-size:10px;color:#999}
+    .nav-item.active{color:var(--primary)}
+    .nav-item svg{width:22px;height:22px;margin-bottom:3px}
+    .main{padding:16px;padding-bottom:80px}
+    .category-tabs{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;scrollbar-width:none}
+    .category-tabs::-webkit-scrollbar{display:none}
+    .cat-tab{flex-shrink:0;padding:8px 16px;border-radius:20px;border:2px solid var(--primary);
+      background:#fff;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+    .cat-tab.active{background:var(--primary);color:#fff}
+    .cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media(min-width:480px){.cards-grid{grid-template-columns:repeat(3,1fr)}}
+    .activity-card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);
+      overflow:hidden;cursor:pointer;transition:transform .2s,box-shadow .2s;position:relative}
+    .activity-card:active{transform:scale(.97)}
+    .card-badge{position:absolute;top:8px;right:8px;padding:3px 8px;border-radius:10px;
+      font-size:10px;font-weight:700;color:#fff}
+    .badge-open{background:var(--secondary)} .badge-full{background:var(--danger)} .badge-soon{background:var(--warning)}
+    .card-icon{height:80px;display:flex;align-items:center;justify-content:center;font-size:36px}
+    .card-icon.FITNESS{background:linear-gradient(135deg,#E3F2FD,#BBDEFB)}
+    .card-icon.HANDCYCLE{background:linear-gradient(135deg,#E8F5E9,#C8E6C9)}
+    .card-icon.CANOE{background:linear-gradient(135deg,#E0F7FA,#B2EBF2)}
+    .card-icon.OTHER{background:linear-gradient(135deg,#FFF3E0,#FFE0B2)}
+    .card-body{padding:10px}
+    .card-title{font-size:13px;font-weight:700;margin-bottom:4px;line-height:1.3}
+    .card-meta{font-size:11px;color:#888}
+    .card-meta span{display:block;margin-bottom:2px}
+    .card-footer{padding:8px 10px;border-top:1px solid #F0F0F0;
+      display:flex;justify-content:space-between;align-items:center}
+    .card-fee{font-size:13px;font-weight:700;color:var(--primary)}
+    .card-slots{font-size:11px;color:#999}
+    .progress-bar{height:4px;background:#EEE;border-radius:2px;margin:6px 0 0}
+    .progress-fill{height:100%;border-radius:2px;background:var(--secondary);transition:width .3s}
+    .progress-fill.warn{background:var(--warning)} .progress-fill.full{background:var(--danger)}
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+      z-index:200;align-items:flex-end;justify-content:center}
+    .modal-overlay.show{display:flex}
+    .modal{background:#fff;border-radius:var(--radius) var(--radius) 0 0;
+      width:100%;max-height:90vh;overflow-y:auto;padding:20px;animation:slideUp .3s ease}
+    @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+    .modal-handle{width:40px;height:4px;background:#DDD;border-radius:2px;margin:0 auto 16px}
+    .modal-title{font-size:18px;font-weight:700;margin-bottom:14px}
+    .modal-close{position:absolute;top:16px;right:16px;font-size:22px;cursor:pointer;color:#999;background:none;border:none}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+    .info-item label{font-size:11px;color:#888;display:block;margin-bottom:2px}
+    .info-item p{font-size:14px;font-weight:600}
+    .info-chip{display:inline-block;padding:4px 10px;border-radius:12px;font-size:12px;
+      background:#EEF4FF;color:var(--primary);margin:2px}
+    .desc-box{background:#F8F9FA;border-radius:10px;padding:12px;font-size:13px;
+      line-height:1.6;color:#555;margin-bottom:14px}
+    .btn{display:block;width:100%;padding:14px;border-radius:12px;border:none;
+      font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;text-align:center;margin-top:8px}
+    .btn-primary{background:var(--primary);color:#fff}
+    .btn-primary:hover{background:#3A7BC8}
+    .btn-danger{background:var(--danger);color:#fff}
+    .btn-success{background:var(--secondary);color:#fff}
+    .btn-outline{background:#fff;color:var(--primary);border:2px solid var(--primary)}
+    .btn-gray{background:#EEE;color:#666}
+    .btn:disabled{background:#CCC;cursor:not-allowed;color:#999}
+    .btn-sm{padding:8px 16px;font-size:13px;width:auto;display:inline-block;border-radius:8px}
+    .page{display:none} .page.active{display:block}
+    .section-title{font-size:16px;font-weight:700;margin-bottom:12px;color:var(--dark)}
+    .calendar-list{display:flex;flex-direction:column;gap:12px}
+    .cal-item{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);
+      padding:14px;display:flex;gap:14px;align-items:center}
+    .cal-date{min-width:50px;text-align:center;background:var(--primary);
+      color:#fff;border-radius:10px;padding:8px 4px}
+    .cal-date .month{font-size:10px;opacity:.85}
+    .cal-date .day{font-size:22px;font-weight:700;line-height:1}
+    .cal-info{flex:1}
+    .cal-title{font-size:14px;font-weight:700;margin-bottom:4px}
+    .cal-detail{font-size:12px;color:#888}
+    .status-chip{padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700}
+    .status-confirmed{background:#E8F5E9;color:#2E7D32}
+    .status-pending{background:#FFF3E0;color:#E65100}
+    .status-cancelled{background:#FFEBEE;color:#C62828}
+    .profile-card{background:linear-gradient(135deg,var(--primary),#2C6FAC);
+      border-radius:var(--radius);padding:24px;color:#fff;text-align:center;margin-bottom:16px}
+    .profile-avatar{width:72px;height:72px;border-radius:50%;border:3px solid #fff;
+      margin:0 auto 12px;display:block;object-fit:cover}
+    .profile-name{font-size:20px;font-weight:700}
+    .profile-role{font-size:13px;opacity:.8;margin-top:4px}
+    .settings-list{background:#fff;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+    .settings-item{padding:14px 16px;display:flex;align-items:center;
+      justify-content:space-between;border-bottom:1px solid #F0F0F0;cursor:pointer;transition:background .15s}
+    .settings-item:hover{background:#F8F9FA}
+    .settings-item:last-child{border-bottom:none}
+    .settings-item-left{display:flex;align-items:center;gap:12px;font-size:14px}
+    .settings-icon{font-size:20px;width:28px;text-align:center}
+    .form-group{margin-bottom:14px}
+    .form-group label{font-size:13px;color:#555;display:block;margin-bottom:6px;font-weight:600}
+    .form-control{width:100%;padding:12px;border:1.5px solid #DDD;
+      border-radius:10px;font-size:14px;transition:border-color .2s;background:#fff}
+    .form-control:focus{outline:none;border-color:var(--primary)}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .payment-methods{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+    .pay-method{border:2px solid #DDD;border-radius:12px;padding:14px;
+      text-align:center;cursor:pointer;transition:all .2s}
+    .pay-method.selected{border-color:var(--primary);background:#EEF4FF}
+    .pay-method .pay-icon{font-size:28px;margin-bottom:6px}
+    .pay-method .pay-name{font-size:13px;font-weight:600}
+    .amount-box{background:linear-gradient(135deg,#EEF4FF,#E3F2FD);
+      border-radius:12px;padding:16px;text-align:center;margin:12px 0}
+    .amount-box .amount{font-size:32px;font-weight:700;color:var(--primary)}
+    .amount-box .label{font-size:12px;color:#888;margin-top:4px}
+    .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+      background:#333;color:#fff;padding:10px 20px;border-radius:20px;
+      font-size:13px;z-index:999;opacity:0;transition:opacity .3s;
+      pointer-events:none;white-space:nowrap;max-width:90vw}
+    .toast.show{opacity:1}
+    .toast.success{background:#2E7D32} .toast.error{background:#C62828}
+    .loading{display:flex;align-items:center;justify-content:center;
+      padding:40px;flex-direction:column;gap:12px;color:#888}
+    .spinner{width:36px;height:36px;border:3px solid #EEE;
+      border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .empty-state{text-align:center;padding:40px 20px;color:#AAA}
+    .empty-state .emoji{font-size:48px;margin-bottom:12px}
+    .divider{height:1px;background:#EEE;margin:14px 0}
+    .badge-count{background:var(--danger);color:#fff;border-radius:10px;
+      font-size:10px;padding:1px 6px;margin-left:6px;font-weight:700}
+    .vol-task-card{background:#fff;border-radius:12px;padding:14px;
+      box-shadow:var(--shadow);margin-bottom:10px;border-left:4px solid var(--primary)}
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🏃 活動報名系統</h1>
+  <img id="userAvatar" class="avatar" src="https://via.placeholder.com/36" alt="avatar" onclick="showPage('profile')">
+</div>
+
+<div class="main">
+  <!-- 首頁 -->
+  <div id="page-home" class="page active">
+    <div class="category-tabs" id="categoryTabs"></div>
+    <div id="activityCards" class="cards-grid">
+      <div class="loading" style="grid-column:1/-1"><div class="spinner"></div><span>載入活動中...</span></div>
+    </div>
+  </div>
+
+  <!-- 行事曆 -->
+  <div id="page-calendar" class="page">
+    <div class="section-title">📅 我的活動行事曆</div>
+    <div id="calendarList" class="calendar-list"></div>
+  </div>
+
+  <!-- 個人資料 -->
+  <div id="page-profile" class="page">
+    <div class="profile-card">
+      <img id="profileAvatar" class="profile-avatar" src="https://via.placeholder.com/72" alt="">
+      <div class="profile-name" id="profileName">載入中...</div>
+      <div class="profile-role" id="profileRole"></div>
+    </div>
+    <div class="settings-list">
+      <div class="settings-item" onclick="showEditProfile()">
+        <div class="settings-item-left"><span class="settings-icon">✏️</span>編輯個人資料</div><span>›</span>
+      </div>
+      <div class="settings-item" onclick="loadCalendar();showPage('calendar')">
+        <div class="settings-item-left"><span class="settings-icon">📅</span>我的報名記錄</div><span>›</span>
+      </div>
+      <div class="settings-item" onclick="showPaymentHistory()">
+        <div class="settings-item-left"><span class="settings-icon">💳</span>繳費記錄</div><span>›</span>
+      </div>
+      <div class="settings-item" id="volunteerBtn" onclick="showVolunteerRegister()">
+        <div class="settings-item-left"><span class="settings-icon">🙋</span>成為志工</div><span>›</span>
+      </div>
+      <div class="settings-item" id="adminBtn" style="display:none" onclick="goAdmin()">
+        <div class="settings-item-left"><span class="settings-icon">⚙️</span>管理後台</div><span>›</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom Nav -->
+<nav class="bottom-nav">
+  <div class="nav-item active" id="nav-home" onclick="showPage('home')">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>首頁
+  </div>
+  <div class="nav-item" id="nav-calendar" onclick="loadCalendar();showPage('calendar')">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>行事曆
+  </div>
+  <div class="nav-item" id="nav-profile" onclick="showPage('profile')">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>我的
+  </div>
+</nav>
+
+<!-- 活動詳情 Modal -->
+<div class="modal-overlay" id="activityModal" onclick="closeModalOutside(event,'activityModal')">
+  <div class="modal"><div class="modal-handle"></div><div id="modalContent"></div></div>
+</div>
+
+<!-- 報名確認 Modal -->
+<div class="modal-overlay" id="registerModal" onclick="closeModalOutside(event,'registerModal')">
+  <div class="modal"><div class="modal-handle"></div><div id="registerContent"></div></div>
+</div>
+
+<!-- 繳費 Modal -->
+<div class="modal-overlay" id="paymentModal" onclick="closeModalOutside(event,'paymentModal')">
+  <div class="modal"><div class="modal-handle"></div><div id="paymentContent"></div></div>
+</div>
+
+<!-- 編輯資料 Modal -->
+<div class="modal-overlay" id="editProfileModal" onclick="closeModalOutside(event,'editProfileModal')">
+  <div class="modal"><div class="modal-handle"></div><div id="editProfileContent"></div></div>
+</div>
+
+<!-- 志工報名 Modal -->
+<div class="modal-overlay" id="volunteerModal" onclick="closeModalOutside(event,'volunteerModal')">
+  <div class="modal"><div class="modal-handle"></div><div id="volunteerContent"></div></div>
+</div>
+
+<!-- 繳費記錄 Modal -->
+<div class="modal-overlay" id="payHistoryModal" onclick="closeModalOutside(event,'payHistoryModal')">
+  <div class="modal"><div class="modal-handle"></div><div id="payHistoryContent"></div></div>
+</div>
+
+<!-- 首次註冊 Modal（不可關閉） -->
+<div class="modal-overlay" id="firstRegModal" style="align-items:center">
+  <div class="modal" style="border-radius:var(--radius);max-width:480px;margin:16px">
+    <div id="firstRegContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyhoYiT3Lh7_yujQgSAI51j4wjVpSFPjnDv8TkuekbU8GqfFgfdm2fnxWJjXNgGIlm6/exec';
+let currentUser = null;
+let activities  = [];
+let currentCategory = 'ALL';
+let selectedActivity = null;
+let selectedPayMethod = '';
+
+const CATEGORY_MAP = {
+  ALL:       { label:'全部',   icon:'🏅' },
+  FITNESS:   { label:'體適能', icon:'🏋️' },
+  HANDCYCLE: { label:'手搖車', icon:'🚴' },
+  CANOE:     { label:'獨木舟', icon:'🛶' },
+  OTHER:     { label:'其他',   icon:'🎯' },
+};
+const ROLE_MAP = { user:'一般會員', admin:'管理員', volunteer:'志工' };
+
+// ── LIFF 初始化 ───────────────────────────────────────────────
+async function initLiff() {
+  try {
+    await liff.init({ liffId: document.querySelector('meta[name="liff-id"]')?.content || '2005891423-hTZ5rhmd' });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const profile = await liff.getProfile();
+    document.getElementById('userAvatar').src = profile.pictureUrl || '';
+    const res = await callAPI('loginUser', { lineId: profile.userId });
+    if (res.needRegister) {
+      showFirstRegister(profile);
+    } else {
+      currentUser = { ...res.user, pictureUrl: profile.pictureUrl };
+      updateProfileUI();
+      loadActivities();
+    }
+  } catch(e) { showToast('初始化失敗：' + e.message, 'error'); }
+}
+
+// ── API 呼叫 ──────────────────────────────────────────────────
+async function callAPI(action, data = {}) {
+  try {
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action, data })
+    });
+    return await res.json();
+  } catch(e) { return { success:false, message: e.message }; }
+}
+
+// ── 頁面切換 ──────────────────────────────────────────────────
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page)?.classList.add('active');
+  document.getElementById('nav-' + page)?.classList.add('active');
+}
+
+// ── Modal 控制 ────────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function closeModalOutside(e, id) {
+  if (e.target === document.getElementById(id)) closeModal(id);
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast show ' + type;
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+// ── 首次註冊表單 ──────────────────────────────────────────────
+function showFirstRegister(profile) {
+  document.getElementById('firstRegContent').innerHTML = `
+    <div style="text-align:center;margin-bottom:20px">
+      <img src="${profile.pictureUrl}" style="width:64px;height:64px;border-radius:50%;margin-bottom:10px">
+      <h2 style="font-size:18px;font-weight:700">歡迎加入！</h2>
+      <p style="font-size:13px;color:#888;margin-top:6px">請填寫基本資料以完成註冊</p>
+    </div>
+    <div class="form-group">
+      <label>姓名 *</label>
+      <input class="form-control" id="reg_name" value="${profile.displayName}" placeholder="請輸入真實姓名">
+    </div>
+    <div class="form-group">
+      <label>手機號碼 *</label>
+      <input class="form-control" id="reg_phone" type="tel" placeholder="09xxxxxxxx">
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input class="form-control" id="reg_email" type="email" placeholder="選填">
+    </div>
+    <div class="form-group">
+      <label>障礙類別</label>
+      <select class="form-control" id="reg_disability">
+        <option value="無">無</option>
+        <option value="肢體障礙">肢體障礙</option>
+        <option value="視覺障礙">視覺障礙</option>
+        <option value="聽覺障礙">聽覺障礙</option>
+        <option value="智能障礙">智能障礙</option>
+        <option value="多重障礙">多重障礙</option>
+        <option value="其他">其他</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>緊急聯絡人 *</label>
+        <input class="form-control" id="reg_ec_name" placeholder="姓名">
+      </div>
+      <div class="form-group">
+        <label>緊急聯絡電話 *</label>
+        <input class="form-control" id="reg_ec_phone" type="tel" placeholder="電話">
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="submitFirstRegister('${profile.userId}','${profile.pictureUrl}')">
+      ✅ 完成註冊
+    </button>`;
+  openModal('firstRegModal');
+}
+
+async function submitFirstRegister(lineId, pictureUrl) {
+  const name   = document.getElementById('reg_name').value.trim();
+  const phone  = document.getElementById('reg_phone').value.trim();
+  const ecName = document.getElementById('reg_ec_name').value.trim();
+  const ecPhone= document.getElementById('reg_ec_phone').value.trim();
+  if (!name || !phone || !ecName || !ecPhone) {
+    showToast('請填寫所有必填欄位', 'error'); return;
+  }
+  const res = await callAPI('registerUser', {
+    lineId, name, phone,
+    email:            document.getElementById('reg_email').value.trim(),
+    disability:       document.getElementById('reg_disability').value,
+    emergencyContact: ecName,
+    emergencyPhone:   ecPhone,
+    role: 'user'
+  });
+  if (res.success) {
+    closeModal('firstRegModal');
+    const loginRes = await callAPI('loginUser', { lineId });
+    currentUser = { ...loginRes.user, pictureUrl };
+    updateProfileUI();
+    loadActivities();
+    showToast('🎉 註冊成功！歡迎加入', 'success');
+  } else {
+    showToast(res.message, 'error');
+  }
+}
+
+// ── 更新個人資料 UI ───────────────────────────────────────────
+function updateProfileUI() {
+  if (!currentUser) return;
+  document.getElementById('profileName').textContent  = currentUser.name;
+  document.getElementById('profileRole').textContent  = ROLE_MAP[currentUser.role] || '一般會員';
+  document.getElementById('profileAvatar').src        = currentUser.pictureUrl || '';
+  document.getElementById('userAvatar').src           = currentUser.pictureUrl || '';
+  if (currentUser.role === 'admin') {
+    document.getElementById('adminBtn').style.display = 'flex';
+  }
+}
+
+// ── 載入活動 ──────────────────────────────────────────────────
+async function loadActivities(category) {
+  currentCategory = category || 'ALL';
+  renderCategoryTabs();
+  document.getElementById('activityCards').innerHTML =
+    '<div class="loading" style="grid-column:1/-1"><div class="spinner"></div><span>載入中...</span></div>';
+  const params = currentCategory !== 'ALL' ? { category: currentCategory } : {};
+  const res = await callAPI('getActivities', params);
+  if (res.success) {
+    activities = res.activities;
+    renderActivityCards(activities);
+  } else {
+    document.getElementById('activityCards').innerHTML =
+      '<div class="empty-state" style="grid-column:1/-1"><div class="emoji">😢</div><p>載入失敗</p></div>';
+  }
+}
+
+// ── 渲染類別 Tabs ─────────────────────────────────────────────
+function renderCategoryTabs() {
+  const tabs = document.getElementById('categoryTabs');
+  tabs.innerHTML = Object.entries(CATEGORY_MAP).map(([key, val]) => `
+    <div class="cat-tab ${currentCategory===key?'active':''}" onclick="loadActivities('${key}')">
+      ${val.icon} ${val.label}
+    </div>`).join('');
+}
+
+// ── 渲染活動卡牌 ──────────────────────────────────────────────
+function renderActivityCards(list) {
+  const container = document.getElementById('activityCards');
+  if (!list.length) {
+    container.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="emoji">🏖️</div><p>目前沒有活動</p></div>';
+    return;
+  }
+  const ICONS = { FITNESS:'🏋️', HANDCYCLE:'🚴', CANOE:'🛶', OTHER:'🎯' };
+  container.innerHTML = list.map(act => {
+    const pct   = Math.round((act.registeredCount / act.capacity) * 100);
+    const isFull = act.isFull;
+    const isWarn = pct >= 80 && !isFull;
+    const badge  = isFull ? '<span class="card-badge badge-full">額滿</span>'
+                 : isWarn ? '<span class="card-badge badge-soon">即將額滿</span>'
+                 :          '<span class="card-badge badge-open">報名中</span>';
+    const fillCls = isFull ? 'full' : isWarn ? 'warn' : '';
+    const dateStr = act.date ? new Date(act.date).toLocaleDateString('zh-TW',{month:'2-digit',day:'2-digit'}) : '';
+    return `
+      <div class="activity-card" onclick="showActivityDetail('${act.activityId}')">
+        ${badge}
+        <div class="card-icon ${act.category}">${ICONS[act.category]||'🎯'}</div>
+        <div class="card-body">
+          <div class="card-title">${act.title}</div>
+          <div class="card-meta">
+            <span>📅 ${dateStr} ${act.startTime||''}</span>
+            <span>📍 ${act.subVenue||act.location||''}</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill ${fillCls}" style="width:${Math.min(pct,100)}%"></div></div>
+        </div>
+        <div class="card-footer">
+          <span class="card-fee">${parseInt(act.fee)>0?'NT$'+act.fee:'免費'}</span>
+          <span class="card-slots">${act.registeredCount}/${act.capacity} 人</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── 活動詳情 ──────────────────────────────────────────────────
+async function showActivityDetail(activityId) {
+  openModal('activityModal');
+  document.getElementById('modalContent').innerHTML =
+    '<div class="loading"><div class="spinner"></div><span>載入中...</span></div>';
+  const res = await callAPI('getActivityDetail', { activityId });
+  if (!res.success) { document.getElementById('modalContent').innerHTML = '<p>載入失敗</p>'; return; }
+  const act = res.activity;
+  selectedActivity = act;
+  const pct = Math.round((act.registeredCount / act.capacity) * 100);
+  const ICONS = { FITNESS:'🏋️', HANDCYCLE:'🚴', CANOE:'🛶', OTHER:'🎯' };
+  const dateStr = act.date ? new Date(act.date).toLocaleDateString('zh-TW',{year:'numeric',month:'long',day:'numeric'}) : '';
+
+  // 檢查是否已報名
+  let alreadyReg = false;
+  if (currentUser) {
+    const myRegs = await callAPI('getMyRegistrations', { userId: currentUser.userId });
+    alreadyReg = myRegs.registrations?.some(r => r.activityId === activityId);
+  }
+
+  document.getElementById('modalContent').innerHTML = `
+    <div style="font-size:48px;text-align:center;margin-bottom:12px">${ICONS[act.category]||'🎯'}</div>
+    <h2 class="modal-title" style="text-align:center">${act.title}</h2>
+    <div class="info-grid">
+      <div class="info-item"><label>📅 日期</label><p>${dateStr}</p></div>
+      <div class="info-item"><label>⏰ 時間</label><p>${act.startTime||''} ~ ${act.endTime||''}</p></div>
+      <div class="info-item"><label>📍 地點</label><p>${act.subVenue||act.location||'—'}</p></div>
+      <div class="info-item"><label>👥 名額</label><p>${act.registeredCount}/${act.capacity} 人</p></div>
+    </div>
+    <div class="progress-bar" style="margin-bottom:14px">
+      <div class="progress-fill ${pct>=100?'full':pct>=80?'warn':''}" style="width:${Math.min(pct,100)}%"></div>
+    </div>
+    ${act.description ? `<div class="desc-box">📝 ${act.description}</div>` : ''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <span class="info-chip">🏷️ ${CATEGORY_MAP[act.category]?.label||act.category}</span>
+      ${act.subVenue ? `<span class="info-chip">🏟️ ${act.subVenue}</span>` : ''}
+      ${parseInt(act.fee)>0 ? `<span class="info-chip">💰 NT$${act.fee}</span>` : '<span class="info-chip">🆓 免費</span>'}
+      ${act.volunteerNeeded>0 ? `<span class="info-chip">🙋 需要 ${act.volunteerNeeded} 位志工</span>` : ''}
+    </div>
+    ${alreadyReg
+      ? `<button class="btn btn-gray" disabled>✅ 已報名</button>
+         <button class="btn btn-danger btn-sm" style="margin-top:8px;width:100%" onclick="showCancelReg('${activityId}')">取消報名</button>`
+      : act.isFull
+        ? `<button class="btn btn-gray" disabled>❌ 名額已滿</button>`
+        : `<button class="btn btn-primary" onclick="showRegisterConfirm('${activityId}')">📝 立即報名</button>`
+    }
+    <button class="btn btn-outline" style="margin-top:8px" onclick="closeModal('activityModal')">關閉</button>`;
+}
+
+// ── 報名確認 ──────────────────────────────────────────────────
+function showRegisterConfirm(activityId) {
+  closeModal('activityModal');
+  const act = selectedActivity;
+  document.getElementById('registerContent').innerHTML = `
+    <h2 class="modal-title">📝 確認報名</h2>
+    <div class="desc-box">
+      <strong>${act.title}</strong><br>
+      📅 ${act.date} ${act.startTime} ~ ${act.endTime}<br>
+      📍 ${act.subVenue||act.location||'—'}<br>
+      💰 費用：${parseInt(act.fee)>0?'NT$'+act.fee:'免費'}
+    </div>
+    <div class="form-group">
+      <label>報名姓名</label>
+      <input class="form-control" id="reg_confirm_name" value="${currentUser?.name||''}" placeholder="請確認姓名">
+    </div>
+    <div class="form-group">
+      <label>聯絡電話</label>
+      <input class="form-control" id="reg_confirm_phone" value="${currentUser?.phone||''}" type="tel">
+    </div>
+    <div class="form-group">
+      <label>障礙類別</label>
+      <input class="form-control" id="reg_confirm_disability" value="${currentUser?.disability||'無'}">
+    </div>
+    <button class="btn btn-primary" onclick="submitRegister('${activityId}')">✅ 確認報名</button>
+    <button class="btn btn-outline" onclick="closeModal('registerModal')">取消</button>`;
+  openModal('registerModal');
+}
+
+async function submitRegister(activityId) {
+  if (!currentUser) { showToast('請先登入', 'error'); return; }
+  const name  = document.getElementById('reg_confirm_name').value.trim();
+  const phone = document.getElementById('reg_confirm_phone').value.trim();
+  const dis   = document.getElementById('reg_confirm_disability').value.trim();
+  if (!name || !phone) { showToast('請填寫姓名與電話', 'error'); return; }
+
+  const profile = await liff.getProfile();
+  const res = await callAPI('registerActivity', {
+    activityId, userId: currentUser.userId,
+    lineId: profile.userId, userName: name, phone, disability: dis
+  });
+  closeModal('registerModal');
+  if (res.success) {
+    showToast('🎉 報名成功！', 'success');
+    // 若需繳費，顯示繳費 modal
+    if (parseInt(selectedActivity?.fee) > 0) {
+      setTimeout(() => showPaymentModal(res.regId, activityId, selectedActivity.fee), 800);
+    }
+    loadActivities(currentCategory);
+  } else {
+    showToast(res.message, 'error');
+  }
+}
+
+// ── 取消報名 ──────────────────────────────────────────────────
+async function showCancelReg(activityId) {
+  if (!confirm('確定要取消報名嗎？')) return;
+  const myRegs = await callAPI('getMyRegistrations', { userId: currentUser.userId });
+  const reg = myRegs.registrations?.find(r => r.activityId === activityId);
+  if (!reg) { showToast('找不到報名記錄', 'error'); return; }
+  const profile = await liff.getProfile();
+  const res = await callAPI('cancelRegistration', {
+    regId: reg.regId, userId: currentUser.userId, lineId: profile.userId
+  });
+  closeModal('activityModal');
+  showToast(res.success ? '已取消報名' : res.message, res.success ? '' : 'error');
+  if (res.success) loadActivities(currentCategory);
+}
+
+// ── 繳費 Modal ────────────────────────────────────────────────
+function showPaymentModal(regId, activityId, amount) {
+  selectedPayMethod = '';
+  document.getElementById('paymentContent').innerHTML = `
+    <h2 class="modal-title">💳 完成繳費</h2>
+    <div class="amount-box">
+      <div class="amount">NT$ ${amount}</div>
+      <div class="label">應繳金額</div>
+    </div>
+    <p style="font-size:13px;color:#555;margin-bottom:10px">請選擇繳費方式：</p>
+    <div class="payment-methods">
+      <div class="pay-method" id="pm-transfer" onclick="selectPayMethod('transfer')">
+        <div class="pay-icon">🏦</div><div class="pay-name">銀行轉帳</div>
+      </div>
+      <div class="pay-method" id="pm-linepay" onclick="selectPayMethod('linepay')">
+        <div class="pay-icon">💚</div><div class="pay-name">LINE Pay</div>
+      </div>
+      <div class="pay-method" id="pm-cash" onclick="selectPayMethod('cash')">
+        <div class="pay-icon">💵</div><div class="pay-name">現場繳費</div>
+      </div>
+      <div class="pay-method" id="pm-other" onclick="selectPayMethod('other')">
+        <div class="pay-icon">📱</div><div class="pay-name">其他方式</div>
+      </div>
+    </div>
+    <div id="payExtraFields"></div>
+    <button class="btn btn-success" id="paySubmitBtn" onclick="submitPayment('${regId}','${activityId}')" disabled>
+      ✅ 送出繳費資料
+    </button>
+    <button class="btn btn-outline" onclick="closeModal('paymentModal')" style="margin-top:8px">稍後繳費</button>`;
+  openModal('paymentModal');
+}
+
+function selectPayMethod(method) {
+  selectedPayMethod = method;
+  document.querySelectorAll('.pay-method').forEach(el => el.classList.remove('selected'));
+  document.getElementById('pm-' + method)?.classList.add('selected');
+  document.getElementById('paySubmitBtn').disabled = false;
+  const extra = document.getElementById('payExtraFields');
+  if (method === 'transfer') {
+    extra.innerHTML = `
+      <div class="desc-box" style="margin:10px 0">
+        🏦 轉帳帳號：<strong>012-345-678901</strong><br>
+        戶名：XX 運動中心<br>
+        轉帳後請上傳收據末五碼
+      </div>
+      <div class="form-group">
+        <label>末五碼 / 交易序號</label>
+        <input class="form-control" id="receiptNo" placeholder="請輸入">
+      </div>`;
+  } else if (method === 'linepay') {
+    extra.innerHTML = `<div class="desc-box" style="margin:10px 0">💚 點擊送出後將導向 LINE Pay 付款頁面</div>`;
+  } else if (method === 'cash') {
+    extra.innerHTML = `<div class="desc-box" style="margin:10px 0">💵 請於活動當天攜帶現金至現場繳費</div>`;
+  } else {
+    extra.innerHTML = `
+      <div class="form-group" style="margin-top:10px">
+        <label>備註說明</label>
+        <input class="form-control" id="receiptNo" placeholder="請說明繳費方式">
+      </div>`;
+  }
+}
+
+async function submitPayment(regId, activityId) {
+  if (!selectedPayMethod) { showToast('請選擇繳費方式', 'error'); return; }
+  const receiptNo = document.getElementById('receiptNo')?.value || '';
+  const res = await callAPI('submitPayment', {
+    regId, userId: currentUser.userId, method: selectedPayMethod, receiptNo
+  });
+  closeModal('paymentModal');
+  showToast(res.success ? '💳 繳費資料已送出，等待確認' : res.message, res.success ? 'success' : 'error');
+}
+
+// ── 行事曆 ────────────────────────────────────────────────────
+async function loadCalendar() {
+  const container = document.getElementById('calendarList');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>載入中...</span></div>';
+  if (!currentUser) { container.innerHTML = '<div class="empty-state"><div class="emoji">🔒</div><p>請先登入</p></div>'; return; }
+  const res = await callAPI('getMyRegistrations', { userId: currentUser.userId });
+  if (!res.success || !res.registrations.length) {
+    container.innerHTML = '<div class="empty-state"><div class="emoji">📭</div><p>尚無報名記錄</p></div>'; return;
+  }
+  container.innerHTML = res.registrations.map(reg => {
+    const d = reg.activity?.date ? new Date(reg.activity.date) : null;
+    const month = d ? d.toLocaleDateString('zh-TW',{month:'short'}) : '';
+    const day   = d ? d.getDate() : '—';
+    const statusCls = { confirmed:'status-confirmed', pending:'status-pending', cancelled:'status-cancelled' }[reg.status] || '';
+    const statusLabel = { confirmed:'已確認', pending:'待確認', cancelled:'已取消' }[reg.status] || reg.status;
+    return `
+      <div class="cal-item">
+        <div class="cal-date"><div class="month">${month}</div><div class="day">${day}</div></div>
+        <div class="cal-info">
+          <div class="cal-title">${reg.activity?.title||'—'}</div>
+          <div class="cal-detail">⏰ ${reg.activity?.startTime||''} ~ ${reg.activity?.endTime||''}</div>
+          <div class="cal-detail">📍 ${reg.activity?.location||''}</div>
+          <div class="cal-detail" style="margin-top:4px">
+            ${parseInt(reg.activity?.fee)>0
+              ? `<span class="info-chip" style="font-size:11px">💰 NT$${reg.activity.fee}</span>`
+              : '<span class="info-chip" style="font-size:11px">🆓 免費</span>'}
+          </div>
+        </div>
+        <div>
+          <span class="status-chip ${statusCls}">${statusLabel}</span>
+          ${reg.status==='pending' && parseInt(reg.activity?.fee)>0
+            ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="showPaymentModal('${reg.regId}','${reg.activityId}','${reg.activity?.fee}')">繳費</button>`
+            : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── 繳費記錄 ──────────────────────────────────────────────────
+async function showPaymentHistory() {
+  document.getElementById('payHistoryContent').innerHTML =
+    '<h2 class="modal-title">💳 繳費記錄</h2><div class="loading"><div class="spinner"></div></div>';
+  openModal('payHistoryModal');
+  const res = await callAPI('getPaymentStatus', { userId: currentUser.userId });
+  const STATUS = { pending:'待繳費', submitted:'審核中', confirmed:'已確認', cancelled:'已取消' };
+  const STATUS_CLS = { pending:'status-pending', submitted:'status-pending', confirmed:'status-confirmed', cancelled:'status-cancelled' };
+  document.getElementById('payHistoryContent').innerHTML = `
+    <h2 class="modal-title">💳 繳費記錄</h2>
+    ${!res.payments?.length
+      ? '<div class="empty-state"><div class="emoji">📭</div><p>尚無繳費記錄</p></div>'
+      : res.payments.map(p => `
+        <div class="cal-item" style="margin-bottom:10px">
+          <div style="font-size:28px">💳</div>
+          <div class="cal-info">
+            <div class="cal-title">NT$ ${p.amount}</div>
+            <div class="cal-detail">方式：${p.method||'—'} | 編號：${p.payId}</div>
+            <div class="cal-detail">送出：${p.submittedAt?new Date(p.submittedAt).toLocaleDateString('zh-TW'):''}</div>
+          </div>
+          <span class="status-chip ${STATUS_CLS[p.status]||''}">${STATUS[p.status]||p.status}</span>
+        </div>`).join('')}
+    <button class="btn btn-outline" onclick="closeModal('payHistoryModal')">關閉</button>`;
+}
+
+// ── 編輯個人資料 ──────────────────────────────────────────────
+function showEditProfile() {
+  if (!currentUser) return;
+  document.getElementById('editProfileContent').innerHTML = `
+    <h2 class="modal-title">✏️ 編輯個人資料</h2>
+    <div class="form-group"><label>姓名</label>
+      <input class="form-control" id="ep_name" value="${currentUser.name||''}"></div>
+    <div class="form-group"><label>手機號碼</label>
+      <input class="form-control" id="ep_phone" value="${currentUser.phone||''}" type="tel"></div>
+    <div class="form-group"><label>Email</label>
+      <input class="form-control" id="ep_email" value="${currentUser.email||''}" type="email"></div>
+    <div class="form-group"><label>障礙類別</label>
+      <select class="form-control" id="ep_disability">
+        ${['無','肢體障礙','視覺障礙','聽覺障礙','智能障礙','多重障礙','其他'].map(v =>
+          `<option ${currentUser.disability===v?'selected':''}>${v}</option>`).join('')}
+      </select></div>
+    <div class="form-row">
+      <div class="form-group"><label>緊急聯絡人</label>
+        <input class="form-control" id="ep_ec_name" value="${currentUser.emergencyContact||''}"></div>
+      <div class="form-group"><label>緊急聯絡電話</label>
+        <input class="form-control" id="ep_ec_phone" value="${currentUser.emergencyPhone||''}" type="tel"></div>
+    </div>
+    <button class="btn btn-primary" onclick="saveProfile()">💾 儲存</button>
+    <button class="btn btn-outline" onclick="closeModal('editProfileModal')" style="margin-top:8px">取消</button>`;
+  openModal('editProfileModal');
+}
+
+async function saveProfile() {
+  const res = await callAPI('updateUserProfile', {
+    userId:           currentUser.userId,
+    name:             document.getElementById('ep_name').value.trim(),
+    phone:            document.getElementById('ep_phone').value.trim(),
+    email:            document.getElementById('ep_email').value.trim(),
+    disability:       document.getElementById('ep_disability').value,
+    emergencyContact: document.getElementById('ep_ec_name').value.trim(),
+    emergencyPhone:   document.getElementById('ep_ec_phone').value.trim(),
+  });
+  if (res.success) {
+    currentUser.name = document.getElementById('ep_name').value.trim();
+    updateProfileUI();
+    closeModal('editProfileModal');
+    showToast('✅ 資料已更新', 'success');
+  } else { showToast(res.message, 'error'); }
+}
+
+// ── 志工報名 ──────────────────────────────────────────────────
+function showVolunteerRegister() {
+  document.getElementById('volunteerContent').innerHTML = `
+    <h2 class="modal-title">🙋 成為志工</h2>
+    <div class="desc-box">加入志工團隊，協助活動進行，讓更多人享受運動的樂趣！</div>
+    <div class="form-group"><label>專長技能（可複選）</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px" id="skillsGroup">
+        ${['活動帶領','急救處理','交通接送','設備操作','行政支援','攝影記錄','翻譯手語','其他'].map(s => `
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+            <input type="checkbox" value="${s}" name="skill"> ${s}
+          </label>`).join('')}
+      </div>
+    </div>
+    <div class="form-group"><label>可配合時段</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">
+        ${['平日上午','平日下午','假日上午','假日下午','彈性配合'].map(t => `
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+            <input type="checkbox" value="${t}" name="avail"> ${t}
+          </label>`).join('')}
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="submitVolunteer()">🙋 送出申請</button>
+    <button class="btn btn-outline" onclick="closeModal('volunteerModal')" style="margin-top:8px">取消</button>`;
+  openModal('volunteerModal');
+}
+
+async function submitVolunteer() {
+  const skills = [...document.querySelectorAll('input[name="skill"]:checked')].map(el => el.value);
+  const avail  = [...document.querySelectorAll('input[name="avail"]:checked')].map(el => el.value);
+  const profile = await liff.getProfile();
+  const res = await callAPI('registerVolunteer', {
+    userId: currentUser.userId, name: currentUser.name,
+    phone: currentUser.phone, lineId: profile.userId,
+    skills, availability: avail
+  });
+  closeModal('volunteerModal');
+  showToast(res.success ? '🎉 志工申請成功！' : res.message, res.success ? 'success' : 'error');
+  if (res.success) { currentUser.role = 'volunteer'; updateProfileUI(); }
+}
+
+function goAdmin() {
+  liff.openWindow({ url: location.origin + location.pathname + '?page=admin', external: false });
+}
+
+// ── 初始化 ────────────────────────────────────────────────────
+window.addEventListener('load', initLiff);
+</script>
+</body>
+</html>
