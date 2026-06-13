@@ -651,7 +651,7 @@ textarea.form-control{min-height:100px;resize:vertical}
 </div>
 
 <script>
-const GAS_URL = window.location.origin + window.location.pathname;
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzX2VejlJF-FV-f2yWplet7JztRiWGzs7y6B4zb-LTxoXD4-2Rwr2O2axc5FdqkGfY/exec";
 // 如果你要串正式 LIFF，可改成真實 LIFF ID
 const APP_CONFIG = {
   GAS_URL,
@@ -729,6 +729,7 @@ async function reloadCurrentUserData() {
   renderHome();
   renderProfile();
   renderCart();
+  renderRegistrations();
 }
 
 function enterGuestMode() {
@@ -971,6 +972,7 @@ function renderHome() {
   const today = todayTaipei();
   const upcoming = (state.events || [])
     .filter(e => (e.date || '') >= today && e.status !== '取消')
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
     .slice(0, 3);
 
   if (!upcoming.length) {
@@ -1571,8 +1573,9 @@ async function cancelRegistration(registrationId) {
     const res = await apiPost({
       action: 'cancelEvent',
       data: {
-        registrationId,
-        memberId: state.currentUser.memberId
+        eventId: reg.eventId,
+        memberId: state.currentUser.memberId,
+        registrationId: reg.registrationId
       }
     });
 
@@ -1609,8 +1612,9 @@ async function checkInEvent(registrationId) {
     const res = await apiPost({
       action: 'checkIn',
       data: {
-        registrationId,
-        memberId: state.currentUser.memberId
+        eventId: reg.eventId,
+        memberId: state.currentUser.memberId,
+        registrationId: reg.registrationId
       }
     });
 
@@ -1632,12 +1636,17 @@ async function checkInEvent(registrationId) {
 // ============================================================
 
 async function apiPost(payload) {
-  const res = await fetch(APP_CONFIG.GAS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(payload || {})
-  });
-  return await res.json();
+  try {
+    const res = await fetch(APP_CONFIG.GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload || {})
+    });
+    return await res.json();
+  } catch (e) {
+    console.error(e);
+    return { success: false, message: '網路連線失敗' };
+  }
 }
 
 // ============================================================
@@ -1717,7 +1726,7 @@ function normalizeMember(m) {
     disabilityType: m.disabilityType || '',
     assistiveDevice: m.assistiveDevice || '',
     isAdmin: !!m.isAdmin,
-    lineBindStatus: m.lineId ? '已綁定' : '未綁定'
+    lineBindStatus: m.lineId ? '已綁定' : (m.lineBindStatus || '未綁定')
   };
 }
 
@@ -1734,6 +1743,8 @@ function badgeClassForEvent(e) {
   if (s.includes('額滿')) return 'badge-red';
   if (s.includes('截止')) return 'badge-gray';
   if (s.includes('取消')) return 'badge-red';
+  if (s.includes('未開放')) return 'badge-gray';
+  if (s.includes('已結束')) return 'badge-gray';
   return 'badge-blue';
 }
 
