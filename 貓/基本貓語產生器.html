@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>貓語聲音產生器</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      color: white;
+    }
+    .container {
+      background: rgba(255,255,255,0.07);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 28px;
+      padding: 32px 24px;
+      max-width: 680px;
+      width: 100%;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.4);
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.8rem;
+      background: linear-gradient(90deg, #f7971e, #ffd200, #f7971e);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+    }
+    .subtitle { text-align: center; color: rgba(255,255,255,0.4); font-size: 0.82rem; margin-bottom: 20px; }
+
+    .cat-display { text-align: center; font-size: 4.5rem; margin-bottom: 4px; }
+    .cat-display.bounce { animation: catBounce 0.4s ease; }
+    @keyframes catBounce {
+      0%   { transform: scale(1); }
+      30%  { transform: scale(1.3) rotate(-8deg); }
+      60%  { transform: scale(0.95) rotate(5deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+    .speech-bubble {
+      text-align: center; font-size: 1.3rem; color: #ffd200;
+      min-height: 32px; margin-bottom: 16px; letter-spacing: 2px; font-weight: bold;
+    }
+
+    canvas {
+      width: 100%; height: 56px; border-radius: 12px;
+      background: rgba(0,0,0,0.25); margin-bottom: 16px; display: block;
+    }
+
+    /* Controls */
+    .controls {
+      background: rgba(255,255,255,0.06);
+      border-radius: 14px; padding: 14px 16px; margin-bottom: 16px;
+    }
+    .control-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .control-row:last-child { margin-bottom: 0; }
+    .control-label { font-size: 0.78rem; color: rgba(255,255,255,0.55); width: 56px; flex-shrink: 0; }
+    input[type=range] {
+      flex: 1; -webkit-appearance: none; height: 5px;
+      border-radius: 4px; background: rgba(255,255,255,0.18); outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+      background: linear-gradient(135deg, #f7971e, #ffd200); cursor: pointer;
+      box-shadow: 0 2px 8px rgba(247,151,30,0.5);
+    }
+    .range-val { font-size: 0.78rem; color: #ffd200; width: 36px; text-align: right; flex-shrink: 0; }
+
+    /* Category tabs */
+    .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .tab {
+      padding: 6px 14px; border-radius: 20px; font-size: 0.78rem; cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.07);
+      color: rgba(255,255,255,0.6); transition: all 0.2s; font-weight: bold;
+    }
+    .tab.active {
+      background: linear-gradient(135deg, #f7971e55, #ffd20033);
+      border-color: #ffd200; color: #ffd200;
+    }
+
+    /* Sound grid */
+    .sounds-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+    @media(max-width:480px){ .sounds-grid { grid-template-columns: repeat(3,1fr); } }
+    .sound-btn {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 14px; padding: 13px 6px; cursor: pointer; transition: all 0.2s;
+      text-align: center; color: white;
+    }
+    .sound-btn:hover { background: rgba(247,151,30,0.22); border-color: #f7971e; transform: translateY(-2px); }
+    .sound-btn:active { transform: scale(0.95); }
+    .sound-btn.playing {
+      background: linear-gradient(135deg, rgba(247,151,30,0.38), rgba(255,210,0,0.25));
+      border-color: #ffd200; box-shadow: 0 0 16px rgba(255,210,0,0.3);
+    }
+    .sound-btn .icon { font-size: 1.6rem; margin-bottom: 5px; }
+    .sound-btn .name { font-size: 0.78rem; font-weight: bold; color: #ffd200; }
+    .sound-btn .desc { font-size: 0.65rem; color: rgba(255,255,255,0.45); margin-top: 2px; }
+
+    /* Bottom */
+    .bottom-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .toggle-btn {
+      flex: 1; padding: 11px; border-radius: 11px;
+      border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.07);
+      color: rgba(255,255,255,0.65); font-size: 0.84rem; cursor: pointer; font-weight: bold; transition: all 0.2s;
+    }
+    .toggle-btn.active { background: linear-gradient(135deg,#f7971e44,#ffd20033); border-color:#ffd200; color:#ffd200; }
+    .stop-btn {
+      flex: 1; padding: 11px; border-radius: 11px; border: none;
+      background: linear-gradient(135deg, #e74c3c, #c0392b);
+      color: white; font-size: 0.84rem; cursor: pointer; font-weight: bold; transition: all 0.2s;
+    }
+    .stop-btn:hover { opacity: 0.85; }
+
+    .section-hidden { display: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🎵 貓語聲音產生器</h1>
+  <p class="subtitle">18 種貓咪聲音 · Web Audio API 即時合成</p>
+
+  <div class="cat-display" id="catEmoji">🐱</div>
+  <div class="speech-bubble" id="bubble">選擇分類，點擊按鈕讓貓咪說話！</div>
+
+  <canvas id="visualizer"></canvas>
+
+  <div class="controls">
+    <div class="control-row">
+      <span class="control-label">🎵 音調</span>
+      <input type="range" id="pitchSlider" min="0.5" max="3" step="0.05" value="1.2">
+      <span class="range-val" id="pitchVal">1.2x</span>
+    </div>
+    <div class="control-row">
+      <span class="control-label">🔊 音量</span>
+      <input type="range" id="volSlider" min="0" max="1" step="0.05" value="0.7">
+      <span class="range-val" id="volVal">70%</span>
+    </div>
+    <div class="control-row">
+      <span class="control-label">🌊 顫音</span>
+      <input type="range" id="vibratoSlider" min="0" max="30" step="1" value="8">
+      <span class="range-val" id="vibratoVal">8</span>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('all')">🐾 全部</div>
+    <div class="tab" onclick="switchTab('basic')">😺 基本</div>
+    <div class="tab" onclick="switchTab('emotion')">💕 情緒</div>
+    <div class="tab" onclick="switchTab('special')">✨ 特殊</div>
+    <div class="tab" onclick="switchTab('wild')">🌙 野性</div>
+  </div>
+
+  <div class="sounds-grid" id="soundGrid"></div>
+
+  <div class="bottom-row">
+    <button class="toggle-btn" id="repeatBtn" onclick="toggleRepeat()">🔁 循環：關</button>
+    <button class="stop-btn" onclick="stopAll()">⏹ 停止</button>
+  </div>
+</div>
+
+<script>
+  // ── Sound definitions ──
+  const SOUNDS = [
+    // basic
+    { id:'meow',    cat:'basic',   icon:'😺', name:'喵～',    desc:'普通招呼',   emoji:['😺','🐱','😸'], text:['喵～','喵嗚～','咪～'] },
+    { id:'meow2',   cat:'basic',   icon:'😸', name:'喵喵！',  desc:'急切呼喚',   emoji:['😸','😹','🐱'], text:['喵！喵！','喵喵喵！','咪咪！'] },
+    { id:'meow3',   cat:'basic',   icon:'🐱', name:'細聲喵',  desc:'輕柔撒嬌',   emoji:['😽','🐱','😻'], text:['咪...','嗯喵...','喵♡'] },
+    { id:'purr',    cat:'basic',   icon:'😻', name:'呼嚕嚕',  desc:'開心撒嬌',   emoji:['😻','😽','🥰'], text:['呼嚕呼嚕...','嗯嗯嗯...♡','呼嚕～♡'] },
+    // emotion
+    { id:'happy',   cat:'emotion', icon:'🎉', name:'開心叫',  desc:'興奮雀躍',   emoji:['😹','🎉','😸'], text:['喵喵喵！！','咪咪咪！','喵嗚嗚！'] },
+    { id:'sad',     cat:'emotion', icon:'😿', name:'委屈喵',  desc:'難過哭泣',   emoji:['😿','😢','🐱'], text:['喵嗚...','咪嗚嗚...','嗚...喵...'] },
+    { id:'angry',   cat:'emotion', icon:'😾', name:'生氣！',  desc:'不爽抗議',   emoji:['😾','😤','🙀'], text:['喵！！！','咪嗚！','嗚嗚嗚！'] },
+    { id:'scared',  cat:'emotion', icon:'🙀', name:'嚇到了',  desc:'驚嚇顫抖',   emoji:['🙀','😱','🐱'], text:['喵？！','咪！！','嗚嗚嗚...'] },
+    { id:'love',    cat:'emotion', icon:'💕', name:'愛你喵',  desc:'撒嬌示愛',   emoji:['😻','💕','🥰'], text:['喵嗚♡','咪咪♡♡','呼嚕♡喵'] },
+    { id:'sleepy',  cat:'emotion', icon:'😴', name:'想睡了',  desc:'哈欠打盹',   emoji:['😴','🌙','😽'], text:['嗯...喵...zzz','咪...呼嚕...','喵...嗯...'] },
+    // special
+    { id:'hiss',    cat:'special', icon:'🐍', name:'嘶～！',  desc:'警告威嚇',   emoji:['😾','🙀','😤'], text:['嘶！！','哈！！','嘶嘶嘶！'] },
+    { id:'chirp',   cat:'special', icon:'🐦', name:'啁啾聲',  desc:'看到獵物',   emoji:['🐱','👀','🐦'], text:['嗯嗯嗯...','啊啊啊...','嗯！嗯！'] },
+    { id:'trill',   cat:'special', icon:'🎶', name:'顫音喵',  desc:'打招呼顫音', emoji:['😺','🎶','🐱'], text:['喵嗚嗚嗚～','咪嗚嗚～','嗯嗚嗚～'] },
+    { id:'chatter', cat:'special', icon:'🦷', name:'打牙顫',  desc:'獵食興奮',   emoji:['🐱','🎯','👀'], text:['嗒嗒嗒嗒！','咔咔咔！','嗒！嗒！嗒！'] },
+    // wild
+    { id:'yowl',    cat:'wild',    icon:'🌙', name:'夜嚎叫',  desc:'夜晚嚎叫',   emoji:['🌙','😿','🐱'], text:['嗚嗚嗚...','喵嗚嗚嗚！','嗚～嗚～'] },
+    { id:'growl',   cat:'wild',    icon:'🐯', name:'低吼聲',  desc:'領地警告',   emoji:['😾','🐯','😤'], text:['嗚嗚嗚...','呼嗚嗚...','嗚～！'] },
+    { id:'caterwaul',cat:'wild',   icon:'🔥', name:'求偶叫',  desc:'求偶嚎叫',   emoji:['🌙','🔥','😹'], text:['喵嗚嗚嗚嗚！','嗚嗚喵嗚！','喵嗚～嗚～'] },
+    { id:'kitten',  cat:'wild',    icon:'🍼', name:'幼貓叫',  desc:'小奶貓聲',   emoji:['🍼','🐱','💛'], text:['咪...咪...','喵...喵...','嗯...咪...'] },
+  ];
+
+  let audioCtx = null, masterGain = null, analyser = null;
+  let activeNodes = [], repeatMode = false, repeatTimer = null, currentSound = null;
+
+  function initAudio() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audioCtx.createGain();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      masterGain.connect(analyser);
+      analyser.connect(audioCtx.destination);
+      drawVisualizer();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function getP() {
+    return {
+      pitch: parseFloat(document.getElementById('pitchSlider').value),
+      vol:   parseFloat(document.getElementById('volSlider').value),
+      vib:   parseFloat(document.getElementById('vibratoSlider').value),
+    };
+  }
+
+  function stopNodes() {
+    activeNodes.forEach(n => { try { n.stop(); } catch(e){} });
+    activeNodes = [];
+  }
+
+  // ── Render grid ──
+  function switchTab(cat) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+    renderGrid(cat);
+  }
+
+  function renderGrid(cat) {
+    const grid = document.getElementById('soundGrid');
+    const list = cat === 'all' ? SOUNDS : SOUNDS.filter(s => s.cat === cat);
+    grid.innerHTML = list.map(s => `
+      <div class="sound-btn" id="btn-${s.id}" onclick="playSound('${s.id}')">
+        <div class="icon">${s.icon}</div>
+        <div class="name">${s.name}</div>
+        <div class="desc">${s.desc}</div>
+      </div>`).join('');
+  }
+  renderGrid('all');
+
+  // ── Play ──
+  function playSound(id) {
+    initAudio();
+    stopNodes();
+    const p = getP();
+    masterGain.gain.setValueAtTime(p.vol, audioCtx.currentTime);
+    currentSound = id;
+
+    const def = SOUNDS.find(s => s.id === id);
+    const catEl = document.getElementById('catEmoji');
+    catEl.textContent = def.emoji[Math.floor(Math.random()*def.emoji.length)];
+    catEl.classList.remove('bounce'); void catEl.offsetWidth; catEl.classList.add('bounce');
+    document.getElementById('bubble').textContent = def.text[Math.floor(Math.random()*def.text.length)];
+
+    document.querySelectorAll('.sound-btn').forEach(b => b.classList.remove('playing'));
+    const btn = document.getElementById('btn-'+id);
+    if (btn) btn.classList.add('playing');
+
+    const synths = {
+      meow:       () => synthMeow(p, false),
+      meow2:      () => synthMeow(p, true),
+      meow3:      () => synthSoftMeow(p),
+      purr:       () => synthPurr(p),
+      happy:      () => synthHappy(p),
+      sad:        () => synthSad(p),
+      angry:      () => synthAngry(p),
+      scared:     () => synthScared(p),
+      love:       () => synthLove(p),
+      sleepy:     () => synthSleepy(p),
+      hiss:       () => synthHiss(p),
+      chirp:      () => synthChirp(p),
+      trill:      () => synthTrill(p),
+      chatter:    () => synthChatter(p),
+      yowl:       () => synthYowl(p),
+      growl:      () => synthGrowl(p),
+      caterwaul:  () => synthCaterwaul(p),
+      kitten:     () => synthKitten(p),
+    };
+    if (synths[id]) synths[id]();
+  }
+
+  // ─── Synth helpers ───
+  function osc(type, freq, t) {
+    const o = audioCtx.createOscillator();
+    o.type = type; o.frequency.value = freq; o.start(t);
+    activeNodes.push(o); return o;
+  }
+  function gainNode(val, t) {
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(val, t); return g;
+  }
+  function addVibrato(oscNode, rate, depth, startT, endT) {
+    const lfo = audioCtx.createOscillator();
+    const lg  = audioCtx.createGain();
+    lfo.frequency.value = rate; lg.gain.value = depth;
+    lfo.connect(lg); lg.connect(oscNode.frequency);
+    lfo.start(startT); lfo.stop(endT);
+    activeNodes.push(lfo);
+  }
+  function connect(src, ...chain) {
+    let cur = src;
+    chain.forEach(n => { cur.connect(n); cur = n; });
+    cur.connect(masterGain);
+  }
+
+  // 1. Meow
+  function synthMeow(p, fast) {
+    const t = audioCtx.currentTime, dur = fast ? 0.22 : 0.55, base = 600*p.pitch;
+    const o = osc('sawtooth', base*0.6, t);
+    const f = audioCtx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=1200; f.Q.value=2;
+    const g = gainNode(0, t);
+    o.frequency.linearRampToValueAtTime(base*1.1, t+dur*0.35);
+    o.frequency.linearRampToValueAtTime(base*0.85, t+dur);
+    if(p.vib>0) addVibrato(o, 6, p.vib, t+dur*0.3, t+dur+0.05);
+    g.gain.linearRampToValueAtTime(0.7, t+0.04);
+    g.gain.linearRampToValueAtTime(0.5, t+dur*0.6);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(o, f, g); o.stop(t+dur+0.05);
+    if(fast) setTimeout(()=>synthMeow(p,false), 260);
+  }
+
+  // 2. Soft meow
+  function synthSoftMeow(p) {
+    const t = audioCtx.currentTime, dur = 0.4, base = 500*p.pitch;
+    const o = osc('sine', base*0.7, t);
+    const f = audioCtx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1000;
+    const g = gainNode(0, t);
+    o.frequency.linearRampToValueAtTime(base, t+0.15);
+    o.frequency.linearRampToValueAtTime(base*0.9, t+dur);
+    addVibrato(o, 5, p.vib*0.5, t+0.1, t+dur);
+    g.gain.linearRampToValueAtTime(0.35, t+0.06);
+    g.gain.linearRampToValueAtTime(0.25, t+dur*0.7);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(o, f, g); o.stop(t+dur+0.05);
+  }
+
+  // 3. Purr
+  function synthPurr(p) {
+    const t = audioCtx.currentTime, base = 25*p.pitch;
+    const o = osc('sawtooth', base, t);
+    const f = audioCtx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=400;
+    const g = gainNode(0.5, t);
+    const lfo = audioCtx.createOscillator(), lg = audioCtx.createGain();
+    lfo.frequency.value = base; lg.gain.value = 0.4;
+    lfo.connect(lg); lg.connect(g.gain);
+    lfo.start(t); lfo.stop(t+2.5); activeNodes.push(lfo);
+    connect(o, f, g); o.stop(t+2.5);
+  }
+
+  // 4. Happy
+  function synthHappy(p) {
+    const t = audioCtx.currentTime, base = 700*p.pitch;
+    [0, 0.18, 0.36].forEach((offset, i) => {
+      const o = osc('sawtooth', base*(0.9+i*0.08), t+offset);
+      const g = gainNode(0, t+offset);
+      o.frequency.linearRampToValueAtTime(base*(1.2+i*0.05), t+offset+0.08);
+      o.frequency.linearRampToValueAtTime(base*(1.0+i*0.04), t+offset+0.16);
+      g.gain.linearRampToValueAtTime(0.6, t+offset+0.03);
+      g.gain.linearRampToValueAtTime(0, t+offset+0.16);
+      connect(o, g); o.stop(t+offset+0.2);
+    });
+  }
+
+  // 5. Sad
+  function synthSad(p) {
+    const t = audioCtx.currentTime, dur = 1.2, base = 450*p.pitch;
+    const o = osc('sawtooth', base, t);
+    const f = audioCtx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=900; f.Q.value=2;
+    const g = gainNode(0, t);
+    o.frequency.linearRampToValueAtTime(base*0.7, t+0.4);
+    o.frequency.linearRampToValueAtTime(base*0.55, t+dur);
+    addVibrato(o, 4, p.vib*0.8, t+0.2, t+dur);
+    g.gain.linearRampToValueAtTime(0.5, t+0.1);
+    g.gain.linearRampToValueAtTime(0.3, t+0.8);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(o, f, g); o.stop(t+dur+0.05);
+  }
+
+  // 6. Angry
+  function synthAngry(p) {
+    const t = audioCtx.currentTime, base = 550*p.pitch;
+    const o = osc('sawtooth', base, t);
+    const o2 = osc('square', base*1.01, t);
+    const f = audioCtx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=1400; f.Q.value=1.5;
+    const g = gainNode(0, t);
+    o.frequency.setValueAtTime(base*0.8, t);
+    o.frequency.linearRampToValueAtTime(base*1.3, t+0.1);
+    o.frequency.linearRampToValueAtTime(base*1.1, t+0.4);
+    addVibrato(o, 9, p.vib*1.5, t, t+0.5);
+    g.gain.linearRampToValueAtTime(0.75, t+0.03);
+    g.gain.linearRampToValueAtTime(0.6, t+0.3);
+    g.gain.linearRampToValueAtTime(0, t+0.5);
+    connect(o, f, g); connect(o2, f, g);
+    o.stop(t+0.55); o2.stop(t+0.55);
+  }
+
+  // 7. Scared
+  function synthScared(p) {
+    const t = audioCtx.currentTime, base = 800*p.pitch;
+    const o = osc('sawtooth', base, t);
+    const g = gainNode(0, t);
+    o.frequency.setValueAtTime(base*1.5, t);
+    o.frequency.linearRampToValueAtTime(base*0.6, t+0.05);
+    o.frequency.linearRampToValueAtTime(base*1.2, t+0.12);
+    o.frequency.linearRampToValueAtTime(base*0.5, t+0.3);
+    addVibrato(o, 12, p.vib*2, t, t+0.35);
+    g.gain.linearRampToValueAtTime(0.7, t+0.02);
+    g.gain.linearRampToValueAtTime(0.4, t+0.15);
+    g.gain.linearRampToValueAtTime(0, t+0.35);
+    connect(o, g); o.stop(t+0.4);
+  }
+
+  // 8. Love
+  function synthLove(p) {
+    const t = audioCtx.currentTime, dur = 0.9, base = 520*p.pitch;
+    const o = osc('sine', base*0.8, t);
+    const f = audioCtx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1200;
+    const g = gainNode(0, t);
+    o.frequency.linearRampToValueAtTime(base*1.05, t+0.3);
+    o.frequency.linearRampToValueAtTime(base*0.95, t+0.6);
+    o.frequency.linearRampToValueAtTime(base*1.1, t+dur);
+    addVibrato(o, 5, p.vib*0.6, t+0.1, t+dur);
+    g.gain.linearRampToValueAtTime(0.5, t+0.08);
+    g.gain.linearRampToValueAtTime(0.45, t+0.5);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(o, f, g); o.stop(t+dur+0.05);
+  }
+
+  // 9. Sleepy
+  function synthSleepy(p) {
+    const t = audioCtx.currentTime, dur = 1.8, base = 300*p.pitch;
+    const o = osc('sine', base, t);
+    const g = gainNode(0, t);
+    o.frequency.linearRampToValueAtTime(base*0.8, t+0.5);
+    o.frequency.linearRampToValueAtTime(base*0.6, t+1.2);
+    o.frequency.linearRampToValueAtTime(base*0.4, t+dur);
+    addVibrato(o, 3, p.vib*0.3, t+0.3, t+dur);
+    g.gain.linearRampToValueAtTime(0.4, t+0.15);
+    g.gain.linearRampToValueAtTime(0.25, t+1.0);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(o, g); o.stop(t+dur+0.05);
+  }
+
+  // 10. Hiss
+  function synthHiss(p) {
+    const t = audioCtx.currentTime, dur = 0.8;
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*dur, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    const src = audioCtx.createBufferSource(); src.buffer = buf;
+    const f = audioCtx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=3000*p.pitch; f.Q.value=0.8;
+    const g = gainNode(0, t);
+    g.gain.linearRampToValueAtTime(0.8, t+0.05);
+    g.gain.linearRampToValueAtTime(0.6, t+0.3);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(src, f, g); src.start(t); activeNodes.push(src);
+  }
+
+  // 11. Chirp
+  function synthChirp(p) {
+    const t = audioCtx.currentTime, base = 1200*p.pitch;
+    for(let i=0;i<5;i++) {
+      const st = t+i*0.12;
+      const o = osc('sine', base*(0.9+Math.random()*0.3), st);
+      const g = gainNode(0, st);
+      o.frequency.linearRampToValueAtTime(base*1.3, st+0.06);
+      g.gain.linearRampToValueAtTime(0.5, st+0.02);
+      g.gain.linearRampToValueAtTime(0, st+0.1);
+      connect(o, g); o.stop(st+0.13);
+    }
+  }
+
+  // 12. Trill
+  function synthTrill(p) {
+    const t = audioCtx.currentTime, base = 650*p.pitch;
+    const o = osc('sawtooth', base, t);
+    const g = gainNode(0, t);
+    const lfo = audioCtx.createOscillator(), lg = audioCtx.createGain();
+    lfo.frequency.value = 18; lg.gain.value = base*0.15;
+    lfo.connect(lg); lg.connect(o.frequency);
+    lfo.start(t); lfo.stop(t+0.8); activeNodes.push(lfo);
+    o.frequency.linearRampToValueAtTime(base*1.1, t+0.3);
+    o.frequency.linearRampToValueAtTime(base*0.95, t+0.7);
+    g.gain.linearRampToValueAtTime(0.55, t+0.05);
+    g.gain.linearRampToValueAtTime(0.4, t+0.6);
+    g.gain.linearRampToValueAtTime(0, t+0.8);
+    connect(o, g); o.stop(t+0.85);
+  }
+
+  // 13. Chatter
+  function synthChatter(p) {
+    const t = audioCtx.currentTime, base = 900*p.pitch;
+    for(let i=0;i<8;i++) {
+      const st = t+i*0.07;
+      const o = osc('square', base*(0.95+Math.random()*0.1), st);
+      const g = gainNode(0, st);
+      g.gain.linearRampToValueAtTime(0.4, st+0.01);
+      g.gain.linearRampToValueAtTime(0, st+0.055);
+      connect(o, g); o.stop(st+0.07);
+    }
+  }
+
+  // 14. Yowl
+  function synthYowl(p) {
+    const t = audioCtx.currentTime, dur = 1.6, base = 400*p.pitch;
+    const o = osc('sawtooth', base*0.5, t);
+    const f = audioCtx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=900; f.Q.value=1.5;
+    const g = gainNode(0, t);
+    o.frequency.linearRampToValueAtTime(base*1.4, t+0.5);
+    o.frequency.linearRampToValueAtTime(base*0.7, t+1.0);
+    o.frequency.linearRampToValueAtTime(base*1.1, t+1.3);
+    o.frequency.linearRampToValueAtTime(base*0.4, t+dur);
+    addVibrato(o, 5, p.vib*1.5, t+0.3, t+dur+0.1);
+    g.gain.linearRampToValueAtTime(0.8, t+0.15);
+    g.gain.linearRampToValueAtTime(0.6, t+1.0);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(o, f, g); o.stop(t+dur+0.1);
+  }
+
+  // 15. Growl
+  function synthGrowl(p) {
+    const t = audioCtx.currentTime, dur = 1.4, base = 120*p.pitch;
+    const o = osc('sawtooth', base, t);
+    const o2 = osc('square', base*1.5, t);
+    const f = audioCtx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=600;
+    const g = gainNode(0, t);
+    addVibrato(o, 7, p.vib*2, t, t+dur);
+    g.gain.linearRampToValueAtTime(0.7, t+0.1);
+    g.gain.linearRampToValueAtTime(0.65, t+1.0);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(o, f, g); connect(o2, f, g);
+    o.stop(t+dur+0.05); o2.stop(t+dur+0.05);
+  }
+
+  // 16. Caterwaul
+  function synthCaterwaul(p) {
+    const t = audioCtx.currentTime, dur = 2.2, base = 380*p.pitch;
+    const o = osc('sawtooth', base, t);
+    const f = audioCtx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=1000; f.Q.value=1.2;
+    const g = gainNode(0, t);
+    o.frequency.linearRampToValueAtTime(base*1.6, t+0.4);
+    o.frequency.linearRampToValueAtTime(base*0.8, t+0.9);
+    o.frequency.linearRampToValueAtTime(base*1.8, t+1.4);
+    o.frequency.linearRampToValueAtTime(base*0.5, t+dur);
+    addVibrato(o, 6, p.vib*2, t+0.2, t+dur);
+    g.gain.linearRampToValueAtTime(0.85, t+0.12);
+    g.gain.linearRampToValueAtTime(0.7, t+1.2);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(o, f, g); o.stop(t+dur+0.1);
+  }
+
+  // 17. Kitten
+  function synthKitten(p) {
+    const t = audioCtx.currentTime, dur = 0.5, base = 900*p.pitch;
+    const o = osc('sine', base*0.6, t);
+    const g = gainNode(0, t);
+    o.frequency.linearRampToValueAtTime(base*0.9, t+0.12);
+    o.frequency.linearRampToValueAtTime(base*0.75, t+dur);
+    addVibrato(o, 7, p.vib*0.4, t+0.1, t+dur);
+    g.gain.linearRampToValueAtTime(0.35, t+0.05);
+    g.gain.linearRampToValueAtTime(0.2, t+0.35);
+    g.gain.linearRampToValueAtTime(0, t+dur);
+    connect(o, g); o.stop(t+dur+0.05);
+  }
+
+  // ── Visualizer ──
+  function drawVisualizer() {
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+    function resize() { canvas.width = canvas.offsetWidth*2; canvas.height = 112; }
+    resize();
+    function draw() {
+      requestAnimationFrame(draw);
+      const bufLen = analyser.frequencyBinCount;
+      const data = new Uint8Array(bufLen);
+      analyser.getByteTimeDomainData(data);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#ffd200';
+      ctx.shadowBlur = 10; ctx.shadowColor = '#f7971e';
+      ctx.beginPath();
+      const sw = canvas.width/bufLen;
+      let x = 0;
+      for(let i=0;i<bufLen;i++) {
+        const v = data[i]/128.0;
+        const y = v*canvas.height/2;
+        i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+        x += sw;
+      }
+      ctx.lineTo(canvas.width, canvas.height/2);
+      ctx.stroke();
+    }
+    draw();
+  }
+
+  // ── Sliders ──
+  document.getElementById('pitchSlider').addEventListener('input', function() {
+    document.getElementById('pitchVal').textContent = parseFloat(this.value).toFixed(2)+'x';
+  });
+  document.getElementById('volSlider').addEventListener('input', function() {
+    document.getElementById('volVal').textContent = Math.round(this.value*100)+'%';
+    if(masterGain) masterGain.gain.value = this.value;
+  });
+  document.getElementById('vibratoSlider').addEventListener('input', function() {
+    document.getElementById('vibratoVal').textContent = this.value;
+  });
+
+  // ── Repeat ──
+  function toggleRepeat() {
+    repeatMode = !repeatMode;
+    const btn = document.getElementById('repeatBtn');
+    btn.textContent = repeatMode ? '🔁 循環：開' : '🔁 循環：關';
+    btn.classList.toggle('active', repeatMode);
+    clearInterval(repeatTimer);
+    if(repeatMode && currentSound) {
+      repeatTimer = setInterval(() => { if(currentSound) playSound(currentSound); }, 2200);
+    }
+  }
+
+  function stopAll() {
+    stopNodes(); clearInterval(repeatTimer);
+    repeatMode = false;
+    document.getElementById('repeatBtn').textContent = '🔁 循環：關';
+    document.getElementById('repeatBtn').classList.remove('active');
+    document.getElementById('catEmoji').textContent = '🐱';
+    document.getElementById('bubble').textContent = '選擇分類，點擊按鈕讓貓咪說話！';
+    document.querySelectorAll('.sound-btn').forEach(b => b.classList.remove('playing'));
+    currentSound = null;
+  }
+</script>
+</body>
+</html>
