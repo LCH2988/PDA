@@ -242,12 +242,12 @@
               <button class="btn btn-outline-primary" type="button" onclick="copyFormLink()"><i class="fa-regular fa-copy me-1"></i>複製連結</button>
             </div>
             <div class="d-flex gap-3 flex-wrap justify-content-center">
-              <button class="btn btn-primary btn-custom" onclick="simulateFormVisit()"><i class="fa-solid fa-up-right-from-square me-1"></i>直接模擬/填寫對外表單</button>
-              <button class="btn btn-success btn-custom" id="btn-create-google-form" onclick="createGoogleForm()"><i class="fa-brands fa-google me-1"></i>生成 Google Form</button>
+              <button class="btn btn-primary btn-custom" onclick="simulateFormVisit()"><i class="fa-solid fa-up-right-from-square me-1"></i>平台內預覽表單</button>
+              <button class="btn btn-success btn-custom" id="btn-generate-form" onclick="generateFormLink()"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>生成報名表單連結</button>
             </div>
-            <!-- Google Form 生成結果區 -->
-            <div id="google-form-result" class="mt-4 w-100" style="display:none;max-width:500px;">
-              <div id="google-form-result-inner"></div>
+            <!-- 自建表單生成結果區 -->
+            <div id="form-gen-result" class="mt-4 w-100" style="display:none;max-width:540px;">
+              <div id="form-gen-result-inner"></div>
             </div>
           </div>
         </div>
@@ -791,8 +791,10 @@ function mockGasBackend(fnName, args) {
       state.formConfigs[args[0]] = args[1]; saveStorageData(); return { success:true };
     }
     case 'createRegistrationForm': {
-      // 本地模擬模式：無法實際建立 Google Form，回傳提示訊息
-      return { success:false, error:'本地模擬模式無法建立 Google Form，請先設定 GAS 後端網址後再試。' };
+      // 本地模擬模式：回傳平台內部報名頁面連結
+      const eid2 = args[0] && args[0].eventId ? args[0].eventId : '';
+      const fUrl2 = window.location.href.split('?')[0] + '?page=register&event=' + encodeURIComponent(eid2);
+      return { success:true, formUrl:fUrl2, formTitle:'報名表單', taskCount:0 };
     }
     default: throw new Error('未定義的動作：'+fnName);
   }
@@ -961,7 +963,8 @@ async function onFormBuilderEventChanged() {
   const eid=document.getElementById('form-builder-event-selector').value; if(!eid) return;
   state.activeEventIdForTasks=eid;
   const li=document.getElementById('form-public-link-url');
-  li.value=GAS_WEB_APP_URL ? `${GAS_WEB_APP_URL}?page=register&event=${eid}` : `https://script.google.com/macros/s/AKfy_MockRunENV/exec?page=register&event=${eid}`;
+  const baseUrl = GAS_WEB_APP_URL || window.location.href.split('?')[0];
+  li.value = baseUrl + '?page=register&event=' + encodeURIComponent(eid);
   let cfg=await gasCall('getFormConfig',eid);
   if(!cfg){ const ev=state.events.find(e=>e.id===eid); cfg={ title:`【線上報名表】${ev?ev.name:'大會活動'}`, bannerTheme:'banner-theme-default', description:ev?ev.description:'歡迎線上報名加入！', requireIdNumber:true, requireEmail:true, allowHandcycle:true, allowKayak:true, allowShuttle:true, allowOther:true, isEnabled:true }; }
   document.getElementById('form-custom-title').value=cfg.title||'';
@@ -980,53 +983,60 @@ async function saveFormConfig() {
   const payload={ title:document.getElementById('form-custom-title').value||'線上活動報名表單', bannerTheme:document.getElementById('form-banner-theme').value, description:document.getElementById('form-custom-desc').value, requireIdNumber:document.getElementById('form-require-id').checked, requireEmail:document.getElementById('form-require-email').checked, allowHandcycle:document.getElementById('form-allow-handcycle').checked, allowKayak:document.getElementById('form-allow-kayak').checked, allowShuttle:document.getElementById('form-allow-shuttle').checked, allowOther:document.getElementById('form-allow-other').checked, isEnabled:document.getElementById('form-is-enabled').checked };
   try { await gasCall('saveFormConfig',eid,payload); state.formConfigs[eid]=payload; saveStorageData(); showToast('活動報名表單設定已成功發佈！'); } catch(err){ showToast('發佈失敗：'+err,'error'); }
 }
-async function createGoogleForm() {
+async function generateFormLink() {
   const eid = document.getElementById('form-builder-event-selector').value;
   if (!eid) { showToast('請先選擇目標活動', 'warning'); return; }
-  const btn = document.getElementById('btn-create-google-form');
-  const resultBox = document.getElementById('google-form-result');
-  const resultInner = document.getElementById('google-form-result-inner');
+  const btn = document.getElementById('btn-generate-form');
+  const resultBox = document.getElementById('form-gen-result');
+  const resultInner = document.getElementById('form-gen-result-inner');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>生成中...';
   resultBox.style.display = 'none';
   try {
-    const res = await gasCall('createRegistrationForm', { eventId: eid });
-    if (res && res.success) {
-      resultBox.style.display = 'block';
-      resultInner.innerHTML = `
-        <div class="alert alert-success text-start">
-          <div class="fw-bold mb-2"><i class="fa-solid fa-circle-check me-1"></i>Google Form 已成功建立！</div>
-          <div class="mb-2" style="font-size:.85rem;">表單名稱：${res.formTitle || '活動報名表單'}</div>
-          <div class="mb-2" style="font-size:.85rem;">報名項目：${res.taskCount || 0} 個</div>
-          <div class="d-grid gap-2 mt-3">
-            <a href="${res.formUrl}" target="_blank" class="btn btn-primary btn-sm btn-custom"><i class="fa-solid fa-up-right-from-square me-1"></i>開啟報名表單（分享用）</a>
-            <a href="${res.editUrl}" target="_blank" class="btn btn-outline-secondary btn-sm btn-custom"><i class="fa-solid fa-pen-to-square me-1"></i>編輯 Google Form</a>
-          </div>
-          <div class="mt-3">
-            <label class="form-label fw-bold" style="font-size:.8rem;">報名表單連結（可複製分享）</label>
-            <div class="input-group input-group-sm">
-              <input type="text" id="google-form-url-input" class="form-control" value="${res.formUrl}" readonly>
-              <button class="btn btn-outline-primary" onclick="copyGoogleFormUrl()"><i class="fa-regular fa-copy"></i></button>
-            </div>
-          </div>
-        </div>`;
+    // 先儲存表單設定
+    await saveFormConfig();
+    let formUrl = '';
+    if (GAS_WEB_APP_URL) {
+      // GAS 模式：後端回傳完整 URL
+      const res = await gasCall('createRegistrationForm', { eventId: eid });
+      if (res && res.success) {
+        formUrl = res.formUrl;
+      } else {
+        throw new Error(res.error || '生成失敗');
+      }
     } else {
-      resultBox.style.display = 'block';
-      resultInner.innerHTML = `<div class="alert alert-danger text-start"><i class="fa-solid fa-triangle-exclamation me-1"></i><strong>生成失敗：</strong>${res.error || '未知錯誤'}</div>`;
+      // 本地模擬模式：直接用平台內部報名頁面
+      formUrl = window.location.href.split('?')[0] + '?page=register&event=' + encodeURIComponent(eid);
     }
+    // 更新連結欄位
+    document.getElementById('form-public-link-url').value = formUrl;
+    resultBox.style.display = 'block';
+    resultInner.innerHTML = `
+      <div class="alert alert-success text-start p-3">
+        <div class="fw-bold mb-2"><i class="fa-solid fa-circle-check me-2"></i>報名表單連結已生成！</div>
+        <p class="text-muted small mb-3">將以下連結透過 Line 群組、官方網站或 Email 發送給參與者，報名資料將直接寫入後台。</p>
+        <div class="input-group mb-3">
+          <input type="text" id="gen-form-url-input" class="form-control form-control-sm" value="${formUrl}" readonly>
+          <button class="btn btn-outline-primary btn-sm" onclick="copyGenFormUrl()"><i class="fa-regular fa-copy"></i></button>
+        </div>
+        <div class="d-grid gap-2">
+          <a href="${formUrl}" target="_blank" class="btn btn-primary btn-sm btn-custom"><i class="fa-solid fa-up-right-from-square me-1"></i>開啟報名表單（分享用）</a>
+        </div>
+      </div>`;
+    showToast('報名表單連結已成功生成！');
   } catch (err) {
     resultBox.style.display = 'block';
-    resultInner.innerHTML = `<div class="alert alert-danger text-start"><i class="fa-solid fa-triangle-exclamation me-1"></i><strong>呼叫後端失敗：</strong>${err.message || err}</div>`;
+    resultInner.innerHTML = `<div class="alert alert-danger text-start"><i class="fa-solid fa-triangle-exclamation me-1"></i><strong>生成失敗：</strong>${err.message || err}</div>`;
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<i class="fa-brands fa-google me-1"></i>生成 Google Form';
+    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles me-1"></i>生成報名表單連結';
   }
 }
-function copyGoogleFormUrl() {
-  const inp = document.getElementById('google-form-url-input');
+function copyGenFormUrl() {
+  const inp = document.getElementById('gen-form-url-input');
   if (!inp) return;
   inp.select(); inp.setSelectionRange(0, 99999); document.execCommand('copy');
-  showToast('Google Form 連結已複製至剪貼簿！');
+  showToast('報名表單連結已複製至剪貼簿！');
 }
 function copyFormLink() {
   const li=document.getElementById('form-public-link-url'); li.select(); li.setSelectionRange(0,99999); document.execCommand('copy'); showToast('大會報名表單專屬連結已複製至剪貼簿！');
