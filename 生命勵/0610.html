@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>🌿 生命勵會員活動系統 v2.0</title>
-  <!-- LIFF SDK -->
+  <!-- LINE LIFF SDK -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <!-- FontAwesome 圖示 -->
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -231,20 +231,26 @@
   </div>
   <div id="toast"></div>
 
-  <!-- ==================== 第一區塊：人員登入/註冊 ==================== -->
+  <!-- ==================== 第一區塊：人員登入/註冊 (登入與綁定完全分離) ==================== -->
   <div id="authPage" class="page active">
     <div class="auth-page">
       <div class="auth-logo">🌿</div>
       <div class="auth-title">生命勵</div>
-      <div class="auth-subtitle">LIFF 會員活動系統 v2.0</div>
+      <div class="auth-subtitle">會員活動系統 v2.0</div>
       <div class="auth-box">
-        <div id="lineStatusBox" class="line-box">LINE 狀態確認中...</div>
-        <div class="tabs">
+        <!-- LINE 快速登入區 (僅在偵測到已綁定過的使用者開啟時顯示) -->
+        <div id="lineQuickLoginBox" class="line-box" style="display:none; background: var(--green-light); border-left-color: var(--green); text-align:center;">
+          <p id="lineWelcomeMsg" style="margin:0 0 12px; font-weight:900;">偵測到 LINE 帳號...</p>
+          <button class="btn btn-primary" onclick="tryLineAutoLogin()"><i class="fa-brands fa-line"></i> LINE 一鍵快速登入</button>
+          <div style="margin-top:12px; font-size:15px; color:#666;">或使用下方一般方式登入</div>
+        </div>
+
+        <div class="tabs" style="margin-top: 15px;">
           <button id="loginTab" class="tab active" onclick="switchAuth('login')">🔐 登入</button>
           <button id="registerTab" class="tab" onclick="switchAuth('register')">✨ 註冊</button>
         </div>
         
-        <!-- 登入表單 -->
+        <!-- 純文字登入表單 -->
         <div id="loginBox">
           <div class="form-group">
             <label class="form-label">姓名 <span class="req">*</span></label>
@@ -258,10 +264,10 @@
             </div>
             <div class="hint">例如手機 0912345678，請輸入 912345678</div>
           </div>
-          <button class="btn btn-primary" onclick="doLogin()">🔐 登入並綁定 LINE</button>
+          <button class="btn btn-primary" onclick="doLogin()">🔐 登入系統</button>
         </div>
 
-        <!-- 註冊表單 -->
+        <!-- 純文字註冊表單 -->
         <div id="registerBox" style="display:none">
           <div class="form-group">
             <label class="form-label">姓名 <span class="req">*</span></label>
@@ -296,7 +302,7 @@
               <option value="志工夥伴">志工夥伴</option>
             </select>
           </div>
-          <button class="btn btn-primary" onclick="doRegister()">✨ 註冊並綁定 LINE</button>
+          <button class="btn btn-primary" onclick="doRegister()">✨ 註冊帳號</button>
         </div>
       </div>
     </div>
@@ -427,9 +433,20 @@
         <div id="profileName" style="font-size:30px; font-weight:900">---</div>
         <div id="profileId" style="font-size:20px; font-weight:800; color:#555">---</div>
       </div>
+      
+      <!-- LINE 綁定區塊 (主動綁定流程) -->
+      <div class="card" id="lineBindCard">
+        <div class="card-title">🔗 LINE 快速登入設定</div>
+        <div id="lineBindStatusText" style="font-size:19px; font-weight:800; margin-bottom:12px;">
+          狀態：未綁定 LINE 帳號
+        </div>
+        <button id="btnBindLine" class="btn btn-secondary" onclick="doActiveLineBind()">
+          <i class="fa-brands fa-line" style="color: #06C755; font-size: 28px;"></i> 綁定目前的 LINE 帳號
+        </button>
+      </div>
+
       <div class="card">
         <button class="btn btn-secondary" onclick="openEditProfile()">✏️ 編輯個人資料與調查表</button>
-        <button class="btn btn-outline mt" onclick="unbindLine()">🔓 解除 LINE 綁定</button>
         <button class="btn btn-danger mt" onclick="logout()">🚪 登出系統</button>
       </div>
       <div class="card">
@@ -597,7 +614,7 @@
         
         <div class="form-group"><label class="form-label">狀態</label><select id="eventStatus" class="form-select"><option value="開放">開放</option><option value="草稿">草稿</option><option value="結束">結束</option></select></div>
       </div>
-      <div class="d-flex gap-2 mt">
+      <div style="display:flex; gap:8px;" class="mt">
         <button class="btn btn-primary" style="flex:2;" onclick="saveEvent()">💾 儲存活動</button>
         <button class="btn btn-gold" style="flex:1;" onclick="cloneAsNewEvent()">📋 複製為新活動</button>
       </div>
@@ -629,7 +646,7 @@
   </div>
 
   <script>
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbytZCDsYwp78d6lpoTI78BXzY6RNrh7ddcrIYYj0ATDkO7FlFM2Yhpd8MZB1lXF49IT/exec';
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbwS_B1ElxhGAu_8q918sY4PwP7elsjfyHOD6fIp00KvYqENPxde9ECAAbyXnUNcJuJ-/exec';
     const LIFF_ID = '2005891423-hTZ5rhmd';
 
     let currentUser = null;
@@ -645,31 +662,41 @@
     let adminEvents = [];
     let adminRegistrations = [];
 
+    // ==================== 初始化與自動偵測 ====================
     window.addEventListener('load', async () => {
       loadCartFromStorage();
+      
       try {
         await liff.init({ liffId: LIFF_ID });
-        if (!liff.isLoggedIn()) {
-          document.getElementById('lineStatusBox').innerHTML = '尚未登入 LINE，請使用 LINE 開啟或手動登入。';
-        } else {
+        if (liff.isLoggedIn()) {
           lineProfile = await liff.getProfile();
-          document.getElementById('lineStatusBox').innerHTML = '已偵測 LINE：' + escapeHtml(lineProfile.displayName || '');
+          // 偵測到 LINE，顯示一鍵快速登入區
+          const quickBox = document.getElementById('lineQuickLoginBox');
+          const welcome = document.getElementById('lineWelcomeMsg');
+          if (quickBox && welcome) {
+            welcome.innerHTML = `🌿 歡迎使用 LINE 開啟<br><b style="color:var(--green-dark);">${escapeHtml(lineProfile.displayName)}</b>`;
+            quickBox.style.display = 'block';
+          }
+          // 嘗試自動登入
           await tryLineAutoLogin();
+        } else {
+          document.getElementById('lineQuickLoginBox').style.display = 'none';
         }
       } catch (err) {
-        console.warn(err);
-        document.getElementById('lineStatusBox').innerHTML = '非 LINE 環境，支援姓名手機登入。';
+        console.warn('LIFF 初始化失敗或非 LINE 環境', err);
       }
 
       // 本地快取登入
-      const saved = localStorage.getItem('lifeUserV2');
-      if (saved) {
-        try {
-          currentUser = JSON.parse(saved);
-          if (currentUser && currentUser.memberId) {
-            await enterApp();
-          }
-        } catch (e) {}
+      if (!currentUser) {
+        const saved = localStorage.getItem('lifeUserV2');
+        if (saved) {
+          try {
+            currentUser = JSON.parse(saved);
+            if (currentUser && currentUser.memberId) {
+              await enterApp();
+            }
+          } catch (e) {}
+        }
       }
     });
 
@@ -693,6 +720,7 @@
       document.getElementById('registerTab').classList.toggle('active', type === 'register');
     }
 
+    // ==================== 純文字登入 (第一區塊) ====================
     async function doLogin() {
       const name = val('loginName');
       const phone9 = val('loginPhone');
@@ -701,10 +729,9 @@
 
       showLoading(true);
       const res = await apiPost({
-        action: 'login', name, phone: '0' + phone9,
-        lineUserId: lineProfile?.userId || '',
-        lineDisplayName: lineProfile?.displayName || '',
-        linePictureUrl: lineProfile?.pictureUrl || ''
+        action: 'login', 
+        name, 
+        phone: '0' + phone9
       });
       showLoading(false);
 
@@ -718,6 +745,7 @@
       }
     }
 
+    // ==================== 純文字註冊 (第一區塊) ====================
     async function doRegister() {
       const name = val('regName');
       const phone9 = val('regPhone');
@@ -726,21 +754,75 @@
 
       showLoading(true);
       const res = await apiPost({
-        action: 'register', name, phone: '0' + phone9,
-        gender: val('regGender'), birthday: val('regBirthday'), identity: val('regIdentity'),
-        lineUserId: lineProfile?.userId || '',
-        lineDisplayName: lineProfile?.displayName || '',
-        linePictureUrl: lineProfile?.pictureUrl || ''
+        action: 'register', 
+        name, 
+        phone: '0' + phone9,
+        gender: val('regGender'), 
+        birthday: val('regBirthday'), 
+        identity: val('regIdentity')
       });
       showLoading(false);
 
       if (res.success) {
         currentUser = res.member;
         localStorage.setItem('lifeUserV2', JSON.stringify(currentUser));
-        showToast('註冊成功', 'success');
+        showToast('註冊成功！', 'success');
         await enterApp();
       } else {
         showToast(res.message, 'error');
+      }
+    }
+
+    // ==================== LINE 獨立主動綁定邏輯 (修正未寫入試算表 Bug) ====================
+    async function doActiveLineBind() {
+      if (!liff.isLoggedIn()) {
+        liff.login();
+        return;
+      }
+
+      showLoading(true);
+      try {
+        lineProfile = await liff.getProfile();
+        
+        const res = await apiPost({
+          action: 'bindLineAccount',
+          memberId: currentUser.memberId,
+          lineUserId: lineProfile.userId,
+          lineDisplayName: lineProfile.displayName || '',
+          linePictureUrl: lineProfile.pictureUrl || ''
+        });
+
+        if (res.success) {
+          currentUser = res.member; 
+          localStorage.setItem('lifeUserV2', JSON.stringify(currentUser));
+          renderUserHeader();
+          renderProfile();
+          showToast('LINE 帳號綁定成功！下次可一鍵快速登入。', 'success');
+        } else {
+          showToast(res.message || '綁定失敗', 'error');
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('獲取 LINE 資料失敗', 'error');
+      }
+      showLoading(false);
+    }
+
+    function updateLineBindUI() {
+      const statusText = document.getElementById('lineBindStatusText');
+      const btn = document.getElementById('btnBindLine');
+      if (!statusText || !btn) return;
+
+      if (currentUser.lineBindStatus === '已綁定') {
+        statusText.innerHTML = `狀態：<span style="color:var(--green); font-weight:900;">🟢 已成功綁定 LINE 快速登入</span>`;
+        btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> 已完成綁定`;
+        btn.disabled = true;
+        btn.className = "btn btn-outline";
+      } else {
+        statusText.innerHTML = `狀態：<span style="color:var(--red); font-weight:900;">🔴 尚未綁定 LINE 快速登入</span>`;
+        btn.innerHTML = `<i class="fa-brands fa-line" style="color: #06C755; font-size: 28px;"></i> 綁定目前的 LINE 帳號`;
+        btn.disabled = false;
+        btn.className = "btn btn-secondary";
       }
     }
 
@@ -844,7 +926,7 @@
         const inCart = cart.some(c => c.eventId === e.id);
         const joined = myRegs.find(r => r.eventId === e.id);
         let statusLabel = e.status;
-        if (joined) statusLabel = joined.status; // '已報名'、'已確認' 等
+        if (joined) statusLabel = joined.status; 
         if (inCart) statusLabel = '已加入報名車';
 
         let btn = '';
@@ -892,83 +974,95 @@
 
     function renderMonthCalendar(events) {
       const box = document.getElementById('eventMonthView');
-      // 簡易日曆渲染
-      box.innerHTML = `<div class="card"><p style="text-align:center;">📅 點擊上方「卡片」或「行事曆」可依序瀏覽 6 月所有活動。</p></div>`;
-    }
+      box.innerHTML = `<div class="card"><p style="text-align:center;">📅 點擊上方「卡片」或「行事曆」可依序瀏覽此月份所有活動。</p></div>`;
+  }
 
-    function openEventDetail(eventId) {
-      const e = allEvents.find(x => x.id === eventId);
-      if (!e) return;
-      document.getElementById('eventDetailContent').innerHTML = `
-        <div class="event-name">${escapeHtml(e.name)}</div>
-        <div class="event-info">📅 日期：${escapeHtml(e.date)}</div>
-        <div class="event-info">🕐 時間：${escapeHtml(e.startTime)}</div>
-        <div class="event-info">📍 地點：${escapeHtml(e.location)}</div>
-        <div class="event-desc">${escapeHtml(e.description || '')}</div>
-      `;
-      openModal('eventDetailModal');
-    }
+  function openEventDetail(eventId) {
+    const e = allEvents.find(x => x.id === eventId);
+    if (!e) return;
+    document.getElementById('eventDetailContent').innerHTML = `
+      <div class="event-name" style="font-size:26px; font-weight:900; color:var(--green-dark); margin-bottom:12px;">${escapeHtml(e.name)}</div>
+      <div class="event-info">📅 日期：${escapeHtml(e.date)}</div>
+      <div class="event-info">🕐 時間：${escapeHtml(e.startTime)}</div>
+      <div class="event-info">📍 地點：${escapeHtml(e.location)}</div>
+      <div class="event-desc" style="margin-top:15px; background:#f4fff4; border:1px solid #c8e6c9; padding:12px; border-radius:12px;">
+        <b>活動說明：</b><br>${escapeHtml(e.description || '無說明')}
+      </div>
+    `;
+    openModal('eventDetailModal');
+  }
 
-    // ==================== 報名車 (第二區塊 B) ====================
-    function addToCart(eventId) {
-      const e = allEvents.find(x => x.id === eventId);
-      if (!e) return;
-      if (cart.some(c => c.eventId === eventId)) return showToast('已在報名車中', 'info');
-      
-      cart.push({
-        eventId: e.id,
-        eventName: e.name,
-        eventDate: e.date,
-        // 預設帶入會員資料
-        answers: {
-          idNumber: currentUser.idNumber || '',
-          address: currentUser.address || '',
-          email: currentUser.email || '',
-          note: currentUser.note || '',
-          hcRide: currentUser.hcRide || '會',
-          hcBalance: currentUser.hcBalance || '良好',
-          hcRange: currentUser.hcRange || '5K以下',
-          swSwim: currentUser.swSwim || '會',
-          swExp: currentUser.swExp || '有'
-        }
-      });
-      saveCart();
-      updateCartBadge();
-      renderAllEventViews();
-      showToast('已加入報名車', 'success');
+  // ==================== 報名購物車 (第二區塊 B) ====================
+  function addToCart(eventId) {
+    const e = allEvents.find(x => x.id === eventId);
+    if (!e) return;
+    if (cart.some(c => c.eventId === eventId)) return showToast('已在報名車中', 'info');
+    if (myRegs.some(r => r.eventId === eventId && r.status !== '已取消')) {
+      return showToast('您已報名過此活動，請至「紀錄」查詢！', 'error');
     }
-
-    function removeFromCart(eventId) {
-      cart = cart.filter(c => c.eventId !== eventId);
-      saveCart(); updateCartBadge(); renderCart(); renderAllEventViews();
-      showToast('已移出報名車', 'info');
-    }
-
-    function clearCart() {
-      cart = []; saveCart(); updateCartBadge(); renderCart(); renderAllEventViews();
-    }
-
-    function renderCart() {
-      const box = document.getElementById('cartList');
-      if (!cart.length) {
-        box.innerHTML = `<div class="empty"><span class="icon">🛒</span>報名車是空的</div>`;
-        return;
+    
+    cart.push({
+      eventId: e.id,
+      eventName: e.name,
+      eventDate: e.date,
+      answers: {
+        idNumber: currentUser.idNumber || '',
+        address: currentUser.address || '',
+        email: currentUser.email || '',
+        note: currentUser.note || '',
+        hcRide: currentUser.hcRide || '會',
+        hcBalance: currentUser.hcBalance || '良好',
+        hcRange: currentUser.hcRange || '5K以下',
+        swSwim: currentUser.swSwim || '會',
+        swExp: currentUser.swExp || '有'
       }
-      box.innerHTML = cart.map(item => {
-        const ev = allEvents.find(e => e.id === item.eventId) || {};
-        // 根據活動設定決定是否顯示手搖車/獨木舟調查
-        const showHc = ev.cfgShowHandcycle === true || ev.cfgShowHandcycle === 'TRUE';
-        const showKayak = ev.cfgShowKayak === true || ev.cfgShowKayak === 'TRUE';
+    });
+    saveCart();
+    updateCartBadge();
+    renderAllEventViews();
+    showToast('已加入報名車', 'success');
+  }
 
-        return `
-          <div class="cart-item">
-            <div class="event-name">${escapeHtml(item.eventName)}</div>
-            <div class="event-info">📅 日期：${escapeHtml(item.eventDate)}</div>
-            
-            <!-- 必填基本與保險資料 -->
-            <div class="question-box">
-              <div class="question-title">👤 個人基本與保險資料確認</div>
-              <div class="form-group">
+  function removeFromCart(eventId) {
+    cart = cart.filter(c => c.eventId !== eventId);
+    saveCart();
+    updateCartBadge();
+    renderCart();
+    renderAllEventViews();
+    showToast('已移出報名車', 'info');
+  }
+
+  function clearCart() {
+    if (!cart.length) return;
+    if (!confirm('確定要清空報名車嗎？')) return;
+    cart = [];
+    saveCart();
+    updateCartBadge();
+    renderCart();
+    renderAllEventViews();
+    showToast('報名車已清空', 'info');
+  }
+
+  function renderCart() {
+    const box = document.getElementById('cartList');
+    if (!cart.length) {
+      box.innerHTML = `<div class="empty"><span class="icon">🛒</span>報名車是空的</div>`;
+      return;
+    }
+    box.innerHTML = cart.map(item => {
+      const ev = allEvents.find(e => e.id === item.eventId) || {};
+      const showHc = ev.cfgShowHandcycle === true || ev.cfgShowHandcycle === 'TRUE';
+      const showKayak = ev.cfgShowKayak === true || ev.cfgShowKayak === 'TRUE';
+
+      return `
+        <div class="cart-item">
+          <div class="event-name" style="font-size:24px; font-weight:900; color:var(--green-dark);">${escapeHtml(item.eventName)}</div>
+          <div class="event-info">📅 日期：${escapeHtml(item.eventDate)}</div>
+          
+          <!-- 必填基本與保險資料 -->
+          <div class="question-box">
+            <div class="question-title">👤 個人基本與保險資料確認</div>
+            <div class="form-group">
               <label class="form-label">身分證字號 / 護照號碼 <span class="req">*</span></label>
               <input type="text" class="form-input" value="${escapeAttr(item.answers.idNumber)}" onchange="updateCartField('${item.eventId}', 'idNumber', this.value)" placeholder="保險必填 A123456789">
             </div>
@@ -1127,7 +1221,7 @@
 
       return `
         <div class="${cardClass}">
-          <div class="event-name">${escapeHtml(r.eventName)}</div>
+          <div class="event-name" style="font-size:24px; font-weight:900; color:var(--green-dark);">${escapeHtml(r.eventName)}</div>
           <div class="event-info">📅 活動日期：${escapeHtml(r.eventDate)}</div>
           <div class="event-info">審核狀態：<span class="badge ${isConfirmed?'green':isCancelled?'red':'gold'}">${escapeHtml(isAttended ? '已出席' : r.status)}</span></div>
           <div class="event-info">報名時間：${formatDate(r.regTime)}</div>
@@ -1240,6 +1334,7 @@
         <div class="profile-val" style="text-align: left; font-size: 19px; font-weight: 700;">${r[1]}</div>
       </div>
     `).join('');
+    updateLineBindUI();
   }
 
   function openEditProfile() {
@@ -1286,11 +1381,6 @@
     } else {
       showToast(res.message || '儲存失敗', 'error');
     }
-  }
-
-  function unbindLine() {
-    if (!confirm('確定要解除 LINE 快速登入綁定嗎？解除後下次需手動輸入姓名與手機登入。')) return;
-    logout();
   }
 
   function logout() {
@@ -1358,7 +1448,7 @@
 
     box.innerHTML = list.map(m => `
       <div class="list-row">
-        <div class="list-title">${escapeHtml(m.name)} <span class="badge green" style="font-size:14px;">${escapeHtml(m.identity)}</span></div>
+        <div class="list-title" style="font-size:22px; font-weight:900;">${escapeHtml(m.name)} <span class="badge green" style="font-size:14px;">${escapeHtml(m.identity)}</span></div>
         <div class="list-meta">📞 手機：${escapeHtml(m.phone)}</div>
         <div class="list-meta">💳 年費狀態：${escapeHtml(m.feeStatus || '未繳費')}</div>
         <div class="list-meta" style="font-size:16px; color:#555; background:#f0fbf0; padding:8px; border-radius:8px; margin-top:6px;">
@@ -1413,7 +1503,7 @@
     const box = document.getElementById('adminEventList');
     box.innerHTML = adminEvents.map(e => `
       <div class="list-row">
-        <div class="list-title">${escapeHtml(e.name)}</div>
+        <div class="list-title" style="font-size:22px; font-weight:900;">${escapeHtml(e.name)}</div>
         <div class="list-meta">📅 日期：${escapeHtml(e.date)} | 📍 地點：${escapeHtml(e.location)}</div>
         <div class="list-meta">⚙️ 欄位控制：手搖車(${e.cfgShowHandcycle === 'TRUE' || e.cfgShowHandcycle === true ? '顯示':'隱藏'}) | 獨木舟(${e.cfgShowKayak === 'TRUE' || e.cfgShowKayak === true ? '顯示':'隱藏'})</div>
         <div class="d-flex gap-2 mt">
@@ -1500,10 +1590,9 @@
     }
   }
 
-  async function cloneAsNewEvent() {
-    // 將 eventEditId 清空，直接執行新增
+  function cloneAsNewEvent() {
     document.getElementById('eventEditId').value = '';
-    await saveEvent();
+    saveEvent();
   }
 
   // ==================== 報名審核與出席管理 ====================
@@ -1533,7 +1622,7 @@
       const isPending = r.status === '待確認';
       return `
         <div class="list-row" style="border-left: 8px solid ${r.status==='已確認'?'var(--green)':'var(--gold)'};">
-          <div class="list-title">${i + 1}. ${escapeHtml(r.name)} <span class="badge ${r.status==='已確認'?'green':'gold'}">${escapeHtml(r.status)}</span></div>
+          <div class="list-title" style="font-size:20px; font-weight:900;">${i + 1}. ${escapeHtml(r.name)} <span class="badge ${r.status==='已確認'?'green':'gold'}">${escapeHtml(r.status)}</span></div>
           <div class="list-meta">📞 手機：${escapeHtml(r.phone)} | 身份：${escapeHtml(r.identity)}</div>
           <div class="list-meta">📝 備註：${escapeHtml(r.note || '無')}</div>
           <div class="d-flex gap-2 mt">
