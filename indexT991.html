@@ -613,7 +613,7 @@ function loadFontSize(){
 }
 
 // ===== 系統設定（請替換為您部署後的 Apps Script 網頁應用程式網址） =====
-const API_BASE = 'https://script.google.com/macros/s/AKfycbxYFetq46zVe8bKjV1hDw8-XTY_YBtUshSxqL-grYehPWaT7dqey46j6_1ZamyEjfFDsQ/exec';
+const API_BASE = 'https://script.google.com/macros/s/AKfycbxRslL4wDYD582jpOYvXevuvA6J6uiSd7QhYXQixLGH9KxRYrzjDynRKFScy42OrUzUpQ/exec';
 const LIFF_ID  = '2009456572-588gzru4';
 const ORG_NAME = '社團法人台灣帕金森病友權益促進會';
 const ADMIN_TYPES = ['管理員','理事長','理監事','理事','監事','會計','出納','總幹事','行政秘書長'];
@@ -641,7 +641,7 @@ const NAV_MAP = {
 };
 
 /*=======================================================
- * API 工具（改為夾帶 LINE ID 進行安全驗證）
+ * API 工具（改為夾帶 LINE ID 與 會員編號進行安全驗證）
  =======================================================*/
 async function api(action, data={}){
   const payload = {
@@ -650,7 +650,7 @@ async function api(action, data={}){
       ...data,
       operatorLineId: APP.user?.lineId || APP.liffProfile?.userId || '', // 自動夾帶登入者的 LINE ID
       operator: data.operator || APP.user?.name || '',
-      operatorId: data.operatorId || APP.user?.memberId || APP.user?.id || ''
+      operatorId: data.operatorId || APP.user?.memberId || APP.user?.id || '' // 自動夾帶登入者的會員編號
     }
   };
   const res=await fetch(API_BASE,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
@@ -690,7 +690,7 @@ function maskClose(e){if(e.target.id==='modalMask')closeModal();}
 function confirmCritical(msg){return confirm((msg||'確定執行此操作？')+'\n\n⚠️ 此操作將影響正式資料，請確認後再繼續。');}
 function requireInput(id,label){const el=$(id);const v=el?el.value.trim():'';if(!v){toast('請填寫：'+label,'w');el?.focus();return'';}return v;}
 function requireAmount(id,label){const el=$(id);const n=Number(el?el.value:0);if(!n||n<=0){toast((label||'金額')+'必須大於 0','w');el?.focus();return 0;}return n;}
-function isValidTaiwanMobile(p){return/^09\d{8}$/.test(String(p||'').trim());}
+function isValidTaiwanMobile(p){return/^09\d{8}$/.test(String(p||'').replace(/[-\s]/g,'').trim());}
 function isAdminUser(u){return!!(u&&ADMIN_TYPES.includes(String(u.type||'')));}
 function showBack(show){$('backBtn')?.classList.toggle('hide',!show);}
 
@@ -1280,7 +1280,6 @@ async function viewReceiptPdf(receiptNo){
       window.open(res.pdfUrl||res.url||res.downloadUrl,'_blank');
       toast('收據 PDF 已開啟','s');
     }else if(res.success && res.html){
-      // 如果後端沒串接 PDF 產生器，直接用 Modal 顯示精美收據 HTML 供列印
       openModal(`
         <div class="modal-title">🧾 電子收據明細</div>
         <div id="receiptPrintDoc" style="background:#fff;color:#111;padding:20px;border:2px solid #222;border-radius:12px;font-family:sans-serif;">
@@ -1324,8 +1323,8 @@ function renderMyPayments(){
       <div class="fg">
         <label class="flabel">繳費金額 <span class="req">*</span></label>
         <div class="amount-quick">
-          <div class="amount-chip active" onclick="selectPayAmount(this,'1000')">NT$ 1,000 年費</div>
-          <div class="amount-chip" onclick="selectPayAmount(this,'500')">NT$ 500 半年</div>
+          <div class="amount-chip active" onclick="selectPayAmount(this,'1000')">NT$ 1,000 常年會費</div>
+          <div class="amount-chip" onclick="selectPayAmount(this,'2000')">NT$ 2,000 入會費+常年會費</div>
         </div>
         <input type="hidden" id="payAmount" value="1000">
       </div>
@@ -1705,7 +1704,7 @@ function openAdminAddPayment(memberId,name){
     <div class="notice warn">本功能僅適用於<b>已確認實際入帳</b>的會費，送出後立即產生正式收據。</div>
     <div class="fg"><label class="flabel" for="adpMemberDisp">會員</label><input id="adpMemberDisp" class="fc" value="${esc(name)}｜${esc(memberId)}" disabled style="background:#f1f5f9;"></div>
     <div class="fg"><label class="flabel" for="adpYear">年度</label><select id="adpYear" class="fc">${yearOptions(y)}</select></div>
-    <div class="fg"><label class="flabel" for="adpAmount">金額</label><select id="adpAmount" class="fc"><option value="1000">NT$ 1,000 年費</option><option value="500">NT$ 500 半年</option></select></div>
+    <div class="fg"><label class="flabel" for="adpAmount">金額</label><select id="adpAmount" class="fc"><option value="1000">NT$ 1,000 常年會費</option><option value="2000">NT$ 2,000 入會費+常年會費</option></select></div>
     <div class="fg"><label class="flabel" for="adpDate">日期</label><input id="adpDate" class="fc" type="date" value="${today()}"></div>
     <div class="fg"><label class="flabel" for="adpMethod">方式</label><select id="adpMethod" class="fc"><option>銀行轉帳</option><option>現金</option><option>LINE Pay</option><option>其他</option></select></div>
     <div class="fg"><label class="flabel" for="adpNote">備註</label><input id="adpNote" class="fc" placeholder="可不填"></div>
@@ -1917,6 +1916,7 @@ async function renderFinanceIncome(){
         <select id="incSubject" class="fc">
           ${subjectOptions('收入')||`
             <option value="4101">4101 會費收入</option>
+            <option value="4101">4101 會費收入</option>
             <option value="4102">4102 捐款收入</option>
             <option value="4199">4199 其他收入</option>`}
         </select>
@@ -1948,7 +1948,7 @@ async function submitIncome(){
  * 支出申請
  =======================================================*/
 async function renderFinanceExpense(){
-   if(!adminGuard())return;
+  if(!adminGuard())return;
   await loadBaseOptions();
   setMain(`
     <div class="card">
@@ -1959,8 +1959,10 @@ async function renderFinanceExpense(){
         <div class="step"><div class="s-num">2</div><div>核准</div></div>
         <div class="step"><div class="s-num">3</div><div>確認撥款</div></div>
       </div>
-      <div class="fg"><label class="flabel" for="expDate">
-            <div class="fg"><label class="flabel" for="expDate">支出日期</label><input id="expDate" class="fc" type="date" value="${today()}"></div>
+      <div class="fg">
+        <label class="flabel" for="expDate">支出日期</label>
+        <input id="expDate" class="fc" type="date" value="${today()}">
+      </div>
       <div class="fg">
         <label class="flabel" for="expSubject">支出科目 <span class="req">*</span></label>
         <select id="expSubject" class="fc">
@@ -2842,7 +2844,7 @@ function renderReportResult(type,res,area){
             <th style="padding:10px;text-align:right;font-weight:800;border-bottom:1px solid #111;">金額</th>
           </tr>
         </thead>
-        <tbody>
+        ㄈ<tbody>
           <tr style="font-weight:800;background:#fafafa;"><td style="padding:10px;border-bottom:1px solid #ddd;">一、 收入科目</td><td style="padding:10px;text-align:right;border-bottom:1px solid #ddd;"></td></tr>
           ${inc.map(r=>`<tr><td style="padding:10px 10px 10px 30px;border-bottom:1px dashed #eee;">${esc(r.subjectCode)} ${esc(r.subjectName)}</td><td style="padding:10px;text-align:right;border-bottom:1px dashed #eee;">${moneyHtml(r.amount)}</td></tr>`).join('')}
           <tr style="font-weight:800;background:#f5fdf4;"><td style="padding:10px;border-bottom:1px solid #111;">收入合計</td><td style="padding:10px;text-align:right;border-bottom:1px solid #111;">${moneyHtml(totInc)}</td></tr>
@@ -2872,7 +2874,7 @@ function renderReportResult(type,res,area){
         </thead>
         <tbody>
           ${items.map(r=>`
-              <tr style="border-bottom:1px solid #eee;">
+            <tr style="border-bottom:1px solid #eee;">
               <td style="padding:8px;">${esc(fmtDate(r.date))}</td>
               <td style="padding:8px;">${esc(r.subjectCode)} ${esc(r.subjectName)}</td>
               <td style="padding:8px;">${esc(r.description||'')}</td>
@@ -3125,5 +3127,3 @@ window.onload=function(){
 </script>
 </body>
 </html>
-
-
