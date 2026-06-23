@@ -612,8 +612,8 @@ function loadFontSize(){
   setFontSize(saved);
 }
 
-// ===== 系統設定 =====
-const API_BASE = 'https://script.google.com/macros/s/AKfycbzsHSzT6-24sCGq8K14WzI5XUcWw86-R8Ti1dsR0yRxAmBRoDYe_-X4wv_ipXATRVo0Ug/exec';
+// ===== 系統設定（請替換為您部署後的 Apps Script 網頁應用程式網址） =====
+const API_BASE = 'https://script.google.com/macros/s/AKfycbwuNapuG-CSpMlsWVfwxUx2luzN2VYvY4W2FKLFsCxOL6pCx_sh0rSPgPsiSit7u9OtUA/exec';
 const LIFF_ID  = '2009456572-588gzru4';
 const ORG_NAME = '社團法人台灣帕金森病友權益促進會';
 const ADMIN_TYPES = ['管理員','理事長','理監事','理事','監事','會計','出納','總幹事','行政秘書長'];
@@ -892,7 +892,7 @@ async function submitRegister(){
 }
 
 /*=======================================================
- * 管理驗證（取消 PIN 碼管制，改為 LINE ID 權限驗證）
+ * 管理驗證
  =======================================================*/
 function requireLogin(){if(APP.user)return true;toast('請先登入','w');openLogin();return false;}
 
@@ -1268,7 +1268,7 @@ async function submitProfile(){
 }
 
 /*=======================================================
- * 收據 PDF
+ * 收據 PDF / 檢視收據
  =======================================================*/
 async function viewReceiptPdf(receiptNo){
   if(!receiptNo||receiptNo==='尚未開立'||receiptNo==='--'){toast('尚未開立收據','w');return;}
@@ -1279,7 +1279,19 @@ async function viewReceiptPdf(receiptNo){
     if(res.success&&(res.pdfUrl||res.url||res.downloadUrl)){
       window.open(res.pdfUrl||res.url||res.downloadUrl,'_blank');
       toast('收據 PDF 已開啟','s');
-    }else toast(res.message||'取得收據失敗','e');
+    }else if(res.success && res.html){
+      // 如果後端沒串接 PDF 產生器，直接用 Modal 顯示精美收據 HTML 供列印
+      openModal(`
+        <div class="modal-title">🧾 電子收據明細</div>
+        <div id="receiptPrintDoc" style="background:#fff;color:#111;padding:20px;border:2px solid #222;border-radius:12px;font-family:sans-serif;">
+          ${res.html}
+        </div>
+        <button class="btn btn-primary" onclick="printElement('receiptPrintDoc')">🖨️ 列印收據</button>
+        <button class="btn btn-ghost" onclick="closeModal()">關閉</button>
+      `);
+    } else {
+      toast(res.message||'取得收據失敗','e');
+    }
   }catch(e){hideLoad();toast('取得收據失敗：'+e.message,'e');}
 }
 
@@ -1375,15 +1387,15 @@ async function loadMyPayments(){
               <div class="item-title">${fmtMoney(r.amount)} ｜ ${esc(r.year||'')} 年度</div>
               <div class="item-meta">
                 日期：${esc(r.date||'')} ｜ 方式：${esc(r.method||'')}<br>
-                到期日：${esc(r.expiryDate||'--')} ｜ 收據：${esc(r.receiptNo||'尚未開立')}<br>
+                收據：${esc(r.receiptNo||'尚未開立')}<br>
                 ${r.note?'備註：'+esc(r.note):''}
               </div>
             </div>
             <span class="badge ${ok?'bs':rej?'bd':'bw'}">${esc(r.status||'待確認')}</span>
           </div>
-          ${ok&&r.receiptNo?`<div class="item-actions"><button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}')">🧾 下載收據 PDF</button></div>`:''}
+          ${ok&&r.receiptNo?`<div class="item-actions"><button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}')">🧾 檢視收據</button></div>`:''}
           ${!ok&&!rej?`<div class="notice warn" style="margin-top:10px;margin-bottom:0;">⏳ 等待管理員確認入帳中</div>`:''}
-          ${rej?`<div class="notice danger" style="margin-top:10px;margin-bottom:0;">❌ 已退回，請聯絡協會確認</div>`:''}
+          ${rej?`<div class="notice danger" style="margin-top:10px;margin-bottom:0;">❌ 已退回：${esc(r.rejectReason||'請聯絡協會確認')}</div>`:''}
         </div>`;
     }).join('');
   }catch(e){area.innerHTML=`<div class="empty">載入失敗：${esc(e.message)}</div>`;}
@@ -1493,15 +1505,15 @@ async function loadMyDonations(){
               <div>
                 <div class="item-title">${fmtMoney(r.amount)}</div>
                 <div class="item-meta">
-                  日期：${esc(r.date||r.donationDate||'')} ｜ 用途：${esc(r.purpose||'一般捐款')}<br>
+                  日期：${esc(r.date||'')} ｜ 用途：${esc(r.purpose||'一般捐款')}<br>
                   方式：${esc(r.method||'')} ｜ 收據：${esc(r.receiptNo||'尚未開立')}
                 </div>
               </div>
               <span class="badge ${ok?'bs':rej?'bd':'bw'}">${esc(r.status||'待確認')}</span>
             </div>
-            ${ok&&r.receiptNo?`<div class="item-actions"><button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}')">🧾 下載收據 PDF</button></div>`:''}
+            ${ok&&r.receiptNo?`<div class="item-actions"><button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}')">🧾 檢視收據</button></div>`:''}
             ${!ok&&!rej?`<div class="notice warn" style="margin-top:10px;margin-bottom:0;">⏳ 等待管理員確認入帳中</div>`:''}
-            ${rej?`<div class="notice danger" style="margin-top:10px;margin-bottom:0;">❌ 已退回，請聯絡協會確認</div>`:''}
+            ${rej?`<div class="notice danger" style="margin-top:10px;margin-bottom:0;">❌ 已退回：${esc(r.rejectReason||'請聯絡協會確認')}</div>`:''}
           </div>`;
       }).join('')}`;
   }catch(e){area.innerHTML=`<div class="empty">載入失敗：${esc(e.message)}</div>`;}
@@ -1604,8 +1616,6 @@ async function loadMembers(){
     const res=await api('member.listAll',{keyword:$('memberKw')?.value.trim()||''});
     if(!res.success){area.innerHTML=`<div class="empty">${esc(res.message||'載入失敗')}</div>`;return;}
     let rows=res.items||[];
-    const kw=$('memberKw')?.value.trim().toLowerCase()||'';
-    if(kw)rows=rows.filter(m=>String(m.name||'').toLowerCase().includes(kw)||String(m.phone||m.mobile||'').includes(kw)||String(m.memberId||m.id||'').toLowerCase().includes(kw));
     if(!rows.length){area.innerHTML=`<div class="empty">查無會員</div>`;return;}
     area.innerHTML=rows.map(m=>`
       <div class="item">
@@ -1660,10 +1670,9 @@ async function renderMemberDetail(params){
   const id=params.id;
   setMain(`<div class="card"><div class="empty">載入中...</div></div>`);
   try{
-    let m=null;
-    try{const r=await api('member.get',{memberId:id,id});if(r.success)m=r.member||r.item;}catch(e){}
-    if(!m){const list=await api('member.listAll',{});m=(list.items||[]).find(x=>String(x.memberId||x.id)===String(id));}
-    if(!m){setMain(`<div class="card"><div class="empty">找不到會員</div></div>`);return;}
+    const res=await api('member.get',{memberId:id});
+    if(!res.success){setMain(`<div class="card"><div class="empty">找不到會員</div></div>`);return;}
+    const m=res.member;
     setMain(`
       <div class="card">
         <div class="card-title"><span class="icon">👤</span>會員詳細資料
@@ -1754,7 +1763,7 @@ async function renderPendingPayments(){
 }
 async function loadPendingPayments(){
   const area=$('pendingPayList');
-  try{
+  try {
     const res=await api('payment.pendingList',{});
     if(!res.success){area.innerHTML=`<div class="empty">${esc(res.message||'載入失敗')}</div>`;return;}
     const rows=res.items||[];
@@ -1950,7 +1959,8 @@ async function renderFinanceExpense(){
         <div class="step"><div class="s-num">2</div><div>核准</div></div>
         <div class="step"><div class="s-num">3</div><div>確認撥款</div></div>
       </div>
-      <div class="fg"><label class="flabel" for="expDate">支出日期</label><input id="expDate" class="fc" type="date" value="${today()}"></div>
+      <div class="fg"><label class="flabel" for="expDate">
+            <div class="fg"><label class="flabel" for="expDate">支出日期</label><input id="expDate" class="fc" type="date" value="${today()}"></div>
       <div class="fg">
         <label class="flabel" for="expSubject">支出科目 <span class="req">*</span></label>
         <select id="expSubject" class="fc">
@@ -2118,7 +2128,7 @@ async function renderReceiptList(){
         </div>
         ${r.status!=='作廢'?`
           <div class="item-actions">
-            <button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}')">🧾 PDF</button>
+            <button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}')">🧾 檢視</button>
             <button class="btn btn-danger btn-xs" onclick="voidReceipt('${jsStr(r.receiptNo)}')">作廢</button>
           </div>`:''}
       </div>`).join('');
@@ -2154,9 +2164,9 @@ async function renderVoucherList(){
           <div>
             <div class="item-title">傳票 ${esc(v.voucherNo)} ｜ ${fmtMoney(v.amount)}</div>
             <div class="item-meta">
-              日期：${esc(v.date||'')} ｜ 支出編號：${esc(v.expenseId||'')}<br>
+              日期：${esc(v.date||'')} ｜ 來源編號：${esc(v.expenseId||v.refNo||'')}<br>
               科目：${esc(v.subjectCode||'')} ${esc(v.subjectName||'')}<br>
-              摘要：${esc(v.description||'')} ｜ 受款人：${esc(v.payee||'')}
+              摘要：${esc(v.description||'')} ｜ 對象：${esc(v.payee||'')}
             </div>
           </div>
           <span class="badge bs">${esc(v.status||'已建立')}</span>
@@ -2233,7 +2243,7 @@ function buildVoucherHtml(v){
             <td style="border:1px solid #111;padding:10px;text-align:right;">--</td>
           </tr>
           <tr>
-            <td style="border:1px solid #111;padding:10px;">現金 / 銀行存款</td>
+            <td style="border:1px solid #111;padding:10px;">庫存現金 / 銀行存款</td>
             <td style="border:1px solid #111;padding:10px;">${esc(v.payee||'')}</td>
             <td style="border:1px solid #111;padding:10px;text-align:right;">--</td>
             <td style="border:1px solid #111;padding:10px;text-align:right;font-weight:900;">${fmtMoney(v.amount)}</td>
@@ -2862,7 +2872,7 @@ function renderReportResult(type,res,area){
         </thead>
         <tbody>
           ${items.map(r=>`
-            <tr style="border-bottom:1px solid #eee;">
+              <tr style="border-bottom:1px solid #eee;">
               <td style="padding:8px;">${esc(fmtDate(r.date))}</td>
               <td style="padding:8px;">${esc(r.subjectCode)} ${esc(r.subjectName)}</td>
               <td style="padding:8px;">${esc(r.description||'')}</td>
@@ -3115,3 +3125,5 @@ window.onload=function(){
 </script>
 </body>
 </html>
+
+
