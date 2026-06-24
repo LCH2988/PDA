@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>台灣帕金森病友權益促進會 (API 模式)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+      body { transition: background-color 0.2s, color 0.2s; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+
+      // ==========================================
+      // ⚠️ 請在此處填入您部署 GAS 後取得的 Web App URL
+      // ==========================================
+      const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzLkF9HcrE3pmB8pHCjW3StzxEhNDESiceES6RR83E6LMiJitgbHkCOeEiFrE-Jmslz/exec";
+
+      const Icon = ({ name, className = "w-5 h-5", ...props }) => {
+        useEffect(() => {
+          if (window.lucide) window.lucide.createIcons();
+        }, [name, className]);
+        return <i data-lucide={name} className={className} {...props}></i>;
+      };
+
+      function App() {
+        const [activeTab, setActiveTab] = useState('home');
+        const [fontSize, setFontSize] = useState('medium');
+        const [highContrast, setHighContrast] = useState(false);
+        const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+        // API 資料狀態
+        const [newsList, setNewsList] = useState([]);
+        const [contactsList, setContactsList] = useState([]);
+        const [isLoading, setIsLoading] = useState(false);
+        
+        // 後台管理
+        const [adminPin, setAdminPin] = useState('');
+        const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+        const [adminActiveSheet, setAdminActiveSheet] = useState('news');
+        const [syncStatus, setSyncStatus] = useState('synced');
+        const [syncLogs, setSyncLogs] = useState([]);
+
+        // 編輯表單
+        const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+        const [editingItem, setEditingItem] = useState(null);
+        const [editForm, setEditForm] = useState({});
+
+        const [newsSearch, setNewsSearch] = useState('');
+        const [contactSearch, setContactSearch] = useState('');
+
+        const [contactForm, setContactForm] = useState({
+          name: '', phone: '', email: '', subject: '長照諮詢與特定輔具補助', message: ''
+        });
+        const [contactSuccessMsg, setContactSuccessMsg] = useState('');
+
+        const addLog = (action, type = "info") => {
+          const timestamp = new Date().toLocaleTimeString();
+          setSyncLogs(prev => [{ time: timestamp, action, type }, ...prev].slice(0, 15));
+        };
+
+        // 核心：透過 URL API (GET) 獲取資料
+        const loadData = async () => {
+          if (GAS_API_URL.includes("YOUR_GAS_ID")) {
+            addLog("請先在 Index.html 程式碼中設定正確的 GAS_API_URL", "error");
+            return;
+          }
+          setIsLoading(true);
+          setSyncStatus('syncing');
+          addLog("發送 HTTP GET 請求讀取數據...", "info");
+
+          try {
+            // 讀取最新消息
+            const newsRes = await fetch(`${GAS_API_URL}?action=read&sheet=news`);
+            const newsJson = await newsRes.json();
+            if (newsJson.success) {
+              newsJson.data.sort((a, b) => b.date.localeCompare(a.date));
+              setNewsList(newsJson.data);
+              addLog(`成功自 API 獲取最新消息 ${newsJson.data.length} 筆`, "success");
+            }
+
+            // 讀取聯絡資料
+            const contactRes = await fetch(`${GAS_API_URL}?action=read&sheet=contacts`);
+            const contactJson = await contactRes.json();
+            if (contactJson.success) {
+              contactJson.data.sort((a, b) => b.date.localeCompare(a.date));
+              setContactsList(contactJson.data);
+              addLog(`成功自 API 獲取諮詢表單 ${contactJson.data.length} 筆`, "success");
+            }
+            setSyncStatus('synced');
+          } catch (err) {
+            addLog(`API 請求失敗: ${err.message}`, "error");
+            setSyncStatus('error');
+          } finally {
+            setIsLoading(false);
+          }
+        };
+
+        useEffect(() => {
+          loadData();
+        }, []);
+
+        // 核心：透過 URL API (POST) 儲存或修改資料
+        const handleSaveItem = async (e) => {
+          e.preventDefault();
+          setSyncStatus('syncing');
+          addLog(`發送 HTTP POST 請求同步變更...`, "info");
+
+          const sheetName = adminActiveSheet === 'news' ? 'news' : 'contacts';
+          const payload = {
+            action: "save",
+            sheet: sheetName,
+            data: editForm
+          };
+
+          try {
+            const response = await fetch(GAS_API_URL, {
+              method: 'POST',
+              body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (result.success) {
+              addLog(`試算表同步成功！`, "success");
+              setIsEditModalOpen(false);
+              setEditingItem(null);
+              loadData();
+            } else {
+              addLog(`同步失敗: ${result.message}`, "error");
+            }
+          } catch (err) {
+            addLog(`網路連線錯誤: ${err.message}`, "error");
+            setSyncStatus('error');
+          }
+        };
+
+        // 核心：透過 URL API (POST) 刪除資料
+        const handleDeleteItem = async (itemId) => {
+          if (!window.confirm("確定要刪除此筆資料嗎？這將同步從雲端試算表抹除。")) return;
+
+          setSyncStatus('syncing');
+          addLog(`發送 HTTP POST 請求執行刪除...`, "info");
+          const sheetName = adminActiveSheet === 'news' ? 'news' : 'contacts';
+
+          const payload = {
+            action: "delete",
+            sheet: sheetName,
+            data: { id: itemId }
+          };
+
+          try {
+            const response = await fetch(GAS_API_URL, {
+              method: 'POST',
+              body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (result.success) {
+              addLog(`成功從試算表刪除資料`, "success");
+              loadData();
+            } else {
+              addLog(`刪除失敗: ${result.message}`, "error");
+            }
+          } catch (err) {
+            addLog(`網路連線錯誤: ${err.message}`, "error");
+            setSyncStatus('error');
+          }
+        };
+
+        // 用戶提交諮詢表單 (POST)
+        const handleContactSubmit = async (e) => {
+          e.preventDefault();
+          addLog("發送 HTTP POST 提交諮詢表單...", "info");
+
+          const payload = {
+            action: "save",
+            sheet: "contacts",
+            data: {
+              name: contactForm.name,
+              phone: contactForm.phone,
+              email: contactForm.email,
+              subject: contactForm.subject,
+              message: contactForm.message,
+              date: new Date().toISOString().split('T')[0],
+              status: "待處理",
+              notes: ""
+            }
+          };
+
+          try {
+            const response = await fetch(GAS_API_URL, {
+              method: 'POST',
+              body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (result.success) {
+              setContactSuccessMsg("您的諮詢表單已成功送出！系統已同步至秘書處試算表，我們將有專人盡速與您聯絡。");
+              setContactForm({ name: '', phone: '', email: '', subject: '長照諮詢與特定輔具補助', message: '' });
+              addLog("前台用戶成功提交諮詢表單，已寫入 Google 試算表", "success");
+              loadData();
+              setTimeout(() => setContactSuccessMsg(''), 6000);
+            }
+          } catch (err) {
+            alert("提交失敗，請檢查網路連線或 API 設定！");
+          }
+        };
+
+        const handleAdminLogin = (e) => {
+          e.preventDefault();
+          if (adminPin === '1234') { 
+            setIsAdminAuthenticated(true);
+            addLog("管理員成功登入系統，啟動編輯與同步讀寫權限", "success");
+          } else {
+            alert("密碼錯誤，請輸入 1234 進行測試！");
+          }
+        };
+
+        const getFontSizeClass = () => {
+          switch(fontSize) {
+            case 'small': return 'text-sm md:text-base';
+            case 'large': return 'text-lg md:text-2xl leading-relaxed';
+            case 'medium':
+            default: return 'text-base md:text-lg';
+          }
+        };
+
+        const getThemeClass = () => {
+          if (highContrast) {
+            return {
+              bg: 'bg-black text-yellow-300',
+              card: 'bg-gray-900 border-2 border-yellow-300 text-yellow-300',
+              textMuted: 'text-yellow-400',
+              primary: 'bg-yellow-300 text-black border-2 border-yellow-300 hover:bg-yellow-400',
+              secondary: 'bg-black text-yellow-300 border border-yellow-300 hover:bg-gray-900',
+              accent: 'border-yellow-300 text-yellow-300',
+              nav: 'bg-black border-b border-yellow-300 text-yellow-300',
+              input: 'bg-black text-yellow-300 border border-yellow-300 focus:ring-yellow-300',
+              footer: 'bg-black border-t border-yellow-300 text-yellow-300'
+            };
+          }
+          return {
+            bg: 'bg-stone-50 text-gray-800',
+            card: 'bg-white shadow-md hover:shadow-lg transition-all rounded-xl border border-stone-200 text-gray-800',
+            textMuted: 'text-gray-500',
+            primary: 'bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800',
+            secondary: 'bg-stone-100 text-stone-700 hover:bg-stone-200 active:bg-stone-300 border border-stone-200',
+            accent: 'border-emerald-100 text-emerald-800 bg-emerald-50/50',
+            nav: 'bg-white border-b border-stone-200 text-stone-900 shadow-sm',
+            input: 'bg-white text-gray-900 border border-stone-300 focus:ring-emerald-500 focus:border-emerald-500',
+            footer: 'bg-stone-900 text-stone-100'
+          };
+        };
+
+        const theme = getThemeClass();
+
+        return (
+          <div className={`min-h-screen flex flex-col font-sans transition-all duration-200 ${theme.bg}`}>
+            
+            {/* 頂部無障礙工具列 */}
+            <div className={`py-1.5 px-4 text-xs flex justify-between items-center transition-all ${highContrast ? 'bg-yellow-300 text-black' : 'bg-emerald-800 text-white'}`}>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">「權益保障・尊嚴生活」</span>
+                <span className="hidden md:inline">| 內政部立案合法促進會組織 | 系統連線：Google Sheets URL API 實時對接</span>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1 bg-black/10 rounded px-1.5 py-0.5">
+                  <Icon name="type" className="w-3.5 h-3.5" />
+                  <span className="mr-1">字級：</span>
+                  <button onClick={() => setFontSize('small')} className={`px-1 rounded hover:bg-black/20 ${fontSize === 'small' ? 'underline font-bold' : ''}`}>小</button>
+                  <button onClick={() => setFontSize('medium')} className={`px-1 rounded hover:bg-black/20 ${fontSize === 'medium' ? 'underline font-bold' : ''}`}>中</button>
+                  <button onClick={() => setFontSize('large')} className={`px-1 rounded hover:bg-black/20 ${fontSize === 'large' ? 'underline font-bold' : ''}`}>大</button>
+                </div>
+                <button onClick={() => setHighContrast(!highContrast)} className="flex items-center gap-1 bg-black/15 hover:bg-black/30 rounded px-2 py-0.5 font-medium">
+                  {highContrast ? "切換回標準色彩" : "切換無障礙高對比"}
+                </button>
+              </div>
+            </div>
+
+            {/* 導覽列 */}
+            <nav className={`sticky top-0 z-40 transition-colors ${theme.nav}`}>
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="flex justify-between h-18 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
+                      <Icon name="heart" className="w-6 h-6 text-emerald-600" />
+                    </div>
+                    <div>
+                      <span className="text-lg md:text-xl font-bold tracking-wide block">台灣帕金森病友權益促進會</span>
+                      <span className="text-[10px] md:text-xs opacity-75 block -mt-1 tracking-tight">Taiwan Parkinson's Patient Rights Promotion Association</span>
+                    </div>
+                  </div>
+
+                  <div className="hidden md:flex items-center space-x-1 lg:space-x-2">
+                    <button onClick={() => setActiveTab('home')} className={`px-3 py-2 rounded-md font-semibold ${activeTab === 'home' ? 'text-emerald-600 border-b-2 border-emerald-600' : 'hover:text-emerald-500'}`}>關於我們</button>
+                    <button onClick={() => setActiveTab('news')} className={`px-3 py-2 rounded-md font-semibold ${activeTab === 'news' ? 'text-emerald-600 border-b-2 border-emerald-600' : 'hover:text-emerald-500'}`}>最新動態與公告</button>
+                    <button onClick={() => setActiveTab('resources')} className={`px-3 py-2 rounded-md font-semibold ${activeTab === 'resources' ? 'text-emerald-600 border-b-2 border-emerald-600' : 'hover:text-emerald-500'}`}>長照與復健指引</button>
+                    <button onClick={() => setActiveTab('contact')} className={`px-3 py-2 rounded-md font-semibold ${activeTab === 'contact' ? 'text-emerald-600 border-b-2 border-emerald-600' : 'hover:text-emerald-500'}`}>病友權益諮詢表單</button>
+                    <div className="h-6 w-[1px] bg-stone-300 mx-1"></div>
+                    <button onClick={() => setActiveTab('admin')} className="flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold transition-all border border-emerald-200">
+                      <Icon name="settings" className="w-4 h-4" />
+                      <span>後台試算表同步管理</span>
+                    </button>
+                  </div>
+
+                  <div className="flex md:hidden items-center">
+                    <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2">
+                      {mobileMenuOpen ? <Icon name="x" className="w-6 h-6" /> : <Icon name="menu" className="w-6 h-6" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {mobileMenuOpen && (
+                <div className="md:hidden px-2 pt-2 pb-4 space-y-1 border-t border-stone-200 bg-white shadow-inner">
+                  <button onClick={() => { setActiveTab('home'); setMobileMenuOpen(false); }} className="block w-full text-left px-3 py-2 rounded-md font-medium hover:bg-stone-100">關於我們</button>
+                  <button onClick={() => { setActiveTab('news'); setMobileMenuOpen(false); }} className="block w-full text-left px-3 py-2 rounded-md font-medium hover:bg-stone-100">最新動態與公告</button>
+                  <button onClick={() => { setActiveTab('resources'); setMobileMenuOpen(false); }} className="block w-full text-left px-3 py-2 rounded-md font-medium hover:bg-stone-100">長照與復健指引</button>
+                  <button onClick={() => { setActiveTab('contact'); setMobileMenuOpen(false); }} className="block w-full text-left px-3 py-2 rounded-md font-medium hover:bg-stone-100">病友權益諮詢表單</button>
+                  <div className="border-t border-stone-200 my-2 pt-2">
+                    <button onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }} className="flex items-center justify-center gap-2 w-full text-center px-4 py-2.5 rounded-md bg-emerald-600 text-white font-semibold">
+                      <Icon name="settings" className="w-4 h-4" />
+                      <span>登入後台試算表管理</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </nav>
+
+            {/* 主要內容 */}
+            <main className="flex-grow">
+              {activeTab === 'home' && (
+                <div>
+                  <div className="relative overflow-hidden py-16 md:py-24 bg-gradient-to-br from-emerald-800 to-teal-950 text-white">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                      <div className="lg:grid lg:grid-cols-12 lg:gap-8 items-center">
+                        <div className="lg:col-span-7">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-400/20 text-emerald-300 mb-6 border border-emerald-500/30">
+                            <Icon name="sparkles" className="w-3.5 h-3.5 mr-1" /> 守護尊嚴・用愛相伴
+                          </span>
+                          <h1 className="text-3.5xl md:text-5xl font-extrabold tracking-tight leading-tight mb-6">
+                            保障帕金森病友權益，<br />
+                            攜手共創無障礙長照未來！
+                          </h1>
+                          <p className={`text-stone-200 mb-8 leading-relaxed max-w-2xl ${getFontSizeClass()}`}>
+                            我們是一群由病友、家屬與專業醫護、社工組成的全國性組織。專注於推動政策倡議、推廣居家生活復健、爭取特定病用輔具補助，協助病友享有尊嚴、高品質的健康尊嚴生活。
+                          </p>
+                          <div className="flex flex-col sm:flex-row gap-4">
+                            <button onClick={() => setActiveTab('contact')} className="px-6 py-3 rounded-lg bg-emerald-500 text-white font-bold text-center hover:bg-emerald-600 shadow-lg hover:shadow-emerald-500/20 transition-all flex items-center justify-center gap-2">
+                              <Icon name="phone" className="w-4 h-4" /> 申請病友權益/長照諮詢
+                            </button>
+                            <button onClick={() => setActiveTab('resources')} className="px-6 py-3 rounded-lg bg-transparent border-2 border-stone-200 text-white font-bold text-center hover:bg-white/10 transition-all">
+                              獲取照護與運動指引
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'news' && (
+                <div className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                    <div>
+                      <h1 className="text-3xl font-extrabold tracking-tight">最新消息與活動公告</h1>
+                      <p className={`mt-2 ${theme.textMuted}`}>促進會所有最新進程、倡議報告與病友交流座談會即時發佈</p>
+                    </div>
+                    <div className="relative w-full md:w-80">
+                      <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 w-4 h-4" />
+                      <input 
+                        type="text" 
+                        placeholder="搜尋公告標題或內容..." 
+                        value={newsSearch}
+                        onChange={(e) => setNewsSearch(e.target.value)}
+                        className={`w-full pl-9 pr-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-emerald-500 ${theme.input}`}
+                      />
+                    </div>
+                  </div>
+
+                  {isLoading ? (
+                    <div className="text-center py-20 bg-stone-100 rounded-xl">
+                      <p className="text-stone-500">正在從 Google API 載入最新公告...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {newsList
+                        .filter(item => item.title.toLowerCase().includes(newsSearch.toLowerCase()) || item.content.toLowerCase().includes(newsSearch.toLowerCase()))
+                        .map((item) => (
+                          <div key={item.id} className={`${theme.card} overflow-hidden`}>
+                            <div className="p-6 md:p-8">
+                              <div className="flex flex-wrap items-center gap-2 mb-3">
+                                <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                  item.category === '活動公告' ? 'bg-amber-100 text-amber-800' :
+                                  item.category === '權益爭取' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'
+                                }`}>
+                                  {item.category}
+                                </span>
+                                <span className="text-xs text-stone-500">{item.date}</span>
+                                <span className="text-xs text-stone-400">| 發佈人：{item.author}</span>
+                              </div>
+                              <h3 className="text-xl md:text-2xl font-bold mb-4">{item.title}</h3>
+                              <p className={`whitespace-pre-wrap leading-relaxed ${getFontSizeClass()}`}>{item.content}</p>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'resources' && (
+                <div className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                  <div className="text-center max-w-3xl mx-auto mb-16">
+                    <h1 className="text-3xl font-extrabold mb-4">帕金森氏症居家照護與運動復健指引</h1>
+                    <p className={`text-stone-600 ${getFontSizeClass()}`}>
+                      由專業物理治療師提供之居家復健動作，以及照顧者日常起居移動與飲食的友善照護建議。
+                    </p>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-8">
+                    <div className={theme.card}>
+                      <div className="p-6 md:p-8">
+                        <h3 className="text-xl font-bold mb-4">🤸‍♂️ 日常肢體伸展與平衡運動</h3>
+                        <ol className="list-decimal pl-5 space-y-2 text-stone-600">
+                          <li><strong>靠牆站立及拉伸：</strong>足跟、臀部與肩部貼牆，維持直立吸吐5次。</li>
+                          <li><strong>踏步抬腳運動：</strong>坐在穩固的椅子上，輪流將左右大腿往上抬高。</li>
+                          <li><strong>雙手平舉扭轉：</strong>站立，雙腳與肩同寬，手部平舉慢動作向左向右旋轉上半身。</li>
+                        </ol>
+                      </div>
+                    </div>
+                    <div className={theme.card}>
+                      <div className="p-6 md:p-8">
+                        <h3 className="text-xl font-bold mb-4">🍲 安全飲食與營養補給原則</h3>
+                        <ol className="list-decimal pl-5 space-y-2 text-stone-600">
+                          <li><strong>藥膳錯開蛋白質：</strong>帕金森藥物 (Levodopa) 建議於空腹或餐前一小時服用。</li>
+                          <li><strong>避免使用玻璃餐具：</strong>應盡量改用食品級美耐皿、不鏽鋼或防震專用餐具。</li>
+                          <li><strong>食物質地調整：</strong>若病友出現輕微吞嚥困難，應避免給予黏性過高的食物。</li>
+                        </ol>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'contact' && (
+                <div className="py-12 max-w-4xl mx-auto px-4 sm:px-6">
+                  <div className="text-center mb-10">
+                    <h1 className="text-3xl font-extrabold mb-3">病友權益諮詢與聯絡服務表單</h1>
+                    <p className={`text-stone-600 ${getFontSizeClass()}`}>
+                      您填寫的資料將**立即同步至 Google 試算表**，我們將指派資深社工專人聯絡！
+                    </p>
+                  </div>
+
+                  {contactSuccessMsg && (
+                    <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg flex items-start gap-2">
+                      <Icon name="check-circle" className="w-5 h-5 shrink-0 mt-0.5" />
+                      <div>{contactSuccessMsg}</div>
+                    </div>
+                  )}
+
+                  <div className={`${theme.card} p-6 md:p-8`}>
+                    <form onSubmit={handleContactSubmit} className="space-y-6">
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-bold mb-2">諮詢者/病友姓名 *</label>
+                          <input type="text" required value={contactForm.name} onChange={(e) => setContactForm({...contactForm, name: e.target.value})} className={`w-full px-4 py-2 rounded-lg border ${theme.input}`} />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold mb-2">聯絡電話 *</label>
+                          <input type="tel" required value={contactForm.phone} onChange={(e) => setContactForm({...contactForm, phone: e.target.value})} className={`w-full px-4 py-2 rounded-lg border ${theme.input}`} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold mb-2">諮詢詳情 *</label>
+                        <textarea rows="4" required value={contactForm.message} onChange={(e) => setContactForm({...contactForm, message: e.target.value})} className={`w-full px-4 py-2 rounded-lg border ${theme.input}`}></textarea>
+                      </div>
+                      <div className="text-center">
+                        <button type="submit" className={`px-8 py-3 rounded-lg font-bold shadow-md ${theme.primary}`}>送出表單並同步至試算表</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'admin' && (
+                <div className="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                  {!isAdminAuthenticated ? (
+                    <div className="max-w-md mx-auto my-12 bg-white rounded-xl shadow-lg p-8 border border-stone-200">
+                      <form onSubmit={handleAdminLogin} className="space-y-4">
+                        <h2 className="text-xl font-bold text-center">登入促進會 Google 試算表管理後台</h2>
+                        <input type="password" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} placeholder="請輸入測試密碼 1234" className={`w-full px-4 py-2 rounded-lg border text-center font-mono text-xl ${theme.input}`} />
+                        <button type="submit" className="w-full py-2.5 rounded-lg bg-emerald-600 text-white font-bold">驗證登入</button>
+                      </form>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="bg-emerald-950 text-stone-100 rounded-2xl p-6 shadow-xl">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                          <div>
+                            <h2 className="text-xl font-extrabold">試算表雙向同步中心 (Google Sheets Active-Sync)</h2>
+                            <p className="text-xs text-stone-300 mt-1">目前所有前端數據已與 Google Sheet 同步。對任意資料列進行新增、修改、刪除將即時更新。</p>
+                          </div>
+                          <button onClick={loadData} className="px-4 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-stone-100 text-sm font-bold flex items-center gap-2">
+                            <Icon name="refresh-cw" className="w-4 h-4" /> 重新同步試算表
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex bg-stone-100 p-1 rounded-xl border border-stone-200 self-start">
+                        <button onClick={() => setAdminActiveSheet('news')} className={`px-4 py-2 rounded-lg text-sm font-bold ${adminActiveSheet === 'news' ? 'bg-white text-emerald-800 shadow-sm' : 'text-stone-600'}`}>工作表一：最新消息公告</button>
+                        <button onClick={() => setAdminActiveSheet('contacts')} className={`px-4 py-2 rounded-lg text-sm font-bold ${adminActiveSheet === 'contacts' ? 'bg-white text-emerald-800 shadow-sm' : 'text-stone-600'}`}>工作表二：諮詢記錄表</button>
+                      </div>
+
+                      <button 
+                        onClick={() => {
+                          if (adminActiveSheet === 'news') {
+                            setEditForm({ title: '', category: '最新消息', date: new Date().toISOString().split('T')[0], author: '秘書處', status: '已發佈', content: '' });
+                          } else {
+                            setEditForm({ name: '', phone: '', email: '', subject: '長照諮詢與特定輔具補助', date: new Date().toISOString().split('T')[0], status: '待處理', message: '', notes: '' });
+                          }
+                          setEditingItem(null);
+                          setIsEditModalOpen(true);
+                        }}
+                        className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold flex items-center gap-1"
+                      >
+                        <Icon name="plus" className="w-4 h-4" /> 新增一列資料
+                      </button>
+
+                      <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+                        <div className="overflow-x-auto">
+                          {adminActiveSheet === 'news' ? (
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-stone-50 border-b border-stone-200 text-xs font-bold text-stone-600">
+                                  <th className="p-4">分類</th>
+                                  <th className="p-4">標題</th>
+                                  <th className="p-4">日期</th>
+                                  <th className="p-4">作者</th>
+                                  <th className="p-4">狀態</th>
+                                  <th className="p-4 text-center">操作</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-stone-200 text-sm">
+                                {newsList.map((item) => (
+                                  <tr key={item.id} className="hover:bg-stone-50/70">
+                                    <td className="p-3">{item.category}</td>
+                                    <td className="p-3 font-medium">{item.title}</td>
+                                    <td className="p-3 font-mono text-xs">{item.date}</td>
+                                    <td className="p-3">{item.author}</td>
+                                    <td className="p-3">{item.status}</td>
+                                    <td className="p-3 text-center">
+                                      <div className="flex justify-center gap-2">
+                                        <button onClick={() => { setEditingItem(item); setEditForm(item); setIsEditModalOpen(true); }} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Icon name="edit-2" className="w-4 h-4" /></button>
+                                        <button onClick={() => handleDeleteItem(item.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Icon name="trash-2" className="w-4 h-4" /></button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-stone-50 border-b border-stone-200 text-xs font-bold text-stone-600">
+                                  <th className="p-4">姓名</th>
+                                  <th className="p-4">電話</th>
+                                  <th className="p-4">主旨</th>
+                                  <th className="p-4">日期</th>
+                                  <th className="p-4">狀態</th>
+                                  <th className="p-4">備註</th>
+                                  <th className="p-4 text-center">操作</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-stone-200 text-sm">
+                                {contactsList.map((item) => (
+                                  <tr key={item.id} className="hover:bg-stone-50/70">
+                                    <td className="p-3 font-bold">{item.name}</td>
+                                    <td className="p-3 font-mono text-xs">{item.phone}</td>
+                                    <td className="p-3">{item.subject}</td>
+                                    <td className="p-3 font-mono text-xs">{item.date}</td>
+                                    <td className="p-3">{item.status}</td>
+                                    <td className="p-3 text-xs italic">{item.notes || '無'}</td>
+                                    <td className="p-3 text-center">
+                                      <div className="flex justify-center gap-2">
+                                        <button onClick={() => { setEditingItem(item); setEditForm(item); setIsEditModalOpen(true); }} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Icon name="edit-2" className="w-4 h-4" /></button>
+                                        <button onClick={() => handleDeleteItem(item.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Icon name="trash-2" className="w-4 h-4" /></button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-stone-900 text-stone-300 rounded-xl p-5">
+                        <h3 className="text-sm font-bold text-stone-100 mb-3">即時同步日誌紀錄 (Realtime Log Console)</h3>
+                        <div className="font-mono text-xs space-y-1 max-h-40 overflow-y-auto bg-black/40 p-3 rounded">
+                          {syncLogs.map((log, index) => (
+                            <div key={index} className="flex gap-2">
+                              <span className="text-stone-500">[{log.time}]</span>
+                              <span className={log.type === 'success' ? 'text-emerald-400' : log.type === 'error' ? 'text-rose-400' : 'text-stone-300'}>{log.action}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </main>
+
+            {isEditModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+                <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full border overflow-hidden">
+                  <div className="px-6 py-4 bg-emerald-800 text-white flex justify-between items-center">
+                    <h3 className="text-lg font-bold">{editingItem ? '✏️ 修改試算表數據' : '➕ 新增試算表數據'}</h3>
+                    <button onClick={() => setIsEditModalOpen(false)}><Icon name="x" className="text-white" /></button>
+                  </div>
+                  <form onSubmit={handleSaveItem} className="p-6 space-y-4 text-gray-800">
+                    {adminActiveSheet === 'news' ? (
+                      <div className="space-y-4">
+                        <input type="text" placeholder="標題" required value={editForm.title || ''} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+                        <textarea placeholder="詳細內容" rows="4" value={editForm.content || ''} onChange={(e) => setEditForm({...editForm, content: e.target.value})} className="w-full px-3 py-2 border rounded-lg"></textarea>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <input type="text" placeholder="姓名" required value={editForm.name || ''} onChange={(e) => setEditForm({...editForm, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+                        <input type="text" placeholder="電話" required value={editForm.phone || ''} onChange={(e) => setEditForm({...editForm, phone: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+                        <textarea placeholder="內部備註 / 社工追蹤進度" rows="3" value={editForm.notes || ''} onChange={(e) => setEditForm({...editForm, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg"></textarea>
+                      </div>
+                    )}
+                    <div className="flex justify-end gap-3 pt-4 border-t">
+                      <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 bg-stone-100 rounded-lg">取消</button>
+                      <button type="submit" className="px-5 py-2 bg-emerald-600 text-white rounded-lg">確認修改，即時同步</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            <footer className={`py-12 ${theme.footer}`}>
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center md:text-left">
+                <p>© 2026 台灣帕金森病友權益促進會 版權所有. 雲端試算表安全保護中.</p>
+              </div>
+            </footer>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  </body>
+</html>
