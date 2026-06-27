@@ -887,6 +887,7 @@
     }
 
     // --- 文章列表與讀取 ---
+    // --- 文章列表與讀取 (優化 HTML 原生網頁顯示) ---
     async function loadArticles() {
       const area = $('articleList');
       try {
@@ -895,62 +896,78 @@
         const items = res.items || [];
         if (!items.length) { area.innerHTML = `<div class="empty">目前沒有符合您權限的文章</div>`; return; }
         
-        area.innerHTML = items.map(a => `
-          <div class="item" style="border-color: var(--primary-light);">
-            <div class="item-h">
-              <div>
-                <div class="item-title" style="color: var(--primary); font-size: var(--fs-lg); cursor:pointer;" onclick="go('infoArticleDetail', {data: ${JSON.stringify(a).replace(/'/g, "&#39;")}})">
-                  ${esc(a.title)}
-                </div>
-                <div class="item-meta">
-                  作者：<b>${esc(a.authorName)}</b> ｜ 發表日期：${esc(a.date)} ｜ 開放等級：<span class="badge bb" style="font-size:14px; padding:2px 8px;">${esc(a.level)}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div class="item-meta" style="margin-top:14px; color: var(--text); line-height: 1.8;">
-              ${a.format === 'HTML' ? a.content : esc(a.content).replace(/\n/g, '<br>')}
-            </div>
+        area.innerHTML = items.map(a => {
+          // 💡 關鍵：如果格式是 HTML，直接輸出內容；如果是純文字，則進行安全轉義並轉換換行符
+          const renderedContent = a.format === 'HTML' 
+            ? `<div class="html-article-wrapper">${a.content}</div>` 
+            : `<div class="text-article-wrapper">${esc(a.content).replace(/\n/g, '<br>')}</div>`;
 
-            <!-- 附件下載控制 -->
-            ${a.attachments && a.attachments.length > 0 ? `
-              <div style="margin-top:14px; padding:12px; background: #f8fafc; border-radius:16px; border:1.5px solid var(--border);">
-                <div style="font-size:var(--fs-sm); font-weight:bold; color:var(--muted); margin-bottom:6px;">📎 附件檔案：</div>
-                ${a.attachments.map(f => `
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; background:#fff; padding:8px 12px; border-radius:8px; border:1px solid #e2e8f0;">
-                    <span style="font-size:var(--fs-sm); font-weight:bold; color:var(--text);">${esc(f.filename)}</span>
-                    ${(a.allowDownload && INFO_PERM.canDownload) ? `
-                      <a href="${esc(f.url)}" target="_blank" class="btn btn-outline btn-xs" style="text-decoration:none; margin:0;">📥 下載</a>
-                    ` : `
-                      <span class="badge bd" style="font-size:12px; padding:4px 8px;">🔒 不開放下載</span>
-                    `}
+          return `
+            <div class="item" style="border-color: var(--primary-light);">
+              <div class="item-h">
+                <div>
+                  <div class="item-title" style="color: var(--primary); font-size: var(--fs-lg); cursor:pointer;" onclick="go('infoArticleDetail', {data: ${JSON.stringify(a).replace(/'/g, "&#39;")}})">
+                    ${esc(a.title)}
                   </div>
-                `).join('')}
+                  <div class="item-meta">
+                    作者：<b>${esc(a.authorName)}</b> ｜ 發表日期：${esc(a.date)} ｜ 開放等級：<span class="badge bb" style="font-size:14px; padding:2px 8px;">${esc(a.level)}</span>
+                  </div>
+                </div>
               </div>
-            ` : ''}
-
-            <!-- 按讚與留言統計列 -->
-            <div style="display:flex; gap:20px; margin-top:16px; border-top: 1px solid var(--border); padding-top:12px;">
-              <button class="btn btn-ghost btn-xs" onclick="toggleArticleLike('${jsStr(a.id)}')" style="margin:0; min-height:44px;">
-                ${a.isLiked ? '❤️' : '🤍'} 按讚 (${a.likesCount})
-              </button>
-              <button class="btn btn-ghost btn-xs" onclick="go('infoArticleDetail', {data: ${JSON.stringify(a).replace(/'/g, "&#39;")}})" style="margin:0; min-height:44px;">
-                💬 留言 (${a.comments.length})
-              </button>
               
-              ${(INFO_PERM.role === '管理員' || a.authorId === APP.user?.memberId) ? `
-                <button class="btn btn-outline btn-xs" onclick="openCreateArticleModal(${JSON.stringify(a).replace(/'/g, "&#39;")})" style="margin:0; margin-left:auto; min-height:44px;">✏️ 編輯</button>
-                <button class="btn btn-danger btn-xs" onclick="deleteArticle('${jsStr(a.id)}')" style="margin:0; min-height:44px;">🗑️ 刪除</button>
+              <!-- 💡 這裡直接呈現實際網頁內容 -->
+              <div style="margin-top:14px; color: var(--text); line-height: 1.8;">
+                ${renderedContent}
+              </div>
+
+              <!-- 附件下載控制 -->
+              ${a.attachments && a.attachments.length > 0 ? `
+                <div style="margin-top:14px; padding:12px; background: #f8fafc; border-radius:16px; border:1.5px solid var(--border);">
+                  <div style="font-size:var(--fs-sm); font-weight:bold; color:var(--muted); margin-bottom:6px;">📎 附件檔案：</div>
+                  ${a.attachments.map(f => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; background:#fff; padding:8px 12px; border-radius:8px; border:1px solid #e2e8f0;">
+                      <span style="font-size:var(--fs-sm); font-weight:bold; color:var(--text);">${esc(f.filename)}</span>
+                      ${(a.allowDownload && INFO_PERM.canDownload) ? `
+                        <a href="${esc(f.url)}" target="_blank" class="btn btn-outline btn-xs" style="text-decoration:none; margin:0;">📥 下載</a>
+                      ` : `
+                        <span class="badge bd" style="font-size:12px; padding:4px 8px;">🔒 不開放下載</span>
+                      `}
+                    </div>
+                  `).join('')}
+                </div>
               ` : ''}
+
+              <!-- 按讚與留言統計列 -->
+              <div style="display:flex; gap:20px; margin-top:16px; border-top: 1px solid var(--border); padding-top:12px;">
+                <button class="btn btn-ghost btn-xs" onclick="toggleArticleLike('${jsStr(a.id)}')" style="margin:0; min-height:44px;">
+                  ${a.isLiked ? '❤️' : '🤍'} 按讚 (${a.likesCount})
+                </button>
+                <button class="btn btn-ghost btn-xs" onclick="go('infoArticleDetail', {data: ${JSON.stringify(a).replace(/'/g, "&#39;")}})" style="margin:0; min-height:44px;">
+                  💬 留言 (${a.comments.length})
+                </button>
+                
+                ${(INFO_PERM.role === '管理員' || a.authorId === APP.user?.memberId) ? `
+                  <button class="btn btn-outline btn-xs" onclick="openCreateArticleModal(${JSON.stringify(a).replace(/'/g, "&#39;")})" style="margin:0; margin-left:auto; min-height:44px;">✏️ 編輯</button>
+                  <button class="btn btn-danger btn-xs" onclick="deleteArticle('${jsStr(a.id)}')" style="margin:0; min-height:44px;">🗑️ 刪除</button>
+                ` : ''}
+              </div>
             </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       } catch (e) { area.innerHTML = `<div class="empty">連線失敗：${esc(e.message)}</div>`; }
     }
 
+
     // 文章詳細與留言互動頁面
+    // 文章詳細與留言互動頁面 (優化 HTML 原生網頁顯示)
     function renderInfoArticleDetail(params) {
       const a = params.data;
+      
+      // 💡 關鍵：如果格式是 HTML，直接輸出內容；如果是純文字，則進行安全轉義並轉換換行符
+      const renderedContent = a.format === 'HTML' 
+        ? `<div class="html-article-wrapper">${a.content}</div>` 
+        : `<div class="text-article-wrapper" style="white-space: pre-wrap;">${esc(a.content)}</div>`;
+
       setMain(`
         <div class="card">
           <div class="card-title">
@@ -964,8 +981,9 @@
               作者：<b>${esc(a.authorName)}</b> ｜ 日期：${esc(a.date)}
             </div>
             
+            <!-- 💡 這裡直接呈現實際網頁內容 -->
             <div style="font-size:var(--fs-base); line-height:1.8; color:var(--text); margin-bottom:30px;">
-              ${a.format === 'HTML' ? a.content : esc(a.content).replace(/\n/g, '<br>')}
+              ${renderedContent}
             </div>
           </div>
 
@@ -998,6 +1016,7 @@
         </div>
       `);
     }
+
 
     async function submitComment(articleId) {
       const content = requireInput('newCommentText', '留言內容');
@@ -3027,14 +3046,4 @@
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
 
