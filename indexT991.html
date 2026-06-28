@@ -549,7 +549,7 @@ function isAdminUser(u){return!!(u&&ADMIN_TYPES.includes(String(u.type||'')));}
 function showBack(show){$('backBtn')?.classList.toggle('hide',!show);}
 
 // ===== 部署設定與全域變數 =====
-const API_BASE = 'https://script.google.com/macros/s/AKfycbyhtSb2xQ_QF8ECsmP2nqHfU9e_yGeuj8MItkKERXGG7B6tjNhisthDiwZwedWdSfruSw/exec';
+const API_BASE = 'https://script.google.com/macros/s/AKfycbw8UKasCXqN63NLWteVelIufo6hAgBviYYLyqVMLdST7M4eGoOy5mDTVjyzeMMs3Ri2jw/exec';
 const LIFF_ID  = '2009456572-588gzru4';
 const ORG_NAME = '社團法人台灣帕金森病友權益促進會';
 const ADMIN_TYPES = ['管理員','理事長','理監事','理事','監事','會計','出納','總幹事','行政秘書長'];
@@ -1925,16 +1925,202 @@ async function renderFinanceExpense(){
       </div>
       <div class="fg"><label class="flabel" for="expProjectName">專案名稱</label><input id="expProjectName" class="fc" placeholder="可不填"></div>
       
-      <!-- 📎 檔案上傳欄位 -->
+      <!-- 📎 升級：多檔案上傳與即時命名區塊 -->
       <div class="fg">
-        <label class="flabel" for="expFile">上傳原始憑證發票/收據單據 <span class="req">*</span></label>
-        <input type="file" id="expFile" class="fc" accept="image/*,application/pdf">
+        <label class="flabel" for="expFiles">上傳原始憑證發票/收據單據 (可選多個檔案) <span class="req">*</span></label>
+        <input type="file" id="expFiles" class="fc" accept="image/*,application/pdf" multiple onchange="handleMultiFileSelect('expFiles', 'filesPreviewArea')">
+        <div id="filesPreviewArea" style="margin-top:12px; display:flex; flex-direction:column; gap:10px;"></div>
       </div>
 
-      <button class="btn btn-warn" onclick="submitExpense()">📤 建立支出申請</button>
+      <button class="btn btn-warn" onclick="submitExpenseWithMultiFiles()">📤 建立支出申請</button>
     </div>
   `);
 }
+
+// ===== 2. 處理多檔案選擇，動態渲染檔名與自訂更名輸入框 =====
+window.__selectedFilesStore = {}; // 全域暫存選中的檔案物件
+
+function handleMultiFileSelect(inputId, previewAreaId) {
+  const input = $(inputId);
+  const preview = $(previewAreaId);
+  if (!input || !preview) return;
+  
+  preview.innerHTML = '';
+  const files = input.files;
+  if (files.length === 0) return;
+  
+  // 儲存至全域暫存
+  window.__selectedFilesStore[inputId] = Array.from(files);
+  
+  window.__selectedFilesStore[inputId].forEach((file, index) => {
+    // 預設將原檔名（不含副檔名）填入輸入框中
+    const lastDot = file.name.lastIndexOf('.');
+    const defaultName = lastDot !== -1 ? file.name.substring(0, lastDot) : file.name;
+    
+    const fileRow = document.createElement('div');
+    fileRow.style = "background:#f1f5f9; border:2px solid #cbd5e1; border-radius:14px; padding:12px 16px; display:flex; flex-direction:column; gap:8px;";
+    fileRow.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:var(--fs-sm); font-weight:bold; color:var(--primary); word-break:break-all;">📄 檔案 ${index + 1}: ${esc(file.name)}</span>
+        <span style="font-size:var(--fs-xs); color:var(--muted);">(${(file.size/1024/1024).toFixed(2)} MB)</span>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <span style="font-size:var(--fs-xs); font-weight:bold; flex-shrink:0;">✏️ 自訂檔名:</span>
+        <input type="text" class="fc file-custom-name-input" data-index="${index}" value="${esc(defaultName)}" style="min-height:44px; padding:6px 12px; font-size:var(--fs-sm); border-radius:10px; flex:1;" placeholder="請輸入此檔案的自訂名稱">
+      </div>
+    `;
+    preview.appendChild(fileRow);
+  });
+}
+
+// ===== 3. 批次將選中的檔案轉換為 Base64 格式 =====
+async function prepareMultiFilesData(inputId) {
+  const files = window.__selectedFilesStore[inputId] || [];
+  if (files.length === 0) return [];
+  
+  const preview = document.getElementById(inputId).parentNode;
+  const inputs = preview.querySelectorAll('.file-custom-name-input');
+  
+  const promises = files.map((file, index) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const base64 = e.target.result.split(',')[1];
+        // 取得對應輸入框的自訂名稱
+        let customName = '';
+        inputs.forEach(input => {
+          if (parseInt(input.getAttribute('data-index')) === index) {
+            customName = input.value.trim();
+          }
+        });
+        
+        resolve({
+          base64: base64,
+          filename: file.name,
+          mimeType: file.type,
+          customName: customName || file.name.split('.').pop()
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+  
+  return Promise.all(promises);
+}
+
+// ===== 4. 提交含多個憑證檔案的支出申請 =====
+async function submitExpenseWithMultiFiles() {
+  const amount = requireAmount('expAmount', '支出金額');
+  const desc = requireInput('expDesc', '用途說明');
+  const account = requireInput('expAccount', '付款帳戶');
+  if (!amount || !desc || !account) return;
+
+  const filesData = await prepareMultiFilesData('expFiles');
+  if (filesData.length === 0) {
+    toast('請至少選擇並上傳一個憑證檔案', 'w');
+    $('expFiles').focus();
+    return;
+  }
+
+  showLoad();
+  try {
+    const res = await api('finance.addExpense', {
+      date: $('expDate').value,
+      subjectCode: $('expSubject').value,
+      amount,
+      applicant: $('expApplicant').value.trim(),
+      payee: $('expPayee').value.trim(),
+      payeeAccount: $('expPayeeAccount').value.trim(),
+      description: desc,
+      account,
+      projectName: $('expProjectName').value.trim(),
+      files: filesData // 傳送多檔案陣列
+    });
+    hideLoad();
+    if (res.success) {
+      toast(res.budgetWarning ? '已建立，預算提醒：' + res.budgetWarning : '支出申請已建立', 's');
+      go('expenseList');
+    } else {
+      toast(res.message || '建立失敗', 'e');
+    }
+  } catch (e) {
+    hideLoad();
+    toast('建立失敗：' + e.message, 'e');
+  }
+}
+
+// ===== 5. 替換 隨時上傳憑證彈窗：支援多檔追加與分別命名 =====
+function openUploadExpenseVoucherModal(expenseId, description) {
+  openModal(`
+    <div class="modal-title">📎 上傳/更新憑證單據</div>
+    <div class="notice info">
+      您正在為「<b>${esc(description)}</b>」上傳憑證單據。<br>
+      您可以選擇多個檔案，並分別為其命名。
+    </div>
+    <div class="fg">
+      <label class="flabel" for="evUploadMode">上傳模式</label>
+      <select id="evUploadMode" class="fc">
+        <option value="append">➕ 追加檔案 (保留原本已上傳的檔案)</option>
+        <option value="overwrite">🔄 覆蓋檔案 (刪除原本檔案，以此批全新檔案替代)</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label class="flabel" for="evFiles">選擇憑證檔案 (可選多個) <span class="req">*</span></label>
+      <input type="file" id="evFiles" class="fc" accept="image/*,application/pdf" multiple onchange="handleMultiFileSelect('evFiles', 'evFilesPreviewArea')">
+      <div id="evFilesPreviewArea" style="margin-top:12px; display:flex; flex-direction:column; gap:10px;"></div>
+    </div>
+    <button class="btn btn-success" onclick="submitExpenseVoucherMultiUpload('${jsStr(expenseId)}')">📤 開始上傳憑證</button>
+    <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+  `);
+}
+
+async function submitExpenseVoucherMultiUpload(expenseId) {
+  const filesData = await prepareMultiFilesData('evFiles');
+  if (filesData.length === 0) {
+    toast('請先選擇要上傳的檔案', 'w');
+    $('evFiles')?.focus();
+    return;
+  }
+  
+  showLoad();
+  try {
+    const res = await api('expense.uploadVoucher', {
+      expenseId,
+      files: filesData,
+      mode: $('evUploadMode').value
+    });
+    hideLoad();
+    if (res.success) {
+      closeModal();
+      toast(res.message || '憑證上傳成功！', 's');
+      loadExpenseList(''); // 重新整理清單
+    } else {
+      toast(res.message || '上傳失敗', 'e');
+    }
+  } catch (e) {
+    hideLoad();
+    toast('上傳連線失敗：' + e.message, 'e');
+  }
+}
+
+// ===== 6. 替換 支出清單顯示：支援多個憑證連結的渲染 =====
+// 請在您的 loadExpenseList 渲染邏輯中，將原本渲染單一連結的部分替換為以下邏輯：
+/*
+  渲染檔案連結的 HTML 生成範例：
+  let filesHtml = '';
+  if (e.files && e.files.length > 0) {
+    filesHtml = e.files.map((file, idx) => `
+      <div style="margin-top: 6px;">
+        📎 憑證 ${idx + 1}：<a href="${esc(file.url)}" target="_blank" style="color:var(--primary); font-weight:bold; text-decoration:underline;">
+          ${esc(file.name || '檢視憑證')}
+        </a>
+      </div>
+    `).join('');
+  } else {
+    filesHtml = '<span style="color:var(--danger); font-weight:bold;">⚠️ 尚未上傳任何憑證單據</span>';
+  }
+*/
+
 async function submitExpense(){
   const amount=requireAmount('expAmount','支出金額');
   const desc=requireInput('expDesc','用途說明');
@@ -2043,25 +2229,25 @@ async function loadExpenseList(statusFilter){
 /*=======================================================
  * 💡 優化：隨時上傳/更新憑證單據彈出視窗 (支援自訂重新命名)
  =======================================================*/
-function openUploadExpenseVoucherModal(expenseId, description) {
-  openModal(`
-    <div class="modal-title">📎 上傳/更新憑證單據</div>
-    <div class="notice info">
-      您正在為「<b>${esc(description)}</b>」上傳或更新憑證單據。<br>
-      上傳成功後，系統會自動將檔案儲存至雲端，並更新此筆支出的憑證連結。
-    </div>
-    <div class="fg">
-      <label class="flabel" for="evCustomName">自訂憑證檔名 (選填，不填則使用原檔名)</label>
-      <input id="evCustomName" class="fc" placeholder="例如：1150628_文具發票">
-    </div>
-    <div class="fg">
-      <label class="flabel" for="evFile">選擇憑證檔案 (圖片或 PDF) <span class="req">*</span></label>
-      <input type="file" id="evFile" class="fc" accept="image/*,application/pdf">
-    </div>
-    <button class="btn btn-success" onclick="submitExpenseVoucherUpload('${jsStr(expenseId)}')">📤 開始上傳憑證</button>
-    <button class="btn btn-ghost" onclick="closeModal()">取消</button>
-  `);
-}
+// function openUploadExpenseVoucherModal(expenseId, description) {
+//   openModal(`
+//     <div class="modal-title">📎 上傳/更新憑證單據</div>
+//     <div class="notice info">
+//       您正在為「<b>${esc(description)}</b>」上傳或更新憑證單據。<br>
+//       上傳成功後，系統會自動將檔案儲存至雲端，並更新此筆支出的憑證連結。
+//     </div>
+//     <div class="fg">
+//       <label class="flabel" for="evCustomName">自訂憑證檔名 (選填，不填則使用原檔名)</label>
+//       <input id="evCustomName" class="fc" placeholder="例如：1150628_文具發票">
+//     </div>
+//     <div class="fg">
+//       <label class="flabel" for="evFile">選擇憑證檔案 (圖片或 PDF) <span class="req">*</span></label>
+//       <input type="file" id="evFile" class="fc" accept="image/*,application/pdf">
+//     </div>
+//     <button class="btn btn-success" onclick="submitExpenseVoucherUpload('${jsStr(expenseId)}')">📤 開始上傳憑證</button>
+//     <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+//   `);
+// }
 
 async function submitExpenseVoucherUpload(expenseId) {
   const fileInput = $('evFile');
