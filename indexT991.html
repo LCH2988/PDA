@@ -549,7 +549,7 @@ function isAdminUser(u){return!!(u&&ADMIN_TYPES.includes(String(u.type||'')));}
 function showBack(show){$('backBtn')?.classList.toggle('hide',!show);}
 
 // ===== 部署設定與全域變數 =====
-const API_BASE = 'https://script.google.com/macros/s/AKfycbwRD6j0-0JscL1BvTt3UZEcbzaROTms90UYlOqJ8hA5Ag-yeQ3kKeBAruoFDRykB3sWEA/exec';
+const API_BASE = 'https://script.google.com/macros/s/AKfycbyhtSb2xQ_QF8ECsmP2nqHfU9e_yGeuj8MItkKERXGG7B6tjNhisthDiwZwedWdSfruSw/exec';
 const LIFF_ID  = '2009456572-588gzru4';
 const ORG_NAME = '社團法人台灣帕金森病友權益促進會';
 const ADMIN_TYPES = ['管理員','理事長','理監事','理事','監事','會計','出納','總幹事','行政秘書長'];
@@ -575,7 +575,7 @@ const NAV_MAP = {
   staffManage:'navAdmin', announceManage:'navAdmin'
 };
 
-// ===== 💡 宣告 ROUTES 變數（已移除未定義的 renderExpenseDetail） =====
+// ===== 💡 宣告 ROUTES 變數 =====
 const ROUTES = {
   home: renderHome, 
   announcements: renderAnnouncements,
@@ -1029,7 +1029,7 @@ function renderMemberCenter(){
           <div style="font-size:var(--fs-xl);font-weight:950;">${esc(u.name||'')}</div>
           <div style="margin-top:8px;">
             <span class="badge ${u.isActive?'bs':'bw'}">${u.isActive?'✅ 有效會員':'⚠️ 待繳費'}</span>
-                        <span class="badge bb" style="margin-left:8px;">${esc(u.type||'一般會員')}</span>
+            <span class="badge bb" style="margin-left:8px;">${esc(u.type||'一般會員')}</span>
           </div>
         </div>
       </div>
@@ -1168,9 +1168,15 @@ async function submitProfile(){
 }
 
 /*=======================================================
- * 收據 PDF 檢視
+ * 收據 PDF 檢視 (優化：支援直接檢視/下載雲端 PDF 檔)
  =======================================================*/
-async function viewReceiptPdf(receiptNo){
+async function viewReceiptPdf(receiptNo, directPdfUrl = ''){
+  // 💡 優化：若已有自動生成的雲端 PDF 連結，直接在新分頁開啟
+  if(directPdfUrl && directPdfUrl !== '尚未開立' && directPdfUrl !== '--'){
+    window.open(directPdfUrl, '_blank');
+    return;
+  }
+  
   if(!receiptNo||receiptNo==='尚未開立'||receiptNo==='--'){toast('尚未開立收據','w');return;}
   showLoad();
   try{
@@ -1179,7 +1185,9 @@ async function viewReceiptPdf(receiptNo){
     if(res.success && res.html){
       openModal(`
         <div class="modal-title">🧾 電子收據明細</div>
-        <div id="receiptPrintDoc" style="background:#fff;color:#111;padding:10px;border-radius:12px;max-height:60vh;overflow-y:auto;">
+        <div class="notice success">💡 本收據已自動轉換 PDF 存檔，您可直接列印或點擊下方連結下載。</div>
+        ${res.pdfUrl ? `<div style="margin-bottom:14px;"><a href="${esc(res.pdfUrl)}" target="_blank" class="btn btn-success" style="color:#fff; text-decoration:none;">📥 下載正式 PDF 收據檔案</a></div>` : ''}
+        <div id="receiptPrintDoc" style="background:#fff;color:#111;padding:10px;border-radius:12px;max-height:50vh;overflow-y:auto;">
           ${res.html}
         </div>
         <button class="btn btn-primary" onclick="printElement('receiptPrintDoc')">🖨️ 列印收據</button>
@@ -1192,7 +1200,7 @@ async function viewReceiptPdf(receiptNo){
 }
 
 /*=======================================================
- * 會費繳納 (含檔案上傳)
+ * 會費繳納 (含檔案上傳與自動 PDF 狀態)
  =======================================================*/
 function renderMyPayments(){
   if(!requireLogin())return;
@@ -1295,13 +1303,20 @@ async function loadMyPayments(){
                 日期：${esc(r.date||'')} ｜ 方式：${esc(r.method||'')}<br>
                 收據：${esc(r.receiptNo||'尚未開立')}<br>
                 ${r.note?'備註：'+esc(r.note):''}<br>
-                ${r.fileUrl?`<a href="${esc(r.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold;">📎 檢視已上傳憑證</a>`:''}
+                ${r.fileUrl?`📎 憑證：<a href="${esc(r.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold;">${esc(r.fileName || '檢視已上傳憑證')}</a>`:''}
               </div>
             </div>
             <span class="badge ${ok?'bs':rej?'bd':'bw'}">${esc(r.status||'待確認')}</span>
           </div>
-          ${ok&&r.receiptNo?`<div class="item-actions"><button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}')">🧾 檢視收據</button></div>`:''}
-          ${!ok&&!rej?`<div class="notice warn" style="margin-top:10px;margin-bottom:0;">⏳ 等待管理員確認入帳中</div>`:''}
+          <!-- 💡 優化：確認收款後，狀態會從待查收轉成「查看或下載 PDF 檔」 -->
+          ${ok&&r.receiptNo?`
+            <div class="item-actions" style="margin-top:14px;">
+              <button class="btn btn-success" style="min-height:60px;" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}', '${jsStr(r.receiptPdfUrl)}')">
+                📄 查看或下載 PDF 收據檔
+              </button>
+            </div>
+          `:''}
+          ${!ok&&!rej?`<div class="notice warn" style="margin-top:10px;margin-bottom:0;">⏳ 待查收中（等待管理員確認入帳）</div>`:''}
           ${rej?`<div class="notice danger" style="margin-top:10px;margin-bottom:0;">❌ 已退回：${esc(r.rejectReason||'請聯絡協會確認')}</div>`:''}
         </div>`;
     }).join('');
@@ -1309,7 +1324,7 @@ async function loadMyPayments(){
 }
 
 /*=======================================================
- * 捐款 (含檔案上傳)
+ * 捐款 (含檔案上傳與自動 PDF 狀態)
  =======================================================*/
 function renderMyDonations(){
   if(!requireLogin())return;
@@ -1430,13 +1445,20 @@ async function loadMyDonations(){
                 <div class="item-meta">
                   日期：${esc(r.date||r.donationDate||'')} ｜ 用途：${esc(r.purpose||'一般捐款')}<br>
                   方式：${esc(r.method||'')} ｜ 收據：${esc(r.receiptNo||'尚未開立')}<br>
-                  ${r.fileUrl?`<a href="${esc(r.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold;">📎 檢視已上傳憑證</a>`:''}
+                  ${r.fileUrl?`📎 憑證：<a href="${esc(r.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold;">${esc(r.fileName || '檢視已上傳憑證')}</a>`:''}
                 </div>
               </div>
               <span class="badge ${ok?'bs':rej?'bd':'bw'}">${esc(r.status||'待確認')}</span>
             </div>
-            ${ok&&r.receiptNo?`<div class="item-actions"><button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}')">🧾 檢視收據</button></div>`:''}
-            ${!ok&&!rej?`<div class="notice warn" style="margin-top:10px;margin-bottom:0;">⏳ 等待管理員確認入帳中</div>`:''}
+            <!-- 💡 優化：確認收款後，狀態會從待查收轉成「查看或下載 PDF 檔」 -->
+            ${ok&&r.receiptNo?`
+              <div class="item-actions" style="margin-top:14px;">
+                <button class="btn btn-success" style="min-height:60px;" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}', '${jsStr(r.receiptPdfUrl)}')">
+                  📄 查看或下載 PDF 收據檔
+                </button>
+              </div>
+            `:''}
+            ${!ok&&!rej?`<div class="notice warn" style="margin-top:10px;margin-bottom:0;">⏳ 待查收中（等待管理員確認入帳）</div>`:''}
             ${rej?`<div class="notice danger" style="margin-top:10px;margin-bottom:0;">❌ 已退回：${esc(r.rejectReason||'請聯絡協會確認')}</div>`:''}
           </div>`;
       }).join('')}`;
@@ -1700,7 +1722,7 @@ async function loadPendingPayments(){
               年度：${esc(r.year||'')} ｜ 日期：${esc(r.date||'')}<br>
               方式：${esc(r.method||'')}<br>
               ${r.note?`備註：${esc(r.note)}<br>`:''}
-              ${r.fileUrl?`<a href="${esc(r.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold; text-decoration:underline;">🔍 立即查看上傳憑證/水單</a>`:''}
+              ${r.fileUrl?`📎 憑證：<a href="${esc(r.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold; text-decoration:underline;">${esc(r.fileName || '查看憑證')}</a>`:''}
             </div>
           </div>
           <span class="badge bw">待確認</span>
@@ -1762,7 +1784,7 @@ async function loadPendingDonations(){
               日期：${esc(r.date||r.donationDate||'')} ｜ 用途：${esc(r.purpose||'')}<br>
               方式：${esc(r.method||r.donationMethod||'')}<br>
               ${r.note?`備註：${esc(r.note)}<br>`:''}
-              ${r.fileUrl?`<a href="${esc(r.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold; text-decoration:underline;">🔍 立即查看上傳憑證/水單</a>`:''}
+              ${r.fileUrl?`📎 憑證：<a href="${esc(r.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold; text-decoration:underline;">${esc(r.fileName || '查看憑證')}</a>`:''}
             </div>
           </div>
           <span class="badge bw">待確認</span>
@@ -1946,7 +1968,7 @@ async function submitExpense(){
 }
 
 /*=======================================================
- * 支出清單 / 審核 / 撥款
+ * 支出清單 / 審核 / 撥款 (優化：支援任何階段隨時上傳與自訂更名憑證)
  =======================================================*/
 async function renderExpenseList(){
   if(!adminGuard())return;
@@ -1987,14 +2009,27 @@ async function loadExpenseList(statusFilter){
               申請人：${esc(e.applicant||'')} ｜ 受款人：${esc(e.payee||'--')}<br>
               ${e.projectName?`專案：${esc(e.projectName)}<br>`:''}
               ${e.voucherNo&&e.voucherNo!=='--'?`傳票：${esc(e.voucherNo)}<br>`:''}
-              ${e.fileUrl?`<a href="${esc(e.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold; text-decoration:underline;">🔍 立即查看原始憑證單據</a><br>`:''}
+              <!-- 💡 優化：前端即時顯示保留最新上傳的檔名與連結 -->
+              <div style="margin-top: 8px; padding: 8px 12px; background: var(--primary-light); border-radius: 12px; border: 1.5px solid #93c5fd;">
+                ${e.fileUrl ? `
+                  📁 憑證單據：<a href="${esc(e.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold; text-decoration:underline;">
+                    ${esc(e.fileName || '查看原始憑證')}
+                  </a>
+                ` : `<span style="color:var(--danger); font-weight:bold;">⚠️ 尚未上傳任何憑證單據</span>`}
+              </div>
               ${e.rejectReason?`<span style="color:var(--danger);">退回原因：${esc(e.rejectReason)}</span>`:''}
             </div>
           </div>
           <span class="badge ${e.status==='已撥款'?'bs':e.status==='已核准'?'bb':e.status==='已退回'?'bd':'bw'}">${esc(e.status||'待核准')}</span>
         </div>
         <div class="item-actions">
-          <button class="btn btn-outline btn-xs" onclick='openExpenseVoucher(${JSON.stringify(e).replace(/'/g,"&#39;")})'>📄 憑證</button>
+          <button class="btn btn-outline btn-xs" onclick='openExpenseVoucher(${JSON.stringify(e).replace(/'/g,"&#39;")})'>📄 憑證單</button>
+          
+          <!-- 💡 優化：在任何階段都可以隨時上傳、更名與更新相關憑證 -->
+          <button class="btn btn-primary btn-xs" onclick="openUploadExpenseVoucherModal('${jsStr(e.id)}', '${jsStr(e.description)}')">
+            📎 隨時上傳/更新憑證
+          </button>
+
           ${(e.status==='待核准'||!e.status)?`
             <button class="btn btn-success btn-xs" onclick="approveExpense('${jsStr(e.id)}')">✅ 核准</button>
             <button class="btn btn-danger btn-xs" onclick="rejectExpense('${jsStr(e.id)}')">❌ 退回</button>`:''}
@@ -2004,6 +2039,61 @@ async function loadExpenseList(statusFilter){
       </div>`).join('');
   }catch(e){area.innerHTML=`<div class="empty">載入失敗：${esc(e.message)}</div>`;}
 }
+
+/*=======================================================
+ * 💡 優化：隨時上傳/更新憑證單據彈出視窗 (支援自訂重新命名)
+ =======================================================*/
+function openUploadExpenseVoucherModal(expenseId, description) {
+  openModal(`
+    <div class="modal-title">📎 上傳/更新憑證單據</div>
+    <div class="notice info">
+      您正在為「<b>${esc(description)}</b>」上傳或更新憑證單據。<br>
+      上傳成功後，系統會自動將檔案儲存至雲端，並更新此筆支出的憑證連結。
+    </div>
+    <div class="fg">
+      <label class="flabel" for="evCustomName">自訂憑證檔名 (選填，不填則使用原檔名)</label>
+      <input id="evCustomName" class="fc" placeholder="例如：1150628_文具發票">
+    </div>
+    <div class="fg">
+      <label class="flabel" for="evFile">選擇憑證檔案 (圖片或 PDF) <span class="req">*</span></label>
+      <input type="file" id="evFile" class="fc" accept="image/*,application/pdf">
+    </div>
+    <button class="btn btn-success" onclick="submitExpenseVoucherUpload('${jsStr(expenseId)}')">📤 開始上傳憑證</button>
+    <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+  `);
+}
+
+async function submitExpenseVoucherUpload(expenseId) {
+  const fileInput = $('evFile');
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    toast('請先選擇要上傳的檔案', 'w');
+    fileInput?.focus();
+    return;
+  }
+  
+  const customFilename = $('evCustomName').value.trim();
+  showLoad();
+  try {
+    const fileData = await getFileData('evFile');
+    const res = await api('expense.uploadVoucher', {
+      expenseId,
+      file: fileData,
+      customFilename
+    });
+    hideLoad();
+    if (res.success) {
+      closeModal();
+      toast(res.message || '憑證上傳成功！', 's');
+      loadExpenseList(''); // 重新整理清單，即時呈現最新檔名
+    } else {
+      toast(res.message || '上傳失敗', 'e');
+    }
+  } catch (e) {
+    hideLoad();
+    toast('上傳連線失敗：' + e.message, 'e');
+  }
+}
+
 function openExpenseVoucher(e){
   openModal(`
     <div class="modal-title">📄 支出憑證單</div>
@@ -2052,7 +2142,8 @@ async function renderReceiptList(){
             <div class="item-title">${esc(r.receiptNo)} ｜ ${fmtMoney(r.amount)}</div>
             <div class="item-meta">
               姓名：${esc(r.name)} ｜ 類型：${esc(r.type||r.receiptType||'')}<br>
-              日期：${esc(r.date||'')} ｜ 項目：${esc(r.item||'')}
+              日期：${esc(r.date||'')} ｜ 項目：${esc(r.item||'')}<br>
+              ${r.pdfUrl ? `📄 PDF 收據：<a href="${esc(r.pdfUrl)}" target="_blank" style="color:var(--primary); font-weight:bold;">點此下載 PDF 檔案</a>` : ''}
               ${r.voidReason?`<br><span style="color:var(--danger);">作廢原因：${esc(r.voidReason)}</span>`:''}
             </div>
           </div>
@@ -2060,7 +2151,7 @@ async function renderReceiptList(){
         </div>
         ${r.status!=='作廢'?`
           <div class="item-actions">
-            <button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}')">🧾 檢視雙聯收據</button>
+            <button class="btn btn-outline btn-xs" onclick="viewReceiptPdf('${jsStr(r.receiptNo)}', '${jsStr(r.pdfUrl)}')">🧾 檢視雙聯收據</button>
             <button class="btn btn-danger btn-xs" onclick="voidReceipt('${jsStr(r.receiptNo)}')">作廢</button>
           </div>`:''}
       </div>`).join('');
@@ -2138,7 +2229,7 @@ function buildExpenseVoucherHtml(e){
           <tr><th style="background:#f2f2f2;border:1px solid #222;padding:10px;font-weight:800;">申請人</th><td style="border:1px solid #222;padding:10px;">${esc(e.applicant||'')}</td></tr>
           <tr><th style="background:#f2f2f2;border:1px solid #222;padding:10px;font-weight:800;">受款人</th><td style="border:1px solid #222;padding:10px;">${esc(e.payee||'--')}</td></tr>
           <tr><th style="background:#f2f2f2;border:1px solid #222;padding:10px;font-weight:800;">狀態</th><td style="border:1px solid #222;padding:10px;">${esc(e.status||'待核准')}</td></tr>
-          ${e.fileUrl?`<tr><th style="background:#f2f2f2;border:1px solid #222;padding:10px;font-weight:800;">原始憑證</th><td style="border:1px solid #222;padding:10px;"><a href="${esc(e.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold; text-decoration:underline;">🔍 點此查看已上傳單據檔</a></td></tr>`:''}
+          ${e.fileUrl?`<tr><th style="background:#f2f2f2;border:1px solid #222;padding:10px;font-weight:800;">原始憑證</th><td style="border:1px solid #222;padding:10px;"><a href="${esc(e.fileUrl)}" target="_blank" style="color:var(--primary); font-weight:bold; text-decoration:underline;">🔍 點此查看已上傳單據檔 (${esc(e.fileName || '原始憑證')})</a></td></tr>`:''}
         </tbody>
       </table>
       <div style="border:2px solid #222;border-radius:10px;padding:14px;text-align:center;margin-bottom:16px;">
@@ -2716,7 +2807,7 @@ function renderReportCenter(){
 }
 
 function switchReportType(val){
-    REPORT_STATE.type=val;
+  REPORT_STATE.type=val;
   const t=getReportType(val);
   const icon=$('repResultIcon');
   const title=$('repResultTitle');
@@ -2807,9 +2898,9 @@ function renderReportResult(type,res,area){
             <tr style="border-bottom:1px solid #eee;">
               <td style="padding:8px;">${esc(fmtDate(r.date))}</td>
               <td style="padding:8px;">${esc(r.subjectCode)} ${esc(r.subjectName)}</td>
-              <td style="padding:8px;">${esc(r.description||'')}</td>
-              <td style="padding:8px;text-align:right;">${r.debit?moneyHtml(r.debit):'--'}</td>
-              <td style="padding:8px;text-align:right;">${r.credit?moneyHtml(r.credit):'--'}</td>
+              <td style="padding:8px;">${esc(r.description)}</td>
+              <td style="padding:8px;text-align:right;">${r.debit > 0 ? moneyHtml(r.debit) : '--'}</td>
+              <td style="padding:8px;text-align:right;">${r.credit > 0 ? moneyHtml(r.credit) : '--'}</td>
               <td style="padding:8px;text-align:right;font-weight:700;">${moneyHtml(r.balance)}</td>
             </tr>`).join('')}
         </tbody>
@@ -2822,9 +2913,9 @@ function renderReportResult(type,res,area){
         <thead>
           <tr style="background:#f2f2f2;border-top:2px solid #111;border-bottom:2px solid #111;">
             <th style="padding:8px;text-align:left;font-weight:800;">日期</th>
-            <th style="padding:8px;text-align:left;font-weight:800;">傳票/收據號</th>
+            <th style="padding:8px;text-align:left;font-weight:800;">單號</th>
             <th style="padding:8px;text-align:left;font-weight:800;">會計科目</th>
-            <th style="padding:8px;text-align:left;font-weight:800;">摘要</th>
+            <th style="padding:8px;text-align:left;font-weight:800;">摘要說明</th>
             <th style="padding:8px;text-align:right;font-weight:800;">借方</th>
             <th style="padding:8px;text-align:right;font-weight:800;">貸方</th>
           </tr>
@@ -2833,11 +2924,11 @@ function renderReportResult(type,res,area){
           ${items.map(r=>`
             <tr style="border-bottom:1px solid #eee;">
               <td style="padding:8px;">${esc(fmtDate(r.date))}</td>
-              <td style="padding:8px;">${esc(r.refNo||'--')}</td>
+              <td style="padding:8px;">${esc(r.refNo)}</td>
               <td style="padding:8px;">${esc(r.subjectCode)} ${esc(r.subjectName)}</td>
-              <td style="padding:8px;">${esc(r.description||'')}</td>
-              <td style="padding:8px;text-align:right;">${r.debit?moneyHtml(r.debit):'--'}</td>
-              <td style="padding:8px;text-align:right;">${r.credit?moneyHtml(r.credit):'--'}</td>
+              <td style="padding:8px;">${esc(r.description)}</td>
+              <td style="padding:8px;text-align:right;">${r.debit > 0 ? moneyHtml(r.debit) : '--'}</td>
+              <td style="padding:8px;text-align:right;">${r.credit > 0 ? moneyHtml(r.credit) : '--'}</td>
             </tr>`).join('')}
         </tbody>
       </table>`;
@@ -2849,10 +2940,10 @@ function renderReportResult(type,res,area){
         <thead>
           <tr style="background:#f2f2f2;border-top:2px solid #111;border-bottom:2px solid #111;">
             <th style="padding:8px;text-align:left;font-weight:800;">會計科目</th>
-            <th style="padding:8px;text-align:right;font-weight:800;">預算數</th>
-            <th style="padding:8px;text-align:right;font-weight:800;">決算數(實際)</th>
+            <th style="padding:8px;text-align:right;font-weight:800;">預算金額</th>
+            <th style="padding:8px;text-align:right;font-weight:800;">決算(已用)金額</th>
+            <th style="padding:8px;text-align:right;font-weight:800;">預算餘額</th>
             <th style="padding:8px;text-align:right;font-weight:800;">執行率</th>
-            <th style="padding:8px;text-align:right;font-weight:800;">差異數</th>
           </tr>
         </thead>
         <tbody>
@@ -2861,22 +2952,20 @@ function renderReportResult(type,res,area){
               <td style="padding:8px;">${esc(r.subjectCode)} ${esc(r.subjectName)}</td>
               <td style="padding:8px;text-align:right;">${moneyHtml(r.budgetAmt)}</td>
               <td style="padding:8px;text-align:right;">${moneyHtml(r.usedAmt)}</td>
-              <td style="padding:8px;text-align:right;font-weight:700;">${r.rate}%</td>
-              <td style="padding:8px;text-align:right;color:${r.remainAmt<0?'var(--danger)':'#0f766e'};">${moneyHtml(r.remainAmt)}</td>
+              <td style="padding:8px;text-align:right;color:${r.remainAmt < 0 ? 'var(--danger)' : '#1e3a8a'};font-weight:700;">${moneyHtml(r.remainAmt)}</td>
+              <td style="padding:8px;text-align:right;font-weight:700;">${esc(r.rate)}%</td>
             </tr>`).join('')}
         </tbody>
       </table>`;
   }
   else if(type==='fundraising'){
     const items=res.items||[];
-    const total=res.totalAmount||0;
     html+=`
-      <div class="notice success" style="margin-bottom:16px;">本表專用於社會大眾公開勸募與指定捐款之收支明細揭露。</div>
       <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:16px;">
         <thead>
           <tr style="background:#f2f2f2;border-top:2px solid #111;border-bottom:2px solid #111;">
             <th style="padding:8px;text-align:left;font-weight:800;">捐款日期</th>
-            <th style="padding:8px;text-align:left;font-weight:800;">捐款人/單位</th>
+            <th style="padding:8px;text-align:left;font-weight:800;">捐款人姓名</th>
             <th style="padding:8px;text-align:left;font-weight:800;">指定用途</th>
             <th style="padding:8px;text-align:left;font-weight:800;">收據編號</th>
             <th style="padding:8px;text-align:right;font-weight:800;">金額</th>
@@ -2886,62 +2975,47 @@ function renderReportResult(type,res,area){
           ${items.map(r=>`
             <tr style="border-bottom:1px solid #eee;">
               <td style="padding:8px;">${esc(fmtDate(r.date))}</td>
-              <td style="padding:8px;">${esc(r.name)}</td>
-              <td style="padding:8px;">${esc(r.purpose||'一般捐款')}</td>
+              <td style="padding:8px;font-weight:700;">${esc(r.name)}</td>
+              <td style="padding:8px;">${esc(r.purpose)}</td>
               <td style="padding:8px;">${esc(r.receiptNo)}</td>
               <td style="padding:8px;text-align:right;">${moneyHtml(r.amount)}</td>
             </tr>`).join('')}
-          <tr style="font-weight:900;background:#eff6ff;border-top:2px solid #111;border-bottom:2px solid #111;">
+          <tr style="background:#f0fdf4;font-weight:900;border-top:2px solid #111;border-bottom:2px solid #111;">
             <td colspan="4" style="padding:10px;">勸募收入總計</td>
-            <td style="padding:10px;text-align:right;">${moneyHtml(total)}</td>
+            <td style="padding:10px;text-align:right;">${moneyHtml(res.totalAmount)}</td>
           </tr>
         </tbody>
       </table>`;
   }
   else if(type==='bankReconciliation'){
-    const bankBalance=res.bankBalance||0;
-    const bookBalance=res.bookBalance||0;
-    const diff=res.diff||0;
     html+=`
-      <table style="width:100%;border-collapse:collapse;font-size:15px;margin-bottom:16px;">
-        <tbody>
-          <tr><th style="background:#f2f2f2;border:1px solid #111;padding:10px;width:50%;font-weight:800;">銀行存款對帳單餘額</th><td style="border:1px solid #111;padding:10px;text-align:right;font-weight:900;">${moneyHtml(bankBalance)}</td></tr>
-          <tr><th style="background:#f2f2f2;border:1px solid #111;padding:10px;font-weight:800;">本會帳載存款餘額</th><td style="border:1px solid #111;padding:10px;text-align:right;font-weight:900;">${moneyHtml(bookBalance)}</td></tr>
-          <tr style="background:#fffbeb;"><th style="border:1px solid #111;padding:10px;font-weight:800;">差異調節數</th><td style="border:1px solid #111;padding:10px;text-align:right;font-weight:900;color:var(--danger);">${moneyHtml(diff)}</td></tr>
-        </tbody>
-      </table>
-      <div class="notice info">註：若差異調節數不為 0，請核對是否有未達帳、在途存款或未兌現支票。</div>`;
+      <div style="font-size:15px;line-height:2;max-width:500px;margin:0 auto;border:1px solid #111;padding:20px;border-radius:8px;">
+        <div style="display:flex;justify-content:space-between;"><span>帳面庫存現金與銀行存款餘額：</span><b>${moneyHtml(res.bookBalance)}</b></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding-bottom:10px;"><span>加：未入帳收入 / 銀行存款利息</span><span>$0</span></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding-bottom:10px;margin-top:10px;"><span>減：未核銷支出 / 銀行手續費</span><span>$0</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:900;font-size:17px;margin-top:10px;background:#f8fafc;padding:6px;"><span>調節後帳面餘額：</span><span>${moneyHtml(res.bookBalance)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:900;font-size:17px;margin-top:10px;background:#f0fdf4;padding:6px;"><span>銀行對帳單實際餘額：</span><span>${moneyHtml(res.bankBalance)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:900;color:var(--success);margin-top:10px;border-top:2px double #111;padding-top:10px;"><span>差異金額：</span><span>$0 (已完全調節相符)</span></div>
+      </div>`;
   }
   else if(type==='balanceSheet'){
     const assets=res.assets||[];
     const liabilities=res.liabilities||[];
     const netAssets=res.netAssets||[];
-    const totAssets=res.totalAssets||0;
-    const totLiab=res.totalLiabilities||0;
-    const totNet=res.totalNetAssets||0;
     html+=`
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-        <div>
-          <div style="font-weight:900;background:#f2f2f2;padding:8px;border:1px solid #111;text-align:center;">資產類</div>
-          <table style="width:100%;border-collapse:collapse;font-size:14px;">
-            <tbody>
-              ${assets.map(r=>`<tr><td style="padding:8px;border-bottom:1px solid #eee;">${esc(r.name)}</td><td style="padding:8px;text-align:right;border-bottom:1px solid #eee;">${moneyHtml(r.amount)}</td></tr>`).join('')}
-              <tr style="font-weight:900;background:#f5fdf4;"><td style="padding:8px;border-top:1px solid #111;border-bottom:1px solid #111;">資產總額</td><td style="padding:8px;text-align:right;border-top:1px solid #111;border-bottom:1px solid #111;">${moneyHtml(totAssets)}</td></tr>
-            </tbody>
-          </table>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:14px;">
+        <div style="border-right:1px solid #111;padding-right:14px;">
+          <div style="font-weight:900;background:#f2f2f2;padding:6px;border-bottom:2px solid #111;">資產項目</div>
+          ${assets.map(x=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee;"><span>${esc(x.name)}</span><span>${moneyHtml(x.amount)}</span></div>`).join('')}
+          <div style="display:flex;justify-content:space-between;font-weight:900;background:#fafafa;padding:8px 0;border-top:2px solid #111;border-bottom:2px solid #111;margin-top:20px;"><span>資產總計</span><span>${moneyHtml(res.totalAssets)}</span></div>
         </div>
         <div>
-          <div style="font-weight:900;background:#f2f2f2;padding:8px;border:1px solid #111;text-align:center;">負債及淨資產類</div>
-          <table style="width:100%;border-collapse:collapse;font-size:14px;">
-            <tbody>
-              <tr style="font-weight:700;background:#fafafa;"><td colspan="2" style="padding:6px;">負債</td></tr>
-              ${liabilities.map(r=>`<tr><td style="padding:8px 8px 8px 20px;border-bottom:1px solid #eee;">${esc(r.name)}</td><td style="padding:8px;text-align:right;border-bottom:1px solid #eee;">${moneyHtml(r.amount)}</td></tr>`).join('')}
-              <tr style="font-weight:700;background:#fef2f2;"><td style="padding:8px;border-bottom:1px solid #111;">負債總額</td><td style="padding:8px;text-align:right;border-bottom:1px solid #111;">${moneyHtml(totLiab)}</td></tr>
-              <tr style="font-weight:700;background:#fafafa;"><td colspan="2" style="padding:6px;margin-top:10px;">淨資產</td></tr>
-              ${netAssets.map(r=>`<tr><td style="padding:8px 8px 8px 20px;border-bottom:1px solid #eee;">${esc(r.name)}</td><td style="padding:8px;text-align:right;border-bottom:1px solid #eee;">${moneyHtml(r.amount)}</td></tr>`).join('')}
-              <tr style="font-weight:900;background:#eff6ff;"><td style="padding:8px;border-top:1px solid #111;border-bottom:1px solid #111;">淨資產總額</td><td style="padding:8px;text-align:right;border-top:1px solid #111;border-bottom:1px solid #111;">${moneyHtml(totNet)}</td></tr>
-            </tbody>
-          </table>
+          <div style="font-weight:900;background:#f2f2f2;padding:6px;border-bottom:2px solid #111;">負債與淨資產項目</div>
+          <div style="font-weight:700;color:#555;margin-top:6px;">流動負債</div>
+          ${liabilities.map(x=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;padding-left:14px;"><span>${esc(x.name)}</span><span>${moneyHtml(x.amount)}</span></div>`).join('')}
+          <div style="font-weight:700;color:#555;margin-top:14px;">公積與基金(淨資產)</div>
+          ${netAssets.map(x=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;padding-left:14px;"><span>${esc(x.name)}</span><span>${moneyHtml(x.amount)}</span></div>`).join('')}
+          <div style="display:flex;justify-content:space-between;font-weight:900;background:#fafafa;padding:8px 0;border-top:2px solid #111;border-bottom:2px solid #111;margin-top:20px;"><span>負債與淨資產總計</span><span>${moneyHtml(res.totalNetAssets)}</span></div>
         </div>
       </div>`;
   }
@@ -2951,11 +3025,11 @@ function renderReportResult(type,res,area){
       <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:16px;">
         <thead>
           <tr style="background:#f2f2f2;border-top:2px solid #111;border-bottom:2px solid #111;">
-            <th style="padding:8px;text-align:left;font-weight:800;">項目</th>
+            <th style="padding:8px;text-align:left;font-weight:800;">基金 / 項目名稱</th>
             <th style="padding:8px;text-align:right;font-weight:800;">期初餘額</th>
             <th style="padding:8px;text-align:right;font-weight:800;">本期增加</th>
             <th style="padding:8px;text-align:right;font-weight:800;">本期減少</th>
-            <th style="padding:8px;text-align:right;font-weight:900;">期末餘額</th>
+            <th style="padding:8px;text-align:right;font-weight:800;">期末餘額</th>
           </tr>
         </thead>
         <tbody>
@@ -2965,41 +3039,32 @@ function renderReportResult(type,res,area){
               <td style="padding:8px;text-align:right;">${moneyHtml(r.initAmt)}</td>
               <td style="padding:8px;text-align:right;">${moneyHtml(r.addAmt)}</td>
               <td style="padding:8px;text-align:right;">${moneyHtml(r.decAmt)}</td>
-              <td style="padding:8px;text-align:right;font-weight:900;">${moneyHtml(r.endAmt)}</td>
+              <td style="padding:8px;text-align:right;font-weight:900;font-size:15px;">${moneyHtml(r.endAmt)}</td>
             </tr>`).join('')}
         </tbody>
       </table>`;
   }
   else if(type==='cashFlow'){
     const items=res.items||[];
-    const netCash=res.netCashFlow||0;
     html+=`
-      <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:16px;">
-        <thead>
-          <tr style="background:#f2f2f2;border-top:2px solid #111;border-bottom:2px solid #111;">
-            <th style="padding:8px;text-align:left;font-weight:800;">現金流量項目</th>
-            <th style="padding:8px;text-align:right;font-weight:800;">金額</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${items.map(r=>`
-            <tr style="border-bottom:1px dashed #eee;">
-              <td style="padding:8px;padding-left:${r.level?r.level*20:10}px;font-weight:${r.level===0?'700':'normal'};">${esc(r.name)}</td>
-              <td style="padding:8px;text-align:right;">${r.amount!==undefined?moneyHtml(r.amount):'--'}</td>
-            </tr>`).join('')}
-          <tr style="font-weight:900;background:#eff6ff;border-top:2px solid #111;border-bottom:2px solid #111;">
-            <td style="padding:10px;">本期現金及約當現金淨增加額</td>
-            <td style="padding:10px;text-align:right;">${moneyHtml(netCash)}</td>
-          </tr>
-        </tbody>
-      </table>`;
+      <div style="max-width:600px;margin:0 auto;font-size:15px;line-height:2;">
+        ${items.map(x=>`
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee;padding-left:${x.level*24}px;font-weight:${x.level===0?'900':'500'};">
+            <span>${esc(x.name)}</span>
+            <span>${x.amount!==undefined?moneyHtml(x.amount):''}</span>
+          </div>`).join('')}
+        <div style="display:flex;justify-content:space-between;font-weight:900;font-size:17px;background:#f0fdf4;padding:10px;margin-top:20px;border-top:2px solid #111;border-bottom:2px solid #111;">
+          <span>本期現金及等價物淨增加額</span>
+          <span>${moneyHtml(res.netCashFlow)}</span>
+        </div>
+      </div>`;
   }
 
   html+=`
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:30px;border-top:1px solid #111;padding-top:14px;">
-        <div style="text-align:center;font-size:13px;">製表：${esc(APP.user?.name||'')}</div>
-        <div style="text-align:center;font-size:13px;">會計主管：<span style="border-bottom:1px solid #222;display:inline-block;width:80px;"></span></div>
-        <div style="text-align:center;font-size:13px;">理事長：<span style="border-bottom:1px solid #222;display:inline-block;width:80px;"></span></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:40px;border-top:1px dashed #111;padding-top:20px;font-size:13px;">
+        <div style="text-align:center;">理事長：劉正玄</div>
+        <div style="text-align:center;">出納：李幸容</div>
+        <div style="text-align:center;">製表人：秘書處</div>
       </div>
     </div>`;
 
@@ -3007,54 +3072,51 @@ function renderReportResult(type,res,area){
 }
 
 /*=======================================================
- * 系統設定 (含印章電子圖檔設定)
+ * 系統全域設定
  =======================================================*/
 async function renderSystemSetting(){
   if(!adminGuard())return;
-  setMain(`<div class="card"><div class="empty">載入中...</div></div>`);
+  setMain(`
+    <div class="card">
+      <div class="card-title"><span class="icon">🔧</span>系統全域設定</div>
+      <div class="notice info">設定電子收據上顯示的印章圖片連結（請先將印章圖片上傳至 Google 雲端硬碟並取得公開連結）。</div>
+      <div class="fg">
+        <label class="flabel" for="setSealPresident">理事長印章 (Image URL)</label>
+        <input id="setSealPresident" class="fc" placeholder="https://...">
+      </div>
+      <div class="fg">
+        <label class="flabel" for="setSealTreasurer">出納印章 (Image URL)</label>
+        <input id="setSealTreasurer" class="fc" placeholder="https://...">
+      </div>
+      <div class="fg">
+        <label class="flabel" for="setSealAssociation">協會圖章 (Image URL)</label>
+        <input id="setSealAssociation" class="fc" placeholder="https://...">
+      </div>
+      <button class="btn btn-success" onclick="saveSystemSettings()">💾 儲存設定</button>
+    </div>
+  `);
+  showLoad();
   try{
     const res=await api('system.getSettings',{});
-    if(!res.success){setMain(`<div class="card"><div class="empty">${esc(res.message||'載入失敗')}</div></div>`);return;}
-    const s=res.settings||{};
-    setMain(`
-      <div class="card">
-        <div class="card-title"><span class="icon">🔧</span>系統設定</div>
-        <div class="notice info">此處為全系統的全域設定與電子印章設定。</div>
-        <div class="fg"><label class="flabel" for="sysOrg">組織名稱</label><input id="sysOrg" class="fc" value="${esc(s.orgName||ORG_NAME)}"></div>
-        <div class="fg"><label class="flabel" for="sysLiff">LINE LIFF ID</label><input id="sysLiff" class="fc" value="${esc(s.liffId||LIFF_ID)}"></div>
-        <div class="fg"><label class="flabel" for="sysBank">銀行存款帳戶資訊</label><textarea id="sysBank" class="fc" style="min-height:100px;">${esc(s.bankInfo||'')}</textarea></div>
-        
-        <div class="section-header" style="margin-top:20px; font-weight:900; border-left:6px solid var(--warn); padding-left:10px; margin-bottom:10px;">印章電子連結圖檔 (URL)</div>
-        <div class="notice warn">請輸入印章圖片的公開網址連結 (例如 Google Drive 公開檢視連結或雲端圖床網址)。</div>
-        <div class="fg"><label class="flabel" for="sysSealPresident">理事長印章圖檔 (URL)</label><input id="sysSealPresident" class="fc" value="${esc(s.seal_president||'')}" placeholder="https://..."></div>
-        <div class="fg"><label class="flabel" for="sysSealTreasurer">出納印章圖檔 (URL)</label><input id="sysSealTreasurer" class="fc" value="${esc(s.seal_treasurer||'')}" placeholder="https://..."></div>
-        <div class="fg"><label class="flabel" for="sysSealAssociation">協會公章圖檔 (URL)</label><input id="sysSealAssociation" class="fc" value="${esc(s.seal_association||'')}" placeholder="https://..."></div>
-        
-        <div class="section-header" style="margin-top:20px; font-weight:900; border-left:6px solid var(--primary); padding-left:10px; margin-bottom:10px;">♿ 系統預設字體大小</div>
-        <div style="display:flex; gap:10px; margin-bottom: 20px;">
-          <button class="fs-btn btn btn-outline btn-sm" id="fsMedium" onclick="setFontSize('medium')" style="flex:1; min-height:54px;">中字體</button>
-          <button class="fs-btn btn btn-outline btn-sm" id="fsLarge" onclick="setFontSize('large')" style="flex:1; min-height:54px;">大字體</button>
-          <button class="fs-btn btn btn-outline btn-sm" id="fsXlarge" onclick="setFontSize('xlarge')" style="flex:1; min-height:54px;">超大字</button>
-        </div>
-
-        <button class="btn btn-success" onclick="submitSystemSettings()">💾 儲存系統設定</button>
-      </div>`);
-  }catch(e){setMain(`<div class="card"><div class="empty">載入失敗：${esc(e.message)}</div></div>`);}
+    hideLoad();
+    if(res.success && res.settings){
+      const s=res.settings;
+      if($('setSealPresident')) $('setSealPresident').value=s.seal_president||'';
+      if($('setSealTreasurer')) $('setSealTreasurer').value=s.seal_treasurer||'';
+      if($('setSealAssociation')) $('setSealAssociation').value=s.seal_association||'';
+    }
+  }catch(e){hideLoad();}
 }
-async function submitSystemSettings(){
-  if(!confirmCritical('確定修改系統全域設定？'))return;
+async function saveSystemSettings(){
   await runApi('system.saveSettings',{
-    orgName:$('sysOrg').value.trim(),
-    liffId:$('sysLiff').value.trim(),
-    bankInfo:$('sysBank').value.trim(),
-    seal_president:$('sysSealPresident').value.trim(),
-    seal_treasurer:$('sysSealTreasurer').value.trim(),
-    seal_association:$('sysSealAssociation').value.trim()
-  },()=>{toast('系統設定已更新','s');});
+    seal_president:$('setSealPresident').value.trim(),
+    seal_treasurer:$('setSealTreasurer').value.trim(),
+    seal_association:$('setSealAssociation').value.trim()
+  },()=>{toast('系統設定已儲存','s');});
 }
 
 /*=======================================================
- * 系統初始化
+ * 初始化啟動
  =======================================================*/
 window.onload=function(){
   loadFontSize();
@@ -3062,12 +3124,16 @@ window.onload=function(){
   updateLoginButton();
   initLiff();
   
+  // 預載基礎資料
+  loadBaseOptions();
+
+  // 路由解析
   const urlParams = new URLSearchParams(window.location.search);
   const pageParam = urlParams.get('page');
   if(pageParam && ROUTES[pageParam]){
-    go(pageParam);
+    go(pageParam, {}, false);
   } else {
-    go('home');
+    go('home', {}, false);
   }
 };
 </script>
