@@ -525,21 +525,30 @@
 <div id="loader" class="loader" aria-hidden="true"><div class="spinner"></div></div>
 
 <script>
-function setFontSize(size){
-  document.body.className='fs-'+size;
-  localStorage.setItem('parkFontSize',size);
-  document.querySelectorAll('.fs-btn').forEach(b=>b.classList.remove('active'));
-  const map={small:'fsSmall',medium:'fsMedium',large:'fsLarge',xlarge:'fsXlarge'};
-  const el=document.getElementById(map[size]);
-  if(el)el.classList.add('active');
-  toast('字體大小已調整','s');
-}
-function loadFontSize(){
-  const saved=localStorage.getItem('parkFontSize')||'large';
-  document.body.className='fs-'+saved;
-}
+// ===== 基礎工具函數 =====
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function jsStr(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n').replace(/\r/g,'');}
+function fmtMoney(n){return 'NT$'+Number(n||0).toLocaleString('zh-TW');}
+function fmtDate(d){if(!d)return'--';try{const dt=new Date(d);if(isNaN(dt.getTime()))return String(d);return`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;}catch(e){return String(d);}}
+function today(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function yearOptions(sel){const y=new Date().getFullYear();const s=Number(sel||y);return[y+1,y,y-1,y-2].map(v=>`<option value="${v}"${v===s?' selected':''}>${v} 年</option>`).join('');}
+function monthOptions(sel){const s=sel?Number(sel):'';return`<option value="">全年</option>${Array.from({length:12}).map((_,i)=>{const v=i+1;return`<option value="${v}"${v===s?' selected':''}>${v} 月</option>`;}).join('')}`;}
+function showLoad(){$('loader')?.classList.add('show');$('loader')?.setAttribute('aria-hidden','false');}
+function hideLoad(){$('loader')?.classList.remove('show');$('loader')?.setAttribute('aria-hidden','true');}
+function toast(msg,type){const el=$('toast');if(!el)return;el.textContent=msg||'';el.className='toast show '+(type||'');clearTimeout(window.__tt);window.__tt=setTimeout(()=>{el.className='toast';},3500);}
+function setMain(html){$('main').innerHTML=html;window.scrollTo(0,0);$('main').focus();}
+function openModal(html){$('modal').innerHTML='<div class="modal-handle"></div>'+html;$('modalMask').classList.add('show');$('modalMask').setAttribute('aria-hidden','false');}
+function closeModal(){$('modalMask').classList.remove('show');$('modalMask').setAttribute('aria-hidden','true');$('modal').innerHTML='';}
+function maskClose(e){if(e.target.id==='modalMask')closeModal();}
+function confirmCritical(msg){return confirm((msg||'確定執行此操作？')+'\n\n⚠️ 此操作將影響正式資料，請確認後再繼續。');}
+function requireInput(id,label){const el=$(id);const v=el?el.value.trim():'';if(!v){toast('請填寫：'+label,'w');el?.focus();return'';}return v;}
+function requireAmount(id,label){const el=$(id);const n=Number(el?el.value:0);if(!n||n<=0){toast((label||'金額')+'必須大於 0','w');el?.focus();return 0;}return n;}
+function isValidTaiwanMobile(p){return/^09\d{8}$/.test(String(p||'').replace(/[-\s]/g,'').trim());}
+function isAdminUser(u){return!!(u&&ADMIN_TYPES.includes(String(u.type||'')));}
+function showBack(show){$('backBtn')?.classList.toggle('hide',!show);}
 
-// ===== 部署後的 Apps Script 網頁應用程式網址 =====
+// ===== 部署設定與全域變數 =====
 const API_BASE = 'https://script.google.com/macros/s/AKfycbwzl8gp4_PXwXtbFr1TwfAvMvJlgDO_I301RPpnAaXQlH3BrFYZ2eu30pkbX93FxSC2cA/exec';
 const LIFF_ID  = '2009456572-588gzru4';
 const ORG_NAME = '社團法人台灣帕金森病友權益促進會';
@@ -559,13 +568,74 @@ const NAV_MAP = {
   memberDetail:'navAdmin', pendingPayments:'navAdmin',
   pendingDonations:'navAdmin', financeIncome:'navAdmin',
   financeExpense:'navAdmin', expenseList:'navAdmin',
-  expenseDetail:'navAdmin', receiptList:'navAdmin',
-  voucherList:'navAdmin', budgetManage:'navAdmin',
-  projectManage:'navAdmin', subjectManage:'navAdmin',
-  accountManage:'navAdmin', reportCenter:'navAdmin',
-  systemSetting:'navAdmin', staffManage:'navAdmin',
-  announceManage:'navAdmin'
+  receiptList:'navAdmin', voucherList:'navAdmin', 
+  budgetManage:'navAdmin', projectManage:'navAdmin', 
+  subjectManage:'navAdmin', accountManage:'navAdmin', 
+  reportCenter:'navAdmin', systemSetting:'navAdmin', 
+  staffManage:'navAdmin', announceManage:'navAdmin'
 };
+
+// ===== 💡 宣告 ROUTES 變數（已移除未定義的 renderExpenseDetail） =====
+const ROUTES = {
+  home: renderHome, 
+  announcements: renderAnnouncements,
+  memberCenter: renderMemberCenter, 
+  editProfile: renderEditProfile,
+  myPayments: renderMyPayments, 
+  myDonations: renderMyDonations,
+  adminHome: renderAdminHome, 
+  memberManage: renderMemberManage,
+  memberDetail: renderMemberDetail, 
+  pendingPayments: renderPendingPayments,
+  pendingDonations: renderPendingDonations, 
+  financeIncome: renderFinanceIncome,
+  financeExpense: renderFinanceExpense, 
+  expenseList: renderExpenseList,
+  receiptList: renderReceiptList,
+  voucherList: renderVoucherList, 
+  budgetManage: renderBudgetManage,
+  projectManage: renderProjectManage, 
+  subjectManage: renderSubjectManage,
+  accountManage: renderAccountManage, 
+  reportCenter: renderReportCenter,
+  staffManage: renderStaffManage, 
+  systemSetting: renderSystemSetting,
+  announceManage: renderAnnounceManage
+};
+
+// ===== 路由導向函數 =====
+function go(page,params={},push=true){
+  if(push&&APP.page&&APP.page!==page)APP.history.push({page:APP.page,params:APP._params||{}});
+  APP.page=page;APP._params=params||{};
+  document.querySelectorAll('.nitem').forEach(el=>el.classList.remove('active'));
+  const navId=NAV_MAP[page];if(navId)$(navId)?.classList.add('active');
+  showBack(APP.history.length>0);
+  const fn=ROUTES[page];
+  if(fn)fn(params||{});
+  else setMain(`<div class="card"><div class="empty">頁面建置中：${esc(page)}</div></div>`);
+}
+function goBack(){
+  if(!APP.history.length)return;
+  const prev=APP.history.pop();APP.page=prev.page;APP._params=prev.params||{};
+  document.querySelectorAll('.nitem').forEach(el=>el.classList.remove('active'));
+  const navId=NAV_MAP[prev.page];if(navId)$(navId)?.classList.add('active');
+  showBack(APP.history.length>0);
+  const fn=ROUTES[prev.page];if(fn)fn(prev.params||{});
+}
+
+function setFontSize(size){
+  document.body.className='fs-'+size;
+  localStorage.setItem('parkFontSize',size);
+  document.querySelectorAll('.fs-btn').forEach(b=>b.classList.remove('active'));
+  const map={small:'fsSmall',medium:'fsMedium',large:'fsLarge',xlarge:'fsXlarge'};
+  const el=document.getElementById(map[size]);
+  if(el)el.classList.add('active');
+  toast('字體大小已調整','s');
+}
+function loadFontSize(){
+  const saved=localStorage.getItem('parkFontSize')||'large';
+  document.body.className='fs-'+saved;
+}
 
 /*=======================================================
  * 檔案上傳輔助工具 (轉為 Base64 傳送給後端)
@@ -620,31 +690,6 @@ async function runApi(action,data={},onSuccess){
   }catch(e){hideLoad();toast('連線失敗：'+e.message,'e');return{success:false,message:e.message};}
 }
 
-/*=======================================================
- * UI 工具
- =======================================================*/
-function $(id){return document.getElementById(id);}
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-function jsStr(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n').replace(/\r/g,'');}
-function fmtMoney(n){return 'NT$'+Number(n||0).toLocaleString('zh-TW');}
-function fmtDate(d){if(!d)return'--';try{const dt=new Date(d);if(isNaN(dt.getTime()))return String(d);return`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;}catch(e){return String(d);}}
-function today(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
-function yearOptions(sel){const y=new Date().getFullYear();const s=Number(sel||y);return[y+1,y,y-1,y-2].map(v=>`<option value="${v}"${v===s?' selected':''}>${v} 年</option>`).join('');}
-function monthOptions(sel){const s=sel?Number(sel):'';return`<option value="">全年</option>${Array.from({length:12}).map((_,i)=>{const v=i+1;return`<option value="${v}"${v===s?' selected':''}>${v} 月</option>`;}).join('')}`;}
-function showLoad(){$('loader')?.classList.add('show');$('loader')?.setAttribute('aria-hidden','false');}
-function hideLoad(){$('loader')?.classList.remove('show');$('loader')?.setAttribute('aria-hidden','true');}
-function toast(msg,type){const el=$('toast');if(!el)return;el.textContent=msg||'';el.className='toast show '+(type||'');clearTimeout(window.__tt);window.__tt=setTimeout(()=>{el.className='toast';},3500);}
-function setMain(html){$('main').innerHTML=html;window.scrollTo(0,0);$('main').focus();}
-function openModal(html){$('modal').innerHTML='<div class="modal-handle"></div>'+html;$('modalMask').classList.add('show');$('modalMask').setAttribute('aria-hidden','false');}
-function closeModal(){$('modalMask').classList.remove('show');$('modalMask').setAttribute('aria-hidden','true');$('modal').innerHTML='';}
-function maskClose(e){if(e.target.id==='modalMask')closeModal();}
-function confirmCritical(msg){return confirm((msg||'確定執行此操作？')+'\n\n⚠️ 此操作將影響正式資料，請確認後再繼續。');}
-function requireInput(id,label){const el=$(id);const v=el?el.value.trim():'';if(!v){toast('請填寫：'+label,'w');el?.focus();return'';}return v;}
-function requireAmount(id,label){const el=$(id);const n=Number(el?el.value:0);if(!n||n<=0){toast((label||'金額')+'必須大於 0','w');el?.focus();return 0;}return n;}
-function isValidTaiwanMobile(p){return/^09\d{8}$/.test(String(p||'').replace(/[-\s]/g,'').trim());}
-function isAdminUser(u){return!!(u&&ADMIN_TYPES.includes(String(u.type||'')));}
-function showBack(show){$('backBtn')?.classList.toggle('hide',!show);}
-
 function updateLoginButton(){
   const btn=$('loginBtn');if(!btn)return;
   if(APP.user){
@@ -672,44 +717,6 @@ function logout(){
   updateLoginButton();
   toast('已登出','s');
   go('home',{},false);
-}
-
-/*=======================================================
- * 路由
- =======================================================*/
-const ROUTES={
-  home:renderHome, announcements:renderAnnouncements,
-  memberCenter:renderMemberCenter, editProfile:renderEditProfile,
-  myPayments:renderMyPayments, myDonations:renderMyDonations,
-  adminHome:renderAdminHome, memberManage:renderMemberManage,
-  memberDetail:renderMemberDetail, pendingPayments:renderPendingPayments,
-  pendingDonations:renderPendingDonations, financeIncome:renderFinanceIncome,
-  financeExpense:renderFinanceExpense, expenseList:renderExpenseList,
-  expenseDetail:renderExpenseDetail, receiptList:renderReceiptList,
-  voucherList:renderVoucherList, budgetManage:renderBudgetManage,
-  projectManage:renderProjectManage, subjectManage:renderSubjectManage,
-  accountManage:renderAccountManage, reportCenter:renderReportCenter,
-  staffManage:renderStaffManage, systemSetting:renderSystemSetting,
-  announceManage:renderAnnounceManage
-};
-
-function go(page,params={},push=true){
-  if(push&&APP.page&&APP.page!==page)APP.history.push({page:APP.page,params:APP._params||{}});
-  APP.page=page;APP._params=params||{};
-  document.querySelectorAll('.nitem').forEach(el=>el.classList.remove('active'));
-  const navId=NAV_MAP[page];if(navId)$(navId)?.classList.add('active');
-  showBack(APP.history.length>0);
-  const fn=ROUTES[page];
-  if(fn)fn(params||{});
-  else setMain(`<div class="card"><div class="empty">頁面建置中：${esc(page)}</div></div>`);
-}
-function goBack(){
-  if(!APP.history.length)return;
-  const prev=APP.history.pop();APP.page=prev.page;APP._params=prev.params||{};
-  document.querySelectorAll('.nitem').forEach(el=>el.classList.remove('active'));
-  const navId=NAV_MAP[prev.page];if(navId)$(navId)?.classList.add('active');
-  showBack(APP.history.length>0);
-  const fn=ROUTES[prev.page];if(fn)fn(prev.params||{});
 }
 
 /*=======================================================
@@ -1022,11 +1029,12 @@ function renderMemberCenter(){
           <div style="font-size:var(--fs-xl);font-weight:950;">${esc(u.name||'')}</div>
           <div style="margin-top:8px;">
             <span class="badge ${u.isActive?'bs':'bw'}">${u.isActive?'✅ 有效會員':'⚠️ 待繳費'}</span>
-            <span class="badge bb" style="margin-left:8px;">${esc(u.type||'一般會員')}</span>
+                        <span class="badge bb" style="margin-left:8px;">${esc(u.type||'一般會員')}</span>
           </div>
         </div>
-      </div>      
-        <div class="stat-grid" style="margin-bottom:20px;">
+      </div>
+      
+      <div class="stat-grid" style="margin-bottom:20px;">
         <div class="stat blue"><div class="k">會籍到期日</div><div class="v">${esc(u.expiryDate||'尚未啟用')}</div></div>
         <div class="stat green"><div class="k">入會日期</div><div class="v">${esc(u.joinDate||'--')}</div></div>
       </div>      
@@ -1074,7 +1082,7 @@ function renderEditProfile(){
       <div class="card-title"><span class="icon">✏️</span>編輯會員資料</div>
       <div class="notice info">姓名與手機請務必正確，這是您登入系統時使用的資料。</div>
       
-      <div class="section-header">基本聯絡資料</div>
+      <div class="section-header" style="font-weight:900; margin-bottom:12px; border-left:4px solid var(--primary); padding-left:8px;">基本聯絡資料</div>
       <div class="fg"><label class="flabel" for="pfName">姓名 <span class="req">*</span></label><input id="pfName" class="fc" value="${esc(u.name||'')}"></div>
       <div class="fg"><label class="flabel" for="pfNick">暱稱</label><input id="pfNick" class="fc" value="${esc(u.nickname||'')}" placeholder="可不填"></div>
       <div class="fg"><label class="flabel" for="pfPhone">手機號碼 <span class="req">*</span></label><input id="pfPhone" class="fc" value="${esc(u.phone||u.mobile||'')}" inputmode="tel" placeholder="0912345678"></div>
@@ -1082,7 +1090,7 @@ function renderEditProfile(){
       <div class="fg"><label class="flabel" for="pfBirthday">生日</label><input id="pfBirthday" type="date" class="fc" value="${esc(u.birthday||'')}"></div>
       <div class="fg"><label class="flabel" for="pfAddress">通訊地址</label><input id="pfAddress" class="fc" value="${esc(u.address||'')}" placeholder="可不填"></div>
       
-      <div class="section-header">敏感健康個資（選填）</div>
+      <div class="section-header" style="font-weight:900; margin-top:24px; margin-bottom:12px; border-left:4px solid var(--warn); padding-left:8px;">敏感健康個資（選填）</div>
       <div class="notice warn">
         <b>⚠️ 個人資料保護告知條款：</b><br>
         確診年份、主治醫師及藥物狀況等屬於《個資法》規定之敏感健康醫療個資。本會僅用於提供客製化關懷與病友統計分析，絕不對外洩露。請詳閱並勾選同意後再行填寫。
@@ -1658,7 +1666,7 @@ async function submitAdminAddDonation(){
 }
 
 /*=======================================================
- * 待確認會費 (管理端：第一時間立即查看憑證與開立收據)
+ * 待確認會費
  =======================================================*/
 async function renderPendingPayments(){
   if(!adminGuard())return;
@@ -1720,7 +1728,7 @@ async function rejectPayment(id){
 }
 
 /*=======================================================
- * 待確認捐款 (管理端：第一時間立即查看憑證與開立收據)
+ * 待確認捐款
  =======================================================*/
 async function renderPendingDonations(){
   if(!adminGuard())return;
@@ -1938,7 +1946,7 @@ async function submitExpense(){
 }
 
 /*=======================================================
- * 支出清單 / 審核 / 撥款 (含第一時間查看憑證)
+ * 支出清單 / 審核 / 撥款
  =======================================================*/
 async function renderExpenseList(){
   if(!adminGuard())return;
@@ -2327,7 +2335,7 @@ async function loadSubjectList(){
     APP.subjects.forEach(s=>{const t=s.type||'其他';(groups[t]||groups['其他']).push(s);});
     area.innerHTML=Object.keys(groups).filter(k=>groups[k].length).map(k=>`
       <div style="margin-bottom:14px;">
-        <div class="section-header">${k}</div>
+        <div class="section-header" style="font-weight:900; border-left:4px solid var(--primary); padding-left:8px; margin-bottom:10px;">${k}</div>
         ${groups[k].map(s=>`
           <div class="item" style="margin-bottom:10px;">
             <div class="item-title">${esc(s.code)} ${esc(s.name)}</div>
@@ -2443,10 +2451,10 @@ async function loadStaffList(){
           <div>
             <div class="item-title">${esc(s.name)} <span class="badge bb">${esc(s.title||'')}</span></div>
             <div class="item-meta">電話：${esc(s.phone||'--')} ｜ Email：${esc(s.email||'--')}</div>
+          </div>
+          <span class="badge ${s.status==='停用'?'bd':'bs'}">${esc(s.status||'啟用')}</span>
         </div>
-        <span class="badge ${s.status==='停用'?'bd':'bs'}">${esc(s.status||'啟用')}</span>
-      </div>
-    </div>`).join('');
+      </div>`).join('');
   }catch(e){area.innerHTML=`<div class="empty">載入失敗：${esc(e.message)}</div>`;}
 }
 function openAddStaff(){
@@ -2708,7 +2716,7 @@ function renderReportCenter(){
 }
 
 function switchReportType(val){
-  REPORT_STATE.type=val;
+    REPORT_STATE.type=val;
   const t=getReportType(val);
   const icon=$('repResultIcon');
   const title=$('repResultTitle');
@@ -3016,13 +3024,13 @@ async function renderSystemSetting(){
         <div class="fg"><label class="flabel" for="sysLiff">LINE LIFF ID</label><input id="sysLiff" class="fc" value="${esc(s.liffId||LIFF_ID)}"></div>
         <div class="fg"><label class="flabel" for="sysBank">銀行存款帳戶資訊</label><textarea id="sysBank" class="fc" style="min-height:100px;">${esc(s.bankInfo||'')}</textarea></div>
         
-        <div class="section-header" style="margin-top:20px; font-weight:900; border-left:6px solid var(--warn); padding-left:10px;">印章電子連結圖檔 (URL)</div>
+        <div class="section-header" style="margin-top:20px; font-weight:900; border-left:6px solid var(--warn); padding-left:10px; margin-bottom:10px;">印章電子連結圖檔 (URL)</div>
         <div class="notice warn">請輸入印章圖片的公開網址連結 (例如 Google Drive 公開檢視連結或雲端圖床網址)。</div>
         <div class="fg"><label class="flabel" for="sysSealPresident">理事長印章圖檔 (URL)</label><input id="sysSealPresident" class="fc" value="${esc(s.seal_president||'')}" placeholder="https://..."></div>
         <div class="fg"><label class="flabel" for="sysSealTreasurer">出納印章圖檔 (URL)</label><input id="sysSealTreasurer" class="fc" value="${esc(s.seal_treasurer||'')}" placeholder="https://..."></div>
         <div class="fg"><label class="flabel" for="sysSealAssociation">協會公章圖檔 (URL)</label><input id="sysSealAssociation" class="fc" value="${esc(s.seal_association||'')}" placeholder="https://..."></div>
         
-        <div class="section-header" style="margin-top:20px;">♿ 系統預設字體大小</div>
+        <div class="section-header" style="margin-top:20px; font-weight:900; border-left:6px solid var(--primary); padding-left:10px; margin-bottom:10px;">♿ 系統預設字體大小</div>
         <div style="display:flex; gap:10px; margin-bottom: 20px;">
           <button class="fs-btn btn btn-outline btn-sm" id="fsMedium" onclick="setFontSize('medium')" style="flex:1; min-height:54px;">中字體</button>
           <button class="fs-btn btn btn-outline btn-sm" id="fsLarge" onclick="setFontSize('large')" style="flex:1; min-height:54px;">大字體</button>
