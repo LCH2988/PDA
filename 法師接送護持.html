@@ -1,0 +1,130 @@
+// ==========================================
+// GAS 後端正式版程式碼 (Code.gs)
+// ==========================================
+
+const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+
+// 允許跨網域存取 (CORS)
+function corsResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// 處理 GET 請求：查詢使用者狀態、取得任務清單
+function doGet(e) {
+  const action = e.parameter.action;
+  const db = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  try {
+    // 1. 檢查使用者是否已註冊
+    if (action === "getUser") {
+      const lineId = e.parameter.lineId;
+      const sheet = db.getSheetByName("Users");
+      const rows = sheet.getDataRange().getValues();
+      
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][0] === lineId) {
+          return corsResponse({
+            success: true,
+            exists: true,
+            user: { name: rows[i][1], phone: rows[i][2], role: rows[i][3] }
+          });
+        }
+      }
+      return corsResponse({ success: true, exists: false });
+    }
+    
+    // 2. 取得所有任務清單
+    if (action === "getMissions") {
+      const sheet = db.getSheetByName("Missions");
+      const rows = sheet.getDataRange().getValues();
+      const missions = [];
+      
+      for (let i = 1; i < rows.length; i++) {
+        missions.push({
+          id: rows[i][0],
+          title: rows[i][1],
+          date: Utilities.formatDate(new Date(rows[i][2]), "GMT+8", "yyyy-MM-dd"),
+          time: rows[i][3],
+          location: rows[i][4],
+          type: rows[i][5],
+          status: rows[i][6],
+          volunteer: rows[i][7] || null,
+          creator: rows[i][8]
+        });
+      }
+      // 將任務依日期由新到舊排序
+      missions.sort((a, b) => new Date(b.date) - new Date(a.date));
+      return corsResponse({ success: true, missions: missions });
+    }
+    
+    return corsResponse({ success: false, message: "未知的 Action 請求" });
+  } catch (error) {
+    return corsResponse({ success: false, message: error.toString() });
+  }
+}
+
+// 處理 POST 請求：註冊、建立任務、承接任務
+function doPost(e) {
+  const db = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  try {
+    const postData = JSON.parse(e.postData.contents);
+    const action = postData.action;
+    
+    // 1. 註冊綁定使用者
+    if (action === "register") {
+      const sheet = db.getSheetByName("Users");
+      sheet.appendRow([
+        postData.lineId,
+        postData.name,
+        postData.phone,
+        postData.role
+      ]);
+      return corsResponse({ success: true, message: "註冊成功" });
+    }
+    
+    // 2. 建立新任務 (排班志工/法師)
+    if (action === "createMission") {
+      const sheet = db.getSheetByName("Missions");
+      const missionId = "M" + new Date().getTime(); // 產生唯一ID
+      sheet.appendRow([
+        missionId,
+        postData.title,
+        postData.date,
+        postData.time,
+        postData.location,
+        postData.type,
+        postData.status, // '待承接' 或 '已安排'
+        postData.volunteer || "",
+        postData.creator
+      ]);
+      return corsResponse({ success: true, message: "任務建立成功", id: missionId });
+    }
+    
+    // 3. 承接任務 (護送志工)
+    if (action === "acceptMission") {
+      const sheet = db.getSheetByName("Missions");
+      const rows = sheet.getDataRange().getValues();
+      const missionId = postData.missionId;
+      const volunteerName = postData.volunteerName;
+      
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][0] === missionId) {
+          if (rows[i][6] !== "待承接") {
+            return corsResponse({ success: false, message: "此任務已被其他人承接囉！" });
+          }
+          // 更新狀態為 '已承接'，並寫入志工姓名
+          sheet.getRange(i + 1, 7).setValue("已承接");
+          sheet.getRange(i + 1, 8).setValue(volunteerName);
+          return corsResponse({ success: true, message: "成功承接任務，功德無量！" });
+        }
+      }
+      return corsResponse({ success: false, message: "找不到該任務" });
+    }
+    
+    return corsResponse({ success: false, message: "未知的 Action 請求" });
+  } catch (error) {
+    return corsResponse({ success: false, message: error.toString() });
+  }
+}
