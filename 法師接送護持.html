@@ -1,130 +1,626 @@
-// ==========================================
-// GAS 後端正式版程式碼 (Code.gs)
-// ==========================================
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>溫馨志工護送任務系統</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- LINE LIFF SDK -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    /* 專為長輩設計的防誤觸與流暢動畫 */
+    body {
+      -webkit-tap-highlight-color: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .active-scale:active {
+      transform: scale(0.96);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex justify-center">
 
-const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+  <div class="w-full max-w-md bg-slate-50 min-h-screen shadow-lg flex flex-col pb-12 relative">
+    
+    <!-- LINE LIFF 頂部狀態 -->
+    <div class="bg-[#06C755] text-white px-4 py-2.5 text-sm flex justify-between items-center font-bold shadow-sm">
+      <span class="flex items-center gap-1">🟢 LINE 認證安全連線</span>
+      <span id="liff-status" class="bg-white/20 px-2.5 py-0.5 rounded-full text-xs">載入中...</span>
+    </div>
 
-// 允許跨網域存取 (CORS)
-function corsResponse(data) {
-  return ContentService.createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+    <!-- 載入中遮罩 -->
+    <div id="loading-overlay" class="fixed inset-0 bg-white/80 z-50 flex flex-col items-center justify-center">
+      <div class="animate-spin rounded-full h-12 w-12 border-4 border-emerald-600 border-t-transparent"></div>
+      <p class="mt-4 text-lg font-bold text-slate-600">系統資料讀取中，請稍候...</p>
+    </div>
 
-// 處理 GET 請求：查詢使用者狀態、取得任務清單
-function doGet(e) {
-  const action = e.parameter.action;
-  const db = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
-  try {
-    // 1. 檢查使用者是否已註冊
-    if (action === "getUser") {
-      const lineId = e.parameter.lineId;
-      const sheet = db.getSheetByName("Users");
-      const rows = sheet.getDataRange().getValues();
+    <!-- ================= 畫面 A：首次註冊綁定 ================= -->
+    <div id="view-register" class="hidden flex-1 p-6 flex flex-col justify-center bg-gradient-to-b from-emerald-50 to-white">
+      <div class="space-y-6 my-auto">
+        <div class="text-center space-y-2">
+          <div class="inline-flex p-4 bg-emerald-100 text-emerald-600 rounded-full mb-2">
+            <i data-lucide="heart" class="w-12 h-12 text-emerald-600 animate-pulse"></i>
+          </div>
+          <h1 class="text-3xl font-extrabold text-emerald-800 tracking-wide">溫馨護送志工系統</h1>
+          <p class="text-lg text-slate-600 font-medium">首次使用，請填寫基本資料綁定 LINE</p>
+        </div>
+
+        <form id="register-form" class="space-y-5 bg-white p-6 rounded-2xl shadow-md border border-emerald-100">
+          <div class="space-y-2">
+            <label class="block text-xl font-bold text-slate-700">您的真實姓名</label>
+            <input type="text" id="reg-name" placeholder="例如：王大明" class="w-full px-4 py-3.5 text-lg border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none" required>
+          </div>
+
+          <div class="space-y-2">
+            <label class="block text-xl font-bold text-slate-700">聯絡電話</label>
+            <input type="tel" id="reg-phone" placeholder="例如：0912345678" class="w-full px-4 py-3.5 text-lg border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none" required>
+          </div>
+
+          <div class="space-y-2">
+            <label class="block text-xl font-bold text-slate-700">您的身分角色</label>
+            <div class="grid grid-cols-3 gap-2" id="role-selector">
+              <button type="button" data-role="護送志工" class="role-btn py-3 rounded-xl text-base font-bold border-2 bg-emerald-600 text-white border-emerald-600">護送志工</button>
+              <button type="button" data-role="法師" class="role-btn py-3 rounded-xl text-base font-bold border-2 bg-slate-50 text-slate-600 border-slate-200">法師</button>
+              <button type="button" data-role="排班志工" class="role-btn py-3 rounded-xl text-base font-bold border-2 bg-slate-50 text-slate-600 border-slate-200">排班志工</button>
+            </div>
+          </div>
+
+          <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl text-xl shadow-lg active-scale mt-4">
+            確認綁定 LINE 帳號
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ================= 畫面 B：主功能畫面 ================= -->
+    <div id="view-main" class="hidden flex-1 flex flex-col">
       
-      for (let i = 1; i < rows.length; i++) {
-        if (rows[i][0] === lineId) {
-          return corsResponse({
-            success: true,
-            exists: true,
-            user: { name: rows[i][1], phone: rows[i][2], role: rows[i][3] }
-          });
-        }
-      }
-      return corsResponse({ success: true, exists: false });
-    }
-    
-    // 2. 取得所有任務清單
-    if (action === "getMissions") {
-      const sheet = db.getSheetByName("Missions");
-      const rows = sheet.getDataRange().getValues();
-      const missions = [];
-      
-      for (let i = 1; i < rows.length; i++) {
-        missions.push({
-          id: rows[i][0],
-          title: rows[i][1],
-          date: Utilities.formatDate(new Date(rows[i][2]), "GMT+8", "yyyy-MM-dd"),
-          time: rows[i][3],
-          location: rows[i][4],
-          type: rows[i][5],
-          status: rows[i][6],
-          volunteer: rows[i][7] || null,
-          creator: rows[i][8]
-        });
-      }
-      // 將任務依日期由新到舊排序
-      missions.sort((a, b) => new Date(b.date) - new Date(a.date));
-      return corsResponse({ success: true, missions: missions });
-    }
-    
-    return corsResponse({ success: false, message: "未知的 Action 請求" });
-  } catch (error) {
-    return corsResponse({ success: false, message: error.toString() });
-  }
-}
+      <!-- 個人資訊欄 -->
+      <div class="bg-gradient-to-r from-emerald-700 to-emerald-800 text-white p-4 shadow-md flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+          <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center font-bold text-xl border-2 border-white/40" id="user-avatar">
+            志
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xl font-extrabold" id="user-name">載入中</span>
+              <span class="bg-amber-400 text-slate-900 text-xs px-2 py-0.5 rounded-full font-bold" id="user-role">志工</span>
+            </div>
+            <p class="text-xs text-emerald-100 mt-0.5">LINE 已成功綁定安全登入</p>
+          </div>
+        </div>
+      </div>
 
-// 處理 POST 請求：註冊、建立任務、承接任務
-function doPost(e) {
-  const db = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
-  try {
-    const postData = JSON.parse(e.postData.contents);
-    const action = postData.action;
+      <!-- 快捷操作區 -->
+      <div class="bg-white p-4 border-b border-slate-100 shadow-sm flex justify-between items-center">
+        <h2 class="text-lg font-bold text-slate-700">專屬功能</h2>
+        <button id="btn-action-trigger" class="hidden bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-1 shadow-md text-base active-scale">
+          <i data-lucide="plus" class="w-5 h-5"></i>
+          <span id="action-btn-text">新增行程</span>
+        </button>
+        <span id="volunteer-tips" class="text-emerald-600 font-bold text-sm bg-emerald-50 px-3 py-1.5 rounded-full">
+          👍 歡迎您今天行善積德！
+        </span>
+      </div>
+
+      <!-- 核心 1：當週任務卡片 (左右切換) -->
+      <div class="p-4 bg-amber-50/50 border-b border-amber-100">
+        <div class="flex justify-between items-center mb-3">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-6 bg-amber-500 rounded-full inline-block"></span>
+            <h3 class="text-xl font-extrabold text-slate-800">本週待辦任務卡片</h3>
+          </div>
+          <span class="text-sm font-bold text-slate-500" id="card-counter">0 / 0</span>
+        </div>
+
+        <!-- 卡片容器 -->
+        <div id="card-container" class="relative">
+          <!-- 卡片內容會由 JS 動態渲染 -->
+        </div>
+      </div>
+
+      <!-- 核心 2 & 3：任務搜尋、篩選與顯示切換 -->
+      <div class="p-4 space-y-4">
+        
+        <!-- 顯示切換 (週、月、年) -->
+        <div class="space-y-2">
+          <label class="block text-lg font-bold text-slate-700">選擇顯示範圍</label>
+          <div class="grid grid-cols-3 gap-2 bg-slate-200 p-1 rounded-xl">
+            <button data-view="week" class="view-mode-btn py-2.5 rounded-lg text-base font-bold bg-white text-emerald-700 shadow-sm">本週任務</button>
+            <button data-view="month" class="view-mode-btn py-2.5 rounded-lg text-base font-bold text-slate-600">本月行程</button>
+            <button data-view="year" class="view-mode-btn py-2.5 rounded-lg text-base font-bold text-slate-600">年度總覽</button>
+          </div>
+        </div>
+
+        <!-- 關鍵字搜尋 -->
+        <div class="space-y-2">
+          <label class="block text-lg font-bold text-slate-700">快速搜尋任務</label>
+          <input type="text" id="search-input" placeholder="🔍 輸入關鍵字（如：醫院、姓名、地點）" class="w-full px-4 py-3 text-lg border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none">
+        </div>
+
+        <!-- 條件篩選 -->
+        <div class="space-y-2">
+          <label class="block text-lg font-bold text-slate-700">條件篩選</label>
+          <div class="flex flex-wrap gap-2" id="filter-container">
+            <button data-filter="全部" class="filter-btn px-4 py-2 rounded-full text-base font-bold border-2 bg-emerald-50 text-emerald-700 border-emerald-500">全部顯示</button>
+            <button data-filter="待承接" class="filter-btn px-4 py-2 rounded-full text-base font-bold border-2 bg-white text-slate-600 border-slate-200">待承接護送</button>
+            <button data-filter="法師行程" class="filter-btn px-4 py-2 rounded-full text-base font-bold border-2 bg-white text-slate-600 border-slate-200">法師專區</button>
+          </div>
+        </div>
+
+        <!-- 任務清單列表 -->
+        <div class="space-y-3">
+          <h3 class="text-xl font-extrabold text-slate-800" id="list-title">任務清單</h3>
+          <div id="mission-list" class="space-y-3">
+            <!-- 列表內容由 JS 動態渲染 -->
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ================= 彈出視窗：新增任務/行程 ================= -->
+    <div id="create-modal" class="hidden fixed inset-0 bg-black/60 flex items-end justify-center z-50 p-4">
+      <div class="bg-white w-full max-w-md rounded-t-3xl p-6 space-y-4">
+        <div class="flex justify-between items-center border-b pb-3">
+          <h3 class="text-2xl font-extrabold text-slate-800" id="modal-title">建立新護送任務</h3>
+          <button id="btn-close-modal" class="text-slate-400 text-2xl font-bold p-1">✕</button>
+        </div>
+
+        <form id="create-mission-form" class="space-y-4">
+          <div class="space-y-1">
+            <label class="block text-lg font-bold text-slate-700">行程/任務標題</label>
+            <input type="text" id="m-title" placeholder="例如：護送張爺爺至台大醫院" class="w-full p-3 text-base border-2 border-slate-200 rounded-xl focus:outline-none" required>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <label class="block text-lg font-bold text-slate-700">日期</label>
+              <input type="date" id="m-date" class="w-full p-3 text-base border-2 border-slate-200 rounded-xl focus:outline-none" required>
+            </div>
+            <div class="space-y-1">
+              <label class="block text-lg font-bold text-slate-700">時間</label>
+              <input type="text" id="m-time" placeholder="例如：09:00-12:00" class="w-full p-3 text-base border-2 border-slate-200 rounded-xl focus:outline-none" required>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-lg font-bold text-slate-700">地點</label>
+            <input type="text" id="m-location" placeholder="例如：大安區 -> 台大醫院" class="w-full p-3 text-base border-2 border-slate-200 rounded-xl focus:outline-none" required>
+          </div>
+
+          <button type="submit" class="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl text-xl shadow-lg mt-2 active-scale">
+            確認發佈行程
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ==========================================
+    // 前端核心設定與邏輯
+    // ==========================================
     
-    // 1. 註冊綁定使用者
-    if (action === "register") {
-      const sheet = db.getSheetByName("Users");
-      sheet.appendRow([
-        postData.lineId,
-        postData.name,
-        postData.phone,
-        postData.role
-      ]);
-      return corsResponse({ success: true, message: "註冊成功" });
-    }
+    // ⚠️ 請將此處替換為您部署完 GAS 後取得的 Web App URL
+    const API_URL = "https://script.google.com/macros/s/AKfycbzqk4kziqHu6NgxWHvdDjXIomc_ZBWPK7VSxAASp20rGfp4uSjpggKr6qmXDy6bEebapw/exec"; 
     
-    // 2. 建立新任務 (排班志工/法師)
-    if (action === "createMission") {
-      const sheet = db.getSheetByName("Missions");
-      const missionId = "M" + new Date().getTime(); // 產生唯一ID
-      sheet.appendRow([
-        missionId,
-        postData.title,
-        postData.date,
-        postData.time,
-        postData.location,
-        postData.type,
-        postData.status, // '待承接' 或 '已安排'
-        postData.volunteer || "",
-        postData.creator
-      ]);
-      return corsResponse({ success: true, message: "任務建立成功", id: missionId });
-    }
-    
-    // 3. 承接任務 (護送志工)
-    if (action === "acceptMission") {
-      const sheet = db.getSheetByName("Missions");
-      const rows = sheet.getDataRange().getValues();
-      const missionId = postData.missionId;
-      const volunteerName = postData.volunteerName;
-      
-      for (let i = 1; i < rows.length; i++) {
-        if (rows[i][0] === missionId) {
-          if (rows[i][6] !== "待承接") {
-            return corsResponse({ success: false, message: "此任務已被其他人承接囉！" });
+    // 狀態管理
+    let currentUser = null;
+    let lineUserId = "MOCK_LINE_USER_001"; // 測試預設值，LIFF 啟動後會被真實 LINE ID 覆蓋
+    let allMissions = [];
+    let currentCardIndex = 0;
+    let selectedRole = "護送志工";
+    let currentViewMode = "week";
+    let currentFilter = "全部";
+
+    // 初始化
+    window.onload = function() {
+      lucide.createIcons();
+      initLIFF();
+    };
+
+    // 初始化 LINE LIFF
+    function initLIFF() {
+      // 請在此處填入您的 LIFF ID
+      liff.init({ liffId: "2006468619-tbzccSNz" })
+        .then(() => {
+          if (liff.isLoggedIn()) {
+            document.getElementById("liff-status").innerText = "LINE 已連線";
+            liff.getProfile().then(profile => {
+              lineUserId = profile.userId;
+              checkUserRegistration();
+            });
+          } else {
+            // 在開發測試階段，若未在 LINE 內開啟，可使用模擬登入
+            document.getElementById("liff-status").innerText = "模擬環境";
+            checkUserRegistration();
           }
-          // 更新狀態為 '已承接'，並寫入志工姓名
-          sheet.getRange(i + 1, 7).setValue("已承接");
-          sheet.getRange(i + 1, 8).setValue(volunteerName);
-          return corsResponse({ success: true, message: "成功承接任務，功德無量！" });
-        }
-      }
-      return corsResponse({ success: false, message: "找不到該任務" });
+        })
+        .catch((err) => {
+          console.log("LIFF 初始化失敗，進入模擬測試模式", err);
+          document.getElementById("liff-status").innerText = "測試模式";
+          checkUserRegistration();
+        });
     }
-    
-    return corsResponse({ success: false, message: "未知的 Action 請求" });
-  } catch (error) {
-    return corsResponse({ success: false, message: error.toString() });
-  }
-}
+
+    // 檢查使用者是否已註冊
+    function checkUserRegistration() {
+      showLoading(true);
+      fetch(`${API_URL}?action=getUser&lineId=${lineUserId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.exists) {
+            currentUser = data.user;
+            showMainView();
+          } else {
+            showRegisterView();
+          }
+        })
+        .catch(err => alert("網路連線失敗，請檢查 API 網址是否設定正確！"))
+        .finally(() => showLoading(false));
+    }
+
+    // 顯示註冊畫面
+    function showRegisterView() {
+      document.getElementById("view-register").classList.remove("hidden");
+      document.getElementById("view-main").classList.add("hidden");
+      
+      // 註冊角色選擇器事件
+      const roleBtns = document.querySelectorAll(".role-btn");
+      roleBtns.forEach(btn => {
+        btn.addEventListener("click", function() {
+          roleBtns.forEach(b => {
+            b.className = "role-btn py-3 rounded-xl text-base font-bold border-2 bg-slate-50 text-slate-600 border-slate-200";
+          });
+          this.className = "role-btn py-3 rounded-xl text-base font-bold border-2 bg-emerald-600 text-white border-emerald-600";
+          selectedRole = this.getAttribute("data-role");
+        });
+      });
+
+      // 註冊表單提交
+      document.getElementById("register-form").onsubmit = function(e) {
+        e.preventDefault();
+        const name = document.getElementById("reg-name").value;
+        const phone = document.getElementById("reg-phone").value;
+
+        showLoading(true);
+        fetch(API_URL, {
+          method: "POST",
+          body: JSON.stringify({
+            action: "register",
+            lineId: lineUserId,
+            name: name,
+            phone: phone,
+            role: selectedRole
+          })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            currentUser = { name, phone, role: selectedRole };
+            showMainView();
+          } else {
+            alert("註冊失敗，請重試");
+          }
+        })
+        .finally(() => showLoading(false));
+      };
+    }
+
+    // 顯示主畫面
+    function showMainView() {
+      document.getElementById("view-register").classList.add("hidden");
+      document.getElementById("view-main").classList.remove("hidden");
+
+      // 渲染個人資訊
+      document.getElementById("user-name").innerText = currentUser.name;
+      document.getElementById("user-role").innerText = currentUser.role;
+      document.getElementById("user-avatar").innerText = currentUser.name[0];
+
+      // 依據角色調整介面
+      const actionBtn = document.getElementById("btn-action-trigger");
+      const actionText = document.getElementById("action-btn-text");
+      const tips = document.getElementById("volunteer-tips");
+
+      if (currentUser.role === "排班志工") {
+        actionBtn.classList.remove("hidden");
+        actionText.innerText = "新增護送任務";
+        tips.classList.add("hidden");
+      } else if (currentUser.role === "法師") {
+        actionBtn.classList.remove("hidden");
+        actionText.innerText = "登入我的行程";
+        tips.classList.add("hidden");
+      } else {
+        actionBtn.classList.add("hidden");
+        tips.classList.remove("hidden");
+      }
+
+      // 綁定事件
+      initMainEvents();
+      // 載入任務資料
+      loadMissions();
+    }
+
+    // 載入任務資料
+    function loadMissions() {
+      showLoading(true);
+      fetch(`${API_URL}?action=getMissions`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            allMissions = data.missions;
+            renderAll();
+          }
+        })
+        .finally(() => showLoading(false));
+    }
+
+    // 渲染卡片與列表
+    function renderAll() {
+      renderCards();
+      renderList();
+    }
+
+    // 1. 渲染當週任務卡片 (可左右切換)
+    function renderCards() {
+      const container = document.getElementById("card-container");
+      // 篩選出本週的任務
+      const weekMissions = allMissions.filter(m => {
+        // 簡單判斷是否為本週任務，實際生產環境可比對日期區間
+        return m.status === "待承接" || m.type === "法師行程";
+      });
+
+      if (weekMissions.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white rounded-2xl p-8 text-center border-2 border-dashed border-slate-200 text-slate-500 text-lg">
+            目前沒有待承接的當週任務喔！
+          </div>
+        `;
+        document.getElementById("card-counter").innerText = "0 / 0";
+        return;
+      }
+
+      if (currentCardIndex >= weekMissions.length) {
+        currentCardIndex = 0;
+      }
+
+      const mission = weekMissions[currentCardIndex];
+      document.getElementById("card-counter").innerText = `${currentCardIndex + 1} / ${weekMissions.length}`;
+
+      // 產生卡片 HTML
+      let actionButtonHTML = "";
+      if (currentUser.role === "護送志工" && mission.status === "待承接") {
+        actionButtonHTML = `
+          <button onclick="acceptMission('${mission.id}')" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl text-xl shadow-md flex items-center justify-center gap-2 active-scale mt-4">
+            <i data-lucide="heart"></i>
+            <span>我要承接此任務</span>
+          </button>
+        `;
+      } else {
+        actionButtonHTML = `
+          <div class="bg-slate-50 p-3.5 rounded-xl text-center text-slate-500 font-bold text-base mt-4">
+            ${mission.status === '已承接' ? `已由志工【${mission.volunteer}】承接` : `發佈者：${mission.creator}`}
+          </div>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="bg-white rounded-2xl p-5 shadow-lg border-2 border-amber-200">
+          <div class="flex justify-between items-start mb-3">
+            <span class="px-3 py-1 rounded-full text-sm font-bold ${mission.type === '法師行程' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}">
+              ${mission.type}
+            </span>
+            <span class="px-3 py-1 rounded-full text-sm font-bold bg-amber-100 text-amber-700">
+              ${mission.status}
+            </span>
+          </div>
+
+          <h4 class="text-2xl font-bold text-slate-800 mb-4 leading-snug">${mission.title}</h4>
+
+          <div class="space-y-3 text-base text-slate-600">
+            <div class="flex items-center gap-2">
+              <i data-lucide="calendar" class="text-emerald-600 w-5 h-5"></i>
+              <span class="font-semibold text-lg">${mission.date}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <i data-lucide="clock" class="text-emerald-600 w-5 h-5"></i>
+              <span class="font-semibold text-lg">${mission.time}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <i data-lucide="map-pin" class="text-emerald-600 w-5 h-5"></i>
+              <span class="font-semibold text-lg">${mission.location}</span>
+            </div>
+          </div>
+
+          ${actionButtonHTML}
+        </div>
+
+        <!-- 左右切換超大按鈕 -->
+        <div class="flex justify-between items-center mt-4 gap-4">
+          <button onclick="prevCard(${weekMissions.length})" class="flex-1 bg-white border-2 border-slate-200 py-3.5 rounded-xl flex items-center justify-center gap-1 text-lg font-bold text-slate-700 active-scale">
+            <i data-lucide="chevron-left"></i> 上一個
+          </button>
+          <button onclick="nextCard(${weekMissions.length})" class="flex-1 bg-white border-2 border-slate-200 py-3.5 rounded-xl flex items-center justify-center gap-1 text-lg font-bold text-slate-700 active-scale">
+            下一個 <i data-lucide="chevron-right"></i>
+          </button>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function prevCard(total) {
+      if (currentCardIndex > 0) {
+        currentCardIndex--;
+        renderCards();
+      }
+    }
+
+    function nextCard(total) {
+      if (currentCardIndex < total - 1) {
+        currentCardIndex++;
+        renderCards();
+      }
+    }
+
+    // 2. 渲染下方清單 (支援搜尋與篩選)
+    function renderList() {
+      const listContainer = document.getElementById("mission-list");
+      const keyword = document.getElementById("search-input").value.toLowerCase();
+
+      // 進行資料過濾
+      const filtered = allMissions.filter(m => {
+        const matchKeyword = m.title.toLowerCase().includes(keyword) || m.location.toLowerCase().includes(keyword);
+        
+        let matchFilter = true;
+        if (currentFilter === "待承接") matchFilter = (m.status === "待承接");
+        if (currentFilter === "法師行程") matchFilter = (m.type === "法師行程");
+
+        return matchKeyword && matchFilter;
+      });
+
+      document.getElementById("list-title").innerText = `${currentViewMode === 'week' ? '本週' : currentViewMode === 'month' ? '本月' : '年度'}任務清單 (${filtered.length})`;
+
+      if (filtered.length === 0) {
+        listContainer.innerHTML = `
+          <div class="bg-white rounded-xl p-8 text-center border border-slate-200 text-slate-400 text-lg">
+            沒有找到符合條件的行程
+          </div>
+        `;
+        return;
+      }
+
+      listContainer.innerHTML = filtered.map(m => `
+        <div class="p-4 rounded-xl border-2 bg-white ${m.status === '待承接' ? 'border-amber-200' : 'border-slate-100'}">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-bold px-2 py-0.5 rounded ${m.type === '法師行程' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}">
+              ${m.type}
+            </span>
+            <span class="text-sm font-bold text-slate-500">${m.date}</span>
+          </div>
+          <h4 class="text-lg font-bold text-slate-800 mb-2">${m.title}</h4>
+          <div class="text-sm text-slate-500 space-y-1">
+            <p>📍 地點：${m.location}</p>
+            <p>⏰ 時間：${m.time}</p>
+            ${m.volunteer ? `<p>🙋‍♂️ 承接志工：${m.volunteer}</p>` : ''}
+          </div>
+          ${currentUser.role === '護送志工' && m.status === '待承接' ? `
+            <button onclick="acceptMission('${m.id}')" class="mt-3 w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold py-2.5 rounded-lg text-base flex items-center justify-center gap-1 active-scale">
+              <i data-lucide="heart" class="w-4 h-4"></i> 我要承接
+            </button>
+          ` : ''}
+        </div>
+      `).join("");
+      lucide.createIcons();
+    }
+
+    // 承接任務 API 呼叫
+    function acceptMission(missionId) {
+      if (!confirm("您確定要承接這個護送任務嗎？")) return;
+      
+      showLoading(true);
+      fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "acceptMission",
+          missionId: missionId,
+          volunteerName: currentUser.name
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message);
+        if (data.success) {
+          loadMissions();
+        }
+      })
+      .finally(() => showLoading(false));
+    }
+
+    // 初始化事件監聽
+    function initMainEvents() {
+      // 搜尋輸入監聽
+      document.getElementById("search-input").addEventListener("input", renderList);
+
+      // 顯示範圍切換 (週、月、年)
+      const viewBtns = document.querySelectorAll(".view-mode-btn");
+      viewBtns.forEach(btn => {
+        btn.onclick = function() {
+          viewBtns.forEach(b => b.className = "view-mode-btn py-2.5 rounded-lg text-base font-bold text-slate-600");
+          this.className = "view-mode-btn py-2.5 rounded-lg text-base font-bold bg-white text-emerald-700 shadow-sm";
+          currentViewMode = this.getAttribute("data-view");
+          renderList();
+        };
+      });
+
+      // 篩選按鈕切換
+      const filterBtns = document.querySelectorAll(".filter-btn");
+      filterBtns.forEach(btn => {
+        btn.onclick = function() {
+          filterBtns.forEach(b => b.className = "filter-btn px-4 py-2 rounded-full text-base font-bold border-2 bg-white text-slate-600 border-slate-200");
+          this.className = "filter-btn px-4 py-2 rounded-full text-base font-bold border-2 bg-emerald-50 text-emerald-700 border-emerald-500";
+          currentFilter = this.getAttribute("data-filter");
+          renderList();
+        };
+      });
+
+      // 彈出視窗控制
+      const modal = document.getElementById("create-modal");
+      document.getElementById("btn-action-trigger").onclick = function() {
+        document.getElementById("modal-title").innerText = currentUser.role === "法師" ? "登入法師行程" : "建立新護送任務";
+        modal.classList.remove("hidden");
+      };
+      document.getElementById("btn-close-modal").onclick = function() {
+        modal.classList.add("hidden");
+      };
+
+      // 提交新行程表單
+      document.getElementById("create-mission-form").onsubmit = function(e) {
+        e.preventDefault();
+        const title = document.getElementById("m-title").value;
+        const date = document.getElementById("m-date").value;
+        const time = document.getElementById("m-time").value;
+        const location = document.getElementById("m-location").value;
+
+        showLoading(true);
+        fetch(API_URL, {
+          method: "POST",
+          body: JSON.stringify({
+            action: "createMission",
+            title: title,
+            date: date,
+            time: time,
+            location: location,
+            type: currentUser.role === "法師" ? "法師行程" : "護送任務",
+            status: currentUser.role === "法師" ? "已安排" : "待承接",
+            volunteer: currentUser.role === "法師" ? currentUser.name : "",
+            creator: currentUser.name
+          })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert("發佈成功！");
+            modal.classList.add("hidden");
+            document.getElementById("create-mission-form").reset();
+            loadMissions();
+          } else {
+            alert("發佈失敗，請重試");
+          }
+        })
+        .finally(() => showLoading(false));
+      };
+    }
+
+    function showLoading(show) {
+      const overlay = document.getElementById("loading-overlay");
+      if (show) overlay.classList.remove("hidden");
+      else overlay.classList.add("hidden");
+    }
+  </script>
+</body>
+</html>
