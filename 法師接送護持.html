@@ -11,7 +11,6 @@
   <!-- LINE LIFF SDK -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
-    /* 專為長輩設計的防誤觸與流暢動畫 */
     body {
       -webkit-tap-highlight-color: transparent;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -125,7 +124,7 @@
       <!-- 核心 2 & 3：任務搜尋、篩選與顯示切換 -->
       <div class="p-4 space-y-4">
         
-        <!-- 顯示切換 (週、月、年) -->
+        <!-- 顯示範圍切換 -->
         <div class="space-y-2">
           <label class="block text-lg font-bold text-slate-700">選擇顯示範圍</label>
           <div class="grid grid-cols-3 gap-2 bg-slate-200 p-1 rounded-xl">
@@ -202,23 +201,17 @@
   </div>
 
   <script>
-    // ==========================================
-    // 前端核心設定與邏輯
-    // ==========================================
+    // 請替換為部署後的 GAS Web App URL
+    const API_URL = "https://script.google.com/macros/s/AKfycbxgz-9ktUTHGxIF5hSTCxa-LTWAQqvW3COsCgRpp0BePQRYeFm1q3cC7XSh3s0kewFPrw/exec"; 
     
-    // ⚠️ 請將此處替換為您部署完 GAS 後取得的 Web App URL
-    const API_URL = "https://script.google.com/macros/s/AKfycbzqk4kziqHu6NgxWHvdDjXIomc_ZBWPK7VSxAASp20rGfp4uSjpggKr6qmXDy6bEebapw/exec"; 
-    
-    // 狀態管理
     let currentUser = null;
-    let lineUserId = "MOCK_LINE_USER_001"; // 測試預設值，LIFF 啟動後會被真實 LINE ID 覆蓋
+    let lineUserId = "MOCK_LINE_USER_001"; // 預設測試 ID
     let allMissions = [];
     let currentCardIndex = 0;
     let selectedRole = "護送志工";
     let currentViewMode = "week";
     let currentFilter = "全部";
 
-    // 初始化
     window.onload = function() {
       lucide.createIcons();
       initLIFF();
@@ -226,7 +219,6 @@
 
     // 初始化 LINE LIFF
     function initLIFF() {
-      // 請在此處填入您的 LIFF ID
       liff.init({ liffId: "2006468619-tbzccSNz" })
         .then(() => {
           if (liff.isLoggedIn()) {
@@ -236,9 +228,13 @@
               checkUserRegistration();
             });
           } else {
-            // 在開發測試階段，若未在 LINE 內開啟，可使用模擬登入
-            document.getElementById("liff-status").innerText = "模擬環境";
-            checkUserRegistration();
+            // 若在 LINE 內開啟但未登入，強制引導登入
+            if (liff.isInClient()) {
+              liff.login();
+            } else {
+              document.getElementById("liff-status").innerText = "外部瀏覽器(測試)";
+              checkUserRegistration();
+            }
           }
         })
         .catch((err) => {
@@ -261,7 +257,7 @@
             showRegisterView();
           }
         })
-        .catch(err => alert("網路連線失敗，請檢查 API 網址是否設定正確！"))
+        .catch(err => alert("網路連線失敗，請檢查後端 API 網址！"))
         .finally(() => showLoading(false));
     }
 
@@ -270,7 +266,6 @@
       document.getElementById("view-register").classList.remove("hidden");
       document.getElementById("view-main").classList.add("hidden");
       
-      // 註冊角色選擇器事件
       const roleBtns = document.querySelectorAll(".role-btn");
       roleBtns.forEach(btn => {
         btn.addEventListener("click", function() {
@@ -282,15 +277,17 @@
         });
       });
 
-      // 註冊表單提交
       document.getElementById("register-form").onsubmit = function(e) {
         e.preventDefault();
         const name = document.getElementById("reg-name").value;
         const phone = document.getElementById("reg-phone").value;
 
         showLoading(true);
+        // ⚠️ 修正重點：使用 text/plain 避免 OPTIONS 預檢請求導致的 CORS 錯誤
         fetch(API_URL, {
           method: "POST",
+          mode: "cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({
             action: "register",
             lineId: lineUserId,
@@ -317,12 +314,10 @@
       document.getElementById("view-register").classList.add("hidden");
       document.getElementById("view-main").classList.remove("hidden");
 
-      // 渲染個人資訊
       document.getElementById("user-name").innerText = currentUser.name;
       document.getElementById("user-role").innerText = currentUser.role;
       document.getElementById("user-avatar").innerText = currentUser.name[0];
 
-      // 依據角色調整介面
       const actionBtn = document.getElementById("btn-action-trigger");
       const actionText = document.getElementById("action-btn-text");
       const tips = document.getElementById("volunteer-tips");
@@ -340,13 +335,10 @@
         tips.classList.remove("hidden");
       }
 
-      // 綁定事件
       initMainEvents();
-      // 載入任務資料
       loadMissions();
     }
 
-    // 載入任務資料
     function loadMissions() {
       showLoading(true);
       fetch(`${API_URL}?action=getMissions`)
@@ -360,19 +352,30 @@
         .finally(() => showLoading(false));
     }
 
-    // 渲染卡片與列表
     function renderAll() {
       renderCards();
       renderList();
     }
 
-    // 1. 渲染當週任務卡片 (可左右切換)
+    // 判斷日期是否在今天起算 7 天內（本週任務）
+    function isWithinNext7Days(dateStr) {
+      const missionDate = new Date(dateStr);
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const nextWeek = new Date();
+      nextWeek.setDate(today.getDate() + 7);
+      nextWeek.setHours(23,59,59,999);
+      return missionDate >= today && missionDate <= nextWeek;
+    }
+
+    // 1. 渲染當週任務卡片
     function renderCards() {
       const container = document.getElementById("card-container");
-      // 篩選出本週的任務
+      
+      // ⚠️ 修正重點：只篩選出「未來 7 天內」且「待承接」或「法師行程」的任務
       const weekMissions = allMissions.filter(m => {
-        // 簡單判斷是否為本週任務，實際生產環境可比對日期區間
-        return m.status === "待承接" || m.type === "法師行程";
+        const isUpcoming = isWithinNext7Days(m.date);
+        return isUpcoming && (m.status === "待承接" || m.type === "法師行程");
       });
 
       if (weekMissions.length === 0) {
@@ -392,7 +395,6 @@
       const mission = weekMissions[currentCardIndex];
       document.getElementById("card-counter").innerText = `${currentCardIndex + 1} / ${weekMissions.length}`;
 
-      // 產生卡片 HTML
       let actionButtonHTML = "";
       if (currentUser.role === "護送志工" && mission.status === "待承接") {
         actionButtonHTML = `
@@ -440,7 +442,6 @@
           ${actionButtonHTML}
         </div>
 
-        <!-- 左右切換超大按鈕 -->
         <div class="flex justify-between items-center mt-4 gap-4">
           <button onclick="prevCard(${weekMissions.length})" class="flex-1 bg-white border-2 border-slate-200 py-3.5 rounded-xl flex items-center justify-center gap-1 text-lg font-bold text-slate-700 active-scale">
             <i data-lucide="chevron-left"></i> 上一個
@@ -467,20 +468,34 @@
       }
     }
 
-    // 2. 渲染下方清單 (支援搜尋與篩選)
+    // 2. 渲染下方清單 (支援時間範圍、搜尋與篩選)
     function renderList() {
       const listContainer = document.getElementById("mission-list");
       const keyword = document.getElementById("search-input").value.toLowerCase();
 
-      // 進行資料過濾
       const filtered = allMissions.filter(m => {
+        // A. 關鍵字過濾
         const matchKeyword = m.title.toLowerCase().includes(keyword) || m.location.toLowerCase().includes(keyword);
         
+        // B. 條件篩選過濾
         let matchFilter = true;
         if (currentFilter === "待承接") matchFilter = (m.status === "待承接");
         if (currentFilter === "法師行程") matchFilter = (m.type === "法師行程");
 
-        return matchKeyword && matchFilter;
+        // C. 顯示範圍過濾 (週、月、年)
+        let matchView = true;
+        const mDate = new Date(m.date);
+        const today = new Date();
+        
+        if (currentViewMode === "week") {
+          matchView = isWithinNext7Days(m.date);
+        } else if (currentViewMode === "month") {
+          matchView = (mDate.getMonth() === today.getMonth() && mDate.getFullYear() === today.getFullYear());
+        } else if (currentViewMode === "year") {
+          matchView = (mDate.getFullYear() === today.getFullYear());
+        }
+
+        return matchKeyword && matchFilter && matchView;
       });
 
       document.getElementById("list-title").innerText = `${currentViewMode === 'week' ? '本週' : currentViewMode === 'month' ? '本月' : '年度'}任務清單 (${filtered.length})`;
@@ -518,13 +533,16 @@
       lucide.createIcons();
     }
 
-    // 承接任務 API 呼叫
+    // 承接任務
     function acceptMission(missionId) {
       if (!confirm("您確定要承接這個護送任務嗎？")) return;
       
       showLoading(true);
+      // ⚠️ 修正重點：使用 text/plain 避免 OPTIONS 預檢請求
       fetch(API_URL, {
         method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           action: "acceptMission",
           missionId: missionId,
@@ -541,12 +559,9 @@
       .finally(() => showLoading(false));
     }
 
-    // 初始化事件監聽
     function initMainEvents() {
-      // 搜尋輸入監聽
       document.getElementById("search-input").addEventListener("input", renderList);
 
-      // 顯示範圍切換 (週、月、年)
       const viewBtns = document.querySelectorAll(".view-mode-btn");
       viewBtns.forEach(btn => {
         btn.onclick = function() {
@@ -557,7 +572,6 @@
         };
       });
 
-      // 篩選按鈕切換
       const filterBtns = document.querySelectorAll(".filter-btn");
       filterBtns.forEach(btn => {
         btn.onclick = function() {
@@ -568,7 +582,6 @@
         };
       });
 
-      // 彈出視窗控制
       const modal = document.getElementById("create-modal");
       document.getElementById("btn-action-trigger").onclick = function() {
         document.getElementById("modal-title").innerText = currentUser.role === "法師" ? "登入法師行程" : "建立新護送任務";
@@ -578,7 +591,6 @@
         modal.classList.add("hidden");
       };
 
-      // 提交新行程表單
       document.getElementById("create-mission-form").onsubmit = function(e) {
         e.preventDefault();
         const title = document.getElementById("m-title").value;
@@ -587,8 +599,11 @@
         const location = document.getElementById("m-location").value;
 
         showLoading(true);
+        // ⚠️ 修正重點：使用 text/plain 避免 OPTIONS 預檢請求
         fetch(API_URL, {
           method: "POST",
+          mode: "cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({
             action: "createMission",
             title: title,
