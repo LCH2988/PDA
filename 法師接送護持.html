@@ -3,688 +3,899 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>溫馨志工護送任務系統</title>
-  
-  <!-- 1. 使用標準靜態 Tailwind CSS (徹底消除 cdn.tailwindcss.com 的生產環境警告) -->
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-  
-  <!-- 2. Lucide Icons 圖標庫 -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  
-  <!-- 3. LINE LIFF SDK -->
+  <title>法師接送護持隨身助手</title>
+
+  <!-- LINE LIFF SDK -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  
+  <!-- React 18 -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel (JSX 轉譯) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
   <style>
-    /* 專為長輩設計的防誤觸與流暢動畫 */
+    /* ── 全域基礎 ── */
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
     body {
+      font-size: 17px;
+      touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background-color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, "Microsoft JhengHei", "PingFang TC",
+                   "Noto Sans TC", sans-serif;
+      background: #f1f5f9;
     }
-    .active-scale:active {
-      transform: scale(0.96);
+    input, select, textarea, button { font-size: 17px !important; font-family: inherit; }
+
+    /* ── 隱藏捲軸 ── */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* ── 動畫 ── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-16px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
-    /* 強制全局黑粗體，適合中高齡志工閱讀 */
-    .font-black-bold {
-      font-weight: 900 !important;
-      color: #0f172a !important; /* Slate 900 */
-    }
-    /* 自訂卡片陰影與框線分割 */
-    .mission-card {
-      border: 3px solid #e2e8f0;
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-      transition: all 0.2s ease;
-    }
-    .mission-card-pending {
-      border: 3px solid #fcd34d !important; /* 待承接使用亮眼橘黃框 */
-      box-shadow: 0 10px 20px -3px rgba(251, 191, 36, 0.15);
-    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    .animate-spin    { animation: spin 1s linear infinite; }
+    .animate-pulse   { animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+    .animate-fadein  { animation: fadeInDown .35s ease both; }
+
+    /* ── 按鈕點擊縮放 ── */
+    .btn-tap { transition: transform .12s ease, opacity .12s ease; }
+    .btn-tap:active { transform: scale(.96); opacity: .85; }
+
+    /* ── 卡片陰影 ── */
+    .card-shadow { box-shadow: 0 2px 12px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); }
+    .card-shadow-lg { box-shadow: 0 4px 24px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.08); }
+
+    /* ── 狀態標籤 ── */
+    .badge-waiting  { background:#fef2f2; color:#991b1b; border:1.5px solid #fecaca; }
+    .badge-assigned { background:#eff6ff; color:#1e40af; border:1.5px solid #bfdbfe; }
+    .badge-ongoing  { background:#fffbeb; color:#92400e; border:1.5px solid #fde68a; }
+    .badge-done     { background:#f8fafc; color:#475569; border:1.5px solid #e2e8f0; }
+    .badge-cancel   { background:#f8fafc; color:#94a3b8; border:1.5px solid #e2e8f0; text-decoration:line-through; }
+
+    /* ── 底部導覽列安全區 ── */
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
   </style>
 </head>
-<body class="min-h-screen flex justify-center">
+<body>
+  <div id="root"></div>
 
-  <div class="w-full max-w-md bg-gray-50 min-h-screen shadow-2xl flex flex-col pb-12 relative">
-    
-    <!-- LINE LIFF 頂部狀態 -->
-    <div class="bg-green-600 text-white px-4 py-3 text-sm flex justify-between items-center font-extrabold shadow-md">
-      <span class="flex items-center text-base">🟢 LINE 認證安全連線</span>
-      <span id="liff-status" class="bg-green-700 px-3 py-0.5 rounded-full text-xs">安全載入中...</span>
-    </div>
+  <script type="text/babel">
+    // =========================================================================
+    // ★ [必填設定] 部署前請替換以下兩個值
+    // =========================================================================
+    const LIFF_ID = "2006181829-l81j2YrD";        // LINE Developers > LIFF > LIFF ID
+    const API_URL = "https://script.google.com/macros/s/AKfycbzjddBeeApwqu8XgiVrbCh8v7ObWYL5aD7XDBgjds2YRLYvEKlN_NsWcrI7WWucrC2jjA/exec";
+    // =========================================================================
 
-    <!-- 載入中遮罩 -->
-    <div id="loading-overlay" class="fixed inset-0 bg-white bg-opacity-90 z-50 flex flex-col items-center justify-center">
-      <div class="animate-spin rounded-full h-14 w-14 border-4 border-green-600 border-t-transparent"></div>
-      <p class="mt-4 text-xl font-black text-gray-700">系統安全連線中，請稍候...</p>
-    </div>
-
-    <!-- ================= 畫面 A：首次註冊綁定 ================= -->
-    <div id="view-register" class="hidden flex-1 p-6 flex flex-col justify-center bg-gradient-to-b from-green-50 to-white">
-      <div class="space-y-6 my-auto">
-        <div class="text-center space-y-2">
-          <div class="inline-flex p-4 bg-green-100 text-green-600 rounded-full mb-2">
-            <i data-lucide="heart" class="w-14 h-14 text-green-600"></i>
-          </div>
-          <h1 class="text-3xl font-black text-green-800 tracking-wide">溫馨護送志工系統</h1>
-          <p class="text-lg text-gray-600 font-bold">首次使用，請填寫基本資料綁定 LINE</p>
-        </div>
-
-        <form id="register-form" class="space-y-5 bg-white p-6 rounded-2xl shadow-lg border-2 border-green-100">
-          <div class="space-y-2">
-            <label class="block text-xl font-black-bold">您的真實姓名</label>
-            <input type="text" id="reg-name" placeholder="例如：王大明" class="w-full px-4 py-3.5 text-lg border-2 border-gray-300 rounded-xl focus:border-green-500 focus:outline-none font-bold" required>
-          </div>
-
-          <div class="space-y-2">
-            <label class="block text-xl font-black-bold">聯絡電話</label>
-            <input type="tel" id="reg-phone" placeholder="例如：0912345678" class="w-full px-4 py-3.5 text-lg border-2 border-gray-300 rounded-xl focus:border-green-500 focus:outline-none font-bold" required>
-          </div>
-
-          <div class="space-y-2">
-            <label class="block text-xl font-black-bold">您的身分角色</label>
-            <div class="grid grid-cols-3 gap-2" id="role-selector">
-              <button type="button" data-role="護送志工" class="role-btn py-3 rounded-xl text-base font-black border-2 bg-green-600 text-white border-green-600">護送志工</button>
-              <button type="button" data-role="法師" class="role-btn py-3 rounded-xl text-base font-black border-2 bg-gray-50 text-gray-600 border-gray-200">法師</button>
-              <button type="button" data-role="排班志工" class="role-btn py-3 rounded-xl text-base font-black border-2 bg-gray-50 text-gray-600 border-gray-200">排班志工</button>
-            </div>
-          </div>
-
-          <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-black py-4 rounded-xl text-xl shadow-lg active-scale mt-4">
-            確認綁定 LINE 帳號
-          </button>
-        </form>
-      </div>
-    </div>
-
-    <!-- ================= 畫面 B：主功能畫面 ================= -->
-    <div id="view-main" class="hidden flex-1 flex flex-col">
-      
-      <!-- 個人資訊欄 -->
-      <div class="bg-gradient-to-r from-green-700 to-green-800 text-white p-4 shadow-md flex justify-between items-center">
-        <div class="flex items-center space-x-3">
-          <div class="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center font-black text-xl border-2 border-white border-opacity-40" id="user-avatar">
-            志
-          </div>
-          <div>
-            <div class="flex items-center space-x-2">
-              <span class="text-2xl font-black" id="user-name">載入中</span>
-              <span class="bg-yellow-400 text-gray-900 text-sm px-2.5 py-0.5 rounded-full font-black" id="user-role">志工</span>
-            </div>
-            <p class="text-xs text-green-100 mt-0.5 font-bold">LINE 已成功綁定安全登入</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- 快捷操作區 -->
-      <div class="bg-white p-4 border-b border-gray-200 shadow-sm flex justify-between items-center">
-        <h2 class="text-xl font-black-bold">專屬功能</h2>
-        <button id="btn-action-trigger" class="hidden bg-green-600 text-white px-4 py-2.5 rounded-xl font-black flex items-center gap-1 shadow-md text-base active-scale">
-          <i data-lucide="plus" class="w-5 h-5"></i>
-          <span id="action-btn-text">新增行程</span>
-        </button>
-        <span id="volunteer-tips" class="text-green-700 font-black text-base bg-green-50 px-3 py-1.5 rounded-full border border-green-200">
-          👍 歡迎您今天行善積德！
-        </span>
-      </div>
-
-      <!-- 核心 1：最近 5 筆任務卡片 (左右切換) -->
-      <div class="p-4 bg-yellow-50 bg-opacity-60 border-b-2 border-yellow-200">
-        <div class="flex justify-between items-center mb-3">
-          <div class="flex items-center gap-1.5">
-            <span class="w-3 h-6 bg-yellow-500 rounded-full inline-block"></span>
-            <h3 class="text-xl font-black text-yellow-900">最新 5 筆待辦任務</h3>
-          </div>
-          <span class="text-base font-black text-yellow-800 bg-yellow-100 px-2.5 py-0.5 rounded-full" id="card-counter">0 / 0</span>
-        </div>
-
-        <!-- 卡片容器 -->
-        <div id="card-container" class="relative">
-          <!-- 卡片內容會由 JS 動態渲染 -->
-        </div>
-      </div>
-
-      <!-- 核心 2 & 3：任務搜尋、篩選與顯示切換 -->
-      <div class="p-4 space-y-5">
-        
-        <!-- 顯示範圍切換 -->
-        <div class="space-y-2">
-          <label class="block text-lg font-black-bold">選擇顯示範圍</label>
-          <div class="grid grid-cols-3 gap-2 bg-gray-200 p-1 rounded-xl border border-gray-300">
-            <button data-view="week" class="view-mode-btn py-2.5 rounded-lg text-lg font-black bg-white text-green-800 shadow-sm">本週任務</button>
-            <button data-view="month" class="view-mode-btn py-2.5 rounded-lg text-lg font-black text-gray-600">本月行程</button>
-            <button data-view="year" class="view-mode-btn py-2.5 rounded-lg text-lg font-black text-gray-600">年度總覽</button>
-          </div>
-        </div>
-
-        <!-- 關鍵字搜尋 -->
-        <div class="space-y-2">
-          <label class="block text-lg font-black-bold">快速搜尋任務</label>
-          <input type="text" id="search-input" placeholder="🔍 輸入關鍵字（如：醫院、姓名、地點）" class="w-full px-4 py-3 text-lg border-2 border-gray-300 rounded-xl focus:border-green-500 focus:outline-none font-bold">
-        </div>
-
-        <!-- 條件篩選 -->
-        <div class="space-y-2">
-          <label class="block text-lg font-black-bold">條件篩選</label>
-          <div class="flex flex-wrap gap-2" id="filter-container">
-            <button data-filter="全部" class="filter-btn px-4 py-2 rounded-full text-base font-black border-2 bg-green-50 text-green-800 border-green-500 shadow-sm">全部顯示</button>
-            <button data-filter="待承接" class="filter-btn px-4 py-2 rounded-full text-base font-black border-2 bg-white text-gray-600 border-gray-300 shadow-sm">待承接護送</button>
-            <button data-filter="法師行程" class="filter-btn px-4 py-2 rounded-full text-base font-black border-2 bg-white text-gray-600 border-gray-300 shadow-sm">法師專區</button>
-          </div>
-        </div>
-
-        <!-- 任務清單列表 -->
-        <div class="space-y-3">
-          <h3 class="text-2xl font-black text-gray-800 border-b-2 border-gray-200 pb-2" id="list-title">任務清單</h3>
-          <div id="mission-list" class="space-y-4">
-            <!-- 列表內容由 JS 動態渲染 -->
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- ================= 彈出視窗：新增任務/行程 ================= -->
-    <div id="create-modal" class="hidden fixed inset-0 bg-black bg-opacity-60 flex items-end justify-center z-50 p-4">
-      <div class="bg-white w-full max-w-md rounded-t-3xl p-6 space-y-4 shadow-2xl border-t-4 border-green-600">
-        <div class="flex justify-between items-center border-b pb-3">
-          <h3 class="text-2xl font-black text-gray-800" id="modal-title">建立新護送任務</h3>
-          <button id="btn-close-modal" class="text-gray-400 text-3xl font-black p-1">✕</button>
-        </div>
-
-        <form id="create-mission-form" class="space-y-4">
-          <div class="space-y-1">
-            <label class="block text-lg font-black-bold">行程/任務標題</label>
-            <input type="text" id="m-title" placeholder="例如：護送張爺爺至台大醫院" class="w-full p-3 text-base border-2 border-gray-300 rounded-xl focus:outline-none font-bold" required>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div class="space-y-1">
-              <label class="block text-lg font-black-bold">日期</label>
-              <input type="date" id="m-date" class="w-full p-3 text-base border-2 border-gray-300 rounded-xl focus:outline-none font-bold" required>
-            </div>
-            <div class="space-y-1">
-              <label class="block text-lg font-black-bold">時間</label>
-              <input type="text" id="m-time" placeholder="例如：09:00" class="w-full p-3 text-base border-2 border-gray-300 rounded-xl focus:outline-none font-bold" required>
-            </div>
-          </div>
-
-          <div class="space-y-1">
-            <label class="block text-lg font-black-bold">地點</label>
-            <input type="text" id="m-location" placeholder="例如：大安區 -> 台大醫院" class="w-full p-3 text-base border-2 border-gray-300 rounded-xl focus:outline-none font-bold" required>
-          </div>
-
-          <button type="submit" class="w-full bg-green-600 text-white font-black py-4 rounded-xl text-xl shadow-lg mt-2 active-scale">
-            確認發佈行程
-          </button>
-        </form>
-      </div>
-    </div>
-
-  </div>
-
-  <script>
-    // 請替換為您部署後的 GAS Web App URL
-    const API_URL = "https://script.google.com/macros/s/AKfycby_6VP7yptHsQDy5RZzMgLUg0XSK4dTcp9HZkFeAhC0ICh6jLixoGjeEof6mdppcih3VQ/exec"; 
-    
-    let currentUser = null;
-    let lineUserId = ""; // 正式版移除預設測試 ID，強制由 LINE 授權取得
-    let allMissions = [];
-    let currentCardIndex = 0;
-    let selectedRole = "護送志工";
-    let currentViewMode = "week";
-    let currentFilter = "全部";
-
-    window.onload = function() {
-      lucide.createIcons();
-      initLIFF();
+    // ── 常數 ──
+    const ROLE_LABEL = { volunteer: '志工', monk: '法師', scheduler: '排班' };
+    const ROLE_COLOR = {
+      volunteer: 'bg-emerald-900 text-emerald-100',
+      monk:      'bg-amber-900 text-amber-100',
+      scheduler: 'bg-blue-900 text-blue-100',
+    };
+    const STATUS_BADGE = {
+      '待領取': 'badge-waiting',
+      '已排定': 'badge-assigned',
+      '進行中': 'badge-ongoing',
+      '已完成': 'badge-done',
+      '已取消': 'badge-cancel',
+    };
+    const STATUS_DOT = {
+      '待領取': 'bg-red-500',
+      '已排定': 'bg-blue-500',
+      '進行中': 'bg-amber-500',
+      '已完成': 'bg-slate-400',
+      '已取消': 'bg-slate-300',
     };
 
-    // 初始化 LINE LIFF (正式上線版：強制登入，關閉測試模式)
-    function initLIFF() {
-      liff.init({ liffId: "2006468619-tbzccSNz" })
-        .then(() => {
-          if (liff.isLoggedIn()) {
-            document.getElementById("liff-status").innerText = "LINE 已連線";
-            liff.getProfile()
-              .then(profile => {
-                lineUserId = profile.userId;
-                checkUserRegistration();
-              })
-              .catch(err => {
-                console.error("取得 LINE 個人資料失敗", err);
-                alert("無法取得您的 LINE 帳號資訊，請重新開啟網頁。");
-              });
-          } else {
-            // 未登入，強制跳轉 LINE 授權登入
-            document.getElementById("liff-status").innerText = "引導登入中...";
-            liff.login();
-          }
-        })
-        .catch((err) => {
-          console.error("LIFF 初始化失敗", err);
-          document.getElementById("liff-status").innerText = "連線失敗";
-          alert("系統安全連線失敗！請確保您是在 LINE 軟體內開啟此連結。");
-          showLoading(false);
-        });
-    }
+    // ── 模擬資料（未設定 LIFF_ID 時使用）──
+    const MOCK = {
+      profile: { userId: 'U_MOCK_VOL', role: 'volunteer', name: '林東毅（模擬）', phone: '0912-345-678', monkId: '' },
+      monks: [
+        { monkId: 'M0001', monkName: '如英法師', active: true },
+        { monkId: 'M0002', monkName: '清幢法師', active: true },
+        { monkId: 'M0003', monkName: '淨遠法師', active: true },
+      ],
+      tasks: [
+        { id: 'REC0001', status: '已排定', monkId: 'M0001', monkName: '如英法師', date: '2026-07-10', time: '19:00', pickup: '妙覺寺', dropoff: '華藏樓', driverId: 'U_MOCK_VOL', driverName: '林東毅（模擬）', driverPhone: '0912-345-678', notes: '法師行李較多，請預留後車廂空間。', createdAt: '2026-07-01 10:00:00', updatedAt: '2026-07-01 10:00:00' },
+        { id: 'REC0002', status: '待領取', monkId: 'M0003', monkName: '淨遠法師', date: '2026-07-11', time: '09:00', pickup: '鳳山寺', dropoff: '妙覺寺', driverId: '', driverName: '', driverPhone: '', notes: '無', createdAt: '2026-07-01 11:00:00', updatedAt: '2026-07-01 11:00:00' },
+        { id: 'REC0003', status: '已完成', monkId: 'M0002', monkName: '清幢法師', date: '2026-07-03', time: '14:30', pickup: '鳳山寺', dropoff: '妙覺寺', driverId: 'U_MOCK_VOL', driverName: '林東毅（模擬）', driverPhone: '0912-345-678', notes: '無', createdAt: '2026-06-30 09:00:00', updatedAt: '2026-07-03 16:00:00' },
+      ],
+    };
 
-    // 檢查使用者是否已註冊
-    function checkUserRegistration() {
-      showLoading(true);
-      fetch(`${API_URL}?action=getUser&lineId=${lineUserId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.exists) {
-            currentUser = data.user;
-            showMainView();
-          } else {
-            showRegisterView();
-          }
-        })
-        .catch(err => alert("網路連線失敗，請檢查後端 API 網址！"))
-        .finally(() => showLoading(false));
-    }
+    // =========================================================================
+    // 主應用程式元件
+    // =========================================================================
+    function App() {
+      const [appState, setAppState]   = React.useState('loading'); // loading | error | ready
+      const [errorMsg, setErrorMsg]   = React.useState('');
+      const [isMock, setIsMock]       = React.useState(false);
+      const [idToken, setIdToken]     = React.useState(null);
 
-    // 顯示註冊畫面
-    function showRegisterView() {
-      document.getElementById("view-register").classList.remove("hidden");
-      document.getElementById("view-main").classList.add("hidden");
-      
-      const roleBtns = document.querySelectorAll(".role-btn");
-      roleBtns.forEach(btn => {
-        btn.addEventListener("click", function() {
-          roleBtns.forEach(b => {
-            b.className = "role-btn py-3 rounded-xl text-base font-black border-2 bg-gray-50 text-gray-600 border-gray-200";
+      const [profile, setProfile]     = React.useState(null);
+      const [tasks, setTasks]         = React.useState([]);
+      const [monks, setMonks]         = React.useState([]);
+      const [loading, setLoading]     = React.useState(false);
+      const [activeTab, setActiveTab] = React.useState('my-tasks');
+      const [toast, setToast]         = React.useState(null);
+
+      const [searchQ, setSearchQ]           = React.useState('');
+      const [statusFilter, setStatusFilter] = React.useState('全部');
+      const [newForm, setNewForm]           = React.useState({ monkId: '', date: '', time: '', pickup: '', dropoff: '', notes: '' });
+      const [driverPhone, setDriverPhone]   = React.useState('');
+
+      // ── Toast 通知 ──
+      const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 4000);
+      };
+
+      // ── Lucide 圖示渲染 ──
+      React.useEffect(() => {
+        if (window.lucide) window.lucide.createIcons();
+      });
+
+      // ── 初始化 ──
+      React.useEffect(() => {
+        if (!LIFF_ID || LIFF_ID === 'YOUR_LIFF_ID') {
+          console.warn('未設定 LIFF_ID，進入本機模擬模式。');
+          activateMock();
+          return;
+        }
+        liff.init({ liffId: LIFF_ID })
+          .then(() => {
+            if (!liff.isLoggedIn()) { liff.login(); return; }
+            const token = liff.getIDToken();
+            if (!token) {
+              setAppState('error');
+              setErrorMsg('無法取得 LINE 身分權杖 (idToken)。請確認 LIFF 已開啟 openid scope。');
+              return;
+            }
+            setIdToken(token);
+            loadData(token);
+          })
+          .catch(err => {
+            setAppState('error');
+            setErrorMsg('LIFF 初始化失敗：' + err.message);
           });
-          this.className = "role-btn py-3 rounded-xl text-base font-black border-2 bg-green-600 text-white border-green-600";
-          selectedRole = this.getAttribute("data-role");
+      }, []);
+
+      const activateMock = () => {
+        setIsMock(true);
+        setProfile(MOCK.profile);
+        setMonks(MOCK.monks);
+        setTasks(MOCK.tasks);
+        setDriverPhone(MOCK.profile.phone);
+        setActiveTab('my-tasks');
+        setAppState('ready');
+      };
+
+      // ── 載入初始資料 ──
+      const loadData = async (token) => {
+        setLoading(true);
+        try {
+          const res  = await fetch(`${API_URL}?action=list&idToken=${encodeURIComponent(token)}`);
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || '讀取資料失敗');
+          setProfile(data.profile);
+          setTasks(data.tasks || []);
+          setMonks(data.monks || []);
+          setDriverPhone(data.profile.phone || '');
+          setAppState('ready');
+        } catch (err) {
+          setAppState('error');
+          setErrorMsg(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // ── 重新整理 ──
+      const refreshTasks = async () => {
+        if (isMock) { showToast('本機模擬模式，資料已是最新狀態', 'info'); return; }
+        setLoading(true);
+        try {
+          const res  = await fetch(`${API_URL}?action=list&idToken=${encodeURIComponent(idToken)}`);
+          const data = await res.json();
+          if (!data.success) throw new Error(data.error || '讀取資料失敗');
+          setTasks(data.tasks || []);
+          setMonks(data.monks || []);
+          showToast('已成功同步最新行程', 'success');
+        } catch (err) {
+          showToast('同步失敗：' + err.message, 'error');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // ── 統一 API 呼叫 ──
+      const callApi = async (payload) => {
+        if (isMock) return mockCall(payload);
+        const res  = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ idToken, ...payload }),
         });
-      });
-
-      document.getElementById("register-form").onsubmit = function(e) {
-        e.preventDefault();
-        const name = document.getElementById("reg-name").value;
-        const phone = document.getElementById("reg-phone").value;
-
-        showLoading(true);
-        fetch(API_URL, {
-          method: "POST",
-          mode: "cors",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "register",
-            lineId: lineUserId,
-            name: name,
-            phone: phone,
-            role: selectedRole
-          })
-        })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            currentUser = { name, phone, role: selectedRole };
-            showMainView();
-          } else {
-            alert("註冊失敗，請重試");
-          }
-        })
-        .finally(() => showLoading(false));
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || '操作失敗');
+        return data;
       };
-    }
 
-    // 顯示主畫面
-    function showMainView() {
-      document.getElementById("view-register").classList.add("hidden");
-      document.getElementById("view-main").classList.remove("hidden");
-
-      document.getElementById("user-name").innerText = currentUser.name;
-      document.getElementById("user-role").innerText = currentUser.role;
-      document.getElementById("user-avatar").innerText = currentUser.name[0];
-
-      const actionBtn = document.getElementById("btn-action-trigger");
-      const actionText = document.getElementById("action-btn-text");
-      const tips = document.getElementById("volunteer-tips");
-
-      if (currentUser.role === "排班志工") {
-        actionBtn.classList.remove("hidden");
-        actionText.innerText = "新增護送任務";
-        tips.classList.add("hidden");
-      } else if (currentUser.role === "法師") {
-        actionBtn.classList.remove("hidden");
-        actionText.innerText = "登入我的行程";
-        tips.classList.add("hidden");
-      } else {
-        actionBtn.classList.add("hidden");
-        tips.classList.remove("hidden");
-      }
-
-      initMainEvents();
-      loadMissions();
-    }
-
-    function loadMissions() {
-      showLoading(true);
-      fetch(`${API_URL}?action=getMissions`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            allMissions = data.missions;
-            renderAll();
+      // ── 本機模擬 API ──
+      const mockCall = (payload) => new Promise(resolve => {
+        setTimeout(() => {
+          if (payload.action === 'claim') {
+            setTasks(prev => prev.map(t => t.id === payload.id
+              ? { ...t, status: '已排定', driverId: profile.userId, driverName: profile.name, driverPhone: payload.driverPhone }
+              : t));
+          } else if (payload.action === 'updateStatus') {
+            setTasks(prev => prev.map(t => t.id === payload.id ? { ...t, status: payload.status } : t));
+          } else if (payload.action === 'create') {
+            const monk  = monks.find(m => m.monkId === payload.monkId);
+            const newId = 'REC' + Math.random().toString(36).slice(2, 6).toUpperCase();
+            setTasks(prev => [{ id: newId, status: '待領取', monkId: payload.monkId, monkName: monk?.monkName || '', date: payload.date, time: payload.time, pickup: payload.pickup, dropoff: payload.dropoff, driverId: '', driverName: '', driverPhone: '', notes: payload.notes || '無', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...prev]);
+          } else if (payload.action === 'cancel') {
+            setTasks(prev => prev.map(t => t.id === payload.id ? { ...t, status: '已取消' } : t));
           }
-        })
-        .finally(() => showLoading(false));
-    }
-
-    function renderAll() {
-      renderCards();
-      renderList();
-    }
-
-    // 格式化時間輔助函數：將異常的 1899-12-30 格式過濾，只保留 HH:mm
-    function formatCleanTime(timeStr) {
-      if (!timeStr) return "未定";
-      if (timeStr.includes("T")) {
-        const parts = timeStr.split("T");
-        if (parts.length > 1) {
-          return parts[1].substring(0, 5); // 取得 "11:30"
-        }
-      }
-      return timeStr;
-    }
-
-    // 判斷日期是否在今天起算 7 天內
-    function isWithinNext7Days(dateStr) {
-      const missionDate = new Date(dateStr);
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const nextWeek = new Date();
-      nextWeek.setDate(today.getDate() + 7);
-      nextWeek.setHours(23,59,59,999);
-      return missionDate >= today && missionDate <= nextWeek;
-    }
-
-    // 1. 渲染「最近 5 筆任務」卡片 (左右切換)
-    function renderCards() {
-      const container = document.getElementById("card-container");
-      
-      // 篩選出「待承接」或「法師行程」的任務，並只取最新 5 筆
-      const recentMissions = allMissions
-        .filter(m => m.status === "待承接" || m.type === "法師行程")
-        .slice(0, 5);
-
-      if (recentMissions.length === 0) {
-        container.innerHTML = `
-          <div class="bg-white rounded-2xl p-8 text-center border-2 border-dashed border-gray-300 text-gray-500 text-lg font-black">
-            目前沒有待承接的任務喔！
-          </div>
-        `;
-        document.getElementById("card-counter").innerText = "0 / 0";
-        return;
-      }
-
-      if (currentCardIndex >= recentMissions.length) {
-        currentCardIndex = 0;
-      }
-
-      const mission = recentMissions[currentCardIndex];
-      document.getElementById("card-counter").innerText = `${currentCardIndex + 1} / ${recentMissions.length}`;
-
-      let actionButtonHTML = "";
-      if (currentUser.role === "護送志工" && mission.status === "待承接") {
-        actionButtonHTML = `
-          <button onclick="acceptMission('${mission.id}')" class="w-full bg-green-600 hover:bg-green-700 text-white font-black py-4 rounded-xl text-xl shadow-md flex items-center justify-center gap-2 active-scale mt-4 border-2 border-green-700">
-            <i data-lucide="heart" style="fill: white;"></i>
-            <span>我要承接此任務</span>
-          </button>
-        `;
-      } else {
-        actionButtonHTML = `
-          <div class="bg-gray-100 p-3.5 rounded-xl text-center text-gray-700 font-black text-base mt-4 border border-gray-300">
-            ${mission.status === '已承接' ? `已由志工【${mission.volunteer}】承接` : `發佈者：${mission.creator}`}
-          </div>
-        `;
-      }
-
-      // 視覺優化：對標題進行法師名稱高亮 (紫色框體)
-      let highlightedTitle = mission.title;
-      highlightedTitle = highlightedTitle.replace(/【(.*?)】/g, '<span class="text-purple-800 font-black bg-purple-100 px-1.5 py-0.5 rounded border border-purple-300">$1</span>');
-
-      container.innerHTML = `
-        <div class="bg-white rounded-2xl p-5 shadow-lg border-2 border-yellow-300 relative overflow-hidden">
-          <div class="flex justify-between items-start mb-4">
-            <span class="px-3 py-1 rounded-full text-sm font-black ${mission.type === '法師行程' ? 'bg-purple-100 text-purple-800 border border-purple-300' : 'bg-green-100 text-green-800 border border-green-300'}">
-              ${mission.type}
-            </span>
-            <span class="px-3 py-1 rounded-full text-sm font-black ${mission.status === '待承接' ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' : 'bg-gray-100 text-gray-600 border border-gray-300'}">
-              ${mission.status}
-            </span>
-          </div>
-
-          <h4 class="text-2xl font-black text-gray-900 mb-4 leading-snug">${highlightedTitle}</h4>
-
-          <div class="space-y-3 text-lg border-t border-b border-gray-100 py-3">
-            <div class="flex items-center">
-              <i data-lucide="calendar" class="text-green-600 w-6 h-6 mr-2"></i>
-              <span class="font-black text-gray-800">${mission.date}</span>
-            </div>
-            <div class="flex items-center">
-              <i data-lucide="clock" class="text-yellow-600 w-6 h-6 mr-2"></i>
-              <span class="font-black text-yellow-800 bg-yellow-50 px-2 py-0.5 rounded border border-yellow-200">${formatCleanTime(mission.time)}</span>
-            </div>
-            <div class="flex items-start">
-              <i data-lucide="map-pin" class="text-blue-600 w-6 h-6 mr-2 mt-0.5"></i>
-              <span class="font-black text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 leading-tight">${mission.location}</span>
-            </div>
-          </div>
-
-          ${actionButtonHTML}
-        </div>
-
-        <!-- 左右切換按鈕 -->
-        <div class="flex justify-between items-center mt-4 gap-4">
-          <button onclick="prevCard(${recentMissions.length})" class="flex-1 bg-white border-2 border-gray-300 py-3.5 rounded-xl flex items-center justify-center gap-1 text-lg font-black text-gray-700 shadow-sm active-scale">
-            <i data-lucide="chevron-left"></i> 上一個
-          </button>
-          <button onclick="nextCard(${recentMissions.length})" class="flex-1 bg-white border-2 border-gray-300 py-3.5 rounded-xl flex items-center justify-center gap-1 text-lg font-black text-gray-700 shadow-sm active-scale">
-            下一個 <i data-lucide="chevron-right"></i>
-          </button>
-        </div>
-      `;
-      lucide.createIcons();
-    }
-
-    function prevCard(total) {
-      if (currentCardIndex > 0) {
-        currentCardIndex--;
-        renderCards();
-      }
-    }
-
-    function nextCard(total) {
-      if (currentCardIndex < total - 1) {
-        currentCardIndex++;
-        renderCards();
-      }
-    }
-
-    // 2. 渲染下方任務清單 (加強框線分割與顏色對比)
-    function renderList() {
-      const listContainer = document.getElementById("mission-list");
-      const keyword = document.getElementById("search-input").value.toLowerCase();
-
-      const filtered = allMissions.filter(m => {
-        const matchKeyword = m.title.toLowerCase().includes(keyword) || m.location.toLowerCase().includes(keyword);
-        
-        let matchFilter = true;
-        if (currentFilter === "待承接") matchFilter = (m.status === "待承接");
-        if (currentFilter === "法師行程") matchFilter = (m.type === "法師行程");
-
-        let matchView = true;
-        const mDate = new Date(m.date);
-        const today = new Date();
-        
-        if (currentViewMode === "week") {
-          matchView = isWithinNext7Days(m.date);
-        } else if (currentViewMode === "month") {
-          matchView = (mDate.getMonth() === today.getMonth() && mDate.getFullYear() === today.getFullYear());
-        } else if (currentViewMode === "year") {
-          matchView = (mDate.getFullYear() === today.getFullYear());
-        }
-
-        return matchKeyword && matchFilter && matchView;
+          resolve({ success: true });
+        }, 450);
       });
 
-      document.getElementById("list-title").innerText = `${currentViewMode === 'week' ? '本週' : currentViewMode === 'month' ? '本月' : '年度'}任務清單 (${filtered.length})`;
+      // ── 接單 ──
+      const handleClaim = async (task) => {
+        if (!driverPhone.trim()) { showToast('請先填寫您的聯絡電話再接單', 'error'); return; }
+        setLoading(true);
+        try {
+          await callApi({ action: 'claim', id: task.id, driverPhone: driverPhone.trim() });
+          showToast('您已成功接下此護持任務，功德無量！', 'success');
+          if (!isMock) await refreshTasks();
+        } catch (err) { showToast(err.message, 'error'); }
+        finally { setLoading(false); }
+      };
 
-      if (filtered.length === 0) {
-        listContainer.innerHTML = `
-          <div class="bg-white rounded-xl p-8 text-center border-2 border-dashed border-gray-300 text-gray-500 text-lg font-black">
-            沒有找到符合條件的行程
+      // ── 更新狀態 ──
+      const handleUpdateStatus = async (task, newStatus) => {
+        setLoading(true);
+        try {
+          await callApi({ action: 'updateStatus', id: task.id, status: newStatus });
+          showToast('狀態已更新為：' + newStatus, 'success');
+          if (!isMock) await refreshTasks();
+        } catch (err) { showToast(err.message, 'error'); }
+        finally { setLoading(false); }
+      };
+
+      // ── 取消行程 ──
+      const handleCancel = async (task) => {
+        if (!window.confirm(`確定要取消【${task.monkName}】${task.date} ${task.time} 的行程嗎？`)) return;
+        setLoading(true);
+        try {
+          await callApi({ action: 'cancel', id: task.id });
+          showToast('行程已取消', 'success');
+          if (!isMock) await refreshTasks();
+        } catch (err) { showToast(err.message, 'error'); }
+        finally { setLoading(false); }
+      };
+
+      // ── 建立行程 ──
+      const handleCreate = async (e) => {
+        e.preventDefault();
+        const { monkId, date, time, pickup, dropoff } = newForm;
+        if (!monkId || !date || !time || !pickup || !dropoff) {
+          showToast('請完整填寫所有必填欄位', 'error'); return;
+        }
+        setLoading(true);
+        try {
+          await callApi({ action: 'create', ...newForm });
+          showToast('接送需求已成功登記並廣播至群組！', 'success');
+          setNewForm({ monkId: '', date: '', time: '', pickup: '', dropoff: '', notes: '' });
+          setActiveTab('all-tasks');
+          if (!isMock) await refreshTasks();
+        } catch (err) { showToast(err.message, 'error'); }
+        finally { setLoading(false); }
+      };
+
+      // ── 複製行程資訊 ──
+      const copyTask = (task) => {
+        const text = [
+          '【法師接送護持隨身助手】',
+          '━━━━━━━━━━━━━━━',
+          '👤 護持法師：' + task.monkName,
+          '📅 接送時間：' + task.date + ' ' + task.time,
+          '🛫 接地（上車）：' + task.pickup,
+          '🛬 送地（下車）：' + task.dropoff,
+          '🚗 護持司機：' + (task.driverName ? `${task.driverName}（${task.driverPhone}）` : '尚無，等待接單中'),
+          '📝 備註：' + (task.notes || '無'),
+          '━━━━━━━━━━━━━━━',
+          (!task.driverName ? '👉 群組快速接單指令：/接單 ' + task.id : '')
+        ].filter(Boolean).join('\n');
+        navigator.clipboard.writeText(text)
+          .then(() => showToast('行程詳情已複製，可前往 LINE 群組貼上！', 'success'))
+          .catch(() => showToast('複製失敗，請手動圈選文字複製', 'error'));
+      };
+
+      // ── 載入畫面 ──
+      if (appState === 'loading') {
+        return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 gap-5">
+            <div className="w-14 h-14 border-4 border-emerald-700 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-slate-500 font-bold text-lg">正在驗證您的 LINE 身分中...</p>
           </div>
-        `;
-        return;
+        );
       }
 
-      listContainer.innerHTML = filtered.map(m => {
-        let highlightedTitle = m.title;
-        highlightedTitle = highlightedTitle.replace(/【(.*?)】/g, '<span class="text-purple-800 font-black bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">$1</span>');
+      // ── 錯誤畫面 ──
+      if (appState === 'error') {
+        return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 gap-4 p-6 text-center">
+            <div className="bg-white p-7 rounded-2xl border-2 border-rose-200 card-shadow-lg max-w-sm w-full">
+              <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="alert-triangle" className="w-8 h-8 text-rose-600"></i>
+              </div>
+              <p className="text-xl font-black text-rose-700 mb-2">無法載入系統</p>
+              <p className="text-sm text-slate-600 font-bold leading-relaxed">{errorMsg}</p>
+              <div className="mt-4 bg-slate-50 rounded-xl p-3 text-xs text-slate-500 font-bold text-left leading-relaxed">
+                <p>若顯示「尚未被授權」，請聯繫排班組將您的 LINE 帳號加入志工名冊白名單。</p>
+              </div>
+            </div>
+          </div>
+        );
+      }
 
-        return `
-          <!-- 任務卡片分割框線 -->
-          <div class="p-5 rounded-2xl border-2 bg-white shadow-md ${m.status === '待承接' ? 'border-yellow-300' : 'border-gray-200'}">
-            <div class="flex justify-between items-center mb-3">
-              <span class="text-xs font-black px-2.5 py-1 rounded border ${m.type === '法師行程' ? 'bg-purple-100 text-purple-800 border-purple-300' : 'bg-green-100 text-green-800 border-green-300'}">
-                ${m.type}
-              </span>
-              <span class="text-base font-black text-gray-500">${m.date}</span>
+      // ── 資料過濾 ──
+      const myTasks = tasks.filter(t => {
+        if (profile.role === 'volunteer') return String(t.driverId) === String(profile.userId) && t.status !== '已完成' && t.status !== '已取消';
+        if (profile.role === 'monk')      return String(t.monkId)   === String(profile.monkId)  && t.status !== '已完成' && t.status !== '已取消';
+        return false;
+      });
+
+      const filteredTasks = tasks.filter(t => {
+        const q = searchQ.trim().toLowerCase();
+        const matchSearch =
+          (t.monkName   || '').toLowerCase().includes(q) ||
+          (t.pickup     || '').toLowerCase().includes(q) ||
+          (t.dropoff    || '').toLowerCase().includes(q) ||
+          (t.driverName || '').toLowerCase().includes(q) ||
+          (t.id         || '').toLowerCase().includes(q);
+        return (statusFilter === '全部' || t.status === statusFilter) && matchSearch;
+      });
+
+      // ── 統計數字 ──
+      const stats = {
+        waiting:  tasks.filter(t => t.status === '待領取').length,
+        assigned: tasks.filter(t => t.status === '已排定').length,
+        ongoing:  tasks.filter(t => t.status === '進行中').length,
+      };
+
+      return (
+        <div className="max-w-md mx-auto bg-slate-100 min-h-screen flex flex-col pb-6 text-slate-900 relative">
+
+          {/* ── Toast 通知 ── */}
+          {toast && (
+            <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-4 rounded-2xl card-shadow-lg text-base font-black flex items-center gap-3 w-[92%] max-w-sm animate-fadein ${
+              toast.type === 'success' ? 'bg-emerald-700 text-white' :
+              toast.type === 'error'   ? 'bg-rose-600 text-white'    : 'bg-slate-800 text-white'
+            }`}>
+              <i data-lucide={toast.type === 'success' ? 'check-circle-2' : toast.type === 'error' ? 'x-circle' : 'info'} className="w-6 h-6 shrink-0"></i>
+              <span className="leading-snug">{toast.message}</span>
             </div>
-            
-            <h4 class="text-xl font-black text-gray-900 mb-3 leading-snug">${highlightedTitle}</h4>
-            
-            <div class="text-base space-y-2 border-t border-gray-100 pt-2.5">
-              <p class="font-black text-blue-800 bg-blue-50 px-2 py-1 rounded border border-blue-200">
-                📍 地點：${m.location}
-              </p>
-              <p class="font-black text-yellow-800 bg-yellow-50 px-2 py-1 rounded border border-yellow-200">
-                ⏰ 時間：${formatCleanTime(m.time)}
-              </p>
-              ${m.volunteer ? `
-                <p class="font-black text-gray-700 bg-gray-100 px-2 py-1 rounded border border-gray-300">
-                  🙋‍♂️ 承接志工：<span class="text-green-700 underline">${m.volunteer}</span>
-                </p>
-              ` : ''}
-            </div>
-            
-            ${currentUser.role === '護送志工' && m.status === '待承接' ? `
-              <button onclick="acceptMission('${m.id}')" class="mt-4 w-full bg-green-50 hover:bg-green-100 text-green-800 border-2 border-green-300 font-black py-3 rounded-xl text-lg flex items-center justify-center gap-1.5 active-scale shadow-sm">
-                <i data-lucide="heart" class="w-5 h-5" style="fill: #065f46; color: #065f46;"></i> 我要承接
+          )}
+
+          {/* ── 頂部導覽列 ── */}
+          <header className="bg-emerald-800 text-white px-5 pt-5 pb-4 sticky top-0 z-20" style={{boxShadow:'0 4px 20px rgba(0,0,0,.25)'}}>
+            <div className="flex justify-between items-start">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-2xl">🚗</span>
+                  <h1 className="text-xl font-black tracking-wide leading-tight">法師接送護持隨身助手</h1>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="flex items-center gap-1.5 text-sm text-emerald-200 font-bold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+                    {profile.name}
+                  </span>
+                  <span className={`text-[11px] px-2 py-0.5 rounded font-black font-mono ${ROLE_COLOR[profile.role]}`}>
+                    {ROLE_LABEL[profile.role]}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={refreshTasks}
+                disabled={loading}
+                className="btn-tap bg-emerald-900 hover:bg-emerald-950 p-3 rounded-full border border-emerald-700 shrink-0 ml-3"
+                title="重整同步資料"
+              >
+                <i data-lucide="refresh-cw" className={`w-5 h-5 block ${loading ? 'animate-spin' : ''}`}></i>
               </button>
-            ` : ''}
+            </div>
+
+            {/* 統計快覽 */}
+            <div className="grid grid-cols-3 gap-2 mt-4">
+              {[
+                { label: '待接單', value: stats.waiting,  color: 'bg-rose-500/20 text-rose-200 border-rose-500/30' },
+                { label: '已排定', value: stats.assigned, color: 'bg-blue-500/20 text-blue-200 border-blue-500/30' },
+                { label: '進行中', value: stats.ongoing,  color: 'bg-amber-500/20 text-amber-200 border-amber-500/30' },
+              ].map(s => (
+                <div key={s.label} className={`rounded-xl px-3 py-2 text-center border ${s.color}`}>
+                  <p className="text-2xl font-black leading-none">{s.value}</p>
+                  <p className="text-[11px] font-bold mt-0.5 opacity-90">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {isMock && (
+              <div className="mt-3 bg-amber-500/20 text-amber-100 text-xs px-3 py-2 rounded-xl text-center font-bold border border-amber-500/30">
+                ⚠️ 本機模擬模式：未設定 LIFF_ID，資料僅存於記憶體，重新整理將重置。
+              </div>
+            )}
+          </header>
+
+          {/* ── 分頁切換 ── */}
+          <div className="flex bg-white border-b-2 border-slate-200 sticky top-0 z-10" style={{top:'auto', boxShadow:'0 2px 8px rgba(0,0,0,.08)'}}>
+            {profile.role !== 'scheduler' && (
+              <TabBtn active={activeTab === 'my-tasks'} onClick={() => setActiveTab('my-tasks')} icon="user-check" label="我的行程" badge={myTasks.length > 0 ? myTasks.length : null} />
+            )}
+            <TabBtn active={activeTab === 'all-tasks'} onClick={() => setActiveTab('all-tasks')} icon="calendar-days" label="所有行程" />
+            {profile.role === 'scheduler' && (
+              <TabBtn active={activeTab === 'create'} onClick={() => setActiveTab('create')} icon="plus-circle" label="登記接送" />
+            )}
           </div>
-        `;
-      }).join("");
-      lucide.createIcons();
+
+          {/* ── 主內容 ── */}
+          <main className="flex-1 p-4 space-y-4">
+
+            {/* ══ 頁面 A：我的行程 ══ */}
+            {activeTab === 'my-tasks' && profile.role !== 'scheduler' && (
+              <div className="space-y-4">
+                                {/* 歡迎卡 */}
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-4 card-shadow">
+                  <p className="text-lg font-black text-amber-950">🙏 阿彌陀佛，{profile.name}</p>
+                  <p className="text-sm mt-1 font-bold text-slate-600">以下是您目前的專屬護持行程：</p>
+
+                  {profile.role === 'volunteer' && (
+                    <div className="mt-3 bg-white rounded-xl border border-amber-200 p-3">
+                      <label className="block text-xs font-black text-slate-500 mb-1.5">
+                        您的護持聯絡電話（接單時同步通知法師）：
+                      </label>
+                      <input
+                        type="tel"
+                        value={driverPhone}
+                        onChange={e => setDriverPhone(e.target.value)}
+                        placeholder="例如：0912-345-678"
+                        className="w-full border-2 border-slate-200 px-3 py-2 rounded-lg text-sm bg-slate-50 font-bold focus:border-emerald-600 focus:bg-white focus:outline-none transition"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {myTasks.length === 0 ? (
+                  <EmptyState icon="calendar-x" title="目前沒有進行中的接送" desc="請點選「所有行程」尋找待接單需求！" />
+                ) : (
+                  myTasks.map(task => (
+                    <TaskDetailCard
+                      key={task.id}
+                      task={task}
+                      role={profile.role}
+                      onUpdateStatus={handleUpdateStatus}
+                      onCopy={copyTask}
+                      loading={loading}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* ══ 頁面 B：所有行程 ══ */}
+            {activeTab === 'all-tasks' && (
+              <div className="space-y-4">
+                {/* 搜尋與篩選 */}
+                <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 card-shadow space-y-3">
+                  <div className="relative">
+                    <i data-lucide="search" className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                    <input
+                      type="text"
+                      placeholder="搜尋法師、地點、司機、編號..."
+                      value={searchQ}
+                      onChange={e => setSearchQ(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border-2 border-slate-200 focus:outline-none focus:border-emerald-600 font-bold bg-slate-50 transition"
+                    />
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                    {['全部', '待領取', '已排定', '進行中', '已完成', '已取消'].map(st => (
+                      <button
+                        key={st}
+                        onClick={() => setStatusFilter(st)}
+                        className={`btn-tap px-4 py-1.5 rounded-full text-sm font-black shrink-0 border transition-all ${
+                          statusFilter === st
+                            ? 'bg-emerald-800 text-white border-emerald-800 shadow-sm'
+                            : 'bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="text-lg font-black text-slate-800">全部接送需求</h2>
+                  <span className="text-sm bg-slate-200 text-slate-700 px-3 py-0.5 rounded-full font-black">{filteredTasks.length} 筆</span>
+                </div>
+
+                {filteredTasks.length === 0 ? (
+                  <EmptyState icon="search-x" title="找不到相符的行程" desc="請嘗試其他關鍵字或篩選條件" />
+                ) : (
+                  filteredTasks.map(task => (
+                    <TaskListItem
+                      key={task.id}
+                      task={task}
+                      role={profile.role}
+                      profile={profile}
+                      onClaim={handleClaim}
+                      onCancel={handleCancel}
+                      onCopy={copyTask}
+                      loading={loading}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* ══ 頁面 C：登記接送 ══ */}
+            {activeTab === 'create' && profile.role === 'scheduler' && (
+              <form onSubmit={handleCreate} className="bg-white p-5 rounded-2xl border-2 border-slate-200 card-shadow-lg space-y-5">
+                <div className="flex justify-between items-center pb-3 border-b-2 border-slate-100">
+                  <h2 className="text-xl font-black text-slate-800">登記新接送需求</h2>
+                  <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-lg font-black border border-blue-200">排班人員專用</span>
+                </div>
+
+                <FormField label="1. 需護持接送的法師" required>
+                  <select
+                    value={newForm.monkId}
+                    onChange={e => setNewForm({ ...newForm, monkId: e.target.value })}
+                    className="w-full border-2 border-slate-200 rounded-xl p-3 focus:outline-none focus:border-emerald-600 font-bold bg-white transition"
+                    required
+                  >
+                    <option value="">請選擇法師</option>
+                    {monks.map(m => <option key={m.monkId} value={m.monkId}>{m.monkName}</option>)}
+                  </select>
+                </FormField>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="2. 接送日期" required>
+                    <input type="date" value={newForm.date}
+                      onChange={e => setNewForm({ ...newForm, date: e.target.value })}
+                      className="w-full border-2 border-slate-200 rounded-xl p-3 focus:outline-none focus:border-emerald-600 font-bold transition" required />
+                  </FormField>
+                  <FormField label="3. 上車時間" required>
+                    <input type="time" value={newForm.time}
+                      onChange={e => setNewForm({ ...newForm, time: e.target.value })}
+                      className="w-full border-2 border-slate-200 rounded-xl p-3 focus:outline-none focus:border-emerald-600 font-bold transition" required />
+                  </FormField>
+                </div>
+
+                <FormField label="4. 接地（上車起點）" required>
+                  <input type="text" placeholder="例如：鳳山寺" value={newForm.pickup}
+                    onChange={e => setNewForm({ ...newForm, pickup: e.target.value })}
+                    className="w-full border-2 border-slate-200 rounded-xl p-3 focus:outline-none focus:border-emerald-600 font-bold transition" required />
+                </FormField>
+
+                <FormField label="5. 送地（下車終點）" required>
+                  <input type="text" placeholder="例如：妙覺寺" value={newForm.dropoff}
+                    onChange={e => setNewForm({ ...newForm, dropoff: e.target.value })}
+                    className="w-full border-2 border-slate-200 rounded-xl p-3 focus:outline-none focus:border-emerald-600 font-bold transition" required />
+                </FormField>
+
+                <FormField label="6. 備註特別說明事項">
+                  <textarea rows={3} placeholder="若無請填無" value={newForm.notes}
+                    onChange={e => setNewForm({ ...newForm, notes: e.target.value })}
+                    className="w-full border-2 border-slate-200 rounded-xl p-3 focus:outline-none focus:border-emerald-600 font-bold transition resize-none" />
+                </FormField>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn-tap w-full bg-emerald-700 hover:bg-emerald-800 text-white py-4 rounded-xl text-lg font-black card-shadow disabled:opacity-50 transition"
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      儲存同步中...
+                    </span>
+                  ) : '儲存並廣播至群組'}
+                </button>
+              </form>
+            )}
+          </main>
+
+          {/* ── 頁尾 ── */}
+          <footer className="text-center py-5 text-xs text-slate-400 border-t border-slate-200 bg-white px-4 safe-bottom">
+            <p className="font-black text-sm text-slate-500">妙覺寺 / 鳳山寺 護法車隊隨身系統</p>
+            <p className="mt-1">LINE LIFF × Google Apps Script × Google Sheets</p>
+          </footer>
+        </div>
+      );
     }
 
-    function acceptMission(missionId) {
-      if (!confirm("您確定要承接這個護送任務嗎？")) return;
-      
-      showLoading(true);
-      fetch(API_URL, {
-        method: "POST",
-        mode: "cors",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          action: "acceptMission",
-          missionId: missionId,
-          volunteerName: currentUser.name
-        })
-      })
-      .then(res => res.json())
-      .then(data => {
-        alert(data.message);
-        if (data.success) {
-          loadMissions();
-        }
-      })
-      .finally(() => showLoading(false));
+    // =========================================================================
+    // 子元件
+    // =========================================================================
+
+    // ── 分頁按鈕 ──
+    function TabBtn({ active, onClick, icon, label, badge }) {
+      return (
+        <button
+          onClick={onClick}
+          className={`flex-1 py-3 text-sm font-black flex flex-col items-center gap-0.5 transition relative ${
+            active ? 'text-emerald-800 border-b-4 border-emerald-800 bg-emerald-50/60' : 'text-slate-500 border-b-4 border-transparent'
+          }`}
+        >
+          <span className="relative">
+            <i data-lucide={icon} className="w-5 h-5"></i>
+            {badge !== null && badge !== undefined && (
+              <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">{badge}</span>
+            )}
+          </span>
+          <span>{label}</span>
+        </button>
+      );
     }
 
-    function initMainEvents() {
-      document.getElementById("search-input").addEventListener("input", renderList);
-
-      const viewBtns = document.querySelectorAll(".view-mode-btn");
-      viewBtns.forEach(btn => {
-        btn.onclick = function() {
-          viewBtns.forEach(b => b.className = "view-mode-btn py-2.5 rounded-lg text-lg font-black text-gray-600");
-          this.className = "view-mode-btn py-2.5 rounded-lg text-lg font-black bg-white text-green-800 shadow-sm";
-          currentViewMode = this.getAttribute("data-view");
-          renderList();
-        };
-      });
-
-      const filterBtns = document.querySelectorAll(".filter-btn");
-      filterBtns.forEach(btn => {
-        btn.onclick = function() {
-          filterBtns.forEach(b => b.className = "filter-btn px-4 py-2 rounded-full text-base font-black border-2 bg-white text-gray-600 border-gray-300 shadow-sm");
-          this.className = "filter-btn px-4 py-2 rounded-full text-base font-black border-2 bg-green-50 text-green-800 border-green-500 shadow-sm";
-          currentFilter = this.getAttribute("data-filter");
-          renderList();
-        };
-      });
-
-      const modal = document.getElementById("create-modal");
-      document.getElementById("btn-action-trigger").onclick = function() {
-        document.getElementById("modal-title").innerText = currentUser.role === "法師" ? "登入法師行程" : "建立新護送任務";
-        modal.classList.remove("hidden");
-      };
-      document.getElementById("btn-close-modal").onclick = function() {
-        modal.classList.add("hidden");
-      };
-
-      document.getElementById("create-mission-form").onsubmit = function(e) {
-        e.preventDefault();
-        const title = document.getElementById("m-title").value;
-        const date = document.getElementById("m-date").value;
-        const time = document.getElementById("m-time").value;
-        const location = document.getElementById("m-location").value;
-
-        showLoading(true);
-        fetch(API_URL, {
-          method: "POST",
-          mode: "cors",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "createMission",
-            title: title,
-            date: date,
-            time: time,
-            location: location,
-            type: currentUser.role === "法師" ? "法師行程" : "護送任務",
-            status: currentUser.role === "法師" ? "已安排" : "待承接",
-            volunteer: currentUser.role === "法師" ? currentUser.name : "",
-            creator: currentUser.name
-          })
-        })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            alert("發佈成功！");
-            modal.classList.add("hidden");
-            document.getElementById("create-mission-form").reset();
-            loadMissions();
-          } else {
-            alert("發佈失敗，請重試");
-          }
-        })
-        .finally(() => showLoading(false));
-      };
+    // ── 空狀態 ──
+    function EmptyState({ icon, title, desc }) {
+      return (
+        <div className="bg-white rounded-2xl p-12 text-center border-2 border-dashed border-slate-200 card-shadow">
+          <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i data-lucide={icon} className="w-7 h-7 text-slate-400"></i>
+          </div>
+          <p className="text-lg font-black text-slate-600">{title}</p>
+          {desc && <p className="text-sm text-slate-400 mt-2 font-bold">{desc}</p>}
+        </div>
+      );
     }
 
-    function showLoading(show) {
-      const overlay = document.getElementById("loading-overlay");
-      if (show) overlay.classList.remove("hidden");
-      else overlay.classList.add("hidden");
+    // ── 表單欄位包裝 ──
+    function FormField({ label, required, children }) {
+      return (
+        <div>
+          <label className="block text-sm font-black text-slate-700 mb-1.5">
+            {label}{required && <span className="text-rose-500 ml-0.5">*</span>}
+          </label>
+          {children}
+        </div>
+      );
     }
+
+    // ── 狀態徽章 ──
+    function StatusBadge({ status }) {
+      return (
+        <span className={`inline-flex items-center gap-1.5 text-sm px-3 py-1 rounded-full font-black ${STATUS_BADGE[status] || ''}`}>
+          <span className={`w-2 h-2 rounded-full ${STATUS_DOT[status] || 'bg-slate-400'}`}></span>
+          {status}
+        </span>
+      );
+    }
+
+    // ── 我的行程詳細卡片 ──
+    function TaskDetailCard({ task, role, onUpdateStatus, onCopy, loading }) {
+      const isOngoing  = task.status === '進行中';
+      const isAssigned = task.status === '已排定';
+
+      return (
+        <div className={`bg-white rounded-2xl overflow-hidden card-shadow-lg border-2 ${isOngoing ? 'border-amber-400' : 'border-emerald-600/30'}`}>
+          {/* 卡片頂部色條 */}
+          <div className={`px-4 py-3 flex justify-between items-center ${isOngoing ? 'bg-amber-500' : 'bg-emerald-700'} text-white`}>
+            <StatusBadge status={task.status} />
+            <span className="text-xs font-mono font-bold bg-black/20 px-2.5 py-1 rounded-lg">#{task.id}</span>
+          </div>
+
+          <div className="p-4 space-y-4">
+            {/* 法師資訊 + 分享 */}
+            <div className="flex justify-between items-start pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="bg-emerald-50 p-2.5 rounded-xl shrink-0">
+                  <i data-lucide="user" className="w-7 h-7 text-emerald-700"></i>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 font-bold">需護持的法師</p>
+                  <p className="text-2xl font-black text-slate-800">{task.monkName}</p>
+                </div>
+              </div>
+              <button onClick={() => onCopy(task)} className="btn-tap text-slate-500 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 flex items-center gap-1.5 text-sm font-bold">
+                <i data-lucide="copy" className="w-4 h-4"></i><span>複製分享</span>
+              </button>
+            </div>
+
+            {/* 日期時間 */}
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-2">
+                <i data-lucide="calendar" className="w-5 h-5 text-emerald-700 shrink-0"></i>
+                <span className="text-base font-black text-slate-700">{task.date}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <i data-lucide="clock" className="w-5 h-5 text-emerald-700 shrink-0"></i>
+                <span className="text-base font-black text-slate-700">{task.time}</span>
+              </div>
+            </div>
+
+            {/* 接送路線 */}
+            <div className="bg-emerald-50/30 p-4 rounded-xl border border-emerald-100 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                  <i data-lucide="map-pin" className="w-4 h-4 text-blue-600"></i>
+                </div>
+                <div>
+                  <span className="text-xs font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">接地（上車）</span>
+                  <p className="text-lg font-black text-slate-800 mt-1">{task.pickup}</p>
+                </div>
+              </div>
+              <div className="h-5 border-l-4 border-dashed border-slate-300 ml-4"></div>
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-rose-100 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                  <i data-lucide="map-pin" className="w-4 h-4 text-rose-600"></i>
+                </div>
+                <div>
+                  <span className="text-xs font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">送地（下車）</span>
+                  <p className="text-lg font-black text-slate-800 mt-1">{task.dropoff}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 法師視角：顯示司機聯絡資訊 */}
+            {role === 'monk' && task.driverName && (
+              <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 flex justify-between items-center">
+                <div>
+                  <p className="text-xs text-blue-600 font-bold">負責接送的護法志工</p>
+                  <p className="text-xl font-black text-slate-800 mt-0.5">{task.driverName}</p>
+                  <p className="text-sm text-slate-600 font-bold mt-0.5">{task.driverPhone}</p>
+                </div>
+                <a href={`tel:${task.driverPhone}`} className="btn-tap bg-blue-600 text-white p-3.5 rounded-full card-shadow">
+                  <i data-lucide="phone" className="w-6 h-6"></i>
+                </a>
+              </div>
+            )}
+
+            {/* 備註 */}
+            {task.notes && task.notes !== '無' && (
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 flex items-start gap-2">
+                <i data-lucide="info" className="w-5 h-5 text-amber-600 mt-0.5 shrink-0"></i>
+                <p className="text-sm font-bold text-amber-950 leading-relaxed">備註：{task.notes}</p>
+              </div>
+            )}
+
+            {/* 志工操作區 */}
+            {role === 'volunteer' && (
+              <div className="space-y-3 pt-1">
+                <div className="grid grid-cols-2 gap-2">
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(task.pickup)}`}
+                    target="_blank" rel="noreferrer"
+                    className="btn-tap bg-slate-800 text-white py-3 px-2 rounded-xl text-sm font-black flex justify-center items-center gap-1.5 card-shadow">
+                    <i data-lucide="compass" className="w-4 h-4"></i>
+                    <span>導航去接地</span>
+                  </a>
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(task.dropoff)}`}
+                    target="_blank" rel="noreferrer"
+                    className="btn-tap bg-slate-800 text-white py-3 px-2 rounded-xl text-sm font-black flex justify-center items-center gap-1.5 card-shadow">
+                    <i data-lucide="navigation" className="w-4 h-4"></i>
+                    <span>導航去送地</span>
+                  </a>
+                </div>
+
+                {isAssigned && (
+                  <button
+                    onClick={() => onUpdateStatus(task, '進行中')}
+                    disabled={loading}
+                    className="btn-tap w-full bg-amber-500 hover:bg-amber-600 text-white py-4 rounded-xl text-lg font-black card-shadow disabled:opacity-50 transition"
+                  >
+                    🚗 我現在出發去接法師了
+                  </button>
+                )}
+                {isOngoing && (
+                  <button
+                    onClick={() => onUpdateStatus(task, '已完成')}
+                    disabled={loading}
+                    className="btn-tap w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl text-lg font-black flex justify-center items-center gap-2 card-shadow disabled:opacity-50 transition animate-pulse"
+                  >
+                    <i data-lucide="check-circle-2" className="w-6 h-6"></i>
+                    法師已安全抵達目的地
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ── 所有行程列表項目 ──
+    function TaskListItem({ task, role, profile, onClaim, onCancel, onCopy, loading }) {
+      const canClaim = role === 'volunteer' && !task.driverId && task.status === '待領取';
+      const canCancel = role === 'scheduler' && (task.status === '待領取' || task.status === '已排定');
+
+      return (
+        <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 card-shadow space-y-3">
+          {/* 頂部：狀態 + 編號 */}
+          <div className="flex justify-between items-center">
+            <StatusBadge status={task.status} />
+            <span className="text-xs font-mono text-slate-400 font-bold">#{task.id}</span>
+          </div>
+
+          {/* 法師名稱 + 操作按鈕 */}
+          <div className="flex justify-between items-center">
+            <h3 className="text-2xl font-black text-slate-800">{task.monkName}</h3>
+            <div className="flex gap-1.5">
+              <button onClick={() => onCopy(task)} className="btn-tap p-2 text-slate-400 hover:text-slate-600 rounded-xl bg-slate-50 border border-slate-200" title="複製分享">
+                <i data-lucide="share-2" className="w-5 h-5"></i>
+              </button>
+              {canCancel && (
+                <button onClick={() => onCancel(task)} className="btn-tap p-2 text-rose-500 hover:text-rose-700 rounded-xl bg-rose-50 border border-rose-200" title="取消行程">
+                  <i data-lucide="x-circle" className="w-5 h-5"></i>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 時間與路線 */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-600">
+              <i data-lucide="calendar" className="w-4 h-4 text-slate-400 shrink-0"></i>
+              <span>{task.date}</span>
+              <i data-lucide="clock" className="w-4 h-4 text-slate-400 shrink-0 ml-1"></i>
+              <span>{task.time}</span>
+            </div>
+            <div className="flex items-start gap-2 text-sm font-bold text-slate-600">
+              <i data-lucide="navigation-2" className="w-4 h-4 text-slate-400 shrink-0 mt-0.5"></i>
+              <span>
+                <span className="text-blue-600 font-black">{task.pickup}</span>
+                <span className="text-slate-400 mx-1.5">→</span>
+                <span className="text-rose-600 font-black">{task.dropoff}</span>
+              </span>
+            </div>
+          </div>
+
+          {/* 司機資訊 + 接單按鈕 */}
+          <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+            {task.driverName ? (
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-lg text-xs font-black border border-emerald-200">司機</span>
+                <span className="font-black">{task.driverName}</span>
+                <span className="text-slate-400 text-xs">{task.driverPhone}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-sm font-black text-rose-600">
+                <i data-lucide="alert-circle" className="w-4 h-4"></i>
+                <span>尚無司機護持，等待發心</span>
+              </div>
+            )}
+
+            {canClaim && (
+              <button
+                onClick={() => onClaim(task)}
+                disabled={loading}
+                className="btn-tap bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-2.5 rounded-xl text-sm font-black card-shadow disabled:opacity-50 transition shrink-0 ml-2"
+              >
+                我要接單
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ── 掛載 ──
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
   </script>
 </body>
 </html>
+
