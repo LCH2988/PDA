@@ -42,17 +42,24 @@
       from { opacity: 0; transform: translateY(-16px); }
       to   { opacity: 1; transform: translateY(0); }
     }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
-    .animate-spin    { animation: spin 1s linear infinite; }
-    .animate-pulse   { animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
-    .animate-fadein  { animation: fadeInDown .35s ease both; }
+    @keyframes pulseBorder { 0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.4)} 50%{box-shadow:0 0 0 8px rgba(245,158,11,0)} }
+    .animate-spin       { animation: spin 1s linear infinite; }
+    .animate-pulse      { animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite; }
+    .animate-fadein     { animation: fadeInDown .35s ease both; }
+    .animate-fadeinup   { animation: fadeInUp .35s ease both; }
+    .animate-pulseborder{ animation: pulseBorder 1.8s ease-in-out infinite; }
 
     /* ── 按鈕點擊縮放 ── */
     .btn-tap { transition: transform .12s ease, opacity .12s ease; }
     .btn-tap:active { transform: scale(.96); opacity: .85; }
 
     /* ── 卡片陰影 ── */
-    .card-shadow { box-shadow: 0 2px 12px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); }
+    .card-shadow    { box-shadow: 0 2px 12px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); }
     .card-shadow-lg { box-shadow: 0 4px 24px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.08); }
 
     /* ── 狀態標籤 ── */
@@ -62,8 +69,24 @@
     .badge-done     { background:#f8fafc; color:#475569; border:1.5px solid #e2e8f0; }
     .badge-cancel   { background:#f8fafc; color:#94a3b8; border:1.5px solid #e2e8f0; text-decoration:line-through; }
 
-    /* ── 底部導覽列安全區 ── */
+    /* ── 底部安全區 ── */
     .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
+
+    /* ── 確認對話框遮罩 ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55);
+      z-index: 100; display: flex; align-items: flex-end; justify-content: center;
+      animation: fadeInDown .2s ease both;
+    }
+    .modal-sheet {
+      background: #fff; border-radius: 24px 24px 0 0; width: 100%; max-width: 448px;
+      padding: 24px 20px 32px; animation: fadeInUp .25s ease both;
+    }
+
+    /* ── 下拉重整提示 ── */
+    .pull-hint {
+      text-align: center; padding: 8px; font-size: 13px; color: #94a3b8; font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -73,8 +96,8 @@
     // =========================================================================
     // ★ [必填設定] 部署前請替換以下兩個值
     // =========================================================================
-    const LIFF_ID = "2006181829-l81j2YrD";        // LINE Developers > LIFF > LIFF ID
-    const API_URL = "https://script.google.com/macros/s/AKfycbxEULrt7I1offgcncYJYyb9BOedjm8_HENcMwZ1q9OTRyscOeeJ4kCEkvsPvJQmWGKyfg/exec";
+    const LIFF_ID = "2006181829-l81j2YrD";   // LINE Developers > LIFF > LIFF ID
+    const API_URL = "https://script.google.com/macros/s/AKfycbyJeYlbaPVbzJOIBv_gc6B2dLnSymlRNLJScyGyfjYd83CxL9I8Wj9bpZ6PKSg-qCh3KA/exec";   // GAS 部署後的網路應用程式網址
     // =========================================================================
 
     // ── 常數 ──
@@ -115,10 +138,37 @@
     };
 
     // =========================================================================
+    // 確認對話框元件
+    // =========================================================================
+    function ConfirmModal({ title, message, confirmText, cancelText, onConfirm, onCancel, danger }) {
+      return (
+        <div className="modal-overlay" onClick={onCancel}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${danger ? 'bg-rose-100' : 'bg-amber-100'}`}>
+                <i data-lucide={danger ? 'alert-triangle' : 'help-circle'} className={`w-6 h-6 ${danger ? 'text-rose-600' : 'text-amber-600'}`}></i>
+              </div>
+              <p className="text-xl font-black text-slate-800">{title}</p>
+            </div>
+            <p className="text-sm font-bold text-slate-600 leading-relaxed mb-5 pl-14">{message}</p>
+            <div className="flex gap-3">
+              <button onClick={onCancel} className="btn-tap flex-1 py-3.5 rounded-xl border-2 border-slate-200 text-slate-700 font-black text-base">
+                {cancelText || '取消'}
+              </button>
+              <button onClick={onConfirm} className={`btn-tap flex-1 py-3.5 rounded-xl text-white font-black text-base card-shadow ${danger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-700 hover:bg-emerald-800'}`}>
+                {confirmText || '確認'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
     // 主應用程式元件
     // =========================================================================
     function App() {
-      const [appState, setAppState]   = React.useState('loading'); // loading | error | ready
+      const [appState, setAppState]   = React.useState('loading');
       const [errorMsg, setErrorMsg]   = React.useState('');
       const [isMock, setIsMock]       = React.useState(false);
       const [idToken, setIdToken]     = React.useState(null);
@@ -129,16 +179,21 @@
       const [loading, setLoading]     = React.useState(false);
       const [activeTab, setActiveTab] = React.useState('my-tasks');
       const [toast, setToast]         = React.useState(null);
+      const toastTimerRef             = React.useRef(null);
 
       const [searchQ, setSearchQ]           = React.useState('');
       const [statusFilter, setStatusFilter] = React.useState('全部');
       const [newForm, setNewForm]           = React.useState({ monkId: '', date: '', time: '', pickup: '', dropoff: '', notes: '' });
       const [driverPhone, setDriverPhone]   = React.useState('');
+      const [confirmModal, setConfirmModal] = React.useState(null);
+      const [phoneEditing, setPhoneEditing] = React.useState(false);
+      const [phoneSaving, setPhoneSaving]   = React.useState(false);
 
       // ── Toast 通知 ──
       const showToast = (message, type = 'success') => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
         setToast({ message, type });
-        setTimeout(() => setToast(null), 4000);
+        toastTimerRef.current = setTimeout(() => setToast(null), 4000);
       };
 
       // ── Lucide 圖示渲染 ──
@@ -192,6 +247,8 @@
           setTasks(data.tasks || []);
           setMonks(data.monks || []);
           setDriverPhone(data.profile.phone || '');
+          // 排班角色預設顯示「所有行程」
+          setActiveTab(data.profile.role === 'scheduler' ? 'all-tasks' : 'my-tasks');
           setAppState('ready');
         } catch (err) {
           setAppState('error');
@@ -243,10 +300,12 @@
             setTasks(prev => prev.map(t => t.id === payload.id ? { ...t, status: payload.status } : t));
           } else if (payload.action === 'create') {
             const monk  = monks.find(m => m.monkId === payload.monkId);
-            const newId = 'REC' + Math.random().toString(36).slice(2, 6).toUpperCase();
+            const newId = 'REC' + String(Math.floor(Math.random() * 9000) + 1000);
             setTasks(prev => [{ id: newId, status: '待領取', monkId: payload.monkId, monkName: monk?.monkName || '', date: payload.date, time: payload.time, pickup: payload.pickup, dropoff: payload.dropoff, driverId: '', driverName: '', driverPhone: '', notes: payload.notes || '無', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...prev]);
           } else if (payload.action === 'cancel') {
             setTasks(prev => prev.map(t => t.id === payload.id ? { ...t, status: '已取消' } : t));
+          } else if (payload.action === 'updatePhone') {
+            setProfile(prev => ({ ...prev, phone: payload.phone }));
           }
           resolve({ success: true });
         }, 450);
@@ -254,37 +313,83 @@
 
       // ── 接單 ──
       const handleClaim = async (task) => {
-        if (!driverPhone.trim()) { showToast('請先填寫您的聯絡電話再接單', 'error'); return; }
-        setLoading(true);
-        try {
-          await callApi({ action: 'claim', id: task.id, driverPhone: driverPhone.trim() });
-          showToast('您已成功接下此護持任務，功德無量！', 'success');
-          if (!isMock) await refreshTasks();
-        } catch (err) { showToast(err.message, 'error'); }
-        finally { setLoading(false); }
+        if (!driverPhone.trim()) {
+          showToast('請先填寫您的聯絡電話再接單', 'error');
+          setActiveTab('my-tasks');
+          return;
+        }
+        setConfirmModal({
+          title: '確認接單',
+          message: `確定要接下【${task.monkName}】${task.date} ${task.time} 的護持行程嗎？`,
+          confirmText: '確認接單',
+          danger: false,
+          onConfirm: async () => {
+            setConfirmModal(null);
+            setLoading(true);
+            try {
+              await callApi({ action: 'claim', id: task.id, driverPhone: driverPhone.trim() });
+              showToast('您已成功接下此護持任務，功德無量！', 'success');
+              if (!isMock) await refreshTasks();
+            } catch (err) { showToast(err.message, 'error'); }
+            finally { setLoading(false); }
+          },
+        });
       };
 
       // ── 更新狀態 ──
       const handleUpdateStatus = async (task, newStatus) => {
-        setLoading(true);
-        try {
-          await callApi({ action: 'updateStatus', id: task.id, status: newStatus });
-          showToast('狀態已更新為：' + newStatus, 'success');
-          if (!isMock) await refreshTasks();
-        } catch (err) { showToast(err.message, 'error'); }
-        finally { setLoading(false); }
+        const confirmMessages = {
+          '進行中': { title: '確認出發', message: `確定現在出發去接【${task.monkName}】嗎？`, confirmText: '確認出發', danger: false },
+          '已完成': { title: '確認抵達', message: `確認【${task.monkName}】已安全抵達【${task.dropoff}】嗎？`, confirmText: '確認抵達', danger: false },
+        };
+        const cfg = confirmMessages[newStatus];
+        if (cfg) {
+          setConfirmModal({
+            ...cfg,
+            onConfirm: async () => {
+              setConfirmModal(null);
+              setLoading(true);
+              try {
+                await callApi({ action: 'updateStatus', id: task.id, status: newStatus });
+                showToast('狀態已更新為：' + newStatus, 'success');
+                if (!isMock) await refreshTasks();
+              } catch (err) { showToast(err.message, 'error'); }
+              finally { setLoading(false); }
+            },
+          });
+        }
       };
 
       // ── 取消行程 ──
       const handleCancel = async (task) => {
-        if (!window.confirm(`確定要取消【${task.monkName}】${task.date} ${task.time} 的行程嗎？`)) return;
-        setLoading(true);
+        setConfirmModal({
+          title: '取消行程',
+          message: `確定要取消【${task.monkName}】${task.date} ${task.time} 的行程嗎？此操作無法復原。`,
+          confirmText: '確認取消',
+          danger: true,
+          onConfirm: async () => {
+            setConfirmModal(null);
+            setLoading(true);
+            try {
+              await callApi({ action: 'cancel', id: task.id });
+              showToast('行程已取消', 'success');
+              if (!isMock) await refreshTasks();
+            } catch (err) { showToast(err.message, 'error'); }
+            finally { setLoading(false); }
+          },
+        });
+      };
+
+      // ── 儲存電話 ──
+      const handleSavePhone = async () => {
+        if (!driverPhone.trim()) { showToast('電話號碼不可為空', 'error'); return; }
+        setPhoneSaving(true);
         try {
-          await callApi({ action: 'cancel', id: task.id });
-          showToast('行程已取消', 'success');
-          if (!isMock) await refreshTasks();
+          await callApi({ action: 'updatePhone', phone: driverPhone.trim() });
+          showToast('聯絡電話已更新', 'success');
+          setPhoneEditing(false);
         } catch (err) { showToast(err.message, 'error'); }
-        finally { setLoading(false); }
+        finally { setPhoneSaving(false); }
       };
 
       // ── 建立行程 ──
@@ -294,10 +399,15 @@
         if (!monkId || !date || !time || !pickup || !dropoff) {
           showToast('請完整填寫所有必填欄位', 'error'); return;
         }
+        // 驗證日期不可為過去
+        const selectedDate = new Date(date + 'T' + time);
+        if (selectedDate < new Date()) {
+          showToast('接送日期時間不可早於現在', 'error'); return;
+        }
         setLoading(true);
         try {
           await callApi({ action: 'create', ...newForm });
-          showToast('接送需求已成功登記並廣播至群組！', 'success');
+          showToast('接送需求已成功登記！（廣播功能待後續整合）', 'success');
           setNewForm({ monkId: '', date: '', time: '', pickup: '', dropoff: '', notes: '' });
           setActiveTab('all-tasks');
           if (!isMock) await refreshTasks();
@@ -310,12 +420,12 @@
         const text = [
           '【法師接送護持隨身助手】',
           '━━━━━━━━━━━━━━━',
-          '👤 護持法師：' + task.monkName,
-          '📅 接送時間：' + task.date + ' ' + task.time,
-          '🛫 接地（上車）：' + task.pickup,
-          '🛬 送地（下車）：' + task.dropoff,
-          '🚗 護持司機：' + (task.driverName ? `${task.driverName}（${task.driverPhone}）` : '尚無，等待接單中'),
-          '📝 備註：' + (task.notes || '無'),
+          '護持法師：' + task.monkName,
+          '接送時間：' + task.date + ' ' + task.time,
+          '接地（上車）：' + task.pickup,
+          '送地（下車）：' + task.dropoff,
+          '護持司機：' + (task.driverName ? `${task.driverName}（${task.driverPhone}）` : '尚無，等待接單中'),
+          '備註：' + (task.notes || '無'),
           '━━━━━━━━━━━━━━━',
         ].join('\n');
         navigator.clipboard.writeText(text)
@@ -327,8 +437,11 @@
       if (appState === 'loading') {
         return (
           <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 gap-5">
-            <div className="w-14 h-14 border-4 border-emerald-700 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-slate-500 font-bold text-lg">正在驗證您的 LINE 身分中...</p>
+            <div className="w-16 h-16 border-4 border-emerald-700 border-t-transparent rounded-full animate-spin"></div>
+            <div className="text-center">
+              <p className="text-slate-700 font-black text-xl">法師接送護持隨身助手</p>
+              <p className="text-slate-400 font-bold text-sm mt-1">正在驗證您的 LINE 身分中...</p>
+            </div>
           </div>
         );
       }
@@ -344,8 +457,14 @@
               <p className="text-xl font-black text-rose-700 mb-2">無法載入系統</p>
               <p className="text-sm text-slate-600 font-bold leading-relaxed">{errorMsg}</p>
               <div className="mt-4 bg-slate-50 rounded-xl p-3 text-xs text-slate-500 font-bold text-left leading-relaxed">
-                <p>若顯示「尚未被授權」，請聯繫排班組將您的 LINE 帳號加入志工名冊白名單。</p>
+                若顯示「尚未被授權」，請聯繫排班組將您的 LINE 帳號加入志工名冊白名單。
               </div>
+              <button
+                onClick={() => { setAppState('loading'); loadData(idToken); }}
+                className="btn-tap mt-4 w-full bg-emerald-700 text-white py-3 rounded-xl font-black"
+              >
+                重新嘗試
+              </button>
             </div>
           </div>
         );
@@ -360,7 +479,7 @@
 
       const filteredTasks = tasks.filter(t => {
         const q = searchQ.trim().toLowerCase();
-        const matchSearch =
+        const matchSearch = !q ||
           (t.monkName   || '').toLowerCase().includes(q) ||
           (t.pickup     || '').toLowerCase().includes(q) ||
           (t.dropoff    || '').toLowerCase().includes(q) ||
@@ -377,7 +496,19 @@
       };
 
       return (
-        <div className="max-w-md mx-auto bg-slate-100 min-h-screen flex flex-col pb-6 text-slate-900 relative">
+        <div className="max-w-md mx-auto bg-slate-100 min-h-screen flex flex-col text-slate-900 relative">
+
+          {/* ── 確認對話框 ── */}
+          {confirmModal && (
+            <ConfirmModal
+              title={confirmModal.title}
+              message={confirmModal.message}
+              confirmText={confirmModal.confirmText}
+              danger={confirmModal.danger}
+              onConfirm={confirmModal.onConfirm}
+              onCancel={() => setConfirmModal(null)}
+            />
+          )}
 
           {/* ── Toast 通知 ── */}
           {toast && (
@@ -395,7 +526,7 @@
             <div className="flex justify-between items-start">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-2xl">🚗</span>
+                  <span className="text-2xl" role="img" aria-label="car">🚗</span>
                   <h1 className="text-xl font-black tracking-wide leading-tight">法師接送護持隨身助手</h1>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -425,7 +556,7 @@
                 { label: '已排定', value: stats.assigned, color: 'bg-blue-500/20 text-blue-200 border-blue-500/30' },
                 { label: '進行中', value: stats.ongoing,  color: 'bg-amber-500/20 text-amber-200 border-amber-500/30' },
               ].map(s => (
-                <div key={s.label} className={`rounded-xl px-3 py-2 text-center border ${s.color}`}>
+                <div key={s.label} className={`rounded-xl px-3 py-2.5 text-center border ${s.color}`}>
                   <p className="text-2xl font-black leading-none">{s.value}</p>
                   <p className="text-[11px] font-bold mt-0.5 opacity-90">{s.label}</p>
                 </div>
@@ -434,13 +565,13 @@
 
             {isMock && (
               <div className="mt-3 bg-amber-500/20 text-amber-100 text-xs px-3 py-2 rounded-xl text-center font-bold border border-amber-500/30">
-                ⚠️ 本機模擬模式：未設定 LIFF_ID，資料僅存於記憶體，重新整理將重置。
+                本機模擬模式：未設定 LIFF_ID，資料僅存於記憶體，重新整理將重置。
               </div>
             )}
           </header>
 
           {/* ── 分頁切換 ── */}
-          <div className="flex bg-white border-b-2 border-slate-200 sticky top-0 z-10" style={{top:'auto', boxShadow:'0 2px 8px rgba(0,0,0,.08)'}}>
+          <div className="flex bg-white border-b-2 border-slate-200 sticky z-10" style={{top:'auto', boxShadow:'0 2px 8px rgba(0,0,0,.08)'}}>
             {profile.role !== 'scheduler' && (
               <TabBtn active={activeTab === 'my-tasks'} onClick={() => setActiveTab('my-tasks')} icon="user-check" label="我的行程" badge={myTasks.length > 0 ? myTasks.length : null} />
             )}
@@ -451,14 +582,14 @@
           </div>
 
           {/* ── 主內容 ── */}
-          <main className="flex-1 p-4 space-y-4">
+          <main className="flex-1 p-4 space-y-4 pb-8">
 
             {/* ══ 頁面 A：我的行程 ══ */}
             {activeTab === 'my-tasks' && profile.role !== 'scheduler' && (
-              <div className="space-y-4">
+              <div className="space-y-4 animate-fadeinup">
                 {/* 歡迎卡 */}
                 <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-4 card-shadow">
-                  <p className="text-lg font-black text-amber-950">🙏 阿彌陀佛，{profile.name}</p>
+                  <p className="text-lg font-black text-amber-950">阿彌陀佛，{profile.name}</p>
                   <p className="text-sm mt-1 font-bold text-slate-600">以下是您目前的專屬護持行程：</p>
 
                   {profile.role === 'volunteer' && (
@@ -466,13 +597,24 @@
                       <label className="block text-xs font-black text-slate-500 mb-1.5">
                         您的護持聯絡電話（接單時同步通知法師）：
                       </label>
-                      <input
-                        type="tel"
-                        value={driverPhone}
-                        onChange={e => setDriverPhone(e.target.value)}
-                        placeholder="例如：0912-345-678"
-                        className="w-full border-2 border-slate-200 px-3 py-2 rounded-lg text-sm bg-slate-50 font-bold focus:border-emerald-600 focus:bg-white focus:outline-none transition"
-                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="tel"
+                          value={driverPhone}
+                          onChange={e => { setDriverPhone(e.target.value); setPhoneEditing(true); }}
+                          placeholder="例如：0912-345-678"
+                          className="flex-1 border-2 border-slate-200 px-3 py-2 rounded-lg text-sm bg-slate-50 font-bold focus:border-emerald-600 focus:bg-white focus:outline-none transition"
+                        />
+                        {phoneEditing && (
+                          <button
+                            onClick={handleSavePhone}
+                            disabled={phoneSaving}
+                            className="btn-tap bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-black shrink-0 disabled:opacity-50"
+                          >
+                            {phoneSaving ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin block"></span> : '儲存'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -496,7 +638,7 @@
 
             {/* ══ 頁面 B：所有行程 ══ */}
             {activeTab === 'all-tasks' && (
-              <div className="space-y-4">
+              <div className="space-y-4 animate-fadeinup">
                 {/* 搜尋與篩選 */}
                 <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 card-shadow space-y-3">
                   <div className="relative">
@@ -508,6 +650,11 @@
                       onChange={e => setSearchQ(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl border-2 border-slate-200 focus:outline-none focus:border-emerald-600 font-bold bg-slate-50 transition"
                     />
+                    {searchQ && (
+                      <button onClick={() => setSearchQ('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                        <i data-lucide="x" className="w-4 h-4"></i>
+                      </button>
+                    )}
                   </div>
                   <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
                     {['全部', '待領取', '已排定', '進行中', '已完成', '已取消'].map(st => (
@@ -552,7 +699,7 @@
 
             {/* ══ 頁面 C：登記接送 ══ */}
             {activeTab === 'create' && profile.role === 'scheduler' && (
-              <form onSubmit={handleCreate} className="bg-white p-5 rounded-2xl border-2 border-slate-200 card-shadow-lg space-y-5">
+              <form onSubmit={handleCreate} className="bg-white p-5 rounded-2xl border-2 border-slate-200 card-shadow-lg space-y-5 animate-fadeinup">
                 <div className="flex justify-between items-center pb-3 border-b-2 border-slate-100">
                   <h2 className="text-xl font-black text-slate-800">登記新接送需求</h2>
                   <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-lg font-black border border-blue-200">排班人員專用</span>
@@ -691,7 +838,7 @@
       const isAssigned = task.status === '已排定';
 
       return (
-        <div className={`bg-white rounded-2xl overflow-hidden card-shadow-lg border-2 ${isOngoing ? 'border-amber-400' : 'border-emerald-600/30'}`}>
+        <div className={`bg-white rounded-2xl overflow-hidden card-shadow-lg border-2 ${isOngoing ? 'border-amber-400 animate-pulseborder' : 'border-emerald-600/30'}`}>
           {/* 卡片頂部色條 */}
           <div className={`px-4 py-3 flex justify-between items-center ${isOngoing ? 'bg-amber-500' : 'bg-emerald-700'} text-white`}>
             <StatusBadge status={task.status} />
@@ -751,17 +898,24 @@
             </div>
 
             {/* 法師視角：顯示司機聯絡資訊 */}
-            {role === 'monk' && task.driverName && (
-              <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 flex justify-between items-center">
-                <div>
-                  <p className="text-xs text-blue-600 font-bold">負責接送的護法志工</p>
-                  <p className="text-xl font-black text-slate-800 mt-0.5">{task.driverName}</p>
-                  <p className="text-sm text-slate-600 font-bold mt-0.5">{task.driverPhone}</p>
+            {role === 'monk' && (
+              task.driverName ? (
+                <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 flex justify-between items-center">
+                  <div>
+                    <p className="text-xs text-blue-600 font-bold">負責接送的護法志工</p>
+                    <p className="text-xl font-black text-slate-800 mt-0.5">{task.driverName}</p>
+                    <p className="text-sm text-slate-600 font-bold mt-0.5">{task.driverPhone}</p>
+                  </div>
+                  <a href={`tel:${task.driverPhone}`} className="btn-tap bg-blue-600 text-white p-3.5 rounded-full card-shadow">
+                    <i data-lucide="phone" className="w-6 h-6"></i>
+                  </a>
                 </div>
-                <a href={`tel:${task.driverPhone}`} className="btn-tap bg-blue-600 text-white p-3.5 rounded-full card-shadow">
-                  <i data-lucide="phone" className="w-6 h-6"></i>
-                </a>
-              </div>
+              ) : (
+                <div className="bg-rose-50 p-4 rounded-xl border border-rose-200 flex items-center gap-3">
+                  <i data-lucide="alert-circle" className="w-5 h-5 text-rose-500 shrink-0"></i>
+                  <p className="text-sm font-bold text-rose-700">尚無志工接單，請稍候或聯繫排班組。</p>
+                </div>
+              )
             )}
 
             {/* 備註 */}
@@ -796,7 +950,7 @@
                     disabled={loading}
                     className="btn-tap w-full bg-amber-500 hover:bg-amber-600 text-white py-4 rounded-xl text-lg font-black card-shadow disabled:opacity-50 transition"
                   >
-                    🚗 我現在出發去接法師了
+                    我現在出發去接法師了
                   </button>
                 )}
                 {isOngoing && (
@@ -818,7 +972,7 @@
 
     // ── 所有行程列表項目 ──
     function TaskListItem({ task, role, profile, onClaim, onCancel, onCopy, loading }) {
-      const canClaim = role === 'volunteer' && !task.driverId && task.status === '待領取';
+      const canClaim  = role === 'volunteer' && !task.driverId && task.status === '待領取';
       const canCancel = role === 'scheduler' && (task.status === '待領取' || task.status === '已排定');
 
       return (
