@@ -44,17 +44,10 @@
 
   <script type="text/babel">
     // =========================================================================
-    // [系統設定] 請在此處替換您的 LIFF ID 與 GAS API 網址
+    // [正式版設定] 請在此處替換您的實體 LIFF ID 與 GAS API 網址
     // =========================================================================
     const LIFF_ID = "2006181829-l81j2YrD"; 
-    const API_URL = "https://script.google.com/macros/s/AKfycbxIDds0NkW6X2wGR-30U2r_RZwY81zEz31QKmYk81KC51JCrQ8OZYCd5eetIsOPilpZTQ/exec";
-
-    // 模擬的志工駕駛資料庫 (供排班志工指派時選擇)
-    const mockDriversList = [
-      { id: 'U114514', name: '林東毅', phone: '0912-345-678' },
-      { id: 'U222222', name: '陳志強', phone: '0988-123-456' },
-      { id: 'U333333', name: '王小明', phone: '0933-777-888' }
-    ];
+    const API_URL = "https://script.google.com/macros/s/AKfycbwFRE4KjByrOFBaSoapZ8WhNpcmx8RhEx0JLyPwciLsSIqjNQbSSlUjL-J1Nvw8gt5kZA/exec";
 
     // -------------------------------------------------------------------------
     // 獨立 SVG 圖示元件 (防止 Lucide 異步載入時失效)
@@ -137,15 +130,16 @@
     }
 
     function App() {
-      // 1. 註冊狀態與使用者資料
+      // 1. 使用者認證與註冊狀態
       const [isRegistered, setIsRegistered] = React.useState(false);
-      const [userRole, setUserRole] = React.useState('volunteer'); // 'volunteer' (護持駕駛), 'monk' (法師), 'scheduler' (排班)
-      const [userName, setUserName] = React.useState('');
-      const [userId, setUserId] = React.useState('U114514'); // 預設模擬 LINE ID
+      const [userRole, setUserRole] = React.useState('volunteer'); // 'volunteer', 'monk', 'scheduler'
+      const [userName, setUserName] = React.useState('載入中...');
+      const [userId, setUserId] = React.useState(''); 
       const [userPhone, setUserPhone] = React.useState('');
       const [isLiffInit, setIsLiffInit] = React.useState(false);
       
       const [tasks, setTasks] = React.useState([]);
+      const [driversList, setDriversList] = React.useState([]); // 從後端動態獲取的司機名冊
       const [loading, setLoading] = React.useState(false);
       const [activeTab, setActiveTab] = React.useState('my-tasks');
 
@@ -153,10 +147,7 @@
       const [searchTerm, setSearchTerm] = React.useState('');
       const [statusFilter, setStatusFilter] = React.useState('全部');
 
-      // 連線模式選擇：'mock' (模擬模式) 或 'api' (真實連線)
-      const [connectionMode, setConnectionMode] = React.useState('mock');
-
-      // 自訂通知與 Modal 系統
+      // 自訂通知與 Modal 系統 (取代 window.alert & confirm)
       const [toast, setToast] = React.useState({ show: false, message: '', type: 'success' });
       const [modal, setModal] = React.useState({ show: false, title: '', message: '', onConfirm: null, confirmText: '確定' });
 
@@ -193,167 +184,184 @@
         setModal(prev => ({ ...prev, show: false }));
       };
 
-      // 模擬初始接送行程資料
-      const mockInitialTasks = [
-        { id: 'REC0001', status: '已排定', monks: '如英法師', date: '2026-07-01', time: '19:00', pickup: '妙覺寺', dropoff: '華藏樓', driverId: 'U114514', driverName: '林東毅', driverPhone: '0912-345-678', notes: '法師行李較多，需要空出後車廂空間' },
-        { id: 'REC0002', status: '待排班確認', monks: '清幢法師', date: '2026-07-02', time: '15:30', pickup: '華藏樓', dropoff: '鳳山寺', driverId: 'U114514', driverName: '林東毅', driverPhone: '0912-345-678', notes: '此為認領待審核行程' },
-        { id: 'REC0003', status: '待駕駛確認', monks: '淨明法師', date: '2026-07-03', time: '09:00', pickup: '鳳山寺', dropoff: '妙覺寺', driverId: 'U114514', driverName: '林東毅', driverPhone: '0912-345-678', notes: '此為排班指派待確認行程' },
-        { id: 'REC0004', status: '待領取', monks: '慧能法師', date: '2026-07-04', time: '10:00', pickup: '台中高鐵站', dropoff: '妙覺寺', driverId: '', driverName: '', driverPhone: '', notes: '法師自主提出，誠徵發心駕駛' }
-      ];
-
-      // 2. 初始化 LIFF 並取得使用者真實資訊
+      // 2. 初始化 LIFF 並取得使用者真實資訊與註冊狀態
       React.useEffect(() => {
-        setTasks(mockInitialTasks);
-
-        // 讀取本地註冊快取 (便於示範)
-        const cachedReg = localStorage.getItem('liff_helper_registered_v2');
-        if (cachedReg) {
-          const regData = JSON.parse(cachedReg);
-          setUserName(regData.name);
-          setUserPhone(regData.phone);
-          setUserRole(regData.role);
-          setIsRegistered(true);
-        }
-
         if (typeof liff !== 'undefined') {
           liff.init({ liffId: LIFF_ID })
             .then(() => {
               setIsLiffInit(true);
-              setConnectionMode('api'); 
               if (liff.isLoggedIn()) {
                 liff.getProfile()
                   .then(profile => {
-                    setUserId(profile.userId);
-                    // 若無快取，則根據 LINE 顯示名稱預填註冊表單
-                    if (!cachedReg) {
-                      setRegForm(prev => ({
-                        ...prev,
-                        name: profile.displayName,
-                        role: profile.displayName.includes("法師") ? "monk" : "volunteer"
-                      }));
-                    }
+                    const lineId = profile.userId;
+                    setUserId(lineId);
+                    // 根據 LINE 顯示名稱預填註冊表單
+                    setRegForm(prev => ({
+                      ...prev,
+                      name: profile.displayName,
+                      role: profile.displayName.includes("法師") ? "monk" : "volunteer"
+                    }));
+                    // 向 GAS 後端查詢是否已註冊
+                    checkUserRegistration(lineId);
                   })
                   .catch(err => {
                     console.error("取得 LINE 個人資料失敗", err);
+                    showToast("讀取 LINE 資訊失敗，請確認行動網路環境。", "error");
                   });
               } else {
                 if (liff.isInClient()) {
+                  liff.login();
+                } else {
+                  // 在非 LINE App 瀏覽器開啟時自動進行重導向登入
                   liff.login();
                 }
               }
             })
             .catch(err => {
-              console.warn("LIFF 初始化失敗或未使用 LINE 開啟，切換為模擬演示模式", err);
-              setConnectionMode('mock');
+              console.error("LIFF 初始化失敗", err);
+              showToast("LIFF 載入失敗，請確認是否在 LINE 內置瀏覽器中開啟。", "error");
             });
         }
-        fetchTasks();
       }, []);
 
-      React.useEffect(() => {
-        fetchTasks();
-      }, [connectionMode]);
-
-      // 3. API：讀取雲端行程
-      const fetchTasks = async () => {
+      // 查詢使用者是否在試算表中有註冊紀錄
+      const checkUserRegistration = async (lineId) => {
         setLoading(true);
-        if (connectionMode === 'mock') {
-          setTimeout(() => {
-            setLoading(false);
-          }, 1500);
-          return;
-        }
-
         try {
-          const response = await fetch(API_URL);
-          if (!response.ok) throw new Error('網路連線失敗');
+          const response = await fetch(`${API_URL}?action=getUser&userId=${lineId}`);
+          if (!response.ok) throw new Error();
           const data = await response.json();
-          setTasks(data);
-          showToast('雲端接送行程已同步更新！', 'success');
+          if (data.success && data.isRegistered) {
+            setUserName(data.user.name);
+            setUserPhone(data.user.phone);
+            setUserRole(data.user.role);
+            setIsRegistered(true);
+            
+            // 根據註冊身分導入合適的預設頁籤
+            if (data.user.role === 'scheduler') {
+              setActiveTab('all-tasks');
+              fetchDrivers(); // 排班人員自動讀取所有志工駕駛
+            } else {
+              setActiveTab('my-tasks');
+            }
+            fetchTasks();
+          } else {
+            // 尚未註冊
+            setIsRegistered(false);
+          }
         } catch (error) {
-          console.error("讀取雲端失敗，沿用現有/模擬資料:", error);
-          showToast("無法連接 Google 試算表，使用本機模擬數據運作中。", "warning");
+          showToast("連線後端驗證失敗，請確認 API 網址是否正確設定。", "error");
         } finally {
           setLoading(false);
         }
       };
 
-      // 4. LIFF：發送訊息至當前聊天室
+      // 3. API：讀取所有接送行程
+      const fetchTasks = async () => {
+        setLoading(true);
+        try {
+          const response = await fetch(API_URL);
+          if (!response.ok) throw new Error('網路連線失敗');
+          const data = await response.json();
+          setTasks(data);
+        } catch (error) {
+          showToast("讀取雲端行程失敗，請確認連線。", "error");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // 4. API：讀取所有駕駛名冊 (排班志工登記時，從 Users 表單即時查詢)
+      const fetchDrivers = async () => {
+        try {
+          const response = await fetch(`${API_URL}?action=getDrivers`);
+          if (response.ok) {
+            const data = await response.json();
+            setDriversList(data);
+          }
+        } catch (error) {
+          console.error("讀取司機名冊失敗", error);
+        }
+      };
+
+      // 5. LIFF：發送同步訊息至 LINE 聊天室
       const sendLiffChatMessage = async (textMessage) => {
         if (typeof liff !== 'undefined' && liff.isInClient() && liff.isLoggedIn()) {
           try {
             await liff.sendMessages([{ type: 'text', text: textMessage }]);
-            showToast("成功在 LINE 聊天室發送同步通知！", "success");
+            showToast("已同步在 LINE 群組中發送通知訊息！", "success");
           } catch (error) {
             console.error("LIFF 傳送訊息失敗:", error);
             showToast("無法同步發送 LINE 訊息 (可能非群組對話框內)", "info");
           }
         } else {
-          console.log("非 LINE 環境，模擬發送群組訊息：\n", textMessage);
-          showToast("【模擬發送 LINE 群組訊息成功】", "info");
+          console.log("非 LINE 環境，模擬發送：\n", textMessage);
         }
       };
 
-      // 5. 首次註冊提交
-      const handleRegisterSubmit = (e) => {
+      // 6. 提交註冊登記
+      const handleRegisterSubmit = async (e) => {
         e.preventDefault();
         if (!regForm.name || !regForm.phone) {
           showToast('⚠️ 請填寫完整註冊欄位！', 'warning');
           return;
         }
+        setLoading(true);
 
-        const registrationInfo = {
-          name: regForm.name,
-          phone: regForm.phone,
-          role: regForm.role
-        };
-
-        localStorage.setItem('liff_helper_registered_v2', JSON.stringify(registrationInfo));
-        setUserName(regForm.name);
-        setUserPhone(regForm.phone);
-        setUserRole(regForm.role);
-        setIsRegistered(true);
-
-        // 註冊後之角色對應預設頁籤
-        if (regForm.role === 'scheduler') {
-          setActiveTab('all-tasks');
-        } else {
-          setActiveTab('my-tasks');
+        try {
+          const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+              action: 'register',
+              userId: userId,
+              name: regForm.name,
+              phone: regForm.phone,
+              role: regForm.role
+            })
+          });
+          const data = await response.json();
+          if (data.success) {
+            showToast("🎉 註冊成功，正在導入系統...", "success");
+            setTimeout(() => {
+              checkUserRegistration(userId);
+            }, 1000);
+          } else {
+            showToast("❌ 註冊寫入失敗，請重試。", "error");
+          }
+        } catch (error) {
+          showToast("❌ 註冊寫入失敗，請確認網路連線。", "error");
+        } finally {
+          setLoading(false);
         }
-
-        showToast(`🎉 註冊成功！身分：【${
-          regForm.role === 'volunteer' ? '護持駕駛志工' : 
-          regForm.role === 'monk' ? '尊貴法師' : '排班管理志工'
-        }】`, 'success');
       };
 
-      // 6. 志工確認或婉拒「指派任務」
+      // 7. 志工接受或婉拒排班組「直接指派任務」
       const handleConfirmAssignment = (task, isAccepted) => {
         const actionText = isAccepted ? '確認接受' : '婉拒指派';
         showConfirmModal(
           `${actionText}此護持指派？`,
           isAccepted 
             ? `確認接受護持 ${task.monks} 的任務嗎？接受後將會正式成立行程，並通知法師大護法駕駛資訊。`
-            : `婉拒後，此任務會重新釋放至待領取狀態。`,
+            : `婉拒後，此任務會重新釋放至「待領取」狀態。`,
           async () => {
             closeConfirmModal();
             setLoading(true);
 
-            const updatedStatus = isAccepted ? '已排定' : '待領取';
-            const finalDriverId = isAccepted ? userId : '';
-            const finalDriverName = isAccepted ? userName : '';
-            const finalDriverPhone = isAccepted ? userPhone : '';
+            const apiAction = isAccepted ? 'acceptAssignment' : 'rejectAssignment';
 
-            if (connectionMode === 'mock') {
-              setTimeout(async () => {
-                setTasks(prev => prev.map(t => t.id === task.id ? { 
-                  ...t, 
-                  status: updatedStatus,
-                  driverId: finalDriverId,
-                  driverName: finalDriverName,
-                  driverPhone: finalDriverPhone
-                } : t));
-
+            try {
+              const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ 
+                  action: apiAction, 
+                  id: task.id, 
+                  driverPhone: userPhone // 確認接受時需要提供最新的司機手機
+                })
+              });
+              const data = await response.json();
+              if (data.success) {
                 if (isAccepted) {
                   const msg = `🚗【護持志工已接單確認！】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n📍 路線：${task.pickup} ➔ ${task.dropoff}\n👤 護持大護法已確認：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n法師已收到您的資訊，感恩護持！`;
                   await sendLiffChatMessage(msg);
@@ -361,35 +369,11 @@
                   const msg = `⚠️【護持指派已婉拒】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n此指派已被婉拒，已重新釋放為待領取。`;
                   await sendLiffChatMessage(msg);
                 }
-
-                setLoading(false);
                 showToast(`您已${actionText}指派任務`);
-              }, 800);
-              return;
-            }
-
-            try {
-              await fetch(API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  action: 'updateAssignment', 
-                  id: task.id, 
-                  status: updatedStatus,
-                  driverId: finalDriverId,
-                  driverName: finalDriverName,
-                  driverPhone: finalDriverPhone
-                })
-              });
-
-              if (isAccepted) {
-                const msg = `🚗【護持志工已接單確認！】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n📍 路線：${task.pickup} ➔ ${task.dropoff}\n👤 護持大護法已確認：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n法師已收到您的資訊，感恩護持！`;
-                await sendLiffChatMessage(msg);
+                fetchTasks();
+              } else {
+                showToast("❌ 操作更新失敗，請重新嘗試。", "error");
               }
-
-              showToast(`✅ 已完成${actionText}流程！`, 'success');
-              fetchTasks();
             } catch (error) {
               showToast('❌ 處理失敗，請確認連線！', 'error');
             } finally {
@@ -399,51 +383,36 @@
         );
       };
 
-      // 7. 志工提出認領 (需排班確認)
+      // 8. 志工主動認領任務 (待排班審核)
       const handleClaimTask = (task) => {
         showConfirmModal(
           '申請認領護持行程？',
-          `您即將申請認領此任務：\n👤 法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n\n注意：認領需經過【排班組志工確認核准】後才會正式生效並通知法師。`,
+          `您即將申請認領此任務：\n👤 法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n\n注意：認領將進入「待排班審核」狀態。審核核准後才會正式成立並通知法師。`,
           async () => {
             closeConfirmModal();
             setLoading(true);
 
-            if (connectionMode === 'mock') {
-              setTimeout(async () => {
-                setTasks(prev => prev.map(t => t.id === task.id ? { 
-                  ...t, 
-                  driverId: userId, 
-                  driverName: userName, 
-                  driverPhone: userPhone, 
-                  status: '待排班確認' 
-                } : t));
-                const msg = `🙋‍♂️【志工申請認領行程】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n👤 認領駕駛：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n⏳ 待排班志工審核確認後正式生效。`;
-                await sendLiffChatMessage(msg);
-                setLoading(false);
-                showToast('🎉 已提交認領申請，請等待排班審核確認！', 'success');
-              }, 800);
-              return;
-            }
-
             try {
-              await fetch(API_URL, {
+              const response = await fetch(API_URL, {
                 method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({
-                  action: 'applyClaim',
+                  action: 'claim',
                   id: task.id,
                   driverId: userId,
                   driverName: userName,
                   driverPhone: userPhone
                 })
               });
-
-              const msg = `🙋‍♂️【志工申請認領行程】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n👤 認領駕駛：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n⏳ 待排班志工審核確認後正式生效。`;
-              await sendLiffChatMessage(msg);
-
-              showToast('🎉 已提交認領申請，請等待排班審核！', 'success');
-              fetchTasks();
+              const data = await response.json();
+              if (data.success) {
+                const msg = `🙋‍♂️【志工申請認領行程】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n👤 認領駕駛：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n⏳ 待排班志工審核確認後正式生效。`;
+                await sendLiffChatMessage(msg);
+                showToast('🎉 已提交認領申請，請等待排班審核！', 'success');
+                fetchTasks();
+              } else {
+                showToast("❌ 提交認領失敗。", "error");
+              }
             } catch (error) {
               showToast('❌ 申請認領失敗，請稍後再試！', 'error');
             } finally {
@@ -453,33 +422,31 @@
         );
       };
 
-      // 8. 排班確認駕駛的「認領審核」 (核准或拒絕)
+      // 9. 排班志工：核准或拒絕志工認領
       const handleApproveClaim = (task, isApproved) => {
-        const actionLabel = isApproved ? '同意核准' : '拒絕認領';
+        const actionLabel = isApproved ? '核准' : '拒絕';
         showConfirmModal(
-          `${actionLabel}此認領？`,
+          `確定要${actionLabel}此認領？`,
           isApproved 
-            ? `確認指派大護法【${task.driverName}】護持本行程嗎？核准後會發布正式通知至 LINE 給法師。`
+            ? `確認指派大護法【${task.driverName}】護持本行程嗎？核准後會發布正式通知至 LINE。`
             : `拒絕後，本行程將會重新釋放為「待領取」狀態。`,
           async () => {
             closeConfirmModal();
             setLoading(true);
 
-            const finalStatus = isApproved ? '已排定' : '待領取';
-            const finalDriverId = isApproved ? task.driverId : '';
-            const finalDriverName = isApproved ? task.driverName : '';
-            const finalDriverPhone = isApproved ? task.driverPhone : '';
+            const apiAction = isApproved ? 'approveClaim' : 'rejectClaim';
 
-            if (connectionMode === 'mock') {
-              setTimeout(async () => {
-                setTasks(prev => prev.map(t => t.id === task.id ? { 
-                  ...t, 
-                  status: finalStatus,
-                  driverId: finalDriverId,
-                  driverName: finalDriverName,
-                  driverPhone: finalDriverPhone
-                } : t));
-
+            try {
+              const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ 
+                  action: apiAction, 
+                  id: task.id
+                })
+              });
+              const data = await response.json();
+              if (data.success) {
                 if (isApproved) {
                   const msg = `✅【排班核准：接送任務已成立！】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n📍 路線：${task.pickup} ➔ ${task.dropoff}\n🚗 護持大護法：${task.driverName} (${task.driverPhone})\n━━━━━━━━━━━━━━━\n行車平安，隨喜大家發心護持！`;
                   await sendLiffChatMessage(msg);
@@ -487,35 +454,11 @@
                   const msg = `⚠️【認領審核退回】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n認領申請已駁回，本行程重新開放認領。`;
                   await sendLiffChatMessage(msg);
                 }
-
-                setLoading(false);
-                showToast(`已${actionLabel}認領申請`);
-              }, 800);
-              return;
-            }
-
-            try {
-              await fetch(API_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  action: 'approveClaim', 
-                  id: task.id, 
-                  status: finalStatus,
-                  driverId: finalDriverId,
-                  driverName: finalDriverName,
-                  driverPhone: finalDriverPhone
-                })
-              });
-
-              if (isApproved) {
-                const msg = `✅【排班核准：接送任務已成立！】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n📍 路線：${task.pickup} ➔ ${task.dropoff}\n🚗 護持大護法：${task.driverName} (${task.driverPhone})\n━━━━━━━━━━━━━━━\n行車平安，隨喜大家發心護持！`;
-                await sendLiffChatMessage(msg);
+                showToast(`已成功${actionLabel}認領申請！`, 'success');
+                fetchTasks();
+              } else {
+                showToast("❌ 審核處理失敗。", "error");
               }
-
-              showToast(`✅ 已${actionLabel}審核！`, 'success');
-              fetchTasks();
             } catch (error) {
               showToast('❌ 審核處理失敗，請確認連線。', 'error');
             } finally {
@@ -525,7 +468,7 @@
         );
       };
 
-      // 9. 排班志工新增/指派接送需求
+      // 10. 排班志工：建立新接送行程或指派任務
       const handleCreateTask = async (e) => {
         e.preventDefault();
         if (!newForm.monks || !newForm.date || !newForm.time || !newForm.pickup || !newForm.dropoff) {
@@ -534,74 +477,44 @@
         }
         setLoading(true);
 
-        // 判定狀態：若指派了特定駕駛，狀態為「待駕駛確認」，否則為「待領取」
-        const targetDriver = mockDriversList.find(d => d.id === newForm.assignedDriverId);
-        const status = targetDriver ? '待駕駛確認' : '待領取';
-        const driverId = targetDriver ? targetDriver.id : '';
-        const driverName = targetDriver ? targetDriver.name : '';
-        const driverPhone = targetDriver ? targetDriver.phone : '';
+        // 檢查指派特定司機
+        const targetDriver = driversList.find(d => d.id === newForm.assignedDriverId);
+        const assignedDriverId = targetDriver ? targetDriver.id : '';
+        const assignedDriverName = targetDriver ? targetDriver.name : '';
 
-        if (connectionMode === 'mock') {
-          setTimeout(async () => {
-            const newId = `REC${String(tasks.length + 1).padStart(4, '0')}`;
-            const createdTask = {
-              id: newId,
-              status,
-              driverId,
-              driverName,
-              driverPhone,
+        try {
+          const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ 
+              action: 'create', 
               monks: newForm.monks,
               date: newForm.date,
               time: newForm.time,
               pickup: newForm.pickup,
               dropoff: newForm.dropoff,
-              notes: newForm.notes
-            };
-            setTasks(prev => [createdTask, ...prev]);
-            
+              notes: newForm.notes,
+              assignedDriverId,
+              assignedDriverName
+            })
+          });
+          const data = await response.json();
+          if (data.success) {
             let msg = '';
             if (targetDriver) {
-              msg = `🔔【排班指派：接送需求已登記】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n🚗 指派駕駛：${driverName} (${driverPhone})\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n⏳ 待大護法駕駛確認指派任務後生效。`;
+              msg = `🔔【排班指派：接送需求已登記】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n🚗 指派駕駛：${targetDriver.name} (${targetDriver.phone})\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n⏳ 待大護法駕駛確認指派任務後生效。`;
             } else {
               msg = `🔔【新登記法師接送需求】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n👉 請大護法志工們至系統認領接單護持！`;
             }
             await sendLiffChatMessage(msg);
 
+            showToast('💾 接送需求已成功同步並發送通知！', 'success');
             setNewForm({ monks: '', date: '', time: '', pickup: '', dropoff: '', notes: '', assignedDriverId: '' });
             setActiveTab('all-tasks');
-            setLoading(false);
-            showToast('💾 接送需求已成功建立（模擬寫入）！', 'success');
-          }, 800);
-          return;
-        }
-
-        try {
-          await fetch(API_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              action: 'create', 
-              status,
-              driverId,
-              driverName,
-              driverPhone,
-              ...newForm 
-            })
-          });
-
-          let msg = '';
-          if (targetDriver) {
-            msg = `🔔【排班指派：接送需求已登記】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n🚗 指派駕駛：${driverName} (${driverPhone})\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n⏳ 待大護法駕駛確認指派任務後生效。`;
+            fetchTasks();
           } else {
-            msg = `🔔【新登記法師接送需求】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n👉 請大護法志工們至系統認領接單護持！`;
+            showToast("❌ 儲存建立失敗。", "error");
           }
-          await sendLiffChatMessage(msg);
-
-          showToast('💾 接送需求已成功寫入雲端試算表並發送通知！', 'success');
-          setNewForm({ monks: '', date: '', time: '', pickup: '', dropoff: '', notes: '', assignedDriverId: '' });
-          setActiveTab('all-tasks');
-          fetchTasks();
         } catch (error) {
           showToast('❌ 送出失敗，請確認 API 網址或連線。', 'error');
         } finally {
@@ -609,7 +522,7 @@
         }
       };
 
-      // 10. 法師自主填寫「提供接送需求」
+      // 11. 法師自主填寫「我要提需求」
       const handleMonkCreateTask = async (e) => {
         e.preventDefault();
         if (!newForm.date || !newForm.time || !newForm.pickup || !newForm.dropoff) {
@@ -620,58 +533,34 @@
 
         const monksName = userName || '尊貴法師';
 
-        if (connectionMode === 'mock') {
-          setTimeout(async () => {
-            const newId = `REC${String(tasks.length + 1).padStart(4, '0')}`;
-            const createdTask = {
-              id: newId,
-              status: '待領取',
-              driverId: '',
-              driverName: '',
-              driverPhone: '',
+        try {
+          const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ 
+              action: 'create', 
               monks: monksName,
               date: newForm.date,
               time: newForm.time,
               pickup: newForm.pickup,
               dropoff: newForm.dropoff,
-              notes: newForm.notes
-            };
-            setTasks(prev => [createdTask, ...prev]);
-            
+              notes: newForm.notes,
+              assignedDriverId: '',
+              assignedDriverName: ''
+            })
+          });
+          const data = await response.json();
+          if (data.success) {
             const msg = `🙏【尊貴法師提出接送需求】\n━━━━━━━━━━━━━━━\n👤 需求法師：${monksName}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n👉 懇請發心駕駛大護法們點選認領接單護持！`;
             await sendLiffChatMessage(msg);
 
+            showToast('💾 接送需求已成功發布並同步通知！', 'success');
             setNewForm({ monks: '', date: '', time: '', pickup: '', dropoff: '', notes: '', assignedDriverId: '' });
             setActiveTab('all-tasks');
-            setLoading(false);
-            showToast('🙏 接送需求已發布至大護法群組！', 'success');
-          }, 800);
-          return;
-        }
-
-        try {
-          await fetch(API_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              action: 'create', 
-              status: '待領取',
-              driverId: '',
-              driverName: '',
-              driverPhone: '',
-              monks: monksName,
-              ...newForm 
-            })
-          });
-
-          const msg = `🙏【尊貴法師提出接送需求】\n━━━━━━━━━━━━━━━\n👤 需求法師：${monksName}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n👉 懇請發心駕駛大護法們點選認領接單護持！`;
-          await sendLiffChatMessage(msg);
-
-          showToast('💾 接送需求已成功寫入雲端並發送通知！', 'success');
-          setNewForm({ monks: '', date: '', time: '', pickup: '', dropoff: '', notes: '', assignedDriverId: '' });
-          setActiveTab('all-tasks');
-          fetchTasks();
+            fetchTasks();
+          } else {
+            showToast("❌ 發布失敗。", "error");
+          }
         } catch (error) {
           showToast('❌ 送出失敗，請確認連線。', 'error');
         } finally {
@@ -679,40 +568,32 @@
         }
       };
 
-      // 11. 進行中、已完成狀態流轉
+      // 12. 進行中、已完成狀態流轉
       const handleUpdateStatus = (task, newStatus) => {
         const actionLabel = newStatus === '進行中' ? '開始出發接法師' : '法師已安全送達';
         showConfirmModal(
           `確認執行：${actionLabel}？`,
-          `確認將此接送行程 #${task.id} (${task.monks}) 的狀態更新為「${newStatus}」嗎？`,
+          `確認將行程 #${task.id} (${task.monks}) 的狀態更新為「${newStatus}」嗎？`,
           async () => {
             closeConfirmModal();
             setLoading(true);
 
-            if (connectionMode === 'mock') {
-              setTimeout(async () => {
-                setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
-                const msg = `📢【接送狀態更新】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n🚗 護持司機：${userName}\n🚩 最新狀態：【${newStatus}】\n━━━━━━━━━━━━━━━`;
-                await sendLiffChatMessage(msg);
-                setLoading(false);
-                showToast(`狀態已成功更新為：${newStatus}`);
-              }, 800);
-              return;
-            }
-
             try {
-              await fetch(API_URL, {
+              const response = await fetch(API_URL, {
                 method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({ action: 'updateStatus', id: task.id, status: newStatus })
               });
+              const data = await response.json();
+              if (data.success) {
+                const msg = `📢【接送狀態更新】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n🚗 護持司機：${userName}\n🚩 最新狀態：【${newStatus}】\n━━━━━━━━━━━━━━━`;
+                await sendLiffChatMessage(msg);
 
-              const msg = `📢【接送狀態更新】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n🚗 護持司機：${userName}\n🚩 最新狀態：【${newStatus}】\n━━━━━━━━━━━━━━━`;
-              await sendLiffChatMessage(msg);
-
-              showToast(`✅ 狀態已成功更新為：${newStatus}`, 'success');
-              setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+                showToast(`✅ 狀態已成功更新為：${newStatus}`, 'success');
+                fetchTasks();
+              } else {
+                showToast("❌ 更新狀態失敗。", "error");
+              }
             } catch (error) {
               showToast('❌ 更新失敗，請確認網路連線！', 'error');
             } finally {
@@ -722,33 +603,28 @@
         );
       };
 
-      // 12. 排班組取消/刪除行程
+      // 13. 排班組：取消與刪除行程
       const handleDeleteTask = (task) => {
         showConfirmModal(
-          '確認取消行程？',
-          `確定要取消並刪除 #${task.id} (${task.monks}) 的行程嗎？此操作無法還原。`,
+          '確認取消此行程？',
+          `確定要刪除 #${task.id} (${task.monks}) 的行程嗎？此操作無法還原。`,
           async () => {
             closeConfirmModal();
             setLoading(true);
 
-            if (connectionMode === 'mock') {
-              setTimeout(() => {
-                setTasks(prev => prev.filter(t => t.id !== task.id));
-                setLoading(false);
-                showToast(`已成功取消行程 #${task.id}`);
-              }, 500);
-              return;
-            }
-
             try {
-              await fetch(API_URL, {
+              const response = await fetch(API_URL, {
                 method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({ action: 'delete', id: task.id })
               });
-              showToast(`已成功取消行程 #${task.id}`, 'success');
-              fetchTasks();
+              const data = await response.json();
+              if (data.success) {
+                showToast(`已成功取消行程 #${task.id}`, 'success');
+                fetchTasks();
+              } else {
+                showToast("❌ 取消失敗。", "error");
+              }
             } catch (error) {
               showToast('❌ 取消行程失敗，請再試一次。', 'error');
             } finally {
@@ -756,36 +632,6 @@
             }
           }
         );
-      };
-
-      // 重置註冊快取 (方便演示)
-      const handleForceReregister = () => {
-        localStorage.removeItem('liff_helper_registered_v2');
-        setIsRegistered(false);
-        setUserName('');
-        setUserPhone('');
-        showToast('已清除註冊快取，請重新註冊體驗流程！', 'info');
-      };
-
-      const handleRoleChange = (role) => {
-        setUserRole(role);
-        if (role === 'volunteer') {
-          setUserName('林東毅');
-          setUserPhone('0912-345-678');
-          setUserId('U114514');
-          setActiveTab('my-tasks');
-        } else if (role === 'monk') {
-          setUserName('如英法師');
-          setUserPhone('0955-555-666');
-          setUserId('M0001');
-          setActiveTab('my-tasks');
-        } else {
-          setUserName('妙覺寺排班組');
-          setUserPhone('02-1234567');
-          setUserId('S0001');
-          setActiveTab('all-tasks');
-        }
-        showToast(`已切換至【${role === 'volunteer' ? '護持志工' : role === 'monk' ? '法師' : '排班志工'}】介面`);
       };
 
       // 篩選與搜尋
@@ -806,28 +652,24 @@
       if (!isRegistered) {
         return (
           <div className="max-w-md mx-auto bg-stone-50 min-h-screen flex flex-col justify-center p-6 text-stone-900 shadow-2xl relative">
-            
-            {/* 頂部禪風大標題 */}
             <div className="text-center mb-8">
-              <span className="text-6xl block mb-3">☸️</span>
+              <span className="text-6xl block mb-3 animate-pulse">☸️</span>
               <h1 className="text-3xl font-black text-emerald-800 tracking-wider">法師接送護持隨身助手</h1>
               <p className="text-stone-500 font-bold mt-2">妙覺寺 ‧ 鳳山寺 護法車隊登記系統</p>
               <div className="h-1 w-24 bg-amber-500 mx-auto mt-4 rounded"></div>
             </div>
 
-            {/* 註冊登記卡片 */}
-            <div className="bg-white p-6 rounded-3xl border-2 border-stone-200 shadow-xl space-y-6">
-              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 text-amber-900 text-center font-bold text-sm">
-                🙏 您好！這是您第一次使用。請先完成以下基本註冊，以利指派與聯絡通知。
+            <div className="bg-white p-6 rounded-3xl border-2 border-stone-200 shadow-xl space-y-6 animate-fade-in">
+              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 text-amber-900 text-center font-bold text-sm leading-relaxed">
+                🙏 您好！檢測到您的 LINE 帳號尚未註冊。請先填寫以下資訊，完成一鍵綁定。
               </div>
 
               <form onSubmit={handleRegisterSubmit} className="space-y-4">
-                {/* 姓名輸入 */}
                 <div>
                   <label className="block text-base font-black text-stone-700 mb-1.5">您的真實姓名 *</label>
                   <input 
                     type="text" 
-                    placeholder="例如：林東毅 / 如英法師" 
+                    placeholder="例如：林東毅 / 釋大德" 
                     value={regForm.name}
                     onChange={e => setRegForm({...regForm, name: e.target.value})}
                     className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
@@ -835,7 +677,6 @@
                   />
                 </div>
 
-                {/* 手機號碼 */}
                 <div>
                   <label className="block text-base font-black text-stone-700 mb-1.5">聯絡電話 (手機) *</label>
                   <input 
@@ -848,32 +689,36 @@
                   />
                 </div>
 
-                {/* 選擇註冊身分 */}
                 <div>
                   <label className="block text-base font-black text-stone-700 mb-1.5">註冊使用的主要身分 *</label>
                   <select 
                     value={regForm.role}
                     onChange={e => setRegForm({...regForm, role: e.target.value})}
-                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors font-bold"
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors font-bold"
                   >
-                    <option value="volunteer">🚗 護持駕駛志工</option>
+                    <option value="volunteer">🚗 護持駕駛志工 (車隊司機)</option>
                     <option value="monk">🙏 尊貴法師</option>
-                    <option value="scheduler">📅 排班登記志工</option>
+                    <option value="scheduler">📅 排班登記志工 (管理組)</option>
                   </select>
                 </div>
 
                 <button 
                   type="submit"
+                  disabled={loading}
                   className="w-full bg-emerald-800 hover:bg-emerald-900 text-white py-4 rounded-2xl text-xl font-black shadow-lg transition duration-200 active:scale-[0.99] flex justify-center items-center gap-2"
                 >
-                  <Icon name="check-circle-2" className="w-6 h-6" /> 
-                  確認註冊並登入系統
+                  {loading ? '綁定寫入中...' : (
+                    <>
+                      <Icon name="check-circle-2" className="w-6 h-6" /> 
+                      一鍵綁定登入系統
+                    </>
+                  )}
                 </button>
               </form>
             </div>
 
             <footer className="text-center text-xs text-stone-400 mt-12">
-              <p>妙覺寺 / 鳳山寺 護法車隊系統 ‧ LINE LIFF 開發版</p>
+              <p>妙覺寺 / 鳳山寺 護法車隊系統 ‧ LINE LIFF 生產版本</p>
             </footer>
           </div>
         );
@@ -887,7 +732,7 @@
           
           {/* 自訂通知 Toast */}
           {toast.show && (
-            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm animate-bounce">
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm">
               <div className={`p-4 rounded-2xl shadow-2xl flex items-center gap-3 border ${
                 toast.type === 'success' ? 'bg-emerald-800 text-white border-emerald-600' : 
                 toast.type === 'warning' ? 'bg-amber-500 text-stone-950 border-amber-400' :
@@ -942,7 +787,7 @@
                 </h1>
                 <p className="text-sm text-emerald-200 mt-1 font-bold">
                   👤 您已登入：<span className="underline decoration-amber-400 decoration-2">{userName}</span> (
-                  {userRole === 'volunteer' ? '大護法駕駛' : userRole === 'monk' ? '尊貴法師' : '排班志工'}
+                  {userRole === 'volunteer' ? '大護法駕駛' : userRole === 'monk' ? '尊貴法師' : '排班管理員'}
                   )
                 </p>
               </div>
@@ -955,62 +800,10 @@
                 <Icon name="refresh" className={`w-6 h-6 block ${loading ? 'animate-spin text-amber-400' : 'text-white'}`} />
               </button>
             </div>
-
-            {/* 快速身分模擬切換 */}
-            <div className="mt-4 bg-emerald-950/60 p-1.5 rounded-2xl flex gap-1 text-xs font-bold border border-emerald-900">
-              <button 
-                onClick={() => handleRoleChange('volunteer')}
-                className={`flex-1 py-2.5 rounded-xl text-center transition ${userRole === 'volunteer' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-white hover:bg-emerald-900/40'}`}
-              >
-                駕駛切換
-              </button>
-              <button 
-                onClick={() => handleRoleChange('monk')}
-                className={`flex-1 py-2.5 rounded-xl text-center transition ${userRole === 'monk' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-white hover:bg-emerald-900/40'}`}
-              >
-                法師切換
-              </button>
-              <button 
-                onClick={() => handleRoleChange('scheduler')}
-                className={`flex-1 py-2.5 rounded-xl text-center transition ${userRole === 'scheduler' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-white hover:bg-emerald-900/40'}`}
-              >
-                排班切換
-              </button>
-            </div>
-
-            {/* 控制區 */}
-            <div className="mt-3 flex justify-between items-center text-xs font-bold">
-              <button 
-                onClick={handleForceReregister}
-                className="text-stone-300 hover:text-white underline"
-              >
-                🔄 重新註冊
-              </button>
-              <div className="flex gap-1.5">
-                <button 
-                  onClick={() => setConnectionMode('mock')}
-                  className={`px-2 py-0.5 rounded ${connectionMode === 'mock' ? 'bg-amber-500 text-stone-950 font-black' : 'bg-stone-800 text-stone-300'}`}
-                >
-                  本地模擬
-                </button>
-                <button 
-                  onClick={() => {
-                    if(API_URL.includes("YOUR_GAS_DEPLOYMENT_ID")) {
-                      showToast("請設定您的 GAS 部署網址喔！", "warning");
-                      return;
-                    }
-                    setConnectionMode('api');
-                  }}
-                  className={`px-2 py-0.5 rounded ${connectionMode === 'api' ? 'bg-amber-500 text-stone-950 font-black' : 'bg-stone-800 text-stone-300'}`}
-                >
-                  雲端試算表
-                </button>
-              </div>
-            </div>
           </header>
 
           {/* 導覽頁籤 */}
-          <div className="flex bg-white/95 backdrop-blur-md border-b-2 border-stone-200 sticky top-[210px] z-10 shadow-sm mx-4 mt-4 rounded-2xl overflow-hidden">
+          <div className="flex bg-white/95 backdrop-blur-md border-b-2 border-stone-200 sticky top-[100px] z-10 shadow-sm mx-4 mt-4 rounded-2xl overflow-hidden">
             {userRole !== 'scheduler' && (
               <button 
                 onClick={() => setActiveTab('my-tasks')}
@@ -1055,30 +848,32 @@
               <div className="space-y-4">
                 <div className="bg-gradient-to-br from-amber-50 to-amber-100/60 border-2 border-amber-300 rounded-3xl p-4 text-stone-800 shadow-sm">
                   <p className="text-xl font-black text-amber-950">您好，{userName}！</p>
-                  <p className="text-base mt-1 font-bold text-stone-600">以下為目前您相關之最新接送護持進度：</p>
+                  <p className="text-base mt-1 font-bold text-stone-600 font-sans">以下為與您相關之進行中行程（已為您過濾已完成的歷史檔案）：</p>
                 </div>
 
                 {tasks.filter(t => 
                   (userRole === 'volunteer' && t.driverId === userId && t.status !== '已完成') ||
+                  (userRole === 'volunteer' && t.assignedDriverId === userId && t.status === '待駕駛確認') ||
                   (userRole === 'monk' && t.monks.includes(userName) && t.status !== '已完成')
                 ).length === 0 ? (
                   <div className="bg-white rounded-3xl p-12 text-center border-2 border-dashed border-stone-300 shadow-inner">
                     <span className="text-4xl block mb-2">🧘</span>
-                    <p className="text-lg text-stone-400 font-bold">目前沒有您進行中或待確認的行程</p>
-                    <p className="text-sm text-stone-400 mt-1">您可以前往「所有行程」認領法師需求。</p>
+                    <p className="text-lg text-stone-400 font-bold">目前沒有您進行中的護持行程</p>
+                    <p className="text-sm text-stone-400 mt-1">您可以前往「所有行程」認領大眾法師需求。</p>
                   </div>
                 ) : (
                   tasks.filter(t => 
                     (userRole === 'volunteer' && t.driverId === userId && t.status !== '已完成') ||
+                    (userRole === 'volunteer' && t.assignedDriverId === userId && t.status === '待駕駛確認') ||
                     (userRole === 'monk' && t.monks.includes(userName) && t.status !== '已完成')
                   ).map(task => (
-                    <div key={task.id} className="bg-white rounded-3xl shadow-lg border border-stone-200 overflow-hidden">
+                    <div key={task.id} className="bg-white rounded-3xl shadow-lg border border-stone-200 overflow-hidden animate-fade-in">
                       
                       {/* 狀態標題 */}
                       <div className="bg-amber-600 text-white px-5 py-3 flex justify-between items-center">
                         <span className="text-base font-black tracking-wider flex items-center gap-1.5">
                           <span className="animate-ping w-2.5 h-2.5 rounded-full bg-white inline-block"></span>
-                          狀態：【{task.status}】
+                          最新進度：【{task.status}】
                         </span>
                         <span className="text-xs font-mono font-bold bg-amber-700 px-3 py-1 rounded-full">#{task.id}</span>
                       </div>
@@ -1137,7 +932,7 @@
                           <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100">
                             <p className="text-xs text-emerald-800 font-bold">負責護持的大護法志工</p>
                             {task.status === '待排班確認' || task.status === '待駕駛確認' ? (
-                              <p className="text-lg font-black text-stone-500 mt-1">⏳ 駕駛認領確認中，生效後會通知您聯絡方式</p>
+                              <p className="text-lg font-black text-stone-500 mt-1">⏳ 駕駛安排與確認中，生效後會立即呈現聯絡方式</p>
                             ) : task.driverName ? (
                               <div className="flex justify-between items-center mt-1">
                                 <div>
@@ -1152,7 +947,7 @@
                                 </a>
                               </div>
                             ) : (
-                              <p className="text-lg font-black text-red-600 mt-1">⏳ 安排大護法駕駛中...</p>
+                              <p className="text-lg font-black text-red-600 mt-1">⏳ 正在安排大護法駕駛中...</p>
                             )}
                           </div>
                         )}
@@ -1160,10 +955,10 @@
                         {/* 駕駛專用操作區 */}
                         {userRole === 'volunteer' && (
                           <div className="space-y-3 pt-2">
-                            {/* 行程一：待確認指派 */}
+                            {/* 情況一：被指派待確認 */}
                             {task.status === '待駕駛確認' && (
                               <div className="bg-amber-100/60 p-4 rounded-2xl border-2 border-amber-300 space-y-3">
-                                <p className="text-sm text-amber-950 font-black text-center">排班組已將此任務指派給您，請確認是否接受護持？</p>
+                                <p className="text-sm text-amber-950 font-black text-center">排班人員已將此行程指派給您，請確認您是否能護持？</p>
                                 <div className="flex gap-2">
                                   <button 
                                     onClick={() => handleConfirmAssignment(task, false)}
@@ -1181,14 +976,14 @@
                               </div>
                             )}
 
-                            {/* 行程二：待審核中 */}
+                            {/* 情況二：主動認領，待審核中 */}
                             {task.status === '待排班確認' && (
                               <div className="bg-stone-100 p-4 rounded-2xl text-center border">
-                                <p className="text-sm font-black text-stone-500">⏳ 已向排班志工提交認領申請，請等待核准確認...</p>
+                                <p className="text-sm font-black text-stone-500">⏳ 已向排班管理組提交認領申請，請等待確認核准...</p>
                               </div>
                             )}
 
-                            {/* 行程三：已排定/進行中/可操作導航 */}
+                            {/* 情況三：已排定/進行中/可操作導航 */}
                             {task.status === '已排定' && (
                               <div className="space-y-3">
                                 <a 
@@ -1238,7 +1033,7 @@
             {/* 頁面 B：所有行程 */}
             {activeTab === 'all-tasks' && (
               <div className="space-y-4">
-                <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 space-y-3">
+                <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 space-y-3 animate-fade-in">
                   <h2 className="text-xl font-black text-stone-800">🔍 接送行程篩選搜尋</h2>
                   
                   {/* 搜尋 */}
@@ -1281,11 +1076,11 @@
 
                 {filteredTasks.length === 0 ? (
                   <div className="bg-white rounded-3xl p-10 text-center border-2 border-stone-200 text-stone-400 font-bold">
-                    目前沒有符合搜尋條件的行程。
+                    目前沒有符合搜尋與篩選條件的行程。
                   </div>
                 ) : (
                   filteredTasks.map(task => (
-                    <div key={task.id} className="bg-white p-5 rounded-3xl border border-stone-200 shadow-md space-y-4 hover:border-stone-300 transition">
+                    <div key={task.id} className="bg-white p-5 rounded-3xl border border-stone-200 shadow-md space-y-4 hover:border-stone-300 transition animate-fade-in">
                       
                       <div className="flex justify-between items-start">
                         <span className={`text-xs px-3 py-1 rounded-full font-black border ${
@@ -1306,7 +1101,7 @@
                             <button 
                               onClick={() => handleDeleteTask(task)}
                               className="text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition"
-                              title="刪除/取消此行程"
+                              title="刪除並取消此行程"
                             >
                               <Icon name="trash" className="w-5 h-5" />
                             </button>
@@ -1337,21 +1132,20 @@
 
                       {task.notes && (
                         <p className="text-sm font-bold text-amber-800 bg-amber-50/50 px-3 py-2 rounded-xl">
-                          備註：{task.notes}
+                          備註說明：{task.notes}
                         </p>
                       )}
 
-                      {/* 認領、審核、與接受之邏輯控制面板 */}
+                      {/* 認領、審核與接受面板 */}
                       <div className="pt-3.5 border-t border-stone-100 space-y-3">
                         
-                        {/* 駕駛狀態顯示 */}
                         <div className="flex justify-between items-center">
                           {task.driverName ? (
                             <div className="flex items-center gap-2">
                               <span className="text-2xl">🚗</span>
                               <div>
                                 <p className="text-xs text-stone-400 font-bold">
-                                  {task.status === '待排班確認' ? '認領申請人' : '護持大護法'}
+                                  {task.status === '待排班確認' ? '認領申請志工' : '已定護持司機'}
                                 </p>
                                 <p className="text-base font-black text-stone-700">{task.driverName}</p>
                               </div>
@@ -1359,11 +1153,11 @@
                           ) : (
                             <p className="text-base font-black text-red-600 flex items-center gap-1.5">
                               <span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block animate-ping"></span>
-                              尚未有司機承接
+                              尚待安排志工承接
                             </p>
                           )}
 
-                          {/* 認領動作：僅限志工端、任務待領取且無指派司機 */}
+                          {/* 認領動作：限司機志工端，待領取狀態 */}
                           {userRole === 'volunteer' && task.status === '待領取' && !task.driverName && (
                             <button 
                               onClick={() => handleClaimTask(task)}
@@ -1374,16 +1168,16 @@
                           )}
                         </div>
 
-                        {/* 排班志工專用：審核認領(待排班確認) 或是 指派狀態追蹤 */}
+                        {/* 排班組審核志工認領 */}
                         {userRole === 'scheduler' && task.status === '待排班確認' && (
                           <div className="bg-purple-50 p-3 rounded-2xl border border-purple-200 flex flex-col gap-2">
-                            <p className="text-sm font-bold text-purple-950 text-center">志工「{task.driverName}」已申請認領，是否核准？</p>
+                            <p className="text-sm font-bold text-purple-950 text-center">志工「{task.driverName}」已發出認領，請進行審核：</p>
                             <div className="flex gap-2">
                               <button 
                                 onClick={() => handleApproveClaim(task, false)}
                                 className="flex-1 bg-stone-200 hover:bg-stone-300 text-stone-800 font-bold py-2 rounded-xl text-sm"
                               >
-                                婉拒認領
+                                婉拒申請
                               </button>
                               <button 
                                 onClick={() => handleApproveClaim(task, true)}
@@ -1397,7 +1191,7 @@
 
                         {userRole === 'scheduler' && task.status === '待駕駛確認' && (
                           <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 text-center">
-                            <p className="text-sm font-bold text-amber-950">⏳ 已指派給「{task.driverName}」，等待駕駛回覆接受...</p>
+                            <p className="text-sm font-bold text-amber-950">⏳ 已指定發信給「{task.driverName}」，等待駕駛回覆接受...</p>
                           </div>
                         )}
 
@@ -1408,9 +1202,9 @@
               </div>
             )}
 
-            {/* 頁面 C：登記接送 (排班專用) */}
+            {/* 頁面 C：登記接送 (排班管理組專用) */}
             {activeTab === 'create' && userRole === 'scheduler' && (
-              <form onSubmit={handleCreateTask} className="bg-white p-6 rounded-3xl border border-stone-200 shadow-lg space-y-5">
+              <form onSubmit={handleCreateTask} className="bg-white p-6 rounded-3xl border border-stone-200 shadow-lg space-y-5 animate-fade-in">
                 <h2 className="text-2xl font-black text-stone-800 border-b-2 border-stone-100 pb-3 flex items-center gap-2">
                   <span>✍️</span> 登記新接送需求
                 </h2>
@@ -1474,20 +1268,20 @@
                   />
                 </div>
 
-                {/* 指派駕駛功能 */}
+                {/* 指派駕駛：動態讀取雲端註冊的志工司機列表 */}
                 <div>
-                  <label className="block text-base font-black text-stone-700 mb-1.5">6. 指派護持駕駛志工</label>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">6. 指派特定的護持司機</label>
                   <select 
                     value={newForm.assignedDriverId}
                     onChange={e => setNewForm({...newForm, assignedDriverId: e.target.value})}
                     className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors font-bold"
                   >
-                    <option value="">（不指定，開放自由認領）</option>
-                    {mockDriversList.map(driver => (
+                    <option value="">（不指定司機，開放自由認領）</option>
+                    {driversList.map(driver => (
                       <option key={driver.id} value={driver.id}>🚗 {driver.name} ({driver.phone})</option>
                     ))}
                   </select>
-                  <p className="text-xs text-stone-500 mt-1 font-bold">提示：指派後，行程進入「待駕駛確認」狀態，對方接受後會正式成立並通知法師。</p>
+                  <p className="text-xs text-stone-500 mt-1 font-bold">提示：指派後，行程進入「待駕駛確認」，對方點選同意後系統會自動通知法師。</p>
                 </div>
 
                 <div>
@@ -1513,9 +1307,9 @@
 
             {/* 頁面 D：提出接送需求 (法師自主提出) */}
             {activeTab === 'monk-request' && userRole === 'monk' && (
-              <form onSubmit={handleMonkCreateTask} className="bg-white p-6 rounded-3xl border border-stone-200 shadow-lg space-y-5">
-                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 font-bold text-stone-850">
-                  🙏 尊貴的 <span className="underline text-emerald-800 font-black">{userName}</span> 您好，請於下方填寫您的接送行程需求，送出後系統會立刻發出需求通知，供車隊的大護法司機們認領護持。
+              <form onSubmit={handleMonkCreateTask} className="bg-white p-6 rounded-3xl border border-stone-200 shadow-lg space-y-5 animate-fade-in">
+                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 font-bold text-stone-850 text-sm leading-relaxed">
+                  🙏 尊貴的 <span className="underline text-emerald-800 font-black">{userName}</span> 您好，請於下方填寫您的接送需求，送出後系統會立刻發出通知，供車隊的大護法志工們點擊認領護持。
                 </div>
 
                 <h2 className="text-2xl font-black text-stone-800 border-b-2 border-stone-100 pb-3 flex items-center gap-2">
@@ -1573,7 +1367,7 @@
                   <label className="block text-base font-black text-stone-700 mb-1.5">5. 備註特別說明</label>
                   <textarea 
                     rows={2}
-                    placeholder="例如：此行法師行李較多，需要大一點的車廂。" 
+                    placeholder="例如：此行法師行李較多，需要車廂空間稍寬敞。" 
                     value={newForm.notes}
                     onChange={e => setNewForm({...newForm, notes: e.target.value})}
                     className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
@@ -1594,8 +1388,8 @@
           {/* 頁尾 */}
           <footer className="text-center py-8 px-4 text-xs text-stone-400 border-t border-stone-200 bg-white mt-auto rounded-t-[2.5rem] shadow-inner">
             <p className="font-bold text-sm text-stone-600">☸️ 妙覺寺 / 鳳山寺 護法車隊隨身助手</p>
-            <p className="mt-1.5">專為開車行車安全、長輩操作優化之特大字版</p>
-            <p className="mt-1 text-[10px] text-stone-400 font-mono">LIFF ID: {LIFF_ID} | Mode: {connectionMode}</p>
+            <p className="mt-1.5">專為開車安全、高清晰高辨識設計之特大字正式版</p>
+            <p className="mt-1 text-[10px] text-stone-400 font-mono">LIFF ID: {LIFF_ID}</p>
           </footer>
         </div>
       );
