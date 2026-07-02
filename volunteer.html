@@ -5,24 +5,40 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>法師接送護持隨身助手</title>
   
+  <!-- 載入 LINE LIFF SDK -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <!-- 載入 React & Babel -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- 載入 Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
-
+  
   <style>
     body {
       font-size: 18px;
       touch-action: manipulation;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
     input, select, textarea, button {
       font-size: 18px !important;
     }
+    /* 自訂捲軸樣式 */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #c5a880;
+      border-radius: 3px;
+    }
   </style>
 </head>
-<body class="bg-slate-100 min-h-screen">
+<body class="bg-stone-100 min-h-screen">
 
   <div id="root"></div>
 
@@ -31,379 +47,1184 @@
     // [系統設定] 請在此處替換您的 LIFF ID 與 GAS API 網址
     // =========================================================================
     const LIFF_ID = "2006181829-l81j2YrD"; 
-    const API_URL = "https://script.google.com/macros/s/AKfycbzRTuIjg0ol8ifcKUgW2hhFDIfmc3PYxDkBYHsks1WQqsZy83NNhsC7sJgkHtGaNN7C3g/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxIDds0NkW6X2wGR-30U2r_RZwY81zEz31QKmYk81KC51JCrQ8OZYCd5eetIsOPilpZTQ/exec";
+
+    // 模擬的志工駕駛資料庫 (供排班志工指派時選擇)
+    const mockDriversList = [
+      { id: 'U114514', name: '林東毅', phone: '0912-345-678' },
+      { id: 'U222222', name: '陳志強', phone: '0988-123-456' },
+      { id: 'U333333', name: '王小明', phone: '0933-777-888' }
+    ];
+
+    // -------------------------------------------------------------------------
+    // 獨立 SVG 圖示元件 (防止 Lucide 異步載入時失效)
+    // -------------------------------------------------------------------------
+    function Icon({ name, className = "w-6 h-6 inline-block" }) {
+      const svgs = {
+        'refresh': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+        ),
+        'user': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+          </svg>
+        ),
+        'list': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12M8.25 17.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+          </svg>
+        ),
+        'plus-circle': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ),
+        'calendar': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+          </svg>
+        ),
+        'clock': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ),
+        'map-pin': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25s-7.5-4.108-7.5-11.25a7.5 7.5 0 1115 0z" />
+          </svg>
+        ),
+        'phone': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-2.824-1.802-5.176-4.154-7-7.008l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+          </svg>
+        ),
+        'navigation': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+          </svg>
+        ),
+        'check-circle-2': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ),
+        'info': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 111.063.852l-.708 2.836a.75.75 0 001.063.852l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+          </svg>
+        ),
+        'search': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.604 10.604z" />
+          </svg>
+        ),
+        'trash': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+          </svg>
+        ),
+        'check': (
+          <svg fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor" className={className}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+          </svg>
+        )
+      };
+      return svgs[name] || <span className="text-xs">圖示</span>;
+    }
 
     function App() {
-      const [userRole, setUserRole] = React.useState('volunteer');
-      const [userName, setUserName] = React.useState('載入中...');
-      const [userId, setUserId] = React.useState(''); 
-      const [userPhone, setUserPhone] = React.useState('0912-345-678');
+      // 1. 註冊狀態與使用者資料
+      const [isRegistered, setIsRegistered] = React.useState(false);
+      const [userRole, setUserRole] = React.useState('volunteer'); // 'volunteer' (護持駕駛), 'monk' (法師), 'scheduler' (排班)
+      const [userName, setUserName] = React.useState('');
+      const [userId, setUserId] = React.useState('U114514'); // 預設模擬 LINE ID
+      const [userPhone, setUserPhone] = React.useState('');
       const [isLiffInit, setIsLiffInit] = React.useState(false);
       
       const [tasks, setTasks] = React.useState([]);
       const [loading, setLoading] = React.useState(false);
       const [activeTab, setActiveTab] = React.useState('my-tasks');
 
+      // 篩選與搜尋
+      const [searchTerm, setSearchTerm] = React.useState('');
+      const [statusFilter, setStatusFilter] = React.useState('全部');
+
+      // 連線模式選擇：'mock' (模擬模式) 或 'api' (真實連線)
+      const [connectionMode, setConnectionMode] = React.useState('mock');
+
+      // 自訂通知與 Modal 系統
+      const [toast, setToast] = React.useState({ show: false, message: '', type: 'success' });
+      const [modal, setModal] = React.useState({ show: false, title: '', message: '', onConfirm: null, confirmText: '確定' });
+
+      // 新增需求表單 State (排班與法師共用)
       const [newForm, setNewForm] = React.useState({
-        monks: '', date: '', time: '', pickup: '', dropoff: '', notes: ''
+        monks: '',
+        date: '',
+        time: '',
+        pickup: '',
+        dropoff: '',
+        notes: '',
+        assignedDriverId: '' // 新增指派駕駛欄位 (排班志工用)
       });
 
-      // 初始化 LIFF 並取得使用者真實資訊
+      // 註冊表單 State
+      const [regForm, setRegForm] = React.useState({
+        name: '',
+        phone: '',
+        role: 'volunteer'
+      });
+
+      const showToast = (message, type = 'success') => {
+        setToast({ show: true, message, type });
+        setTimeout(() => {
+          setToast(prev => ({ ...prev, show: false }));
+        }, 3500);
+      };
+
+      const showConfirmModal = (title, message, onConfirm, confirmText = '確定') => {
+        setModal({ show: true, title, message, onConfirm, confirmText });
+      };
+
+      const closeConfirmModal = () => {
+        setModal(prev => ({ ...prev, show: false }));
+      };
+
+      // 模擬初始接送行程資料
+      const mockInitialTasks = [
+        { id: 'REC0001', status: '已排定', monks: '如英法師', date: '2026-07-01', time: '19:00', pickup: '妙覺寺', dropoff: '華藏樓', driverId: 'U114514', driverName: '林東毅', driverPhone: '0912-345-678', notes: '法師行李較多，需要空出後車廂空間' },
+        { id: 'REC0002', status: '待排班確認', monks: '清幢法師', date: '2026-07-02', time: '15:30', pickup: '華藏樓', dropoff: '鳳山寺', driverId: 'U114514', driverName: '林東毅', driverPhone: '0912-345-678', notes: '此為認領待審核行程' },
+        { id: 'REC0003', status: '待駕駛確認', monks: '淨明法師', date: '2026-07-03', time: '09:00', pickup: '鳳山寺', dropoff: '妙覺寺', driverId: 'U114514', driverName: '林東毅', driverPhone: '0912-345-678', notes: '此為排班指派待確認行程' },
+        { id: 'REC0004', status: '待領取', monks: '慧能法師', date: '2026-07-04', time: '10:00', pickup: '台中高鐵站', dropoff: '妙覺寺', driverId: '', driverName: '', driverPhone: '', notes: '法師自主提出，誠徵發心駕駛' }
+      ];
+
+      // 2. 初始化 LIFF 並取得使用者真實資訊
       React.useEffect(() => {
-        liff.init({ liffId: LIFF_ID })
-          .then(() => {
-            setIsLiffInit(true);
-            if (liff.isLoggedIn()) {
-              liff.getProfile()
-                .then(profile => {
-                  setUserName(profile.displayName);
-                  setUserId(profile.userId);
-                  if (profile.displayName.includes("法師")) {
-                    setUserRole("monk");
-                  }
-                })
-                .catch(err => console.error("取得 LINE 個人資料失敗", err));
-            } else {
-              liff.login();
-            }
-          })
-          .catch(err => {
-            console.error("LIFF 初始化失敗，切換為模擬模式", err);
-            setUserName("林東毅 (模擬)");
-            setUserId("U114514");
-          });
-          
+        setTasks(mockInitialTasks);
+
+        // 讀取本地註冊快取 (便於示範)
+        const cachedReg = localStorage.getItem('liff_helper_registered_v2');
+        if (cachedReg) {
+          const regData = JSON.parse(cachedReg);
+          setUserName(regData.name);
+          setUserPhone(regData.phone);
+          setUserRole(regData.role);
+          setIsRegistered(true);
+        }
+
+        if (typeof liff !== 'undefined') {
+          liff.init({ liffId: LIFF_ID })
+            .then(() => {
+              setIsLiffInit(true);
+              setConnectionMode('api'); 
+              if (liff.isLoggedIn()) {
+                liff.getProfile()
+                  .then(profile => {
+                    setUserId(profile.userId);
+                    // 若無快取，則根據 LINE 顯示名稱預填註冊表單
+                    if (!cachedReg) {
+                      setRegForm(prev => ({
+                        ...prev,
+                        name: profile.displayName,
+                        role: profile.displayName.includes("法師") ? "monk" : "volunteer"
+                      }));
+                    }
+                  })
+                  .catch(err => {
+                    console.error("取得 LINE 個人資料失敗", err);
+                  });
+              } else {
+                if (liff.isInClient()) {
+                  liff.login();
+                }
+              }
+            })
+            .catch(err => {
+              console.warn("LIFF 初始化失敗或未使用 LINE 開啟，切換為模擬演示模式", err);
+              setConnectionMode('mock');
+            });
+        }
         fetchTasks();
       }, []);
 
-      // 修正：每次畫面更新後重新渲染 Lucide 圖示，避免切換 Tab 後圖示消失
       React.useEffect(() => {
-        if (window.lucide) {
-          lucide.createIcons();
-        }
-      }, [activeTab, tasks, userRole, loading, userName]);
+        fetchTasks();
+      }, [connectionMode]);
 
-      // API：讀取雲端行程 (GET 請求)
+      // 3. API：讀取雲端行程
       const fetchTasks = async () => {
         setLoading(true);
+        if (connectionMode === 'mock') {
+          setTimeout(() => {
+            setLoading(false);
+          }, 1500);
+          return;
+        }
+
         try {
           const response = await fetch(API_URL);
           if (!response.ok) throw new Error('網路連線失敗');
           const data = await response.json();
           setTasks(data);
+          showToast('雲端接送行程已同步更新！', 'success');
         } catch (error) {
-          console.error("讀取資料失敗，載入模擬資料:", error);
-          setTasks([
-            { id: 'REC0001', status: '已排定', monks: '如英法師', date: '2026-07-01', time: '19:00', pickup: '妙覺寺', dropoff: '華藏樓', driverId: 'U114514', driverName: '林東毅', driverPhone: '0912-345-678', notes: '法師行李較多' },
-            { id: 'REC0002', status: '進行中', monks: '清幢法師', date: '2026-07-01', time: '15:30', pickup: '華藏樓', dropoff: '鳳山寺', driverId: 'U114514', driverName: '林東毅', driverPhone: '0912-345-678', notes: '需準時' }
-          ]);
+          console.error("讀取雲端失敗，沿用現有/模擬資料:", error);
+          showToast("無法連接 Google 試算表，使用本機模擬數據運作中。", "warning");
         } finally {
           setLoading(false);
         }
       };
 
-      // LIFF：發送訊息至當前聊天室
+      // 4. LIFF：發送訊息至當前聊天室
       const sendLiffChatMessage = async (textMessage) => {
-        if (liff.isInClient()) {
+        if (typeof liff !== 'undefined' && liff.isInClient() && liff.isLoggedIn()) {
           try {
             await liff.sendMessages([{ type: 'text', text: textMessage }]);
-            console.log("LIFF 訊息發送成功");
+            showToast("成功在 LINE 聊天室發送同步通知！", "success");
           } catch (error) {
             console.error("LIFF 傳送訊息失敗:", error);
+            showToast("無法同步發送 LINE 訊息 (可能非群組對話框內)", "info");
           }
         } else {
-          console.log("非 LINE 環境，模擬發送訊息：", textMessage);
+          console.log("非 LINE 環境，模擬發送群組訊息：\n", textMessage);
+          showToast("【模擬發送 LINE 群組訊息成功】", "info");
         }
       };
 
-      // 通用 POST 請求函式
-      // 修正：使用 text/plain 避免瀏覽器發送 CORS Preflight (OPTIONS) 請求
-      // Google Apps Script 無法處理 OPTIONS，改用此法可讓前端讀取真實回應
-      const postToAPI = async (payload) => {
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload)
-        });
-        if (!response.ok) throw new Error('伺服器連線失敗');
-        const result = await response.json();
-        if (result.status !== 'success') {
-          throw new Error(result.message || '未知錯誤');
+      // 5. 首次註冊提交
+      const handleRegisterSubmit = (e) => {
+        e.preventDefault();
+        if (!regForm.name || !regForm.phone) {
+          showToast('⚠️ 請填寫完整註冊欄位！', 'warning');
+          return;
         }
-        return result;
+
+        const registrationInfo = {
+          name: regForm.name,
+          phone: regForm.phone,
+          role: regForm.role
+        };
+
+        localStorage.setItem('liff_helper_registered_v2', JSON.stringify(registrationInfo));
+        setUserName(regForm.name);
+        setUserPhone(regForm.phone);
+        setUserRole(regForm.role);
+        setIsRegistered(true);
+
+        // 註冊後之角色對應預設頁籤
+        if (regForm.role === 'scheduler') {
+          setActiveTab('all-tasks');
+        } else {
+          setActiveTab('my-tasks');
+        }
+
+        showToast(`🎉 註冊成功！身分：【${
+          regForm.role === 'volunteer' ? '護持駕駛志工' : 
+          regForm.role === 'monk' ? '尊貴法師' : '排班管理志工'
+        }】`, 'success');
       };
 
-      // API：更新行程狀態 (出發、已完成)
-      const handleUpdateStatus = async (task, newStatus) => {
-        setLoading(true);
-        try {
-          await postToAPI({ action: 'updateStatus', id: task.id, status: newStatus });
+      // 6. 志工確認或婉拒「指派任務」
+      const handleConfirmAssignment = (task, isAccepted) => {
+        const actionText = isAccepted ? '確認接受' : '婉拒指派';
+        showConfirmModal(
+          `${actionText}此護持指派？`,
+          isAccepted 
+            ? `確認接受護持 ${task.monks} 的任務嗎？接受後將會正式成立行程，並通知法師大護法駕駛資訊。`
+            : `婉拒後，此任務會重新釋放至待領取狀態。`,
+          async () => {
+            closeConfirmModal();
+            setLoading(true);
 
-          const msg = `📢【接送狀態更新】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n🚗 護持司機：${userName}\n🚩 最新狀態：【${newStatus}】\n━━━━━━━━━━━━━━━`;
-          await sendLiffChatMessage(msg);
+            const updatedStatus = isAccepted ? '已排定' : '待領取';
+            const finalDriverId = isAccepted ? userId : '';
+            const finalDriverName = isAccepted ? userName : '';
+            const finalDriverPhone = isAccepted ? userPhone : '';
 
-          alert(`✅ 狀態已成功更新為：${newStatus}`);
-          setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
-        } catch (error) {
-          console.error(error);
-          alert('❌ 更新失敗：' + error.message);
-        } finally {
-          setLoading(false);
-        }
+            if (connectionMode === 'mock') {
+              setTimeout(async () => {
+                setTasks(prev => prev.map(t => t.id === task.id ? { 
+                  ...t, 
+                  status: updatedStatus,
+                  driverId: finalDriverId,
+                  driverName: finalDriverName,
+                  driverPhone: finalDriverPhone
+                } : t));
+
+                if (isAccepted) {
+                  const msg = `🚗【護持志工已接單確認！】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n📍 路線：${task.pickup} ➔ ${task.dropoff}\n👤 護持大護法已確認：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n法師已收到您的資訊，感恩護持！`;
+                  await sendLiffChatMessage(msg);
+                } else {
+                  const msg = `⚠️【護持指派已婉拒】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n此指派已被婉拒，已重新釋放為待領取。`;
+                  await sendLiffChatMessage(msg);
+                }
+
+                setLoading(false);
+                showToast(`您已${actionText}指派任務`);
+              }, 800);
+              return;
+            }
+
+            try {
+              await fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  action: 'updateAssignment', 
+                  id: task.id, 
+                  status: updatedStatus,
+                  driverId: finalDriverId,
+                  driverName: finalDriverName,
+                  driverPhone: finalDriverPhone
+                })
+              });
+
+              if (isAccepted) {
+                const msg = `🚗【護持志工已接單確認！】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n📍 路線：${task.pickup} ➔ ${task.dropoff}\n👤 護持大護法已確認：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n法師已收到您的資訊，感恩護持！`;
+                await sendLiffChatMessage(msg);
+              }
+
+              showToast(`✅ 已完成${actionText}流程！`, 'success');
+              fetchTasks();
+            } catch (error) {
+              showToast('❌ 處理失敗，請確認連線！', 'error');
+            } finally {
+              setLoading(false);
+            }
+          }
+        );
       };
 
-      // API：志工認領行程 (接單)
-      const handleClaimTask = async (task) => {
-        setLoading(true);
-        try {
-          await postToAPI({
-            action: 'claim',
-            id: task.id,
-            driverId: userId,
-            driverName: userName,
-            driverPhone: userPhone
-          });
+      // 7. 志工提出認領 (需排班確認)
+      const handleClaimTask = (task) => {
+        showConfirmModal(
+          '申請認領護持行程？',
+          `您即將申請認領此任務：\n👤 法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n\n注意：認領需經過【排班組志工確認核准】後才會正式生效並通知法師。`,
+          async () => {
+            closeConfirmModal();
+            setLoading(true);
 
-          const msg = `🚗【大護法已接單！】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n📍 路線：${task.pickup} ➔ ${task.dropoff}\n👤 護持司機：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n隨喜發心護持，行車平安，功德無量！`;
-          await sendLiffChatMessage(msg);
+            if (connectionMode === 'mock') {
+              setTimeout(async () => {
+                setTasks(prev => prev.map(t => t.id === task.id ? { 
+                  ...t, 
+                  driverId: userId, 
+                  driverName: userName, 
+                  driverPhone: userPhone, 
+                  status: '待排班確認' 
+                } : t));
+                const msg = `🙋‍♂️【志工申請認領行程】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n👤 認領駕駛：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n⏳ 待排班志工審核確認後正式生效。`;
+                await sendLiffChatMessage(msg);
+                setLoading(false);
+                showToast('🎉 已提交認領申請，請等待排班審核確認！', 'success');
+              }, 800);
+              return;
+            }
 
-          alert('🎉 您已成功接下此護持任務，功德無量！');
-          setTasks(prev => prev.map(t => t.id === task.id ? { ...t, driverId: userId, driverName: userName, driverPhone: userPhone, status: '已排定' } : t));
-        } catch (error) {
-          console.error(error);
-          alert('❌ 接單失敗：' + error.message);
-          fetchTasks(); // 可能已被其他人接單，重新整理清單
-        } finally {
-          setLoading(false);
-        }
+            try {
+              await fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'applyClaim',
+                  id: task.id,
+                  driverId: userId,
+                  driverName: userName,
+                  driverPhone: userPhone
+                })
+              });
+
+              const msg = `🙋‍♂️【志工申請認領行程】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 接送時間：${task.date} ${task.time}\n👤 認領駕駛：${userName} (${userPhone})\n━━━━━━━━━━━━━━━\n⏳ 待排班志工審核確認後正式生效。`;
+              await sendLiffChatMessage(msg);
+
+              showToast('🎉 已提交認領申請，請等待排班審核！', 'success');
+              fetchTasks();
+            } catch (error) {
+              showToast('❌ 申請認領失敗，請稍後再試！', 'error');
+            } finally {
+              setLoading(false);
+            }
+          }
+        );
       };
 
-      // API：排班志工新增接送需求
+      // 8. 排班確認駕駛的「認領審核」 (核准或拒絕)
+      const handleApproveClaim = (task, isApproved) => {
+        const actionLabel = isApproved ? '同意核准' : '拒絕認領';
+        showConfirmModal(
+          `${actionLabel}此認領？`,
+          isApproved 
+            ? `確認指派大護法【${task.driverName}】護持本行程嗎？核准後會發布正式通知至 LINE 給法師。`
+            : `拒絕後，本行程將會重新釋放為「待領取」狀態。`,
+          async () => {
+            closeConfirmModal();
+            setLoading(true);
+
+            const finalStatus = isApproved ? '已排定' : '待領取';
+            const finalDriverId = isApproved ? task.driverId : '';
+            const finalDriverName = isApproved ? task.driverName : '';
+            const finalDriverPhone = isApproved ? task.driverPhone : '';
+
+            if (connectionMode === 'mock') {
+              setTimeout(async () => {
+                setTasks(prev => prev.map(t => t.id === task.id ? { 
+                  ...t, 
+                  status: finalStatus,
+                  driverId: finalDriverId,
+                  driverName: finalDriverName,
+                  driverPhone: finalDriverPhone
+                } : t));
+
+                if (isApproved) {
+                  const msg = `✅【排班核准：接送任務已成立！】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n📍 路線：${task.pickup} ➔ ${task.dropoff}\n🚗 護持大護法：${task.driverName} (${task.driverPhone})\n━━━━━━━━━━━━━━━\n行車平安，隨喜大家發心護持！`;
+                  await sendLiffChatMessage(msg);
+                } else {
+                  const msg = `⚠️【認領審核退回】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n認領申請已駁回，本行程重新開放認領。`;
+                  await sendLiffChatMessage(msg);
+                }
+
+                setLoading(false);
+                showToast(`已${actionLabel}認領申請`);
+              }, 800);
+              return;
+            }
+
+            try {
+              await fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  action: 'approveClaim', 
+                  id: task.id, 
+                  status: finalStatus,
+                  driverId: finalDriverId,
+                  driverName: finalDriverName,
+                  driverPhone: finalDriverPhone
+                })
+              });
+
+              if (isApproved) {
+                const msg = `✅【排班核准：接送任務已成立！】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n📅 時間：${task.date} ${task.time}\n📍 路線：${task.pickup} ➔ ${task.dropoff}\n🚗 護持大護法：${task.driverName} (${task.driverPhone})\n━━━━━━━━━━━━━━━\n行車平安，隨喜大家發心護持！`;
+                await sendLiffChatMessage(msg);
+              }
+
+              showToast(`✅ 已${actionLabel}審核！`, 'success');
+              fetchTasks();
+            } catch (error) {
+              showToast('❌ 審核處理失敗，請確認連線。', 'error');
+            } finally {
+              setLoading(false);
+            }
+          }
+        );
+      };
+
+      // 9. 排班志工新增/指派接送需求
       const handleCreateTask = async (e) => {
         e.preventDefault();
         if (!newForm.monks || !newForm.date || !newForm.time || !newForm.pickup || !newForm.dropoff) {
-          alert('⚠️ 請填寫所有的必填欄位！');
+          showToast('⚠️ 請填寫所有的必填欄位！', 'warning');
           return;
         }
         setLoading(true);
-        try {
-          await postToAPI({ action: 'create', ...newForm });
 
-          const msg = `🔔【新登記法師接送需求】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 接送路線：${newForm.pickup} ➔ ${newForm.dropoff}\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n👉 請大護法志工們點擊系統接單護持！`;
+        // 判定狀態：若指派了特定駕駛，狀態為「待駕駛確認」，否則為「待領取」
+        const targetDriver = mockDriversList.find(d => d.id === newForm.assignedDriverId);
+        const status = targetDriver ? '待駕駛確認' : '待領取';
+        const driverId = targetDriver ? targetDriver.id : '';
+        const driverName = targetDriver ? targetDriver.name : '';
+        const driverPhone = targetDriver ? targetDriver.phone : '';
+
+        if (connectionMode === 'mock') {
+          setTimeout(async () => {
+            const newId = `REC${String(tasks.length + 1).padStart(4, '0')}`;
+            const createdTask = {
+              id: newId,
+              status,
+              driverId,
+              driverName,
+              driverPhone,
+              monks: newForm.monks,
+              date: newForm.date,
+              time: newForm.time,
+              pickup: newForm.pickup,
+              dropoff: newForm.dropoff,
+              notes: newForm.notes
+            };
+            setTasks(prev => [createdTask, ...prev]);
+            
+            let msg = '';
+            if (targetDriver) {
+              msg = `🔔【排班指派：接送需求已登記】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n🚗 指派駕駛：${driverName} (${driverPhone})\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n⏳ 待大護法駕駛確認指派任務後生效。`;
+            } else {
+              msg = `🔔【新登記法師接送需求】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n👉 請大護法志工們至系統認領接單護持！`;
+            }
+            await sendLiffChatMessage(msg);
+
+            setNewForm({ monks: '', date: '', time: '', pickup: '', dropoff: '', notes: '', assignedDriverId: '' });
+            setActiveTab('all-tasks');
+            setLoading(false);
+            showToast('💾 接送需求已成功建立（模擬寫入）！', 'success');
+          }, 800);
+          return;
+        }
+
+        try {
+          await fetch(API_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              action: 'create', 
+              status,
+              driverId,
+              driverName,
+              driverPhone,
+              ...newForm 
+            })
+          });
+
+          let msg = '';
+          if (targetDriver) {
+            msg = `🔔【排班指派：接送需求已登記】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n🚗 指派駕駛：${driverName} (${driverPhone})\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n⏳ 待大護法駕駛確認指派任務後生效。`;
+          } else {
+            msg = `🔔【新登記法師接送需求】\n━━━━━━━━━━━━━━━\n👤 需護持法師：${newForm.monks}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n👉 請大護法志工們至系統認領接單護持！`;
+          }
           await sendLiffChatMessage(msg);
 
-          alert('💾 接送需求已成功寫入雲端試算表並發送通知！');
-          setNewForm({ monks: '', date: '', time: '', pickup: '', dropoff: '', notes: '' });
+          showToast('💾 接送需求已成功寫入雲端試算表並發送通知！', 'success');
+          setNewForm({ monks: '', date: '', time: '', pickup: '', dropoff: '', notes: '', assignedDriverId: '' });
           setActiveTab('all-tasks');
           fetchTasks();
         } catch (error) {
-          console.error(error);
-          alert('❌ 送出失敗：' + error.message);
+          showToast('❌ 送出失敗，請確認 API 網址或連線。', 'error');
         } finally {
           setLoading(false);
         }
       };
 
-      // 測試用：手動切換身分 (正式上線建議移除或加權限保護)
-      const handleRoleChange = (role) => {
-        setUserRole(role);
-        if (role === 'volunteer') {
-          setUserName('林東毅'); setUserId('U114514'); setActiveTab('my-tasks');
-        } else if (role === 'monk') {
-          setUserName('如英法師'); setUserId('M0001'); setActiveTab('my-tasks');
-        } else {
-          setUserName('妙覺寺排班組'); setUserId('S0001'); setActiveTab('all-tasks');
+      // 10. 法師自主填寫「提供接送需求」
+      const handleMonkCreateTask = async (e) => {
+        e.preventDefault();
+        if (!newForm.date || !newForm.time || !newForm.pickup || !newForm.dropoff) {
+          showToast('⚠️ 請填寫所有的必填欄位！', 'warning');
+          return;
+        }
+        setLoading(true);
+
+        const monksName = userName || '尊貴法師';
+
+        if (connectionMode === 'mock') {
+          setTimeout(async () => {
+            const newId = `REC${String(tasks.length + 1).padStart(4, '0')}`;
+            const createdTask = {
+              id: newId,
+              status: '待領取',
+              driverId: '',
+              driverName: '',
+              driverPhone: '',
+              monks: monksName,
+              date: newForm.date,
+              time: newForm.time,
+              pickup: newForm.pickup,
+              dropoff: newForm.dropoff,
+              notes: newForm.notes
+            };
+            setTasks(prev => [createdTask, ...prev]);
+            
+            const msg = `🙏【尊貴法師提出接送需求】\n━━━━━━━━━━━━━━━\n👤 需求法師：${monksName}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n👉 懇請發心駕駛大護法們點選認領接單護持！`;
+            await sendLiffChatMessage(msg);
+
+            setNewForm({ monks: '', date: '', time: '', pickup: '', dropoff: '', notes: '', assignedDriverId: '' });
+            setActiveTab('all-tasks');
+            setLoading(false);
+            showToast('🙏 接送需求已發布至大護法群組！', 'success');
+          }, 800);
+          return;
+        }
+
+        try {
+          await fetch(API_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              action: 'create', 
+              status: '待領取',
+              driverId: '',
+              driverName: '',
+              driverPhone: '',
+              monks: monksName,
+              ...newForm 
+            })
+          });
+
+          const msg = `🙏【尊貴法師提出接送需求】\n━━━━━━━━━━━━━━━\n👤 需求法師：${monksName}\n📅 接送日期：${newForm.date}\n⏰ 接送時間：${newForm.time}\n📍 路線：${newForm.pickup} ➔ ${newForm.dropoff}\n📝 備註事項：${newForm.notes || '無'}\n━━━━━━━━━━━━━━━\n👉 懇請發心駕駛大護法們點選認領接單護持！`;
+          await sendLiffChatMessage(msg);
+
+          showToast('💾 接送需求已成功寫入雲端並發送通知！', 'success');
+          setNewForm({ monks: '', date: '', time: '', pickup: '', dropoff: '', notes: '', assignedDriverId: '' });
+          setActiveTab('all-tasks');
+          fetchTasks();
+        } catch (error) {
+          showToast('❌ 送出失敗，請確認連線。', 'error');
+        } finally {
+          setLoading(false);
         }
       };
 
+      // 11. 進行中、已完成狀態流轉
+      const handleUpdateStatus = (task, newStatus) => {
+        const actionLabel = newStatus === '進行中' ? '開始出發接法師' : '法師已安全送達';
+        showConfirmModal(
+          `確認執行：${actionLabel}？`,
+          `確認將此接送行程 #${task.id} (${task.monks}) 的狀態更新為「${newStatus}」嗎？`,
+          async () => {
+            closeConfirmModal();
+            setLoading(true);
+
+            if (connectionMode === 'mock') {
+              setTimeout(async () => {
+                setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+                const msg = `📢【接送狀態更新】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n🚗 護持司機：${userName}\n🚩 最新狀態：【${newStatus}】\n━━━━━━━━━━━━━━━`;
+                await sendLiffChatMessage(msg);
+                setLoading(false);
+                showToast(`狀態已成功更新為：${newStatus}`);
+              }, 800);
+              return;
+            }
+
+            try {
+              await fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'updateStatus', id: task.id, status: newStatus })
+              });
+
+              const msg = `📢【接送狀態更新】\n━━━━━━━━━━━━━━━\n👤 護持法師：${task.monks}\n🚗 護持司機：${userName}\n🚩 最新狀態：【${newStatus}】\n━━━━━━━━━━━━━━━`;
+              await sendLiffChatMessage(msg);
+
+              showToast(`✅ 狀態已成功更新為：${newStatus}`, 'success');
+              setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+            } catch (error) {
+              showToast('❌ 更新失敗，請確認網路連線！', 'error');
+            } finally {
+              setLoading(false);
+            }
+          }
+        );
+      };
+
+      // 12. 排班組取消/刪除行程
+      const handleDeleteTask = (task) => {
+        showConfirmModal(
+          '確認取消行程？',
+          `確定要取消並刪除 #${task.id} (${task.monks}) 的行程嗎？此操作無法還原。`,
+          async () => {
+            closeConfirmModal();
+            setLoading(true);
+
+            if (connectionMode === 'mock') {
+              setTimeout(() => {
+                setTasks(prev => prev.filter(t => t.id !== task.id));
+                setLoading(false);
+                showToast(`已成功取消行程 #${task.id}`);
+              }, 500);
+              return;
+            }
+
+            try {
+              await fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'delete', id: task.id })
+              });
+              showToast(`已成功取消行程 #${task.id}`, 'success');
+              fetchTasks();
+            } catch (error) {
+              showToast('❌ 取消行程失敗，請再試一次。', 'error');
+            } finally {
+              setLoading(false);
+            }
+          }
+        );
+      };
+
+      // 重置註冊快取 (方便演示)
+      const handleForceReregister = () => {
+        localStorage.removeItem('liff_helper_registered_v2');
+        setIsRegistered(false);
+        setUserName('');
+        setUserPhone('');
+        showToast('已清除註冊快取，請重新註冊體驗流程！', 'info');
+      };
+
+      const handleRoleChange = (role) => {
+        setUserRole(role);
+        if (role === 'volunteer') {
+          setUserName('林東毅');
+          setUserPhone('0912-345-678');
+          setUserId('U114514');
+          setActiveTab('my-tasks');
+        } else if (role === 'monk') {
+          setUserName('如英法師');
+          setUserPhone('0955-555-666');
+          setUserId('M0001');
+          setActiveTab('my-tasks');
+        } else {
+          setUserName('妙覺寺排班組');
+          setUserPhone('02-1234567');
+          setUserId('S0001');
+          setActiveTab('all-tasks');
+        }
+        showToast(`已切換至【${role === 'volunteer' ? '護持志工' : role === 'monk' ? '法師' : '排班志工'}】介面`);
+      };
+
+      // 篩選與搜尋
+      const filteredTasks = tasks.filter(task => {
+        const matchesSearch = 
+          task.monks.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          task.pickup.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          task.dropoff.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (task.driverName && task.driverName.toLowerCase().includes(searchTerm.toLowerCase()));
+        
+        if (statusFilter === '全部') return matchesSearch;
+        return task.status === statusFilter && matchesSearch;
+      });
+
+      // -----------------------------------------------------------------------
+      // A. 尚未註冊：呈現註冊登記頁面
+      // -----------------------------------------------------------------------
+      if (!isRegistered) {
+        return (
+          <div className="max-w-md mx-auto bg-stone-50 min-h-screen flex flex-col justify-center p-6 text-stone-900 shadow-2xl relative">
+            
+            {/* 頂部禪風大標題 */}
+            <div className="text-center mb-8">
+              <span className="text-6xl block mb-3">☸️</span>
+              <h1 className="text-3xl font-black text-emerald-800 tracking-wider">法師接送護持隨身助手</h1>
+              <p className="text-stone-500 font-bold mt-2">妙覺寺 ‧ 鳳山寺 護法車隊登記系統</p>
+              <div className="h-1 w-24 bg-amber-500 mx-auto mt-4 rounded"></div>
+            </div>
+
+            {/* 註冊登記卡片 */}
+            <div className="bg-white p-6 rounded-3xl border-2 border-stone-200 shadow-xl space-y-6">
+              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 text-amber-900 text-center font-bold text-sm">
+                🙏 您好！這是您第一次使用。請先完成以下基本註冊，以利指派與聯絡通知。
+              </div>
+
+              <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                {/* 姓名輸入 */}
+                <div>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">您的真實姓名 *</label>
+                  <input 
+                    type="text" 
+                    placeholder="例如：林東毅 / 如英法師" 
+                    value={regForm.name}
+                    onChange={e => setRegForm({...regForm, name: e.target.value})}
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
+                    required
+                  />
+                </div>
+
+                {/* 手機號碼 */}
+                <div>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">聯絡電話 (手機) *</label>
+                  <input 
+                    type="tel" 
+                    placeholder="例如：0912-345-678" 
+                    value={regForm.phone}
+                    onChange={e => setRegForm({...regForm, phone: e.target.value})}
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
+                    required
+                  />
+                </div>
+
+                {/* 選擇註冊身分 */}
+                <div>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">註冊使用的主要身分 *</label>
+                  <select 
+                    value={regForm.role}
+                    onChange={e => setRegForm({...regForm, role: e.target.value})}
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors font-bold"
+                  >
+                    <option value="volunteer">🚗 護持駕駛志工</option>
+                    <option value="monk">🙏 尊貴法師</option>
+                    <option value="scheduler">📅 排班登記志工</option>
+                  </select>
+                </div>
+
+                <button 
+                  type="submit"
+                  className="w-full bg-emerald-800 hover:bg-emerald-900 text-white py-4 rounded-2xl text-xl font-black shadow-lg transition duration-200 active:scale-[0.99] flex justify-center items-center gap-2"
+                >
+                  <Icon name="check-circle-2" className="w-6 h-6" /> 
+                  確認註冊並登入系統
+                </button>
+              </form>
+            </div>
+
+            <footer className="text-center text-xs text-stone-400 mt-12">
+              <p>妙覺寺 / 鳳山寺 護法車隊系統 ‧ LINE LIFF 開發版</p>
+            </footer>
+          </div>
+        );
+      }
+
+      // -----------------------------------------------------------------------
+      // B. 已註冊：呈現主要應用系統
+      // -----------------------------------------------------------------------
       return (
-        <div className="max-w-md mx-auto bg-slate-100 min-h-screen flex flex-col pb-24 text-slate-900 shadow-xl">
+        <div className="max-w-md mx-auto bg-stone-50 min-h-screen flex flex-col pb-24 text-stone-900 shadow-2xl relative">
           
-          <header className="bg-emerald-800 text-white p-5 shadow-lg sticky top-0 z-10">
+          {/* 自訂通知 Toast */}
+          {toast.show && (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-sm animate-bounce">
+              <div className={`p-4 rounded-2xl shadow-2xl flex items-center gap-3 border ${
+                toast.type === 'success' ? 'bg-emerald-800 text-white border-emerald-600' : 
+                toast.type === 'warning' ? 'bg-amber-500 text-stone-950 border-amber-400' :
+                toast.type === 'error' ? 'bg-red-700 text-white border-red-500' :
+                'bg-stone-850 text-white border-stone-700'
+              }`}>
+                <div className="bg-white/20 p-1.5 rounded-full">
+                  <Icon name={toast.type === 'success' ? 'check' : 'info'} className="w-5 h-5" />
+                </div>
+                <div className="flex-1 text-base font-bold leading-snug">
+                  {toast.message}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 自訂互動確認 Modal */}
+          {modal.show && (
+            <div className="fixed inset-0 bg-stone-950/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl border-2 border-stone-200 animate-fade-in-up">
+                <div className="bg-emerald-800 text-white px-5 py-4 flex items-center gap-2">
+                  <Icon name="info" className="w-6 h-6 text-amber-400" />
+                  <h3 className="text-xl font-black tracking-wide">{modal.title}</h3>
+                </div>
+                <div className="p-5 text-base text-stone-700 font-bold whitespace-pre-wrap leading-relaxed">
+                  {modal.message}
+                </div>
+                <div className="bg-stone-50 px-5 py-4 flex gap-3 border-t">
+                  <button 
+                    onClick={closeConfirmModal}
+                    className="flex-1 bg-stone-200 text-stone-700 font-black py-3 rounded-xl hover:bg-stone-300 transition"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    onClick={modal.onConfirm}
+                    className="flex-1 bg-emerald-800 text-white font-black py-3 rounded-xl hover:bg-emerald-900 transition shadow-md"
+                  >
+                    {modal.confirmText}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 頂部導覽列 */}
+          <header className="bg-emerald-800 text-white p-5 shadow-lg sticky top-0 z-10 rounded-b-[2rem]">
             <div className="flex justify-between items-center">
               <div>
-                <h1 className="text-2xl font-black tracking-wider">法師接送隨身助手</h1>
-                <p className="text-base text-emerald-200 mt-1 font-bold">
-                  👤 使用者：<span className="underline">{userName}</span> ({
-                    userRole === 'volunteer' ? '護持志工' : userRole === 'monk' ? '法師' : '排班志工'
-                  })
+                <h1 className="text-2xl font-black tracking-wider flex items-center gap-2">
+                  <span>🚗</span> 接送護持助手
+                </h1>
+                <p className="text-sm text-emerald-200 mt-1 font-bold">
+                  👤 您已登入：<span className="underline decoration-amber-400 decoration-2">{userName}</span> (
+                  {userRole === 'volunteer' ? '大護法駕駛' : userRole === 'monk' ? '尊貴法師' : '排班志工'}
+                  )
                 </p>
               </div>
               <button 
                 onClick={fetchTasks} 
-                className="bg-emerald-900 p-3 rounded-full active:bg-emerald-950 border border-emerald-700 transition"
-                title="重新整理"
+                className="bg-emerald-900/60 p-3 rounded-full hover:bg-emerald-950 border border-emerald-700 transition"
+                title="同步雲端"
+                disabled={loading}
               >
-                <i data-lucide="refresh-cw" className={`w-6 h-6 block ${loading ? 'animate-spin' : ''}`}></i>
+                <Icon name="refresh" className={`w-6 h-6 block ${loading ? 'animate-spin text-amber-400' : 'text-white'}`} />
               </button>
             </div>
 
-            <div className="mt-4 bg-emerald-950 p-1.5 rounded-xl flex gap-1 text-base font-bold border border-emerald-900">
+            {/* 快速身分模擬切換 */}
+            <div className="mt-4 bg-emerald-950/60 p-1.5 rounded-2xl flex gap-1 text-xs font-bold border border-emerald-900">
               <button 
                 onClick={() => handleRoleChange('volunteer')}
-                className={`flex-1 py-3 rounded-lg text-center transition ${userRole === 'volunteer' ? 'bg-white text-emerald-950 shadow-md' : 'text-white'}`}
-              >志工端</button>
+                className={`flex-1 py-2.5 rounded-xl text-center transition ${userRole === 'volunteer' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-white hover:bg-emerald-900/40'}`}
+              >
+                駕駛切換
+              </button>
               <button 
                 onClick={() => handleRoleChange('monk')}
-                className={`flex-1 py-3 rounded-lg text-center transition ${userRole === 'monk' ? 'bg-white text-emerald-950 shadow-md' : 'text-white'}`}
-              >法師端</button>
+                className={`flex-1 py-2.5 rounded-xl text-center transition ${userRole === 'monk' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-white hover:bg-emerald-900/40'}`}
+              >
+                法師切換
+              </button>
               <button 
                 onClick={() => handleRoleChange('scheduler')}
-                className={`flex-1 py-3 rounded-lg text-center transition ${userRole === 'scheduler' ? 'bg-white text-emerald-950 shadow-md' : 'text-white'}`}
-              >排班端</button>
+                className={`flex-1 py-2.5 rounded-xl text-center transition ${userRole === 'scheduler' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-white hover:bg-emerald-900/40'}`}
+              >
+                排班切換
+              </button>
+            </div>
+
+            {/* 控制區 */}
+            <div className="mt-3 flex justify-between items-center text-xs font-bold">
+              <button 
+                onClick={handleForceReregister}
+                className="text-stone-300 hover:text-white underline"
+              >
+                🔄 重新註冊
+              </button>
+              <div className="flex gap-1.5">
+                <button 
+                  onClick={() => setConnectionMode('mock')}
+                  className={`px-2 py-0.5 rounded ${connectionMode === 'mock' ? 'bg-amber-500 text-stone-950 font-black' : 'bg-stone-800 text-stone-300'}`}
+                >
+                  本地模擬
+                </button>
+                <button 
+                  onClick={() => {
+                    if(API_URL.includes("YOUR_GAS_DEPLOYMENT_ID")) {
+                      showToast("請設定您的 GAS 部署網址喔！", "warning");
+                      return;
+                    }
+                    setConnectionMode('api');
+                  }}
+                  className={`px-2 py-0.5 rounded ${connectionMode === 'api' ? 'bg-amber-500 text-stone-950 font-black' : 'bg-stone-800 text-stone-300'}`}
+                >
+                  雲端試算表
+                </button>
+              </div>
             </div>
           </header>
 
-          <div className="flex bg-white border-b-4 border-slate-200 sticky top-[156px] z-10 shadow-md">
+          {/* 導覽頁籤 */}
+          <div className="flex bg-white/95 backdrop-blur-md border-b-2 border-stone-200 sticky top-[210px] z-10 shadow-sm mx-4 mt-4 rounded-2xl overflow-hidden">
             {userRole !== 'scheduler' && (
               <button 
                 onClick={() => setActiveTab('my-tasks')}
-                className={`flex-1 py-4 text-lg font-black flex flex-col items-center gap-1 transition ${activeTab === 'my-tasks' ? 'text-emerald-800 border-b-4 border-emerald-800 bg-emerald-50/50' : 'text-slate-500'}`}
+                className={`flex-1 py-3 text-lg font-black flex flex-col items-center gap-0.5 transition ${activeTab === 'my-tasks' ? 'text-emerald-800 border-b-4 border-emerald-800 bg-emerald-50/40' : 'text-stone-400 hover:text-stone-600'}`}
               >
-                <i data-lucide="user" className="w-7 h-7"></i>
-                <span>我的行程</span>
+                <Icon name="user" className="w-6 h-6" />
+                <span className="text-sm">我的行程</span>
               </button>
             )}
             <button 
               onClick={() => setActiveTab('all-tasks')}
-              className={`flex-1 py-4 text-lg font-black flex flex-col items-center gap-1 transition ${activeTab === 'all-tasks' ? 'text-emerald-800 border-b-4 border-emerald-800 bg-emerald-50/50' : 'text-slate-500'}`}
+              className={`flex-1 py-3 text-lg font-black flex flex-col items-center gap-0.5 transition ${activeTab === 'all-tasks' ? 'text-emerald-800 border-b-4 border-emerald-800 bg-emerald-50/40' : 'text-stone-400 hover:text-stone-600'}`}
             >
-              <i data-lucide="list" className="w-7 h-7"></i>
-              <span>所有行程</span>
+              <Icon name="list" className="w-6 h-6" />
+              <span className="text-sm">所有行程</span>
             </button>
             {userRole === 'scheduler' && (
               <button 
                 onClick={() => setActiveTab('create')}
-                className={`flex-1 py-4 text-lg font-black flex flex-col items-center gap-1 transition ${activeTab === 'create' ? 'text-emerald-800 border-b-4 border-emerald-800 bg-emerald-50/50' : 'text-slate-500'}`}
+                className={`flex-1 py-3 text-lg font-black flex flex-col items-center gap-0.5 transition ${activeTab === 'create' ? 'text-emerald-800 border-b-4 border-emerald-800 bg-emerald-50/40' : 'text-stone-400 hover:text-stone-600'}`}
               >
-                <i data-lucide="plus-circle" className="w-7 h-7"></i>
-                <span>登記接送</span>
+                <Icon name="plus-circle" className="w-6 h-6" />
+                <span className="text-sm">登記指派</span>
+              </button>
+            )}
+            {userRole === 'monk' && (
+              <button 
+                onClick={() => setActiveTab('monk-request')}
+                className={`flex-1 py-3 text-lg font-black flex flex-col items-center gap-0.5 transition ${activeTab === 'monk-request' ? 'text-emerald-800 border-b-4 border-emerald-800 bg-emerald-50/40' : 'text-stone-400 hover:text-stone-600'}`}
+              >
+                <Icon name="plus-circle" className="w-6 h-6" />
+                <span className="text-sm">我要提需求</span>
               </button>
             )}
           </div>
 
+          {/* 主要呈現區 */}
           <main className="flex-1 p-4 space-y-4">
 
+            {/* 頁面 A：我的行程 */}
             {activeTab === 'my-tasks' && userRole !== 'scheduler' && (
               <div className="space-y-4">
-                <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-amber-950 shadow-sm">
-                  <p className="text-xl font-black">您好，{userName}！</p>
-                  <p className="text-base mt-1 font-bold">以下是您目前已排定的護持行程：</p>
-                  {userRole === 'volunteer' && (
-                    <div className="mt-2">
-                      <label className="block text-xs font-bold text-slate-500 mb-1">您的聯絡電話 (接單時會提供給法師)：</label>
-                      <input 
-                        type="text" 
-                        value={userPhone} 
-                        onChange={(e) => setUserPhone(e.target.value)}
-                        className="w-full border p-2 rounded-lg text-sm bg-white"
-                      />
-                    </div>
-                  )}
+                <div className="bg-gradient-to-br from-amber-50 to-amber-100/60 border-2 border-amber-300 rounded-3xl p-4 text-stone-800 shadow-sm">
+                  <p className="text-xl font-black text-amber-950">您好，{userName}！</p>
+                  <p className="text-base mt-1 font-bold text-stone-600">以下為目前您相關之最新接送護持進度：</p>
                 </div>
 
                 {tasks.filter(t => 
                   (userRole === 'volunteer' && t.driverId === userId && t.status !== '已完成') ||
                   (userRole === 'monk' && t.monks.includes(userName) && t.status !== '已完成')
                 ).length === 0 ? (
-                  <div className="bg-white rounded-2xl p-10 text-center border-2 border-dashed border-slate-300">
-                    <p className="text-xl text-slate-500 font-black">目前沒有進行中的行程</p>
+                  <div className="bg-white rounded-3xl p-12 text-center border-2 border-dashed border-stone-300 shadow-inner">
+                    <span className="text-4xl block mb-2">🧘</span>
+                    <p className="text-lg text-stone-400 font-bold">目前沒有您進行中或待確認的行程</p>
+                    <p className="text-sm text-stone-400 mt-1">您可以前往「所有行程」認領法師需求。</p>
                   </div>
                 ) : (
                   tasks.filter(t => 
                     (userRole === 'volunteer' && t.driverId === userId && t.status !== '已完成') ||
                     (userRole === 'monk' && t.monks.includes(userName) && t.status !== '已完成')
                   ).map(task => (
-                    <div key={task.id} className="bg-white rounded-2xl shadow-md border-2 border-slate-200 overflow-hidden">
+                    <div key={task.id} className="bg-white rounded-3xl shadow-lg border border-stone-200 overflow-hidden">
                       
-                      <div className="bg-amber-500 text-white px-4 py-3 flex justify-between items-center">
-                        <span className="text-xl font-black tracking-wider">【行程狀態：{task.status}】</span>
-                        <span className="text-sm font-mono font-bold bg-amber-600 px-2 py-0.5 rounded">#{task.id}</span>
+                      {/* 狀態標題 */}
+                      <div className="bg-amber-600 text-white px-5 py-3 flex justify-between items-center">
+                        <span className="text-base font-black tracking-wider flex items-center gap-1.5">
+                          <span className="animate-ping w-2.5 h-2.5 rounded-full bg-white inline-block"></span>
+                          狀態：【{task.status}】
+                        </span>
+                        <span className="text-xs font-mono font-bold bg-amber-700 px-3 py-1 rounded-full">#{task.id}</span>
                       </div>
 
-                      <div className="p-4 space-y-4">
-                        <div className="flex items-center gap-3 border-b pb-2">
-                          <i data-lucide="user" className="w-8 h-8 text-emerald-700 flex-shrink-0"></i>
+                      <div className="p-5 space-y-4">
+                        {/* 法師姓名 */}
+                        <div className="flex items-center gap-3 border-b pb-3">
+                          <div className="bg-emerald-50 p-2 rounded-2xl text-emerald-800">
+                            <Icon name="user" className="w-8 h-8 flex-shrink-0" />
+                          </div>
                           <div>
-                            <p className="text-xs text-slate-400 font-bold">需護持的法師</p>
-                            <p className="text-2xl font-black text-slate-800">{task.monks}</p>
+                            <p className="text-xs text-stone-400 font-bold">接送法師</p>
+                            <p className="text-2xl font-black text-stone-800">{task.monks}</p>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border">
+                        {/* 起訖與時間 */}
+                        <div className="grid grid-cols-2 gap-3 bg-stone-50 p-3 rounded-2xl border">
                           <div className="flex items-center gap-2">
-                            <i data-lucide="calendar" className="w-6 h-6 text-slate-500"></i>
-                            <span className="text-lg font-bold text-slate-700">{task.date}</span>
+                            <Icon name="calendar" className="w-5 h-5 text-stone-500" />
+                            <span className="text-base font-black text-stone-700">{task.date}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <i data-lucide="clock" className="w-6 h-6 text-slate-500"></i>
-                            <span className="text-lg font-bold text-slate-700">{task.time}</span>
+                            <Icon name="clock" className="w-5 h-5 text-stone-500" />
+                            <span className="text-base font-black text-stone-700">{task.time}</span>
                           </div>
                         </div>
 
-                        <div className="bg-emerald-50/50 p-4 rounded-xl border-2 border-emerald-100 space-y-3">
+                        <div className="bg-stone-50 p-4 rounded-2xl border space-y-3">
                           <div className="flex items-start gap-3">
-                            <i data-lucide="map-pin" className="w-7 h-7 text-blue-600 mt-1 flex-shrink-0"></i>
+                            <Icon name="map-pin" className="w-6 h-6 text-blue-600 mt-1 flex-shrink-0" />
                             <div>
-                              <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">上車地 (接地)</span>
-                              <p className="text-xl font-black text-slate-800 mt-1">{task.pickup}</p>
+                              <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">上車地</span>
+                              <p className="text-lg font-black text-stone-800 mt-1">{task.pickup}</p>
                             </div>
                           </div>
-                          <div className="h-5 border-l-4 border-dashed border-slate-300 ml-3.5"></div>
+                          <div className="h-6 border-l-2 border-dashed border-stone-300 ml-3"></div>
                           <div className="flex items-start gap-3">
-                            <i data-lucide="map-pin" className="w-7 h-7 text-red-600 mt-1 flex-shrink-0"></i>
+                            <Icon name="map-pin" className="w-6 h-6 text-red-600 mt-1 flex-shrink-0" />
                             <div>
-                              <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">下車地 (送地)</span>
-                              <p className="text-xl font-black text-slate-800 mt-1">{task.dropoff}</p>
+                              <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-100">下車地</span>
+                              <p className="text-lg font-black text-stone-800 mt-1">{task.dropoff}</p>
                             </div>
                           </div>
                         </div>
 
-                        {userRole === 'monk' && task.driverName && (
-                          <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 flex justify-between items-center">
-                            <div>
-                              <p className="text-xs text-blue-600 font-bold">負責的大護法</p>
-                              <p className="text-xl font-black text-slate-800">{task.driverName}</p>
-                            </div>
-                            <a href={`tel:${task.driverPhone}`} className="bg-blue-600 text-white p-4 rounded-full shadow-md active:bg-blue-700">
-                              <i data-lucide="phone" className="w-6 h-6"></i>
-                            </a>
-                          </div>
-                        )}
-
+                        {/* 特別訊息說明 */}
                         {task.notes && (
-                          <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
-                            <p className="text-base font-bold text-amber-900">⚠️ 備註：{task.notes}</p>
+                          <div className="bg-amber-50 p-3 rounded-2xl border">
+                            <p className="text-sm font-bold text-amber-950 leading-relaxed">💡 備註說明：{task.notes}</p>
                           </div>
                         )}
 
+                        {/* 顯示給法師看的大護法司機資訊 */}
+                        {userRole === 'monk' && (
+                          <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100">
+                            <p className="text-xs text-emerald-800 font-bold">負責護持的大護法志工</p>
+                            {task.status === '待排班確認' || task.status === '待駕駛確認' ? (
+                              <p className="text-lg font-black text-stone-500 mt-1">⏳ 駕駛認領確認中，生效後會通知您聯絡方式</p>
+                            ) : task.driverName ? (
+                              <div className="flex justify-between items-center mt-1">
+                                <div>
+                                  <p className="text-xl font-black text-stone-800">{task.driverName}</p>
+                                  <p className="text-sm text-stone-500 font-mono mt-0.5">{task.driverPhone}</p>
+                                </div>
+                                <a 
+                                  href={`tel:${task.driverPhone}`} 
+                                  className="bg-emerald-800 text-white p-3 rounded-full shadow-md hover:bg-emerald-900"
+                                >
+                                  <Icon name="phone" className="w-6 h-6" />
+                                </a>
+                              </div>
+                            ) : (
+                              <p className="text-lg font-black text-red-600 mt-1">⏳ 安排大護法駕駛中...</p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 駕駛專用操作區 */}
                         {userRole === 'volunteer' && (
                           <div className="space-y-3 pt-2">
-                            <a 
-                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(task.pickup)}`}
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="w-full bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-xl text-lg font-black flex justify-center items-center gap-2 shadow-md"
-                            >
-                              <i data-lucide="navigation" className="w-6 h-6"></i> 開啟地圖導航
-                            </a>
-                            
+                            {/* 行程一：待確認指派 */}
+                            {task.status === '待駕駛確認' && (
+                              <div className="bg-amber-100/60 p-4 rounded-2xl border-2 border-amber-300 space-y-3">
+                                <p className="text-sm text-amber-950 font-black text-center">排班組已將此任務指派給您，請確認是否接受護持？</p>
+                                <div className="flex gap-2">
+                                  <button 
+                                    onClick={() => handleConfirmAssignment(task, false)}
+                                    className="flex-1 bg-stone-200 text-stone-800 font-bold py-3 rounded-xl hover:bg-stone-300 text-sm"
+                                  >
+                                    婉拒指派 ❌
+                                  </button>
+                                  <button 
+                                    onClick={() => handleConfirmAssignment(task, true)}
+                                    className="flex-1 bg-emerald-800 text-white font-black py-3 rounded-xl hover:bg-emerald-900 text-sm shadow-md"
+                                  >
+                                    確認接受 👍
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 行程二：待審核中 */}
+                            {task.status === '待排班確認' && (
+                              <div className="bg-stone-100 p-4 rounded-2xl text-center border">
+                                <p className="text-sm font-black text-stone-500">⏳ 已向排班志工提交認領申請，請等待核准確認...</p>
+                              </div>
+                            )}
+
+                            {/* 行程三：已排定/進行中/可操作導航 */}
                             {task.status === '已排定' && (
-                              <button 
-                                onClick={() => handleUpdateStatus(task, '進行中')}
-                                className="w-full bg-amber-500 hover:bg-amber-600 text-white py-4 rounded-xl text-lg font-black shadow-md"
-                              >
-                                現在出發去接法師
-                              </button>
+                              <div className="space-y-3">
+                                <a 
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(task.pickup)}`}
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="w-full bg-stone-800 hover:bg-stone-900 text-white py-3.5 rounded-2xl text-lg font-black flex justify-center items-center gap-2 shadow-md"
+                                >
+                                  <Icon name="navigation" className="w-5 h-5" /> 開啟導航前往接地點
+                                </a>
+                                <button 
+                                  onClick={() => handleUpdateStatus(task, '進行中')}
+                                  className="w-full bg-amber-500 hover:bg-amber-600 text-stone-950 py-3.5 rounded-2xl text-lg font-black shadow"
+                                >
+                                  現在出發接法師 ➔
+                                </button>
+                              </div>
                             )}
 
                             {task.status === '進行中' && (
-                              <button 
-                                onClick={() => handleUpdateStatus(task, '已完成')}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl text-lg font-black flex justify-center items-center gap-2 shadow-md"
-                              >
-                                <i data-lucide="check-circle-2" className="w-6 h-6"></i> 已安全送達目的地
-                              </button>
+                              <div className="space-y-3">
+                                <a 
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(task.dropoff)}`}
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="w-full bg-stone-800 hover:bg-stone-900 text-white py-3.5 rounded-2xl text-lg font-black flex justify-center items-center gap-2 shadow-md"
+                                >
+                                  <Icon name="navigation" className="w-5 h-5" /> 開啟目的地導航
+                                </a>
+                                <button 
+                                  onClick={() => handleUpdateStatus(task, '已完成')}
+                                  className="w-full bg-emerald-800 hover:bg-emerald-900 text-white py-3.5 rounded-2xl text-lg font-black flex justify-center items-center gap-2 shadow"
+                                >
+                                  <Icon name="check-circle-2" className="w-6 h-6" /> 我已安全送達目的地
+                                </button>
+                              </div>
                             )}
                           </div>
                         )}
@@ -414,142 +1235,373 @@
               </div>
             )}
 
+            {/* 頁面 B：所有行程 */}
             {activeTab === 'all-tasks' && (
               <div className="space-y-4">
-                <h2 className="text-xl font-black text-slate-800 px-1">全部接送清單 ({tasks.length} 筆)</h2>
-                {tasks.map(task => (
-                  <div key={task.id} className="bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-sm space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className={`text-sm px-3 py-1 rounded-full font-black ${
-                        task.status === '已完成' ? 'bg-slate-200 text-slate-700' :
-                        task.status === '進行中' ? 'bg-blue-100 text-blue-800' :
-                        task.status === '已排定' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {task.status}
-                      </span>
-                      <span className="text-sm font-mono text-slate-400 font-bold">#{task.id}</span>
-                    </div>
-
-                    <h3 className="text-xl font-black text-slate-800">{task.monks}</h3>
-                    
-                    <div className="text-base font-bold text-slate-600 space-y-1">
-                      <p>📅 日期時間：{task.date} 在 {task.time}</p>
-                      <p>📍 路線：<span className="text-blue-600">{task.pickup}</span> → <span className="text-red-600">{task.dropoff}</span></p>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
-                      {task.driverName ? (
-                        <p className="text-base font-bold text-slate-700">🚗 護持司機：{task.driverName}</p>
-                      ) : (
-                        <p className="text-base font-black text-red-600">⚠️ 尚無司機護持</p>
-                      )}
-
-                      {userRole === 'volunteer' && !task.driverName && (
-                        <button 
-                          onClick={() => handleClaimTask(task)}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl text-base font-black shadow-md active:bg-emerald-800"
-                        >
-                          我要接單
-                        </button>
-                      )}
-                    </div>
+                <div className="bg-white p-4 rounded-3xl shadow-sm border border-stone-200 space-y-3">
+                  <h2 className="text-xl font-black text-stone-800">🔍 接送行程篩選搜尋</h2>
+                  
+                  {/* 搜尋 */}
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-stone-400">
+                      <Icon name="search" className="w-5 h-5" />
+                    </span>
+                    <input 
+                      type="text" 
+                      placeholder="搜尋法師名字、地點..." 
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="w-full bg-stone-50 pl-11 pr-4 py-3 border-2 border-stone-200 rounded-2xl text-base focus:border-emerald-800 focus:bg-white focus:outline-none transition-colors"
+                    />
                   </div>
-                ))}
+
+                  {/* 狀態過濾鈕 */}
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {['全部', '待領取', '待駕駛確認', '待排班確認', '已排定', '進行中', '已完成'].map(st => (
+                      <button
+                        key={st}
+                        onClick={() => setStatusFilter(st)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black transition ${
+                          statusFilter === st 
+                            ? 'bg-emerald-800 text-white shadow-sm' 
+                            : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-base text-stone-500 font-bold">
+                    符合條件：<span className="text-emerald-800 font-black">{filteredTasks.length}</span> 筆行程
+                  </span>
+                </div>
+
+                {filteredTasks.length === 0 ? (
+                  <div className="bg-white rounded-3xl p-10 text-center border-2 border-stone-200 text-stone-400 font-bold">
+                    目前沒有符合搜尋條件的行程。
+                  </div>
+                ) : (
+                  filteredTasks.map(task => (
+                    <div key={task.id} className="bg-white p-5 rounded-3xl border border-stone-200 shadow-md space-y-4 hover:border-stone-300 transition">
+                      
+                      <div className="flex justify-between items-start">
+                        <span className={`text-xs px-3 py-1 rounded-full font-black border ${
+                          task.status === '已完成' ? 'bg-stone-100 text-stone-600 border-stone-200' :
+                          task.status === '進行中' ? 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse' :
+                          task.status === '已排定' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 
+                          task.status === '待排班確認' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                          task.status === '待駕駛確認' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                          'bg-red-50 text-red-600 border-red-200 animate-pulse'
+                        }`}>
+                          {task.status === '待領取' ? '⚠️ 待領取 (徵求大護法)' : task.status}
+                        </span>
+                        
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-stone-400 font-bold">#{task.id}</span>
+                          {/* 排班組專用：刪除/取消行程 */}
+                          {userRole === 'scheduler' && (
+                            <button 
+                              onClick={() => handleDeleteTask(task)}
+                              className="text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition"
+                              title="刪除/取消此行程"
+                            >
+                              <Icon name="trash" className="w-5 h-5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h3 className="text-2xl font-black text-stone-800 flex items-center gap-1.5">
+                          <span>☸️</span> {task.monks}
+                        </h3>
+                      </div>
+                      
+                      <div className="text-base font-bold text-stone-600 space-y-2 bg-stone-50 p-3.5 rounded-2xl border border-stone-150">
+                        <p className="flex items-center gap-2">
+                          <Icon name="calendar" className="w-5 h-5 text-stone-400" />
+                          <span>{task.date} ({task.time})</span>
+                        </p>
+                        <p className="flex items-start gap-2">
+                          <Icon name="map-pin" className="w-5 h-5 text-stone-400 mt-0.5" />
+                          <span className="leading-snug">
+                            <span className="text-blue-600 font-black">{task.pickup}</span>
+                            <span className="mx-1 text-stone-400">➔</span>
+                            <span className="text-red-600 font-black">{task.dropoff}</span>
+                          </span>
+                        </p>
+                      </div>
+
+                      {task.notes && (
+                        <p className="text-sm font-bold text-amber-800 bg-amber-50/50 px-3 py-2 rounded-xl">
+                          備註：{task.notes}
+                        </p>
+                      )}
+
+                      {/* 認領、審核、與接受之邏輯控制面板 */}
+                      <div className="pt-3.5 border-t border-stone-100 space-y-3">
+                        
+                        {/* 駕駛狀態顯示 */}
+                        <div className="flex justify-between items-center">
+                          {task.driverName ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-2xl">🚗</span>
+                              <div>
+                                <p className="text-xs text-stone-400 font-bold">
+                                  {task.status === '待排班確認' ? '認領申請人' : '護持大護法'}
+                                </p>
+                                <p className="text-base font-black text-stone-700">{task.driverName}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-base font-black text-red-600 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block animate-ping"></span>
+                              尚未有司機承接
+                            </p>
+                          )}
+
+                          {/* 認領動作：僅限志工端、任務待領取且無指派司機 */}
+                          {userRole === 'volunteer' && task.status === '待領取' && !task.driverName && (
+                            <button 
+                              onClick={() => handleClaimTask(task)}
+                              className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-2xl text-base font-black shadow-md active:scale-95 transition-all"
+                            >
+                              申請認領護持 ✍️
+                            </button>
+                          )}
+                        </div>
+
+                        {/* 排班志工專用：審核認領(待排班確認) 或是 指派狀態追蹤 */}
+                        {userRole === 'scheduler' && task.status === '待排班確認' && (
+                          <div className="bg-purple-50 p-3 rounded-2xl border border-purple-200 flex flex-col gap-2">
+                            <p className="text-sm font-bold text-purple-950 text-center">志工「{task.driverName}」已申請認領，是否核准？</p>
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => handleApproveClaim(task, false)}
+                                className="flex-1 bg-stone-200 hover:bg-stone-300 text-stone-800 font-bold py-2 rounded-xl text-sm"
+                              >
+                                婉拒認領
+                              </button>
+                              <button 
+                                onClick={() => handleApproveClaim(task, true)}
+                                className="flex-1 bg-purple-700 hover:bg-purple-800 text-white font-black py-2 rounded-xl text-sm shadow"
+                              >
+                                核准指派 ✔️
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {userRole === 'scheduler' && task.status === '待駕駛確認' && (
+                          <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 text-center">
+                            <p className="text-sm font-bold text-amber-950">⏳ 已指派給「{task.driverName}」，等待駕駛回覆接受...</p>
+                          </div>
+                        )}
+
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             )}
 
+            {/* 頁面 C：登記接送 (排班專用) */}
             {activeTab === 'create' && userRole === 'scheduler' && (
-              <form onSubmit={handleCreateTask} className="bg-white p-5 rounded-2xl border-2 border-slate-200 shadow-sm space-y-5">
-                <h2 className="text-xl font-black text-slate-800 border-b-2 pb-2">✍️ 登記新接送需求</h2>
+              <form onSubmit={handleCreateTask} className="bg-white p-6 rounded-3xl border border-stone-200 shadow-lg space-y-5">
+                <h2 className="text-2xl font-black text-stone-800 border-b-2 border-stone-100 pb-3 flex items-center gap-2">
+                  <span>✍️</span> 登記新接送需求
+                </h2>
                 
                 <div>
-                  <label className="block text-base font-black text-slate-700 mb-1">1. 需護持的法師 *</label>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">1. 需護持的法師姓名 *</label>
                   <input 
                     type="text" 
                     placeholder="例如：如英法師" 
                     value={newForm.monks}
                     onChange={e => setNewForm({...newForm, monks: e.target.value})}
-                    className="w-full border-2 border-slate-300 rounded-xl p-3 text-lg focus:outline-none focus:border-emerald-600"
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
                     required
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-base font-black text-slate-700 mb-1">2. 接送日期 *</label>
+                    <label className="block text-base font-black text-stone-700 mb-1.5">2. 接送日期 *</label>
                     <input 
                       type="date" 
                       value={newForm.date}
                       onChange={e => setNewForm({...newForm, date: e.target.value})}
-                      className="w-full border-2 border-slate-300 rounded-xl p-3 text-lg focus:outline-none focus:border-emerald-600"
+                      className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-base font-black text-slate-700 mb-1">3. 時間 *</label>
+                    <label className="block text-base font-black text-stone-700 mb-1.5">3. 時間 *</label>
                     <input 
                       type="time" 
                       value={newForm.time}
                       onChange={e => setNewForm({...newForm, time: e.target.value})}
-                      className="w-full border-2 border-slate-300 rounded-xl p-3 text-lg focus:outline-none focus:border-emerald-600"
+                      className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
                       required
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-base font-black text-slate-700 mb-1">4. 接地 (出發地) *</label>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">4. 接地 (出發地) *</label>
                   <input 
                     type="text" 
-                    placeholder="例如：鳳山寺" 
+                    placeholder="例如：鳳山寺 / 台北高鐵站 3 號出口" 
                     value={newForm.pickup}
                     onChange={e => setNewForm({...newForm, pickup: e.target.value})}
-                    className="w-full border-2 border-slate-300 rounded-xl p-3 text-lg focus:outline-none focus:border-emerald-600"
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-base font-black text-slate-700 mb-1">5. 送地 (目的地) *</label>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">5. 送地 (目的地) *</label>
                   <input 
                     type="text" 
-                    placeholder="例如：桃園機場" 
+                    placeholder="例如：妙覺寺 / 桃園機場第一航廈" 
                     value={newForm.dropoff}
                     onChange={e => setNewForm({...newForm, dropoff: e.target.value})}
-                    className="w-full border-2 border-slate-300 rounded-xl p-3 text-lg focus:outline-none focus:border-emerald-600"
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
                     required
                   />
                 </div>
 
+                {/* 指派駕駛功能 */}
                 <div>
-                  <label className="block text-base font-black text-slate-700 mb-1">6. 備註說明</label>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">6. 指派護持駕駛志工</label>
+                  <select 
+                    value={newForm.assignedDriverId}
+                    onChange={e => setNewForm({...newForm, assignedDriverId: e.target.value})}
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors font-bold"
+                  >
+                    <option value="">（不指定，開放自由認領）</option>
+                    {mockDriversList.map(driver => (
+                      <option key={driver.id} value={driver.id}>🚗 {driver.name} ({driver.phone})</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-stone-500 mt-1 font-bold">提示：指派後，行程進入「待駕駛確認」狀態，對方接受後會正式成立並通知法師。</p>
+                </div>
+
+                <div>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">7. 備註說明 (特別需求)</label>
                   <textarea 
                     rows={2}
-                    placeholder="例如：法師行李多，需協助搬運" 
+                    placeholder="例如：法師行李多，車輛請預留行李箱空位。" 
                     value={newForm.notes}
                     onChange={e => setNewForm({...newForm, notes: e.target.value})}
-                    className="w-full border-2 border-slate-300 rounded-xl p-3 text-lg focus:outline-none focus:border-emerald-600"
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
                   />
                 </div>
 
                 <button 
                   type="submit"
-                  className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-4 rounded-xl text-xl font-black shadow-lg transition-colors"
+                  disabled={loading}
+                  className="w-full bg-emerald-800 hover:bg-emerald-900 text-white py-4 rounded-2xl text-xl font-black shadow-lg transition duration-200 active:scale-[0.99]"
                 >
-                  💾 儲存並同步至雲端
+                  {loading ? '同步處理中...' : '💾 儲存並同步指派任務'}
+                </button>
+              </form>
+            )}
+
+            {/* 頁面 D：提出接送需求 (法師自主提出) */}
+            {activeTab === 'monk-request' && userRole === 'monk' && (
+              <form onSubmit={handleMonkCreateTask} className="bg-white p-6 rounded-3xl border border-stone-200 shadow-lg space-y-5">
+                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 font-bold text-stone-850">
+                  🙏 尊貴的 <span className="underline text-emerald-800 font-black">{userName}</span> 您好，請於下方填寫您的接送行程需求，送出後系統會立刻發出需求通知，供車隊的大護法司機們認領護持。
+                </div>
+
+                <h2 className="text-2xl font-black text-stone-800 border-b-2 border-stone-100 pb-3 flex items-center gap-2">
+                  <span>✍️</span> 登記我的接送需求
+                </h2>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-base font-black text-stone-700 mb-1.5">1. 接送日期 *</label>
+                    <input 
+                      type="date" 
+                      value={newForm.date}
+                      onChange={e => setNewForm({...newForm, date: e.target.value})}
+                      className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-base font-black text-stone-700 mb-1.5">2. 接送時間 *</label>
+                    <input 
+                      type="time" 
+                      value={newForm.time}
+                      onChange={e => setNewForm({...newForm, time: e.target.value})}
+                      className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">3. 上車地點 *</label>
+                  <input 
+                    type="text" 
+                    placeholder="例如：妙覺寺 / 台北高鐵站 3 號出口" 
+                    value={newForm.pickup}
+                    onChange={e => setNewForm({...newForm, pickup: e.target.value})}
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">4. 下車地點 *</label>
+                  <input 
+                    type="text" 
+                    placeholder="例如：鳳山寺 / 桃園機場" 
+                    value={newForm.dropoff}
+                    onChange={e => setNewForm({...newForm, dropoff: e.target.value})}
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-base font-black text-stone-700 mb-1.5">5. 備註特別說明</label>
+                  <textarea 
+                    rows={2}
+                    placeholder="例如：此行法師行李較多，需要大一點的車廂。" 
+                    value={newForm.notes}
+                    onChange={e => setNewForm({...newForm, notes: e.target.value})}
+                    className="w-full border-2 border-stone-200 bg-stone-50 rounded-2xl p-3.5 text-lg focus:outline-none focus:border-emerald-800 focus:bg-white transition-colors"
+                  />
+                </div>
+
+                <button 
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-emerald-800 hover:bg-emerald-900 text-white py-4 rounded-2xl text-xl font-black shadow-lg transition duration-200 active:scale-[0.99]"
+                >
+                  {loading ? '同步處理中...' : '🙏 送出並同步通知大護法們'}
                 </button>
               </form>
             )}
           </main>
 
-          <footer className="text-center py-6 text-xs text-slate-500 border-t border-slate-200 bg-white mt-auto">
-            <p className="font-bold text-sm">妙覺寺 / 鳳山寺 護法車隊系統</p>
-            <p className="mt-1">字體已放大，適合長輩與開車時閱讀</p>
+          {/* 頁尾 */}
+          <footer className="text-center py-8 px-4 text-xs text-stone-400 border-t border-stone-200 bg-white mt-auto rounded-t-[2.5rem] shadow-inner">
+            <p className="font-bold text-sm text-stone-600">☸️ 妙覺寺 / 鳳山寺 護法車隊隨身助手</p>
+            <p className="mt-1.5">專為開車行車安全、長輩操作優化之特大字版</p>
+            <p className="mt-1 text-[10px] text-stone-400 font-mono">LIFF ID: {LIFF_ID} | Mode: {connectionMode}</p>
           </footer>
         </div>
       );
     }
 
+    // 渲染 React 元件
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
