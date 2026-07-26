@@ -135,7 +135,9 @@
 
       // 2. 論壇：按讚與取消讚
       const handleLikePost = async (postId) => {
-        const updatedForum = data.forum.map(post => {
+        if (!currentUser) return;
+        
+        const updatedForum = (data.forum || []).map(post => {
           if (post.id === postId) {
             const likedBy = post.likedBy || [];
             const hasLiked = likedBy.includes(currentUser.id);
@@ -144,7 +146,7 @@
               : [...likedBy, currentUser.id];
             return {
               ...post,
-              likes: hasLiked ? post.likes - 1 : post.likes + 1,
+              likes: hasLiked ? Math.max(0, (post.likes || 0) - 1) : (post.likes || 0) + 1,
               likedBy: newLikedBy
             };
           }
@@ -174,7 +176,7 @@
 
         const newPost = { 
           id: "forum-" + Date.now().toString(), 
-          author: userRole === 'admin' ? '官方管理員' : currentUser.name, 
+          author: userRole === 'admin' ? '官方管理員' : (currentUser?.name || '匿名病友'), 
           role: userRole === 'admin' ? 'admin' : 'member',
           content: newContent, 
           timestamp: new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }),
@@ -184,7 +186,7 @@
         };
 
         if (!gasUrl) {
-          setData(prev => ({ ...prev, forum: [newPost, ...prev.forum] }));
+          setData(prev => ({ ...prev, forum: [newPost, ...(prev.forum || [])] }));
           setNewContent('');
           return;
         }
@@ -209,10 +211,10 @@
         }
       };
 
-      // 4. 論壇：修改貼文 (會員維護自己/管理員維護全部)
+      // 4. 論壇：修改貼文
       const handleSaveForumPost = async (e) => {
         e.preventDefault();
-        const updatedForum = data.forum.map(post => {
+        const updatedForum = (data.forum || []).map(post => {
           if (post.id === forumForm.id) {
             return { ...post, content: forumForm.content, isPinned: forumForm.isPinned };
           }
@@ -252,11 +254,11 @@
         }
       };
 
-      // 5. 管理員：儲存資訊 (新增/修改)
+      // 5. 管理員：儲存資訊
       const handleSaveInfo = async (e) => {
         e.preventDefault();
         if (!gasUrl) {
-          const updatedList = [...data.info];
+          const updatedList = [...(data.info || [])];
           const index = updatedList.findIndex(item => item.id === infoForm.id);
           const newItem = { ...infoForm, id: infoForm.id || "info-" + Date.now().toString(), date: infoForm.date || new Date().toISOString().split('T')[0] };
           if (index > -1) updatedList[index] = newItem;
@@ -286,14 +288,14 @@
         }
       };
 
-      // 6. 管理員：儲存活動花絮 (支援多圖)
+      // 6. 管理員：儲存活動花絮
       const handleSaveActivity = async (e) => {
         e.preventDefault();
-        const validImages = activityForm.images.filter(url => url.trim() !== '');
+        const validImages = (activityForm.images || []).filter(url => url && url.trim() !== '');
         const formattedForm = { ...activityForm, images: validImages };
 
         if (!gasUrl) {
-          const updatedList = [...data.activities];
+          const updatedList = [...(data.activities || [])];
           const index = updatedList.findIndex(item => item.id === formattedForm.id);
           const newItem = { ...formattedForm, id: formattedForm.id || "act-" + Date.now().toString(), date: formattedForm.date || new Date().toISOString().split('T')[0] };
           if (index > -1) updatedList[index] = newItem;
@@ -388,7 +390,7 @@
         if (!gasUrl) {
           setData(prev => ({
             ...prev,
-            [targetSheet]: prev[targetSheet].filter((item) => item.id !== id)
+            [targetSheet]: (prev[targetSheet] || []).filter((item) => item.id !== id)
           }));
           return;
         }
@@ -414,7 +416,7 @@
 
       // 燈箱控制
       const openLightbox = (images, index) => {
-        setLightbox({ isOpen: true, images, currentIndex: index });
+        setLightbox({ isOpen: true, images: images || [], currentIndex: index });
       };
 
       const closeLightbox = () => {
@@ -437,11 +439,13 @@
         }));
       };
 
-      // 排序論壇貼文：置頂 (isPinned) 優先，其餘按時間/ID倒序
-      const sortedForumPosts = [...data.forum].sort((a, b) => {
+      // 排序論壇貼文：置頂 (isPinned) 優先，其餘按時間/ID倒序 (加入防錯)
+      const sortedForumPosts = [...(data.forum || [])].sort((a, b) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
-        return b.id.localeCompare(a.id);
+        const idA = a.id || "";
+        const idB = b.id || "";
+        return idB.localeCompare(idA);
       });
 
       return (
@@ -490,7 +494,7 @@
                   ) : (
                     <div className="flex items-center gap-2 bg-emerald-800/60 px-3 py-1 rounded-lg border border-emerald-500/30">
                       <span className="text-xs text-emerald-200">
-                        {userRole === 'admin' ? '👑 管理員' : `👤 ${currentUser?.name}`}
+                        {userRole === 'admin' ? '👑 管理員' : `👤 ${currentUser?.name || ''}`}
                       </span>
                       <button 
                         onClick={() => {
@@ -583,7 +587,7 @@
                     <p className="text-slate-500 text-sm mt-1">我們用行動與數據，為全台帕金森家庭發聲</p>
                     {userRole === 'admin' && (
                       <button 
-                        onClick={() => { setStatsForm([...data.stats]); setActiveModal('stats'); }}
+                        onClick={() => { setStatsForm([...(data.stats || [])]); setActiveModal('stats'); }}
                         className="mt-2 inline-flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded font-medium shadow"
                       >
                         <Icon name="edit-2" className="h-3 w-3 mr-1" /> 編輯統計數據
@@ -591,7 +595,7 @@
                     )}
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {data.stats.map((stat, idx) => (
+                    {(data.stats || []).map((stat, idx) => (
                       <div key={idx} className="bg-white p-6 rounded-xl border border-slate-100 text-center shadow-sm hover:shadow-md transition">
                         <p className="text-sm text-slate-500 mb-1">{stat.label}</p>
                         <p className="text-3xl font-extrabold text-emerald-600">{stat.value}</p>
@@ -604,7 +608,7 @@
             )}
 
             {/* 2. 認識帕促會 */}
-            {activeTab === 'about' && (
+            {activeTab === 'about' && data.about && (
               <div className="space-y-8">
                 <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm space-y-6">
                   <div className="flex justify-between items-center border-b pb-4">
@@ -632,7 +636,7 @@
                         <Icon name="activity" className="text-emerald-700" /> 我們的核心宗旨
                       </h3>
                       <ul className="space-y-2 text-sm text-slate-700">
-                        {data.about.mission.map((m, idx) => (
+                        {(data.about.mission || []).map((m, idx) => (
                           <li key={idx} className="flex items-start gap-2">
                             <span className="text-emerald-600 font-bold">•</span> {m}
                           </li>
@@ -679,7 +683,7 @@
                   )}
                 </div>
                 <div className="grid gap-6">
-                  {data.info.map((item, idx) => (
+                  {(data.info || []).map((item, idx) => (
                     <div key={idx} className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm space-y-3 relative group">
                       {userRole === 'admin' && (
                         <div className="absolute top-4 right-4 flex gap-2">
@@ -723,7 +727,7 @@
                     <p className="text-slate-500 text-sm">
                       {userRole === 'visitor' 
                         ? "📢 目前為「訪客唯讀模式」，登入會員即可參與討論與按讚。" 
-                        : `👤 您目前以「${userRole === 'admin' ? '官方管理員' : currentUser?.name}」身分登入。`}
+                        : `👤 您目前以「${userRole === 'admin' ? '官方管理員' : currentUser?.name || ''}」身分登入。`}
                     </p>
                   </div>
 
@@ -826,7 +830,7 @@
                           <label className="block text-xs font-medium text-slate-500 mb-1">發言人</label>
                           <input 
                             type="text" 
-                            value={userRole === 'admin' ? '官方管理員' : currentUser?.name}
+                            value={userRole === 'admin' ? '官方管理員' : currentUser?.name || ''}
                             disabled
                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600 font-semibold"
                           />
@@ -857,7 +861,7 @@
               </div>
             )}
 
-            {/* 5. 活動花絮頁 (自適應多圖 + 燈箱) */}
+            {/* 5. 活動花絮頁 */}
             {activeTab === 'activities' && (
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
@@ -878,7 +882,7 @@
                 </div>
                 
                 <div className="grid md:grid-cols-2 gap-8">
-                  {data.activities.map((act, idx) => {
+                  {(data.activities || []).map((act, idx) => {
                     const imgs = act.images || [];
                     return (
                       <div key={idx} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
@@ -944,7 +948,7 @@
               </div>
             )}
 
-            {/* 6. 後台管理專區 (儀表板) */}
+            {/* 6. 後台管理專區 */}
             {activeTab === 'admin' && userRole === 'admin' && (
               <div className="space-y-8">
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
@@ -971,7 +975,7 @@
                       </button>
                     </div>
                     <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-                      {data.info.map((item) => (
+                      {(data.info || []).map((item) => (
                         <div key={item.id} className="flex justify-between items-center p-2 bg-slate-50 hover:bg-slate-100 rounded text-sm transition">
                           <div className="truncate mr-4">
                             <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded mr-2">{item.category}</span>
@@ -1000,7 +1004,7 @@
                       </button>
                     </div>
                     <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-                      {data.activities.map((act) => (
+                      {(data.activities || []).map((act) => (
                         <div key={act.id} className="flex justify-between items-center p-2 bg-slate-50 hover:bg-slate-100 rounded text-sm transition">
                           <div className="truncate mr-4">
                             <span className="text-xs text-slate-400 mr-2">{act.date}</span>
@@ -1023,14 +1027,14 @@
                         <Icon name="bar-chart-3" className="text-emerald-600" /> 關懷數據維護
                       </h3>
                       <button 
-                        onClick={() => { setStatsForm([...data.stats]); setActiveModal('stats'); }}
+                        onClick={() => { setStatsForm([...(data.stats || [])]); setActiveModal('stats'); }}
                         className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded font-semibold flex items-center gap-1"
                       >
                         <Icon name="edit-2" className="h-3 w-3" /> 編輯全部數據
                       </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      {data.stats.map((stat) => (
+                      {(data.stats || []).map((stat) => (
                         <div key={stat.id} className="p-3 bg-slate-50 border rounded-lg text-center">
                           <p className="text-xs text-slate-400">{stat.label}</p>
                           <p className="text-lg font-bold text-emerald-600">{stat.value}</p>
@@ -1046,10 +1050,10 @@
                       <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
                         <Icon name="message-square" className="text-emerald-600" /> 論壇貼文審查與置頂
                       </h3>
-                      <span className="text-xs text-slate-400">共 {data.forum.length} 則貼文</span>
+                      <span className="text-xs text-slate-400">共 {(data.forum || []).length} 則貼文</span>
                     </div>
                     <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-                      {data.forum.map((post) => (
+                      {(data.forum || []).map((post) => (
                         <div key={post.id} className="p-2.5 bg-slate-50 rounded text-sm space-y-1 relative group hover:bg-slate-100 transition">
                           <div className="flex justify-between text-xs text-slate-400">
                             <span className="font-bold text-slate-600 flex items-center gap-1">
@@ -1087,7 +1091,7 @@
           <footer className="bg-slate-900 text-slate-400 py-8 mt-12 border-t border-slate-800">
             <div className="max-w-6xl mx-auto px-4 text-center space-y-3 text-sm">
               <p className="font-semibold text-white">社團法人台灣帕金森病友權益促進會</p>
-              <p>會址：新北市三重區中正北路518號8樓 | 電子郵件：tpda20190121@gmail.com</p>
+              {data.about && <p>會址：{data.about.address} | 電子郵件：{data.about.email}</p>}
               <p className="text-xs text-slate-600">© 2026 社團法人帕促會. 本系統基於 GAS 與 React 開發提供。</p>
             </div>
           </footer>
@@ -1108,26 +1112,26 @@
               <div className="max-w-4xl max-h-[85vh] px-4 flex flex-col items-center gap-2">
                 <img src={lightbox.images[lightbox.currentIndex]} className="max-w-full max-h-[80vh] object-contain rounded shadow-2xl" />
                 <p className="text-white/60 text-xs mt-2">第 {lightbox.currentIndex + 1} 張，共 {lightbox.images.length} 張</p>
+                </div>
+
+                {lightbox.images.length > 1 && (
+                  <button onClick={nextImage} className="absolute right-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition">
+                    <Icon name="chevron-right" className="h-8 w-8" />
+                  </button>
+                )}
               </div>
+            )}
 
-              {lightbox.images.length > 1 && (
-                <button onClick={nextImage} className="absolute right-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition">
-                  <Icon name="chevron-right" className="h-8 w-8" />
-                </button>
-              )}
-            </div>
-          )}
+            {/* ==================== 彈出視窗 (Modals) ==================== */}
 
-          {/* ==================== 彈出視窗 (Modals) ==================== */}
-
-          {/* 1. 整合型登入彈窗 */}
-          {showLoginModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4 shadow-xl">
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h3 className="font-bold text-lg flex items-center gap-2 text-slate-900">
-                    <Icon name={loginType === 'admin' ? 'lock' : 'user'} className="text-emerald-600 h-5 w-5" /> 
-                    {loginType === 'admin' ? '管理員安全登入' : '病友會員登入'}
+            {/* 1. 整合型登入彈窗 */}
+            {showLoginModal && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4 shadow-xl">
+                  <div className="flex justify-between items-center border-b pb-2">
+                    <h3 className="font-bold text-lg flex items-center gap-2 text-slate-900">
+                      <Icon name={loginType === 'admin' ? 'lock' : 'user'} className="text-emerald-600 h-5 w-5" /> 
+                      {loginType === 'admin' ? '管理員安全登入' : '病友會員登入'}
                     </h3>
                     <button onClick={() => setShowLoginModal(false)} className="text-slate-400 hover:text-slate-600">
                       <Icon name="x" className="h-5 w-5" />
@@ -1231,7 +1235,7 @@
                       <label className="block text-xs font-medium text-slate-500 mb-1">標題</label>
                       <input 
                         type="text" 
-                        value={infoForm.title}
+                        value={infoForm.title || ''}
                         onChange={(e) => setInfoForm({...infoForm, title: e.target.value})}
                         required
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -1241,7 +1245,7 @@
                       <label className="block text-xs font-medium text-slate-500 mb-1">內容</label>
                       <textarea 
                         rows={6}
-                        value={infoForm.content}
+                        value={infoForm.content || ''}
                         onChange={(e) => setInfoForm({...infoForm, content: e.target.value})}
                         required
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -1271,7 +1275,7 @@
                         <label className="block text-xs font-medium text-slate-500 mb-1">活動名稱</label>
                         <input 
                           type="text" 
-                          value={activityForm.title}
+                          value={activityForm.title || ''}
                           onChange={(e) => setActivityForm({...activityForm, title: e.target.value})}
                           required
                           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -1281,7 +1285,7 @@
                         <label className="block text-xs font-medium text-slate-500 mb-1">活動日期</label>
                         <input 
                           type="date" 
-                          value={activityForm.date}
+                          value={activityForm.date || ''}
                           onChange={(e) => setActivityForm({...activityForm, date: e.target.value})}
                           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                         />
@@ -1294,9 +1298,9 @@
                           key={idx}
                           type="text" 
                           placeholder={`照片網址 ${idx + 1} (Unsplash 或公開連結)`}
-                          value={activityForm.images[idx] || ''}
+                          value={(activityForm.images && activityForm.images[idx]) || ''}
                           onChange={(e) => {
-                            const newImgs = [...activityForm.images];
+                            const newImgs = [...(activityForm.images || ['', '', ''])];
                             newImgs[idx] = e.target.value;
                             setActivityForm({...activityForm, images: newImgs});
                           }}
@@ -1308,7 +1312,7 @@
                       <label className="block text-xs font-medium text-slate-500 mb-1">活動描述</label>
                       <textarea 
                         rows={4}
-                        value={activityForm.description}
+                        value={activityForm.description || ''}
                         onChange={(e) => setActivityForm({...activityForm, description: e.target.value})}
                         required
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -1339,7 +1343,7 @@
                           <input 
                             type="text" 
                             placeholder="項目名稱" 
-                            value={stat.label}
+                            value={stat.label || ''}
                             onChange={(e) => {
                               const updated = [...statsForm];
                               updated[idx].label = e.target.value;
@@ -1351,7 +1355,7 @@
                           <input 
                             type="text" 
                             placeholder="數值" 
-                            value={stat.value}
+                            value={stat.value || ''}
                             onChange={(e) => {
                               const updated = [...statsForm];
                               updated[idx].value = e.target.value;
@@ -1363,7 +1367,7 @@
                           <input 
                             type="text" 
                             placeholder="單位" 
-                            value={stat.unit}
+                            value={stat.unit || ''}
                             onChange={(e) => {
                               const updated = [...statsForm];
                               updated[idx].unit = e.target.value;
@@ -1398,7 +1402,7 @@
                       <label className="block text-xs font-medium text-slate-500 mb-1">發言人</label>
                       <input 
                         type="text" 
-                        value={forumForm.author}
+                        value={forumForm.author || ''}
                         disabled
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 font-semibold"
                       />
@@ -1407,7 +1411,7 @@
                       <label className="block text-xs font-medium text-slate-500 mb-1">發言內容</label>
                       <textarea 
                         rows={4}
-                        value={forumForm.content}
+                        value={forumForm.content || ''}
                         onChange={(e) => setForumForm({...forumForm, content: e.target.value})}
                         required
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
@@ -1450,7 +1454,7 @@
                       <label className="block text-xs font-medium text-slate-500 mb-1">本會簡介</label>
                       <textarea 
                         rows={4}
-                        value={aboutForm.intro}
+                        value={aboutForm.intro || ''}
                         onChange={(e) => setAboutForm({...aboutForm, intro: e.target.value})}
                         required
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -1462,9 +1466,9 @@
                         <input 
                           key={idx}
                           type="text" 
-                          value={aboutForm.mission[idx] || ''}
+                          value={(aboutForm.mission && aboutForm.mission[idx]) || ''}
                           onChange={(e) => {
-                            const newMissions = [...aboutForm.mission];
+                            const newMissions = [...(aboutForm.mission || ['', '', '', ''])];
                             newMissions[idx] = e.target.value;
                             setAboutForm({...aboutForm, mission: newMissions});
                           }}
@@ -1478,7 +1482,7 @@
                         <label className="block text-xs font-medium text-slate-500 mb-1">會址</label>
                         <input 
                           type="text" 
-                          value={aboutForm.address}
+                          value={aboutForm.address || ''}
                           onChange={(e) => setAboutForm({...aboutForm, address: e.target.value})}
                           required
                           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -1488,7 +1492,7 @@
                         <label className="block text-xs font-medium text-slate-500 mb-1">電話</label>
                         <input 
                           type="text" 
-                          value={aboutForm.phone}
+                          value={aboutForm.phone || ''}
                           onChange={(e) => setAboutForm({...aboutForm, phone: e.target.value})}
                           required
                           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -1500,7 +1504,7 @@
                         <label className="block text-xs font-medium text-slate-500 mb-1">信箱</label>
                         <input 
                           type="email" 
-                          value={aboutForm.email}
+                          value={aboutForm.email || ''}
                           onChange={(e) => setAboutForm({...aboutForm, email: e.target.value})}
                           required
                           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -1510,7 +1514,7 @@
                         <label className="block text-xs font-medium text-slate-500 mb-1">捐款帳戶資訊</label>
                         <input 
                           type="text" 
-                          value={aboutForm.donate}
+                          value={aboutForm.donate || ''}
                           onChange={(e) => setAboutForm({...aboutForm, donate: e.target.value})}
                           required
                           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
@@ -1535,5 +1539,3 @@
     </script>
   </body>
   </html>
-
-                    
