@@ -27,7 +27,7 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // 預設展示資料
+    // 預設展示資料 (當未串接 GAS 時的本地模擬資料)
     const initialFallbackData = {
       info: [
         { id: "info-1", category: "醫療衛教", title: "認識帕金森氏症的早期五大警訊", content: "手部顫抖、肢體僵硬、動作遲緩、步態不穩以及面部表情僵硬（面具臉）是常見的早期徵兆。若發現家人有類似症狀，建議盡早至神經內科門診檢查。", date: "2026-07-20" },
@@ -74,7 +74,9 @@
     // 簡易 Lucide 圖標組件
     function Icon({ name, className = "h-5 w-5", fill = "none" }) {
       useEffect(() => {
-        lucide.createIcons();
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
       }, [name]);
       return <i data-lucide={name} class={className} style={{ fill: fill }}></i>;
     }
@@ -85,13 +87,15 @@
       const [data, setData] = useState(initialFallbackData);
       const [loading, setLoading] = useState(false);
 
-      // 會員模擬登入狀態 (預設一個模擬會員)
-      const [currentUser, setCurrentUser] = useState({ id: "user-1", name: "王大同" });
-
-      // 管理員狀態
-      const [isAdmin, setIsAdmin] = useState(false);
-      const [adminPassword, setAdminPassword] = useState('');
+      // --- 權限與登入狀態 ---
+      // 角色：'visitor' (遊客), 'member' (會員), 'admin' (管理員)
+      const [userRole, setUserRole] = useState('visitor'); 
+      const [currentUser, setCurrentUser] = useState(null); // { id, name }
+      
       const [showLoginModal, setShowLoginModal] = useState(false);
+      const [loginType, setLoginType] = useState('member'); // 'member' 或 'admin'
+      const [memberNickname, setMemberNickname] = useState('');
+      const [adminPassword, setAdminPassword] = useState('');
 
       // 燈箱 (Lightbox) 狀態
       const [lightbox, setLightbox] = useState({ isOpen: false, images: [], currentIndex: 0 });
@@ -152,7 +156,6 @@
           return;
         }
 
-        // 如果有 GAS，則發送 POST 同步
         try {
           await fetch(gasUrl, {
             method: 'POST',
@@ -164,15 +167,15 @@
         }
       };
 
-      // 3. 論壇：發表新貼文 (會員權限)
+      // 3. 論壇：發表新貼文
       const handleAddPost = async (e) => {
         e.preventDefault();
         if (!newContent) return;
 
         const newPost = { 
           id: "forum-" + Date.now().toString(), 
-          author: currentUser.name, 
-          role: "member",
+          author: userRole === 'admin' ? '官方管理員' : currentUser.name, 
+          role: userRole === 'admin' ? 'admin' : 'member',
           content: newContent, 
           timestamp: new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }),
           likes: 0,
@@ -226,7 +229,14 @@
         try {
           const res = await fetch(gasUrl, {
             method: 'POST',
-            body: JSON.stringify({ action: 'saveForum', password: adminPassword, ...forumForm })
+            body: JSON.stringify({ 
+              action: 'saveForum', 
+              password: adminPassword, 
+              id: forumForm.id,
+              author: forumForm.author,
+              content: forumForm.content,
+              isPinned: forumForm.isPinned
+            })
           });
           const result = await res.json();
           if (result.status === 'success') {
@@ -276,10 +286,9 @@
         }
       };
 
-      // 6. 管理員：儲存活動花絮 (新增/修改)
+      // 6. 管理員：儲存活動花絮 (支援多圖)
       const handleSaveActivity = async (e) => {
         e.preventDefault();
-        // 過濾掉空網址
         const validImages = activityForm.images.filter(url => url.trim() !== '');
         const formattedForm = { ...activityForm, images: validImages };
 
@@ -403,15 +412,6 @@
         }
       };
 
-      // 登入管理員
-      const handleAdminLogin = (e) => {
-        e.preventDefault();
-        if (adminPassword) {
-          setIsAdmin(true);
-          setShowLoginModal(false);
-        }
-      };
-
       // 燈箱控制
       const openLightbox = (images, index) => {
         setLightbox({ isOpen: true, images, currentIndex: index });
@@ -465,19 +465,46 @@
                   <button onClick={() => setActiveTab('info')} className={`px-3 py-1.5 rounded text-sm font-medium transition ${activeTab === 'info' ? 'bg-white text-emerald-700 shadow' : 'hover:bg-emerald-600'}`}>帕金森資訊</button>
                   <button onClick={() => setActiveTab('forum')} className={`px-3 py-1.5 rounded text-sm font-medium transition ${activeTab === 'forum' ? 'bg-white text-emerald-700 shadow' : 'hover:bg-emerald-600'}`}>病友論壇</button>
                   <button onClick={() => setActiveTab('activities')} className={`px-3 py-1.5 rounded text-sm font-medium transition ${activeTab === 'activities' ? 'bg-white text-emerald-700 shadow' : 'hover:bg-emerald-600'}`}>活動花絮</button>
-                  {isAdmin && (
+                  {userRole === 'admin' && (
                     <button onClick={() => setActiveTab('admin')} className={`px-3 py-1.5 rounded text-sm font-bold text-amber-300 transition ${activeTab === 'admin' ? 'bg-amber-500 text-slate-900 shadow' : 'hover:bg-emerald-600'}`}>⚙️ 後台管理</button>
                   )}
                 </nav>
 
-                {/* 管理員登入按鈕 */}
-                <button 
-                  onClick={() => isAdmin ? setIsAdmin(false) : setShowLoginModal(true)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${isAdmin ? 'bg-amber-500 border-amber-400 text-white hover:bg-amber-600' : 'bg-emerald-700 border-emerald-500 text-emerald-100 hover:bg-emerald-800'}`}
-                >
-                  <Icon name={isAdmin ? "unlock" : "lock"} className="h-3.5 w-3.5" />
-                  {isAdmin ? '登出後台' : '管理登入'}
-                </button>
+                {/* 動態身份控制區 */}
+                <div className="flex items-center gap-2">
+                  {userRole === 'visitor' ? (
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => { setLoginType('member'); setShowLoginModal(true); }}
+                        className="bg-emerald-700 border border-emerald-500 text-emerald-100 hover:bg-emerald-800 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1"
+                      >
+                        <Icon name="user" className="h-3.5 w-3.5" /> 會員登入
+                      </button>
+                      <button 
+                        onClick={() => { setLoginType('admin'); setShowLoginModal(true); }}
+                        className="bg-slate-700 border border-slate-600 text-slate-200 hover:bg-slate-800 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1"
+                      >
+                        <Icon name="lock" className="h-3.5 w-3.5" /> 管理登入
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 bg-emerald-800/60 px-3 py-1 rounded-lg border border-emerald-500/30">
+                      <span className="text-xs text-emerald-200">
+                        {userRole === 'admin' ? '👑 管理員' : `👤 ${currentUser?.name}`}
+                      </span>
+                      <button 
+                        onClick={() => {
+                          setUserRole('visitor');
+                          setCurrentUser(null);
+                          if (activeTab === 'admin') setActiveTab('home');
+                        }}
+                        className="text-[10px] bg-red-500/80 hover:bg-red-600 text-white px-1.5 py-0.5 rounded transition"
+                      >
+                        登出
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </header>
@@ -554,6 +581,14 @@
                       <Icon name="bar-chart-3" className="text-emerald-600" /> 關懷數據與現況
                     </h3>
                     <p className="text-slate-500 text-sm mt-1">我們用行動與數據，為全台帕金森家庭發聲</p>
+                    {userRole === 'admin' && (
+                      <button 
+                        onClick={() => { setStatsForm([...data.stats]); setActiveModal('stats'); }}
+                        className="mt-2 inline-flex items-center gap-1 text-xs bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded font-medium shadow"
+                      >
+                        <Icon name="edit-2" className="h-3 w-3 mr-1" /> 編輯統計數據
+                      </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {data.stats.map((stat, idx) => (
@@ -568,7 +603,7 @@
               </div>
             )}
 
-            {/* 2. 認識帕促會 (新增主題) */}
+            {/* 2. 認識帕促會 */}
             {activeTab === 'about' && (
               <div className="space-y-8">
                 <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm space-y-6">
@@ -576,10 +611,10 @@
                     <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
                       <Icon name="heart" className="text-emerald-600" fill="currentColor" /> 關於社團法人台灣帕金森病友權益促進會
                     </h2>
-                    {isAdmin && (
+                    {userRole === 'admin' && (
                       <button 
                         onClick={() => { setAboutForm(data.about); setActiveModal('about'); }}
-                        className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded font-semibold flex items-center gap-1"
+                        className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded font-semibold flex items-center gap-1 shadow"
                       >
                         <Icon name="edit-2" className="h-3 w-3" /> 編輯本會資訊
                       </button>
@@ -634,13 +669,39 @@
                     </h2>
                     <p className="text-slate-500 text-sm">提供最專業的醫療衛教、生活照護指引與最新權益倡議進度。</p>
                   </div>
+                  {userRole === 'admin' && (
+                    <button 
+                      onClick={() => { setInfoForm({ id: '', category: '醫療衛教', title: '', content: '', date: '' }); setActiveModal('info'); }}
+                      className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-semibold shadow"
+                    >
+                      <Icon name="plus" className="h-4 w-4" /> 新增資訊
+                    </button>
+                  )}
                 </div>
                 <div className="grid gap-6">
                   {data.info.map((item, idx) => (
-                    <div key={idx} className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm space-y-3 relative">
+                    <div key={idx} className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm space-y-3 relative group">
+                      {userRole === 'admin' && (
+                        <div className="absolute top-4 right-4 flex gap-2">
+                          <button 
+                            onClick={() => { setInfoForm(item); setActiveModal('info'); }}
+                            className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 rounded border border-amber-200"
+                            title="編輯此項目"
+                          >
+                            <Icon name="edit-2" className="h-3.5 w-3.5" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteRow('info', item.id)}
+                            className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded border border-red-200"
+                            title="刪除此項目"
+                          >
+                            <Icon name="trash-2" className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center">
                         <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">{item.category}</span>
-                        <span className="text-xs text-slate-400">{item.date}</span>
+                        <span className="text-xs text-slate-400 mr-16">{item.date}</span>
                       </div>
                       <h3 className="text-lg font-bold text-slate-900">{item.title}</h3>
                       <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{item.content}</p>
@@ -650,31 +711,26 @@
               </div>
             )}
 
-            {/* 4. 病友論壇頁 (專業版) */}
+            {/* 4. 病友論壇頁 (專業管制版) */}
             {activeTab === 'forum' && (
               <div className="grid md:grid-cols-3 gap-8">
-                {/* 貼文列表 */}
+                {/* 左側：貼文列表 */}
                 <div className="md:col-span-2 space-y-6">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                        <Icon name="message-square" className="text-emerald-600" /> 病友與家屬交流論壇
-                      </h2>
-                      <p className="text-slate-500 text-sm">這是一個溫馨、互助的交流空間。您目前以 <strong>{currentUser.name}</strong> 身分登入。</p>
-                    </div>
-                    
-                    {/* 模擬會員切換器 */}
-                    <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg text-xs">
-                      <span className="text-slate-500 pl-2">模擬切換：</span>
-                      <button onClick={() => setCurrentUser({ id: "user-1", name: "王大同" })} className={`px-2 py-1 rounded ${currentUser.id === 'user-1' ? 'bg-white shadow font-bold text-emerald-700' : 'text-slate-600'}`}>王大同</button>
-                      <button onClick={() => setCurrentUser({ id: "user-2", name: "陳小明" })} className={`px-2 py-1 rounded ${currentUser.id === 'user-2' ? 'bg-white shadow font-bold text-emerald-700' : 'text-slate-600'}`}>陳小明</button>
-                    </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                      <Icon name="message-square" className="text-emerald-600" /> 病友與家屬交流論壇
+                    </h2>
+                    <p className="text-slate-500 text-sm">
+                      {userRole === 'visitor' 
+                        ? "📢 目前為「訪客唯讀模式」，登入會員即可參與討論與按讚。" 
+                        : `👤 您目前以「${userRole === 'admin' ? '官方管理員' : currentUser?.name}」身分登入。`}
+                    </p>
                   </div>
 
                   <div className="space-y-4">
                     {sortedForumPosts.map((post) => {
-                      const isOwnPost = post.author === currentUser.name;
-                      const hasLiked = (post.likedBy || []).includes(currentUser.id);
+                      const isOwnPost = currentUser && post.author === currentUser.name;
+                      const hasLiked = currentUser && (post.likedBy || []).includes(currentUser.id);
 
                       return (
                         <div key={post.id} className={`bg-white p-5 rounded-xl border shadow-sm space-y-3 relative transition hover:border-emerald-100 ${post.isPinned ? 'border-amber-200 bg-amber-50/10' : 'border-slate-100'}`}>
@@ -690,7 +746,7 @@
                           <div className="flex justify-between items-center text-xs">
                             <span className="font-bold text-slate-700 flex items-center gap-1">
                               <Icon name="users" className="h-3 w-3 text-emerald-600" /> {post.author} 
-                              {post.author === "王大同" && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.2 rounded ml-1">家屬</span>}
+                              {post.role === "admin" && <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded ml-1 font-bold">官方</span>}
                             </span>
                             <span className="text-slate-400 mr-20">{post.timestamp}</span>
                           </div>
@@ -702,16 +758,22 @@
                           <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-xs">
                             {/* 按讚按鈕 */}
                             <button 
-                              onClick={() => handleLikePost(post.id)}
+                              onClick={() => {
+                                if (userRole === 'visitor') {
+                                  alert("請先登入會員才能按讚喔！");
+                                  return;
+                                }
+                                handleLikePost(post.id);
+                              }}
                               className={`flex items-center gap-1 px-2 py-1 rounded-full transition ${hasLiked ? 'bg-rose-50 text-rose-600 font-bold' : 'text-slate-400 hover:bg-slate-50'}`}
                             >
                               <Icon name="heart" className={`h-4 w-4 ${hasLiked ? 'fill-rose-600 text-rose-600' : ''}`} />
                               <span>{post.likes || 0} 個讚</span>
                             </button>
 
-                            {/* 編輯與刪除 (Own Post or Admin) */}
+                            {/* 編輯與刪除 (本人或管理員) */}
                             <div className="flex gap-2">
-                              {(isOwnPost || isAdmin) && (
+                              {(isOwnPost || userRole === 'admin') && (
                                 <button 
                                   onClick={() => { setForumForm(post); setActiveModal('forum'); }}
                                   className="text-slate-500 hover:text-emerald-600 flex items-center gap-0.5"
@@ -719,7 +781,7 @@
                                   <Icon name="edit-2" className="h-3 w-3" /> 編輯
                                 </button>
                               )}
-                              {(isOwnPost || isAdmin) && (
+                              {(isOwnPost || userRole === 'admin') && (
                                 <button 
                                   onClick={() => handleDeleteRow('forum', post.id)}
                                   className="text-slate-400 hover:text-red-600 flex items-center gap-0.5"
@@ -736,41 +798,61 @@
                   </div>
                 </div>
 
-                {/* 發表新貼文 */}
-                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm h-fit space-y-4 sticky top-24">
-                  <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
-                    <Icon name="plus" className="text-emerald-600" /> 發表新貼文
-                  </h3>
-                  <form onSubmit={handleAddPost} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">發言人暱稱</label>
-                      <input 
-                        type="text" 
-                        value={currentUser.name}
-                        disabled
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 font-semibold"
-                      />
+                {/* 右側：發言管制區 */}
+                <div className="space-y-4 h-fit sticky top-24">
+                  {userRole === 'visitor' ? (
+                    <div className="bg-gradient-to-br from-emerald-50 to-slate-50 p-6 rounded-xl border border-emerald-100 shadow-sm text-center space-y-4">
+                      <div className="bg-emerald-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-emerald-600">
+                        <Icon name="message-square" className="h-6 w-6" />
+                      </div>
+                      <h3 className="font-bold text-slate-900">加入病友交流討論</h3>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        您目前是以「遊客」身份瀏覽。登入會員後即可發表照護經驗、向其他病友提問，並為溫暖的發言按讚支持！
+                      </p>
+                      <button 
+                        onClick={() => { setLoginType('member'); setShowLoginModal(true); }}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-semibold text-sm transition"
+                      >
+                        立即登入會員
+                      </button>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">分享內容</label>
-                      <textarea 
-                        placeholder="請輸入您想詢問或分享的內容..." 
-                        rows={4}
-                        value={newContent}
-                        onChange={(e) => setNewContent(e.target.value)}
-                        required
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                      />
+                  ) : (
+                    <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm space-y-4">
+                      <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                        <Icon name="plus" className="text-emerald-600" /> 發表新貼文
+                      </h3>
+                      <form onSubmit={handleAddPost} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">發言人</label>
+                          <input 
+                            type="text" 
+                            value={userRole === 'admin' ? '官方管理員' : currentUser?.name}
+                            disabled
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600 font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">分享內容</label>
+                          <textarea 
+                            placeholder="請輸入您想詢問或分享的內容..." 
+                            rows={4}
+                            value={newContent}
+                            onChange={(e) => setNewContent(e.target.value)}
+                            required
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                          />
+                        </div>
+                        <button 
+                          type="submit" 
+                          disabled={loading}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition disabled:opacity-50"
+                        >
+                          <Icon name="send" className="h-4 w-4" />
+                          送出貼文
+                        </button>
+                      </form>
                     </div>
-                    <button 
-                      type="submit" 
-                      disabled={loading}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition disabled:opacity-50"
-                    >
-                      <Icon name="send" className="h-4 w-4" />
-                      送出貼文
-                    </button>
-                  </form>
+                  )}
                 </div>
               </div>
             )}
@@ -778,20 +860,48 @@
             {/* 5. 活動花絮頁 (自適應多圖 + 燈箱) */}
             {activeTab === 'activities' && (
               <div className="space-y-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                    <Icon name="image" className="text-emerald-600" /> 活動花絮紀錄
-                  </h2>
-                  <p className="text-slate-500 text-sm">記錄我們與病友一同走過的歡樂時光，點擊照片可放大瀏覽（支援多圖自適應）。</p>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                      <Icon name="image" className="text-emerald-600" /> 活動花絮紀錄
+                    </h2>
+                    <p className="text-slate-500 text-sm">記錄我們與病友一同走過的歡樂時光，點擊照片可放大瀏覽（支援多圖自適應）。</p>
+                  </div>
+                  {userRole === 'admin' && (
+                    <button 
+                      onClick={() => { setActivityForm({ id: '', title: '', images: ['', '', ''], description: '', date: '' }); setActiveModal('activity'); }}
+                      className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-semibold shadow"
+                    >
+                      <Icon name="plus" className="h-4 w-4" /> 新增活動
+                    </button>
+                  )}
                 </div>
                 
                 <div className="grid md:grid-cols-2 gap-8">
                   {data.activities.map((act, idx) => {
                     const imgs = act.images || [];
                     return (
-                      <div key={idx} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
-                        
-                        {/* 自適應圖片網格 (最多3張) */}
+                      <div key={idx} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden flex flex-col relative group">
+                        {userRole === 'admin' && (
+                          <div className="absolute top-4 right-4 flex gap-2 z-10">
+                            <button 
+                              onClick={() => { setActivityForm({ ...act, images: [...(act.images || []), '', '', ''].slice(0,3) }); setActiveModal('activity'); }}
+                              className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 rounded border border-amber-200 shadow"
+                              title="編輯此活動"
+                            >
+                              <Icon name="edit-2" className="h-3.5 w-3.5" />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteRow('activities', act.id)}
+                              className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded border border-red-200 shadow"
+                              title="刪除此活動"
+                            >
+                              <Icon name="trash-2" className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* 自適應圖片網格 */}
                         <div className="w-full bg-slate-100 relative overflow-hidden">
                           {imgs.length === 1 && (
                             <img 
@@ -834,8 +944,8 @@
               </div>
             )}
 
-            {/* 6. 後台管理專區 */}
-            {activeTab === 'admin' && isAdmin && (
+            {/* 6. 後台管理專區 (儀表板) */}
+            {activeTab === 'admin' && userRole === 'admin' && (
               <div className="space-y-8">
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                   <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2 mb-2 text-emerald-700">
@@ -1010,101 +1120,142 @@
 
           {/* ==================== 彈出視窗 (Modals) ==================== */}
 
-          {/* 1. 管理員登入 */}
+          {/* 1. 整合型登入彈窗 */}
           {showLoginModal && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl p-6 max-w-sm w-full space-y-4 shadow-xl">
                 <div className="flex justify-between items-center border-b pb-2">
                   <h3 className="font-bold text-lg flex items-center gap-2 text-slate-900">
-                    <Icon name="lock" className="text-emerald-600 h-5 w-5" /> 管理員安全登入
-                  </h3>
-                  <button onClick={() => setShowLoginModal(false)} className="text-slate-400 hover:text-slate-600">
-                    <Icon name="x" className="h-5 w-5" />
-                  </button>
-                </div>
-                <form onSubmit={handleAdminLogin} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">請輸入管理密碼</label>
-                    <input 
-                      type="password" 
-                      placeholder="預設為 admin123" 
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                    />
+                    <Icon name={loginType === 'admin' ? 'lock' : 'user'} className="text-emerald-600 h-5 w-5" /> 
+                    {loginType === 'admin' ? '管理員安全登入' : '病友會員登入'}
+                    </h3>
+                    <button onClick={() => setShowLoginModal(false)} className="text-slate-400 hover:text-slate-600">
+                      <Icon name="x" className="h-5 w-5" />
+                    </button>
                   </div>
-                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-medium text-sm">
-                    登入驗證
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
 
-          {/* 2. 編輯資訊 */}
-          {activeModal === 'info' && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-xl p-6 max-w-lg w-full space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h3 className="font-bold text-lg text-slate-900">{infoForm.id ? '編輯資訊' : '新增資訊'}</h3>
-                  <button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-slate-600">
-                    <Icon name="x" className="h-5 w-5" />
-                  </button>
+                  {loginType === 'member' ? (
+                    /* 會員登入：免密碼，輸入暱稱即可登入 */
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      if (memberNickname.trim()) {
+                        setUserRole('member');
+                        setCurrentUser({ id: "user-" + Date.now(), name: memberNickname.trim() });
+                        setShowLoginModal(false);
+                        setMemberNickname('');
+                      }
+                    }} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">請輸入您的會員暱稱</label>
+                        <input 
+                          type="text" 
+                          placeholder="例如：王大同、抗帕李阿姨" 
+                          value={memberNickname}
+                          onChange={(e) => setMemberNickname(e.target.value)}
+                          required
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">※ 為了方便病友使用，輸入常用暱稱即可快速登入並開始互動。</p>
+                      </div>
+                      <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-medium text-sm">
+                        登入論壇
+                      </button>
+                    </form>
+                  ) : (
+                    /* 管理員登入：需輸入密碼 */
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      if (adminPassword === "admin123") { // 預設管理密碼
+                        setUserRole('admin');
+                        setShowLoginModal(false);
+                        setAdminPassword('');
+                      } else {
+                        alert("密碼錯誤！");
+                      }
+                    }} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">請輸入管理密碼</label>
+                        <input 
+                          type="password" 
+                          placeholder="預設為 admin123" 
+                          value={adminPassword}
+                          onChange={(e) => setAdminPassword(e.target.value)}
+                          required
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                        />
+                      </div>
+                      <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-medium text-sm">
+                        驗證密碼
+                      </button>
+                    </form>
+                  )}
                 </div>
-                <form onSubmit={handleSaveInfo} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">分類</label>
-                      <select 
-                        value={infoForm.category}
-                        onChange={(e) => setInfoForm({...infoForm, category: e.target.value})}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                      >
-                        <option value="醫療衛教">醫療衛教</option>
-                        <option value="權益倡議">權益倡議</option>
-                        <option value="生活照護">生活照護</option>
-                      </select>
+              </div>
+            )}
+
+            {/* 2. 編輯資訊 */}
+            {activeModal === 'info' && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl p-6 max-w-lg w-full space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center border-b pb-2">
+                    <h3 className="font-bold text-lg text-slate-900">{infoForm.id ? '編輯資訊' : '新增資訊'}</h3>
+                    <button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-slate-600">
+                      <Icon name="x" className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleSaveInfo} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">分類</label>
+                        <select 
+                          value={infoForm.category}
+                          onChange={(e) => setInfoForm({...infoForm, category: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                        >
+                          <option value="醫療衛教">醫療衛教</option>
+                          <option value="權益倡議">權益倡議</option>
+                          <option value="生活照護">生活照護</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">發布日期</label>
+                        <input 
+                          type="date" 
+                          value={infoForm.date}
+                          onChange={(e) => setInfoForm({...infoForm, date: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                        />
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">發布日期</label>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">標題</label>
                       <input 
-                        type="date" 
-                        value={infoForm.date}
-                        onChange={(e) => setInfoForm({...infoForm, date: e.target.value})}
+                        type="text" 
+                        value={infoForm.title}
+                        onChange={(e) => setInfoForm({...infoForm, title: e.target.value})}
+                        required
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                       />
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">標題</label>
-                    <input 
-                      type="text" 
-                      value={infoForm.title}
-                      onChange={(e) => setInfoForm({...infoForm, title: e.target.value})}
-                      required
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">內容</label>
-                    <textarea 
-                      rows={6}
-                      value={infoForm.content}
-                      onChange={(e) => setInfoForm({...infoForm, content: e.target.value})}
-                      required
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                    />
-                  </div>
-                  <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-1">
-                    <Icon name="save" className="h-4 w-4" /> 儲存變更並同步
-                  </button>
-                </form>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">內容</label>
+                      <textarea 
+                        rows={6}
+                        value={infoForm.content}
+                        onChange={(e) => setInfoForm({...infoForm, content: e.target.value})}
+                        required
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                      />
+                    </div>
+                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-1">
+                      <Icon name="save" className="h-4 w-4" /> 儲存變更並同步
+                    </button>
+                  </form>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-                      {/* 3. 編輯活動花絮彈窗 */}
+            {/* 3. 編輯活動花絮 */}
             {activeModal === 'activity' && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-xl p-6 max-w-lg w-full space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
@@ -1171,7 +1322,7 @@
               </div>
             )}
 
-            {/* 4. 編輯統計數據彈窗 */}
+            {/* 4. 編輯統計數據 */}
             {activeModal === 'stats' && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-xl p-6 max-w-xl w-full space-y-4 shadow-xl">
@@ -1232,7 +1383,7 @@
               </div>
             )}
 
-            {/* 5. 編輯/置頂論壇貼文彈窗 */}
+            {/* 5. 編輯/置頂論壇貼文 */}
             {activeModal === 'forum' && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-xl p-6 max-w-lg w-full space-y-4 shadow-xl">
@@ -1262,7 +1413,7 @@
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                       />
                     </div>
-                    {isAdmin && (
+                    {userRole === 'admin' && (
                       <div className="flex items-center gap-2 pt-2">
                         <input 
                           type="checkbox" 
@@ -1284,7 +1435,7 @@
               </div>
             )}
 
-            {/* 6. 編輯關於本會資訊彈窗 */}
+            {/* 6. 編輯關於本會資訊 */}
             {activeModal === 'about' && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-xl p-6 max-w-xl w-full space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
@@ -1384,3 +1535,5 @@
     </script>
   </body>
   </html>
+
+                    
