@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   <title>台灣帕金森病友權益促進會 - 全方位管理平台</title>
-  <!-- Tailwind CSS 生產環境壓縮版 (消除主控台警告，提升載入速度) -->
+  <!-- Tailwind CSS 生產環境壓縮版 -->
   <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
   <!-- Chart.js for health trends -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -316,7 +316,13 @@ textarea.fc{min-height:120px;resize:vertical;}
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function jsStr(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n').replace(/\r/g,'');}
-function fmtMoney(n){return 'NT$'+Number(n||0).toLocaleString('zh-TW');}
+
+// 修正：負數金額顯示優化，更符合台灣財務報表習慣
+function fmtMoney(n){
+  const val = Number(n||0);
+  if (val < 0) return '-NT$' + Math.abs(val).toLocaleString('zh-TW');
+  return 'NT$'+val.toLocaleString('zh-TW');
+}
 function fmtDate(d){if(!d)return'--';try{const dt=new Date(d);if(isNaN(dt.getTime()))return String(d);return`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;}catch(e){return String(d);}}
 function today(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function yearOptions(sel){const y=new Date().getFullYear();const s=Number(sel||y);return[y+1,y,y-1,y-2].map(v=>`<option value="${v}"${v===s?' selected':''}>${v} 年</option>`).join('');}
@@ -342,7 +348,7 @@ function showBack(show){
 }
 
 // ===== 部署設定 =====
-const API_BASE = 'https://script.google.com/macros/s/AKfycbxEt0yuFLKWGu5h4RaGHqMnOViOFXet1bANICQ_3LOFtOKhntb-BCHlvBeZQ3MYYEmK/exec';
+const API_BASE = 'https://script.google.com/macros/s/AKfycbzzPuLg3WS-IcM72hlqamsJkijxtz_K-VJk9g7c7EA7ffB6i6kDkynLm8Pzg0ObxeKS2Q/exec';
 const LIFF_ID  = '2009456572-588gzru4';
 const ORG_NAME = '社團法人台灣帕金森病友權益促進會';
 const ADMIN_TYPES = ['管理員','理事長','理監事','理事','監事','會計','出納','總幹事','行政秘書長'];
@@ -353,6 +359,7 @@ const APP = {
   liffReady:false, liffProfile:null
 };
 
+// 路由定義 (對應 ROUTES 全域變數)
 const ROUTES = {
   home: renderHome,
   memberCenter: renderMemberCenter,
@@ -419,6 +426,8 @@ function loadFontSize(){
   setFontSize(saved);
 }
 
+// ===== 續接第一部分：前端邏輯與頁面渲染 =====
+
 function toggleTremorMode() {
   isTremorMode = !isTremorMode;
   if (isTremorMode) {
@@ -484,8 +493,7 @@ function logout(){
 }
 
 /*=======================================================
- * 🏠 首頁 (未登入：理念、服務重點、公告、登入)
- *        (已登入：個人狀態、健康日誌與關懷、功能大按鈕、心靈雞湯、無所不談)
+ * 🏠 首頁渲染與健康日誌面板
  =======================================================*/
 function renderHome(){
   if(APP.user){
@@ -559,9 +567,6 @@ async function loadHomeAnnouncements(){
   }catch(e){}
 }
 
-/*=======================================================
- * 🏠 已登入首頁：帕友健康日誌與關懷面板
- =======================================================*/
 function renderLoggedInHome(){
   const u = APP.user || {};
   setMain(`
@@ -591,7 +596,6 @@ function renderLoggedInHome(){
 
       <!-- 頁籤 1：健康打卡 -->
       <div id="tab-record" class="health-tab-content space-y-4">
-        <!-- 藥效波動狀態 -->
         <div class="bg-white p-3 rounded-xl border border-slate-200">
           <label class="block font-black text-slate-800 mb-2">⚡ 1. 目前藥效狀態 (ON/OFF 波動)：</label>
           <div id="onOffContainer" class="grid grid-cols-3 gap-2">
@@ -608,7 +612,6 @@ function renderLoggedInHome(){
           <div id="stateToast" class="hidden mt-2 p-2 bg-emerald-100 text-emerald-900 font-bold text-sm rounded-lg text-center"></div>
         </div>
 
-        <!-- 服藥打卡 -->
         <div class="bg-white p-3 rounded-xl border border-slate-200">
           <label class="block font-black text-slate-800 mb-2">💊 2. 今日服藥打卡：</label>
           <div class="grid grid-cols-3 gap-2">
@@ -618,7 +621,6 @@ function renderLoggedInHome(){
           </div>
         </div>
 
-        <!-- 每日運動 -->
         <div class="bg-white p-3 rounded-xl border border-slate-200">
           <label class="block font-black text-slate-800 mb-2">🏃 3. 今日復健運動：</label>
           <div class="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-200 mb-2">
@@ -637,26 +639,16 @@ function renderLoggedInHome(){
           </div>
         </div>
 
-        <!-- 不適症狀勾選 -->
         <div class="bg-white p-3 rounded-xl border border-slate-200">
           <label class="block font-black text-slate-800 mb-2">⚠️ 4. 今日不適症狀 (可多選)：</label>
           <div class="grid grid-cols-2 gap-2">
-            <button onclick="toggleSymptom(event)" class="symptom-btn p-2 bg-slate-50 border-2 border-slate-300 rounded-lg font-bold text-sm text-slate-700 text-left">
-              🤝 手腳顫抖
-            </button>
-            <button onclick="toggleSymptom(event)" class="symptom-btn p-2 bg-slate-50 border-2 border-slate-300 rounded-lg font-bold text-sm text-slate-700 text-left">
-              🚶 步態凍結
-            </button>
-            <button onclick="toggleSymptom(event)" class="symptom-btn p-2 bg-slate-50 border-2 border-slate-300 rounded-lg font-bold text-sm text-slate-700 text-left">
-              🤕 險些跌倒
-            </button>
-            <button onclick="toggleSymptom(event)" class="symptom-btn p-2 bg-slate-50 border-2 border-slate-300 rounded-lg font-bold text-sm text-slate-700 text-left">
-              💤 睡眠障礙
-            </button>
+            <button onclick="toggleSymptom(event)" class="symptom-btn p-2 bg-slate-50 border-2 border-slate-300 rounded-lg font-bold text-sm text-slate-700 text-left">🤝 手腳顫抖</button>
+            <button onclick="toggleSymptom(event)" class="symptom-btn p-2 bg-slate-50 border-2 border-slate-300 rounded-lg font-bold text-sm text-slate-700 text-left">🚶 步態凍結</button>
+            <button onclick="toggleSymptom(event)" class="symptom-btn p-2 bg-slate-50 border-2 border-slate-300 rounded-lg font-bold text-sm text-slate-700 text-left">🤕 險些跌倒</button>
+            <button onclick="toggleSymptom(event)" class="symptom-btn p-2 bg-slate-50 border-2 border-slate-300 rounded-lg font-bold text-sm text-slate-700 text-left">💤 睡眠障礙</button>
           </div>
         </div>
 
-        <!-- 提問備忘 -->
         <div class="bg-white p-3 rounded-xl border border-slate-200">
           <label class="block font-black text-slate-800 mb-2">💬 5. 回診想問醫師的問題備忘：</label>
           <textarea id="doctorQuestion" class="w-full p-2 border-2 border-slate-300 rounded-lg font-bold text-base" rows="2" placeholder="例如：下午常有僵硬感，是否需要調整服藥時間？"></textarea>
@@ -722,169 +714,7 @@ function renderLoggedInHome(){
 }
 
 /*=======================================================
- * 💳 會費繳納紀錄 (會員前端)
- =======================================================*/
-function renderMyPayments(){
-  if(!requireLogin())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">💳 我的會費紀錄</div>
-      <button class="btn btn-primary" onclick="openApplyPayment()"><i class="fa-solid fa-plus mr-1"></i> 線上申報繳納會費</button>
-      <div class="divider"></div>
-      <div id="myPayList"><div class="empty">載入中...</div></div>
-    </div>
-  `);
-  loadMyPayments();
-}
-
-async function loadMyPayments(){
-  const res = await api('payment.list', { memberId: APP.user.memberId });
-  const area = $('myPayList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">尚無會費繳納紀錄</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(r => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${esc(r.year)} 年度常年會費</div>
-            <span class="badge ${r.status==='已確認'?'bs':r.status==='待確認'?'bw':'bd'}">${esc(r.status)}</span>
-          </div>
-          <div class="item-meta">
-            繳費金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
-            付款方式：${esc(r.method)}<br>
-            付款日期：${esc(r.date)}<br>
-            ${r.receiptNo && r.receiptNo !== '尚未開立' ? `收據編號：<strong style="color:var(--primary);">${esc(r.receiptNo)}</strong>` : ''}
-            ${r.rejectReason ? `<br><span class="text-red-600 font-bold">退回原因：${esc(r.rejectReason)}</span>` : ''}
-          </div>
-          <div class="item-actions">
-            ${r.receiptNo && r.receiptNo !== '尚未開立' ? `<button class="btn btn-outline btn-xs" onclick="printReceipt('${esc(r.receiptNo)}')">🖨️ 列印收據</button>` : ''}
-            ${r.fileUrl ? `<a href="${esc(r.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
-}
-
-function openApplyPayment(){
-  const html = `
-    <div class="modal-title">💳 申報繳納會費</div>
-    <div class="notice info">常年會費為每年 NT$1,000 元。請先匯款後，在此填寫申報，秘書處審核後將自動產生電子收據。</div>
-    <div class="fg"><label class="flabel">繳費年度</label><select id="payYear" class="fc">${yearOptions()}</select></div>
-    <div class="fg"><label class="flabel">繳費金額</label><input type="number" id="payAmount" class="fc" value="1000"></div>
-    <div class="fg"><label class="flabel">付款方式</label><select id="payMethod" class="fc"><option value="銀行轉帳">銀行轉帳</option><option value="現金">現金</option></select></div>
-    <div class="fg"><label class="flabel">付款日期</label><input type="date" id="payDate" class="fc" value="${today()}"></div>
-    <div class="fg"><label class="flabel">上傳匯款憑證/截圖</label><input type="file" id="payFile" class="fc" accept="image/*"></div>
-    <div class="fg"><label class="flabel">備註</label><input type="text" id="payNote" class="fc" placeholder="轉帳後五碼或備註說明"></div>
-    <button class="btn btn-primary" onclick="doApplyPayment()">確認送出</button>
-  `;
-  openModal(html);
-}
-
-async function doApplyPayment(){
-  const year = $('payYear').value;
-  const amount = requireAmount('payAmount','金額');
-  const method = $('payMethod').value;
-  const date = requireInput('payDate','付款日期');
-  const note = $('payNote').value.trim();
-  if(!amount || !date) return;
-
-  showLoad();
-  const file = await getFileData('payFile');
-  const payload = { memberId: APP.user.memberId, name: APP.user.name, phone: APP.user.phone, year, amount, method, date, note, file };
-  
-  const res = await api('payment.apply', payload);
-  hideLoad();
-  if(res.success){
-    closeModal(); toast('申報成功，請等待秘書處審核','s'); loadMyPayments();
-  } else {
-    toast(res.message, 'e');
-  }
-}
-
-/*=======================================================
- * 💝 愛心捐款紀錄 (會員前端)
- =======================================================*/
-function renderMyDonations(){
-  if(!requireLogin())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">💝 我的愛心捐款紀錄</div>
-      <button class="btn btn-success" onclick="openApplyDonation()"><i class="fa-solid fa-heart mr-1"></i> 我要線上申報捐款</button>
-      <div class="divider"></div>
-      <div id="myDonList"><div class="empty">載入中...</div></div>
-    </div>
-  `);
-  loadMyDonations();
-}
-
-async function loadMyDonations(){
-  const res = await api('donation.myList', { memberId: APP.user.memberId });
-  const area = $('myDonList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">尚無愛心捐款紀錄</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(r => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">愛心捐款 (${esc(r.purpose)})</div>
-            <span class="badge ${r.status==='已確認'?'bs':r.status==='待確認'?'bw':'bd'}">${esc(r.status)}</span>
-          </div>
-          <div class="item-meta">
-            捐款金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
-            付款方式：${esc(r.method)}<br>
-            捐款日期：${esc(r.date)}<br>
-            ${r.receiptNo && r.receiptNo !== '尚未開立' ? `收據編號：<strong style="color:var(--primary);">${esc(r.receiptNo)}</strong>` : ''}
-            ${r.rejectReason ? `<br><span class="text-red-600 font-bold">退回原因：${esc(r.rejectReason)}</span>` : ''}
-          </div>
-          <div class="item-actions">
-            ${r.receiptNo && r.receiptNo !== '尚未開立' ? `<button class="btn btn-outline btn-xs" onclick="printReceipt('${esc(r.receiptNo)}')">🖨️ 列印收據</button>` : ''}
-            ${r.fileUrl ? `<a href="${esc(r.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
-}
-
-function openApplyDonation(){
-  const html = `
-    <div class="modal-title">💝 申報愛心捐款</div>
-    <div class="notice info">感謝您的慷慨解囊！捐款收據可申報綜合所得稅列舉扣除。</div>
-    <div class="fg"><label class="flabel">捐款金額</label><input type="number" id="donAmount" class="fc" placeholder="請輸入捐款金額"></div>
-    <div class="fg"><label class="flabel">指定用途</label><select id="donPurpose" class="fc"><option value="一般捐款">一般捐贈（全會統籌）</option><option value="復健課程">指定復健課程（太極、瑜伽）</option><option value="病友關懷">指定病友關懷與慰問</option></select></div>
-    <div class="fg"><label class="flabel">付款方式</label><select id="donMethod" class="fc"><option value="銀行轉帳">銀行轉帳</option><option value="現金">現金</option></select></div>
-    <div class="fg"><label class="flabel">付款日期</label><input type="date" id="donDate" class="fc" value="${today()}"></div>
-    <div class="fg"><label class="flabel">上傳匯款憑證/截圖</label><input type="file" id="donFile" class="fc" accept="image/*"></div>
-    <div class="fg"><label class="flabel">備註</label><input type="text" id="donNote" class="fc" placeholder="轉帳後五碼或備註說明"></div>
-    <button class="btn btn-success" onclick="doApplyDonation()">確認送出</button>
-  `;
-  openModal(html);
-}
-
-async function doApplyDonation(){
-  const amount = requireAmount('donAmount','金額');
-  const purpose = $('donPurpose').value;
-  const method = $('donMethod').value;
-  const date = requireInput('donDate','付款日期');
-  const note = $('donNote').value.trim();
-  if(!amount || !date) return;
-
-  showLoad();
-  const file = await getFileData('donFile');
-  const payload = { memberId: APP.user.memberId, name: APP.user.name, phone: APP.user.phone, amount, purpose, method, date, note, file };
-  
-  const res = await api('donation.apply', payload);
-  hideLoad();
-  if(res.success){
-    closeModal(); toast('申報成功，請等待秘書處審核','s'); loadMyDonations();
-  } else {
-    toast(res.message, 'e');
-  }
-}
-
-/*=======================================================
- * ♿ 帕友健康日誌交互與 Chart.js 動態渲染邏輯
+ * ♿ 帕友健康日誌交互與 Chart.js 渲染
  =======================================================*/
 let currentHealthState = 'ON';
 let exerciseMinutes = 30;
@@ -897,7 +727,6 @@ function recordState(evt, type, label) {
   toastEl.innerHTML = `<i class="fa-solid fa-check-circle mr-2"></i> 已選擇目前藥效狀態：【${esc(label)}】(儲存後將同步至雲端)`;
   toastEl.classList.remove('hidden');
   
-  // 高亮選中的狀態按鈕
   document.querySelectorAll('#onOffContainer button').forEach(b => {
     b.className = "p-3 rounded-xl border-2 border-slate-300 bg-white text-slate-700 font-extrabold text-base";
   });
@@ -1123,6 +952,7 @@ function renderDoctorReport(res) {
 
   const symptomText = symptomSet.size ? Array.from(symptomSet).join('、') : '無明顯不適症狀';
 
+  // 修正：提問框 ID 修改為 doctorQuestionRep 避免與打卡頁面 ID 衝突
   const reportHtml = `
     <div class="bg-white p-4 rounded-xl border-2 border-purple-200 space-y-4">
       <div class="border-b-2 border-slate-200 pb-3 flex justify-between items-center flex-wrap gap-2">
@@ -1159,13 +989,172 @@ function renderDoctorReport(res) {
       </div>
       <div class="space-y-1 text-sm">
         <label class="font-extrabold text-slate-700 block">病友 / 照顧者想請教醫師的問題：</label>
-        <textarea id="doctorQuestion" class="w-full p-3 border-2 border-slate-300 rounded-xl font-bold" rows="2" placeholder="例如：下午四點僵硬時，是否能將晚藥提前半小時吃？">${esc(latestQuestion)}</textarea>
+        <textarea id="doctorQuestionRep" class="w-full p-3 border-2 border-slate-300 rounded-xl font-bold" rows="2" placeholder="例如：下午四點僵硬時，是否能將晚藥提前半小時吃？">${esc(latestQuestion)}</textarea>
       </div>
       <button class="btn btn-primary" onclick="window.print()" style="background:var(--purple); border-color:var(--purple); margin:0;">🖨️ 列印 / 匯出 PDF 報告</button>
     </div>
   `;
 
   $('tab-doctor').innerHTML = reportHtml;
+}
+
+/*=======================================================
+ * 💳 會費與捐款申報 (會員前端)
+ =======================================================*/
+function renderMyPayments(){
+  if(!requireLogin())return;
+  setMain(`
+    <div class="card">
+      <div class="card-title">💳 我的會費紀錄</div>
+      <button class="btn btn-primary" onclick="openApplyPayment()"><i class="fa-solid fa-plus mr-1"></i> 線上申報繳納會費</button>
+      <div class="divider"></div>
+      <div id="myPayList"><div class="empty">載入中...</div></div>
+    </div>
+  `);
+  loadMyPayments();
+}
+
+async function loadMyPayments(){
+  const res = await api('payment.list', { memberId: APP.user.memberId });
+  const area = $('myPayList'); if(!area) return;
+  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">尚無會費繳納紀錄</div>`; return; }
+  area.innerHTML = `
+    <div class="list">
+      ${res.items.map(r => `
+        <div class="item">
+          <div class="item-h">
+            <div class="item-title">${esc(r.year)} 年度常年會費</div>
+            <span class="badge ${r.status==='已確認'?'bs':r.status==='待確認'?'bw':'bd'}">${esc(r.status)}</span>
+          </div>
+          <div class="item-meta">
+            繳費金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
+            付款方式：${esc(r.method)}<br>
+            付款日期：${esc(r.date)}<br>
+            ${r.receiptNo && r.receiptNo !== '尚未開立' ? `收據編號：<strong style="color:var(--primary);">${esc(r.receiptNo)}</strong>` : ''}
+            ${r.rejectReason ? `<br><span class="text-red-600 font-bold">退回原因：${esc(r.rejectReason)}</span>` : ''}
+          </div>
+          <div class="item-actions">
+            ${r.receiptNo && r.receiptNo !== '尚未開立' ? `<button class="btn btn-outline btn-xs" onclick="printReceipt('${esc(r.receiptNo)}')">🖨️ 列印收據</button>` : ''}
+            ${r.fileUrl ? `<a href="${esc(r.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function openApplyPayment(){
+  const html = `
+    <div class="modal-title">💳 申報繳納會費</div>
+    <div class="notice info">常年會費為每年 NT$1,000 元。請先匯款後，在此填寫申報，秘書處審核後將自動產生電子收據。</div>
+    <div class="fg"><label class="flabel">繳費年度</label><select id="payYear" class="fc">${yearOptions()}</select></div>
+    <div class="fg"><label class="flabel">繳費金額</label><input type="number" id="payAmount" class="fc" value="1000"></div>
+    <div class="fg"><label class="flabel">付款方式</label><select id="payMethod" class="fc"><option value="銀行轉帳">銀行轉帳</option><option value="現金">現金</option></select></div>
+    <div class="fg"><label class="flabel">付款日期</label><input type="date" id="payDate" class="fc" value="${today()}"></div>
+    <div class="fg"><label class="flabel">上傳匯款憑證/截圖</label><input type="file" id="payFile" class="fc" accept="image/*"></div>
+    <div class="fg"><label class="flabel">備註</label><input type="text" id="payNote" class="fc" placeholder="轉帳後五碼或備註說明"></div>
+    <button class="btn btn-primary" onclick="doApplyPayment()">確認送出</button>
+  `;
+  openModal(html);
+}
+
+async function doApplyPayment(){
+  const year = $('payYear').value;
+  const amount = requireAmount('payAmount','金額');
+  const method = $('payMethod').value;
+  const date = requireInput('payDate','付款日期');
+  const note = $('payNote').value.trim();
+  if(!amount || !date) return;
+
+  showLoad();
+  const file = await getFileData('payFile');
+  const payload = { memberId: APP.user.memberId, name: APP.user.name, phone: APP.user.phone, year, amount, method, date, note, file };
+  
+  const res = await api('payment.apply', payload);
+  hideLoad();
+  if(res.success){
+    closeModal(); toast('申報成功，請等待秘書處審核','s'); loadMyPayments();
+  } else {
+    toast(res.message, 'e');
+  }
+}
+
+function renderMyDonations(){
+  if(!requireLogin())return;
+  setMain(`
+    <div class="card">
+      <div class="card-title">💝 我的愛心捐款紀錄</div>
+      <button class="btn btn-success" onclick="openApplyDonation()"><i class="fa-solid fa-heart mr-1"></i> 我要線上申報捐款</button>
+      <div class="divider"></div>
+      <div id="myDonList"><div class="empty">載入中...</div></div>
+    </div>
+  `);
+  loadMyDonations();
+}
+
+async function loadMyDonations(){
+  const res = await api('donation.myList', { memberId: APP.user.memberId });
+  const area = $('myDonList'); if(!area) return;
+  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">尚無愛心捐款紀錄</div>`; return; }
+  area.innerHTML = `
+    <div class="list">
+      ${res.items.map(r => `
+        <div class="item">
+          <div class="item-h">
+            <div class="item-title">愛心捐款 (${esc(r.purpose)})</div>
+            <span class="badge ${r.status==='已確認'?'bs':r.status==='待確認'?'bw':'bd'}">${esc(r.status)}</span>
+          </div>
+          <div class="item-meta">
+            捐款金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
+            付款方式：${esc(r.method)}<br>
+            捐款日期：${esc(r.date)}<br>
+            ${r.receiptNo && r.receiptNo !== '尚未開立' ? `收據編號：<strong style="color:var(--primary);">${esc(r.receiptNo)}</strong>` : ''}
+            ${r.rejectReason ? `<br><span class="text-red-600 font-bold">退回原因：${esc(r.rejectReason)}</span>` : ''}
+          </div>
+          <div class="item-actions">
+            ${r.receiptNo && r.receiptNo !== '尚未開立' ? `<button class="btn btn-outline btn-xs" onclick="printReceipt('${esc(r.receiptNo)}')">🖨️ 列印收據</button>` : ''}
+            ${r.fileUrl ? `<a href="${esc(r.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function openApplyDonation(){
+  const html = `
+    <div class="modal-title">💝 申報愛心捐款</div>
+    <div class="notice info">感謝您的慷慨解囊！捐款收據可申報綜合所得稅列舉扣除。</div>
+    <div class="fg"><label class="flabel">捐款金額</label><input type="number" id="donAmount" class="fc" placeholder="請輸入捐款金額"></div>
+    <div class="fg"><label class="flabel">指定用途</label><select id="donPurpose" class="fc"><option value="一般捐款">一般捐贈（全會統籌）</option><option value="復健課程">指定復健課程（太極、瑜伽）</option><option value="病友關懷">指定病友關懷與慰問</option></select></div>
+    <div class="fg"><label class="flabel">付款方式</label><select id="donMethod" class="fc"><option value="銀行轉帳">銀行轉帳</option><option value="現金">現金</option></select></div>
+    <div class="fg"><label class="flabel">付款日期</label><input type="date" id="donDate" class="fc" value="${today()}"></div>
+    <div class="fg"><label class="flabel">上傳匯款憑證/截圖</label><input type="file" id="donFile" class="fc" accept="image/*"></div>
+    <div class="fg"><label class="flabel">備註</label><input type="text" id="donNote" class="fc" placeholder="轉帳後五碼或備註說明"></div>
+    <button class="btn btn-success" onclick="doApplyDonation()">確認送出</button>
+  `;
+  openModal(html);
+}
+
+async function doApplyDonation(){
+  const amount = requireAmount('donAmount','金額');
+  const purpose = $('donPurpose').value;
+  const method = $('donMethod').value;
+  const date = requireInput('donDate','付款日期');
+  const note = $('donNote').value.trim();
+  if(!amount || !date) return;
+
+  showLoad();
+  const file = await getFileData('donFile');
+  const payload = { memberId: APP.user.memberId, name: APP.user.name, phone: APP.user.phone, amount, purpose, method, date, note, file };
+  
+  const res = await api('donation.apply', payload);
+  hideLoad();
+  if(res.success){
+    closeModal(); toast('申報成功，請等待秘書處審核','s'); loadMyDonations();
+  } else {
+    toast(res.message, 'e');
+  }
 }
 
 /*=======================================================
@@ -1275,7 +1264,7 @@ async function doUpdateProfile(){
 }
 
 /*=======================================================
- * ⚙️ 管理員後台首頁
+ * ⚙️ 管理員後台首頁與核心模組
  =======================================================*/
 function renderAdminHome(){
   if(!adminGuard())return;
@@ -1288,7 +1277,6 @@ function renderAdminHome(){
       </div>
     </div>
 
-    <!-- 1. 會員管理區塊 -->
     <div class="card" style="border-color:#bbf7d0; background:#f0fdf4;">
       <div class="card-title" style="border-left-color:#16a34a; color:#14532d;">👥 1. 會員管理專區</div>
       <div class="module-grid">
@@ -1299,7 +1287,6 @@ function renderAdminHome(){
       </div>
     </div>
 
-    <!-- 2. 活動公告維塊 -->
     <div class="card" style="border-color:#e9d5ff; background:#faf5ff;">
       <div class="card-title" style="border-left-color:#9333ea; color:#581c87;">📢 2. 活動公告維護</div>
       <div class="module-grid">
@@ -1310,7 +1297,6 @@ function renderAdminHome(){
       </div>
     </div>
 
-    <!-- 3. 財務系統區塊 -->
     <div class="card" style="border-color:#bae6fd; background:#f0f9ff;">
       <div class="card-title" style="border-left-color:#0284c7; color:#0369a1;">💰 3. 財務系統</div>
       
@@ -1343,7 +1329,6 @@ function renderAdminHome(){
       </div>
     </div>
 
-    <!-- 4. 其他設定與報表區塊 -->
     <div class="card" style="border-color:#fef08a; background:#fffbeb;">
       <div class="card-title" style="border-left-color:#ca8a04; color:#713f12;">🛠️ 4. 其他設定與財務報表</div>
       <div class="module-grid">
@@ -1470,1104 +1455,1104 @@ function filterMembers(){
             <span class="badge ${m.isActive?'bs':'bd'}">${esc(m.type)} ｜ ${m.isActive?'有效':'未啟用'}</span>
           </div>
           <div class="item-meta">
-            手機：${esc(m.phone)}<br>
-            到期日：${esc(m.expiryDate)}<br>
-            累計會費：<span class="money">${fmtMoney(m.totalFee)}</span> ｜ 累計捐款：<span class="money">${fmtMoney(m.totalDonation)}</span>
-          </div>
-          <div class="item-actions">
-            <button class="btn btn-outline btn-xs" onclick="go('memberDetail', {memberId:'${esc(m.memberId)}'})">🔍 詳細背景與健康</button>
-            <button class="btn btn-ghost btn-xs" onclick="openEditMember('${esc(m.memberId)}')">✏️ 編輯基本資料</button>
-          </div>
+          手機：${esc(m.phone)}<br>
+          到期日：${esc(m.expiryDate)}<br>
+          累計會費：<span class="money">${fmtMoney(m.totalFee)}</span> ｜ 累計捐款：<span class="money">${fmtMoney(m.totalDonation)}</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-actions">
+          <button class="btn btn-outline btn-xs" onclick="go('memberDetail', {memberId:'${esc(m.memberId)}'})">🔍 詳細背景與健康</button>
+          <button class="btn btn-ghost btn-xs" onclick="openEditMember('${esc(m.memberId)}')">✏️ 編輯基本資料</button>
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 function openAddMember(){
-  const html = `
-    <div class="modal-title">👥 新增會員資料</div>
-    <div class="fg"><label class="flabel">會員姓名<span class="req">*</span></label><input type="text" id="addMName" class="fc"></div>
-    <div class="fg"><label class="flabel">手機號碼<span class="req">*</span></label><input type="text" id="addMPhone" class="fc" placeholder="例如：0912345678"></div>
-    <div class="fg"><label class="flabel">暱稱</label><input type="text" id="addMNickname" class="fc"></div>
-    <div class="fg"><label class="flabel">會員類型</label>
-      <select id="addMType" class="fc">
-        <option value="一般會員">一般會員</option>
-        <option value="永久會員">永久會員</option>
-        <option value="贊助會員">贊助會員</option>
-        <option value="理監事">理監事</option>
-        <option value="管理員">管理員</option>
-      </select>
-    </div>
-    <div class="fg"><label class="flabel">Email</label><input type="email" id="addMEmail" class="fc"></div>
-    <div class="fg"><label class="flabel">通訊地址</label><input type="text" id="addMAddress" class="fc"></div>
-    <button class="btn btn-primary" onclick="doAddMember()">確認新增</button>
-  `;
-  openModal(html);
+const html = `
+  <div class="modal-title">👥 新增會員資料</div>
+  <div class="fg"><label class="flabel">會員姓名<span class="req">*</span></label><input type="text" id="addMName" class="fc"></div>
+  <div class="fg"><label class="flabel">手機號碼<span class="req">*</span></label><input type="text" id="addMPhone" class="fc" placeholder="例如：0912345678"></div>
+  <div class="fg"><label class="flabel">暱稱</label><input type="text" id="addMNickname" class="fc"></div>
+  <div class="fg"><label class="flabel">會員類型</label>
+    <select id="addMType" class="fc">
+      <option value="一般會員">一般會員</option>
+      <option value="永久會員">永久會員</option>
+      <option value="贊助會員">贊助會員</option>
+      <option value="理監事">理監事</option>
+      <option value="管理員">管理員</option>
+    </select>
+  </div>
+  <div class="fg"><label class="flabel">Email</label><input type="email" id="addMEmail" class="fc"></div>
+  <div class="fg"><label class="flabel">通訊地址</label><input type="text" id="addMAddress" class="fc"></div>
+  <button class="btn btn-primary" onclick="doAddMember()">確認新增</button>
+`;
+openModal(html);
 }
 
 async function doAddMember(){
-  const name = requireInput('addMName','姓名');
-  const phone = requireInput('addMPhone','手機號碼');
-  if(!name || !phone) return;
+const name = requireInput('addMName','姓名');
+const phone = requireInput('addMPhone','手機號碼');
+if(!name || !phone) return;
 
-  const payload = {
-    name, phone, nickname: $('addMNickname').value.trim(),
-    type: $('addMType').value, email: $('addMEmail').value.trim(),
-    address: $('addMAddress').value.trim()
-  };
+const payload = {
+  name, phone, nickname: $('addMNickname').value.trim(),
+  type: $('addMType').value, email: $('addMEmail').value.trim(),
+  address: $('addMAddress').value.trim()
+};
 
-  runApi('member.add', payload, () => {
-    closeModal(); toast('會員已成功新增！','s'); loadAllMembers();
-  });
+runApi('member.add', payload, () => {
+  closeModal(); toast('會員已成功新增！','s'); loadAllMembers();
+});
 }
 
 function openEditMember(memberId){
-  const m = allMembersCache.find(x => x.memberId === memberId);
-  if(!m) return;
-  const html = `
-    <div class="modal-title">✏️ 編輯會員資料</div>
-    <div class="fg"><label class="flabel">會員姓名<span class="req">*</span></label><input type="text" id="editMName" class="fc" value="${esc(m.name)}"></div>
-    <div class="fg"><label class="flabel">手機號碼<span class="req">*</span></label><input type="text" id="editMPhone" class="fc" value="${esc(m.mobile)}"></div>
-    <div class="fg"><label class="flabel">會員類型</label>
-      <select id="editMType" class="fc">
-        <option value="一般會員"${m.type==='一般會員'?' selected':''}>一般會員</option>
-        <option value="永久會員"${m.type==='永久會員'?' selected':''}>永久會員</option>
-        <option value="贊助會員"${m.type==='贊助會員'?' selected':''}>贊助會員</option>
-        <option value="理監事"${m.type==='理監事'?' selected':''}>理監事</option>
-        <option value="管理員"${m.type==='管理員'?' selected':''}>管理員</option>
-      </select>
-    </div>
-    <div class="fg"><label class="flabel">會籍到期日</label><input type="date" id="editMExpiry" class="fc" value="${esc(m.expiryDate)}"></div>
-    <div class="fg"><label class="flabel">Email</label><input type="email" id="editMEmail" class="fc" value="${esc(m.email)}"></div>
-    <div class="fg"><label class="flabel">通訊地址</label><input type="text" id="editMAddress" class="fc" value="${esc(m.address)}"></div>
-    <button class="btn btn-primary" onclick="doAdminUpdateMember('${esc(m.memberId)}')">儲存修改</button>
-  `;
-  openModal(html);
+const m = allMembersCache.find(x => x.memberId === memberId);
+if(!m) return;
+const html = `
+  <div class="modal-title">✏️ 編輯會員資料</div>
+  <div class="fg"><label class="flabel">會員姓名<span class="req">*</span></label><input type="text" id="editMName" class="fc" value="${esc(m.name)}"></div>
+  <div class="fg"><label class="flabel">手機號碼<span class="req">*</span></label><input type="text" id="editMPhone" class="fc" value="${esc(m.mobile)}"></div>
+  <div class="fg"><label class="flabel">會員類型</label>
+    <select id="editMType" class="fc">
+      <option value="一般會員"${m.type==='一般會員'?' selected':''}>一般會員</option>
+      <option value="永久會員"${m.type==='永久會員'?' selected':''}>永久會員</option>
+      <option value="贊助會員"${m.type==='贊助會員'?' selected':''}>贊助會員</option>
+      <option value="理監事"${m.type==='理監事'?' selected':''}>理監事</option>
+      <option value="管理員"${m.type==='管理員'?' selected':''}>管理員</option>
+    </select>
+  </div>
+  <div class="fg"><label class="flabel">會籍到期日</label><input type="date" id="editMExpiry" class="fc" value="${esc(m.expiryDate)}"></div>
+  <div class="fg"><label class="flabel">Email</label><input type="email" id="editMEmail" class="fc" value="${esc(m.email)}"></div>
+  <div class="fg"><label class="flabel">通訊地址</label><input type="text" id="editMAddress" class="fc" value="${esc(m.address)}"></div>
+  <button class="btn btn-primary" onclick="doAdminUpdateMember('${esc(m.memberId)}')">儲存修改</button>
+`;
+openModal(html);
 }
 
 async function doAdminUpdateMember(memberId){
-  const name = requireInput('editMName','姓名');
-  const phone = requireInput('editMPhone','手機號碼');
-  if(!name || !phone) return;
+const name = requireInput('editMName','姓名');
+const phone = requireInput('editMPhone','手機號碼');
+if(!name || !phone) return;
 
-  const payload = {
-    memberId, name, phone, type: $('editMType').value,
-    expiryDate: $('editMExpiry').value, email: $('editMEmail').value.trim(),
-    address: $('editMAddress').value.trim()
-  };
+const payload = {
+  memberId, name, phone, type: $('editMType').value,
+  expiryDate: $('editMExpiry').value, email: $('editMEmail').value.trim(),
+  address: $('editMAddress').value.trim()
+};
 
-  runApi('member.adminUpdate', payload, () => {
-    closeModal(); toast('會員資料已更新！','s'); loadAllMembers();
-  });
+runApi('member.adminUpdate', payload, () => {
+  closeModal(); toast('會員資料已更新！','s'); loadAllMembers();
+});
 }
 
 /*=======================================================
  * 🔍 會員詳細背景與健康紀錄檢視
  =======================================================*/
 async function renderMemberDetail(params){
-  if(!adminGuard())return;
-  showLoad();
-  try {
-    const res = await api('member.get', { memberId: params.memberId });
-    const hRes = await api('health.getReport', { memberId: params.memberId });
-    hideLoad();
-    if(!res.success) { toast(res.message, 'e'); go('memberManage'); return; }
-    
-    const m = res.member;
-    const s = hRes.success ? hRes.summary : { avgOnHours: '--', avgOffHours: '--', medCompliance: 0, fallCount: 0, totalExerciseMins: 0 };
+if(!adminGuard())return;
+showLoad();
+try {
+  const res = await api('member.get', { memberId: params.memberId });
+  const hRes = await api('health.getReport', { memberId: params.memberId });
+  hideLoad();
+  if(!res.success) { toast(res.message, 'e'); go('memberManage'); return; }
+  
+  const m = res.member;
+  const s = hRes.success ? hRes.summary : { avgOnHours: '--', avgOffHours: '--', medCompliance: 0, fallCount: 0, totalExerciseMins: 0 };
 
-    setMain(`
-      <div class="card">
-        <div class="card-title">🔍 會員詳細背景資料</div>
-        <div class="item-meta" style="font-size:var(--fs-base); line-height:1.8;">
-          會員編號：<strong>${esc(m.memberId)}</strong><br>
-          姓名：<strong>${esc(m.name)}</strong> (${esc(m.nickname || '無暱稱')})<br>
-          電話：${esc(m.phone)}<br>
-          Email：${esc(m.email || '未提供')}<br>
-          生日：${esc(m.birthday || '未提供')}<br>
-          地址：${esc(m.address || '未提供')}<br>
-          入會日期：${esc(m.joinDate)}<br>
-          會員類型：<span class="badge bb">${esc(m.type)}</span> ｜ 會籍狀態：<span class="badge ${m.isActive?'bs':'bd'}">${m.isActive?'有效':'未啟用'}</span> ｜ 到期日：<strong>${esc(m.expiryDate)}</strong>
+  setMain(`
+    <div class="card">
+      <div class="card-title">🔍 會員詳細背景資料</div>
+      <div class="item-meta" style="font-size:var(--fs-base); line-height:1.8;">
+        會員編號：<strong>${esc(m.memberId)}</strong><br>
+        姓名：<strong>${esc(m.name)}</strong> (${esc(m.nickname || '無暱稱')})<br>
+        電話：${esc(m.phone)}<br>
+        Email：${esc(m.email || '未提供')}<br>
+        生日：${esc(m.birthday || '未提供')}<br>
+        地址：${esc(m.address || '未提供')}<br>
+        入會日期：${esc(m.joinDate)}<br>
+        會員類型：<span class="badge bb">${esc(m.type)}</span> ｜ 會籍狀態：<span class="badge ${m.isActive?'bs':'bd'}">${m.isActive?'有效':'未啟用'}</span> ｜ 到期日：<strong>${esc(m.expiryDate)}</strong>
+      </div>
+    </div>
+
+    <div class="card" style="border-color: #d8b4fe; background: #faf5ff;">
+      <div class="card-title" style="border-left-color: var(--purple); color: var(--purple);">♿ 個資與健康背景 (關懷專用)</div>
+      <div class="item-meta" style="font-size:var(--fs-base); line-height:1.8;">
+        個資健康資料同意：<strong>${esc(m.healthConsent)}</strong><br>
+        ${m.healthConsent === '同意' ? `
+          確診年份：<strong>西元 ${esc(m.diagnosisYear || '未填寫')} 年</strong><br>
+          就診醫院：<strong>${esc(m.hospital || '未填寫')}</strong><br>
+          主治醫師：<strong>${esc(m.doctor || '未填寫')}</strong><br>
+          用藥狀況：<span style="white-space:pre-wrap;">${esc(m.medication || '未填寫')}</span><br>
+          手術記錄：${esc(m.surgery || '無')}<br>
+          特殊需求：${esc(m.specialNeeds || '無')}
+        ` : `<span class="text-red-600 font-bold">⚠️ 會員不同意提供健康背景資料。</span>`}
+      </div>
+    </div>
+
+    <div class="card" style="border-color: #bae6fd; background: #f0f9ff;">
+      <div class="card-title" style="border-left-color: #0284c7; color: #0369a1;">📊 近 7 天健康打卡摘要</div>
+      <div class="grid grid-cols-2 gap-2 text-center text-sm">
+        <div class="bg-white p-2 rounded-lg border border-slate-200">
+          <div class="text-xs text-slate-500">平均 ON (順暢)</div>
+          <div class="font-black text-emerald-600">${s.avgOnHours} 小時/天</div>
+        </div>
+        <div class="bg-white p-2 rounded-lg border border-slate-200">
+          <div class="text-xs text-slate-500">平均 OFF (僵硬)</div>
+          <div class="font-black text-rose-600">${s.avgOffHours} 小時/天</div>
+        </div>
+        <div class="bg-white p-2 rounded-lg border border-slate-200">
+          <div class="text-xs text-slate-500">服藥規律率</div>
+          <div class="font-black text-purple-600">${s.medCompliance}%</div>
+        </div>
+        <div class="bg-white p-2 rounded-lg border border-slate-200">
+          <div class="text-xs text-slate-500">累積運動時間</div>
+          <div class="font-black text-blue-600">${s.totalExerciseMins} 分鐘</div>
         </div>
       </div>
+    </div>
 
-      <div class="card" style="border-color: #d8b4fe; background: #faf5ff;">
-        <div class="card-title" style="border-left-color: var(--purple); color: var(--purple);">♿ 個資與健康背景 (關懷專用)</div>
-        <div class="item-meta" style="font-size:var(--fs-base); line-height:1.8;">
-          個資健康資料同意：<strong>${esc(m.healthConsent)}</strong><br>
-          ${m.healthConsent === '同意' ? `
-            確診年份：<strong>西元 ${esc(m.diagnosisYear || '未填寫')} 年</strong><br>
-            就診醫院：<strong>${esc(m.hospital || '未填寫')}</strong><br>
-            主治醫師：<strong>${esc(m.doctor || '未填寫')}</strong><br>
-            用藥狀況：<span style="white-space:pre-wrap;">${esc(m.medication || '未填寫')}</span><br>
-            手術記錄：${esc(m.surgery || '無')}<br>
-            特殊需求：${esc(m.specialNeeds || '無')}
-          ` : `<span class="text-red-600 font-bold">⚠️ 會員不同意提供健康背景資料。</span>`}
-        </div>
-      </div>
-
-      <div class="card" style="border-color: #bae6fd; background: #f0f9ff;">
-        <div class="card-title" style="border-left-color: #0284c7; color: #0369a1;">📊 近 7 天健康打卡摘要</div>
-        <div class="grid grid-cols-2 gap-2 text-center text-sm">
-          <div class="bg-white p-2 rounded-lg border border-slate-200">
-            <div class="text-xs text-slate-500">平均 ON (順暢)</div>
-            <div class="font-black text-emerald-600">${s.avgOnHours} 小時/天</div>
-          </div>
-          <div class="bg-white p-2 rounded-lg border border-slate-200">
-            <div class="text-xs text-slate-500">平均 OFF (僵硬)</div>
-            <div class="font-black text-rose-600">${s.avgOffHours} 小時/天</div>
-          </div>
-          <div class="bg-white p-2 rounded-lg border border-slate-200">
-            <div class="text-xs text-slate-500">服藥規律率</div>
-            <div class="font-black text-purple-600">${s.medCompliance}%</div>
-          </div>
-          <div class="bg-white p-2 rounded-lg border border-slate-200">
-            <div class="text-xs text-slate-500">累積運動時間</div>
-            <div class="font-black text-blue-600">${s.totalExerciseMins} 分鐘</div>
-          </div>
-        </div>
-      </div>
-
-      <button class="btn btn-ghost" onclick="go('memberManage')">◀ 返回會員名冊</button>
-    `);
-  } catch(e) {
-    hideLoad();
-    toast('載入失敗：' + e.message, 'e');
-  }
+    <button class="btn btn-ghost" onclick="go('memberManage')">◀ 返回會員名冊</button>
+  `);
+} catch(e) {
+  hideLoad();
+  toast('載入失敗：' + e.message, 'e');
+}
 }
 
 /*=======================================================
  * 💳 審核常年會費 (待確認名單)
  =======================================================*/
 function renderPendingPayments(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">💳 審核常年會費 (線上申報)</div>
-      <button class="btn btn-primary" onclick="openAddPaymentDirect()"><i class="fa-solid fa-plus mr-1"></i> 理事會線下代收/補登會費</button>
-      <div class="divider"></div>
-      <div id="pendingPayList"><div class="empty">載入中...</div></div>
-    </div>
-  `);
-  loadPendingPayments();
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">💳 審核常年會費 (線上申報)</div>
+    <button class="btn btn-primary" onclick="openAddPaymentDirect()"><i class="fa-solid fa-plus mr-1"></i> 理事會線下代收/補登會費</button>
+    <div class="divider"></div>
+    <div id="pendingPayList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadPendingPayments();
 }
 
 async function loadPendingPayments(){
-  const res = await api('payment.pendingList');
-  const area = $('pendingPayList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無待審核的會費申報</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(r => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${esc(r.name)} (${esc(r.memberId)})</div>
-            <span class="badge bw">待審核</span>
-          </div>
-          <div class="item-meta">
-            申報年度：<strong>${esc(r.year)} 年度</strong><br>
-            繳費金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
-            付款方式：${esc(r.method)} ｜ 日期：${esc(r.date)}<br>
-            備註：${esc(r.note || '無')}
-          </div>
-          <div class="item-actions">
-            <button class="btn btn-success btn-xs" onclick="confirmPayment('${esc(r.id)}')">✅ 審核通過</button>
-            <button class="btn btn-danger btn-xs" onclick="rejectPayment('${esc(r.id)}')">❌ 退回申請</button>
-            ${r.fileUrl ? `<a href="${esc(r.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
-          </div>
+const res = await api('payment.pendingList');
+const area = $('pendingPayList'); if(!area) return;
+if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無待審核的會費申報</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${res.items.map(r => `
+      <div class="item">
+        <div class="item-h">
+          <div class="item-title">${esc(r.name)} (${esc(r.memberId)})</div>
+          <span class="badge bw">待審核</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          申報年度：<strong>${esc(r.year)} 年度</strong><br>
+          繳費金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
+          付款方式：${esc(r.method)} ｜ 日期：${esc(r.date)}<br>
+          備註：${esc(r.note || '無')}
+        </div>
+        <div class="item-actions">
+          <button class="btn btn-success btn-xs" onclick="confirmPayment('${esc(r.id)}')">✅ 審核通過</button>
+          <button class="btn btn-danger btn-xs" onclick="rejectPayment('${esc(r.id)}')">❌ 退回申請</button>
+          ${r.fileUrl ? `<a href="${esc(r.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 async function confirmPayment(id){
-  if(!confirmCritical('確定審核通過此筆會費？\n通過後系統將自動：\n1. 延長會籍到期日\n2. 累計會員繳費總額\n3. 寫入第一銀行流水帳\n4. 自動開立正式收據')) return;
-  runApi('payment.confirm', { id }, res => {
-    toast('審核成功！收據編號：' + res.receiptNo, 's');
-    loadPendingPayments();
-    loadAdminDashboard();
-  });
+if(!confirmCritical('確定審核通過此筆會費？\n通過後系統將自動：\n1. 延長會籍到期日\n2. 累計會員繳費總額\n3. 寫入第一銀行流水帳\n4. 自動開立正式收據')) return;
+runApi('payment.confirm', { id }, res => {
+  toast('審核成功！收據編號：' + res.receiptNo, 's');
+  loadPendingPayments();
+  loadAdminDashboard();
+});
 }
 
 function rejectPayment(id){
-  const reason = prompt('請輸入退回原因：');
-  if(reason === null) return;
-  if(!reason.trim()){ toast('退回原因不能為空','e'); return; }
-  runApi('payment.reject', { id, reason: reason.trim() }, () => {
-    toast('已退回該申請','s');
-    loadPendingPayments();
-    loadAdminDashboard();
-  });
+const reason = prompt('請輸入退回原因：');
+if(reason === null) return;
+if(!reason.trim()){ toast('退回原因不能為空','e'); return; }
+runApi('payment.reject', { id, reason: reason.trim() }, () => {
+  toast('已退回該申請','s');
+  loadPendingPayments();
+  loadAdminDashboard();
+});
 }
 
 function openAddPaymentDirect(){
-  const html = `
-    <div class="modal-title">💳 理事會補登/代收會費</div>
-    <div class="fg"><label class="flabel">會員編號<span class="req">*</span></label><input type="text" id="dirPayMId" class="fc" placeholder="例如：M20260101001"></div>
-    <div class="fg"><label class="flabel">繳費年度</label><select id="dirPayYear" class="fc">${yearOptions()}</select></div>
-    <div class="fg"><label class="flabel">繳費金額</label><input type="number" id="dirPayAmount" class="fc" value="1000"></div>
-    <div class="fg"><label class="flabel">付款方式</label><select id="dirPayMethod" class="fc"><option value="現金">現金</option><option value="銀行轉帳">銀行轉帳</option></select></div>
-    <div class="fg"><label class="flabel">付款日期</label><input type="date" id="dirPayDate" class="fc" value="${today()}"></div>
-    <div class="fg"><label class="flabel">備註</label><input type="text" id="dirPayNote" class="fc" placeholder="線下代收備註"></div>
-    <button class="btn btn-primary" onclick="doAddPaymentDirect()">確認登錄</button>
-  `;
-  openModal(html);
+const html = `
+  <div class="modal-title">💳 理事會補登/代收會費</div>
+  <div class="fg"><label class="flabel">會員編號<span class="req">*</span></label><input type="text" id="dirPayMId" class="fc" placeholder="例如：M20260101001"></div>
+  <div class="fg"><label class="flabel">繳費年度</label><select id="dirPayYear" class="fc">${yearOptions()}</select></div>
+  <div class="fg"><label class="flabel">繳費金額</label><input type="number" id="dirPayAmount" class="fc" value="1000"></div>
+  <div class="fg"><label class="flabel">付款方式</label><select id="dirPayMethod" class="fc"><option value="現金">現金</option><option value="銀行轉帳">銀行轉帳</option></select></div>
+  <div class="fg"><label class="flabel">付款日期</label><input type="date" id="dirPayDate" class="fc" value="${today()}"></div>
+  <div class="fg"><label class="flabel">備註</label><input type="text" id="dirPayNote" class="fc" placeholder="線下代收備註"></div>
+  <button class="btn btn-primary" onclick="doAddPaymentDirect()">確認登錄</button>
+`;
+openModal(html);
 }
 
 async function doAddPaymentDirect(){
-  const memberId = requireInput('dirPayMId','會員編號');
-  const year = $('dirPayYear').value;
-  const amount = requireAmount('dirPayAmount','金額');
-  const method = $('dirPayMethod').value;
-  const payDate = requireInput('dirPayDate','付款日期');
-  if(!memberId || !amount || !payDate) return;
+const memberId = requireInput('dirPayMId','會員編號');
+const year = $('dirPayYear').value;
+const amount = requireAmount('dirPayAmount','金額');
+const method = $('dirPayMethod').value;
+const payDate = requireInput('dirPayDate','付款日期');
+if(!memberId || !amount || !payDate) return;
 
-  runApi('payment.add', { memberId, year, amount, method, payDate, note: $('dirPayNote').value.trim() }, res => {
-    closeModal();
-    toast('常年會費已成功補登！收據編號：' + res.receiptNo, 's');
-    loadPendingPayments();
-  });
+runApi('payment.add', { memberId, year, amount, method, payDate, note: $('dirPayNote').value.trim() }, res => {
+  closeModal();
+  toast('常年會費已成功補登！收據編號：' + res.receiptNo, 's');
+  loadPendingPayments();
+});
 }
 
 /*=======================================================
  * 💝 審核愛心捐款 (待確認名單)
  =======================================================*/
 function renderPendingDonations(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">💝 審核愛心捐款 (線上申報)</div>
-      <button class="btn btn-success" onclick="openAddDonationDirect()"><i class="fa-solid fa-plus mr-1"></i> 補登線下愛心捐款</button>
-      <div class="divider"></div>
-      <div id="pendingDonList"><div class="empty">載入中...</div></div>
-    </div>
-  `);
-  loadPendingDonations();
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">💝 審核愛心捐款 (線上申報)</div>
+    <button class="btn btn-success" onclick="openAddDonationDirect()"><i class="fa-solid fa-plus mr-1"></i> 補登線下愛心捐款</button>
+    <div class="divider"></div>
+    <div id="pendingDonList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadPendingDonations();
 }
 
 async function loadPendingDonations(){
-  const res = await api('donation.pendingList');
-  const area = $('pendingDonList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無待審核的捐款申報</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(r => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${esc(r.name)} (${esc(r.memberId || '非會員')})</div>
-            <span class="badge bw">待審核</span>
-          </div>
-          <div class="item-meta">
-            指定用途：<strong style="color:var(--purple);">${esc(r.purpose)}</strong><br>
-            捐款金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
-            付款方式：${esc(r.method)} ｜ 日期：${esc(r.date)}<br>
-            備註：${esc(r.note || '無')}
-          </div>
-          <div class="item-actions">
-            <button class="btn btn-success btn-xs" onclick="confirmDonation('${esc(r.id)}')">✅ 審核通過</button>
-            <button class="btn btn-danger btn-xs" onclick="rejectDonation('${esc(r.id)}')">❌ 退回申請</button>
-            ${r.fileUrl ? `<a href="${esc(r.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
-          </div>
+const res = await api('donation.pendingList');
+const area = $('pendingDonList'); if(!area) return;
+if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無待審核的捐款申報</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${res.items.map(r => `
+      <div class="item">
+        <div class="item-h">
+          <div class="item-title">${esc(r.name)} (${esc(r.memberId || '非會員')})</div>
+          <span class="badge bw">待審核</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          指定用途：<strong style="color:var(--purple);">${esc(r.purpose)}</strong><br>
+          捐款金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
+          付款方式：${esc(r.method)} ｜ 日期：${esc(r.date)}<br>
+          備註：${esc(r.note || '無')}
+        </div>
+        <div class="item-actions">
+          <button class="btn btn-success btn-xs" onclick="confirmDonation('${esc(r.id)}')">✅ 審核通過</button>
+          <button class="btn btn-danger btn-xs" onclick="rejectDonation('${esc(r.id)}')">❌ 退回申請</button>
+          ${r.fileUrl ? `<a href="${esc(r.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 async function confirmDonation(id){
-  if(!confirmCritical('確定審核通過此筆捐款？\n通過後系統將自動：\n1. 累計會員捐款總額\n2. 寫入第一銀行流水帳\n3. 自動開立正式收據')) return;
-  runApi('donation.confirm', { id }, res => {
-    toast('審核成功！收據編號：' + res.receiptNo, 's');
-    loadPendingDonations();
-    loadAdminDashboard();
-  });
+if(!confirmCritical('確定審核通過此筆捐款？\n通過後系統將自動：\n1. 累計會員捐款總額\n2. 寫入第一銀行流水帳\n3. 自動開立正式收據')) return;
+runApi('donation.confirm', { id }, res => {
+  toast('審核成功！收據編號：' + res.receiptNo, 's');
+  loadPendingDonations();
+  loadAdminDashboard();
+});
 }
 
 function rejectDonation(id){
-  const reason = prompt('請輸入退回原因：');
-  if(reason === null) return;
-  if(!reason.trim()){ toast('退回原因不能為空','e'); return; }
-  runApi('donation.reject', { id, reason: reason.trim() }, () => {
-    toast('已退回該申請','s');
-    loadPendingDonations();
-    loadAdminDashboard();
-  });
+const reason = prompt('請輸入退回原因：');
+if(reason === null) return;
+if(!reason.trim()){ toast('退回原因不能為空','e'); return; }
+runApi('donation.reject', { id, reason: reason.trim() }, () => {
+  toast('已退回該申請','s');
+  loadPendingDonations();
+  loadAdminDashboard();
+});
 }
 
 function openAddDonationDirect(){
-  const html = `
-    <div class="modal-title">💝 補登線下愛心捐款</div>
-    <div class="fg"><label class="flabel">捐款人姓名<span class="req">*</span></label><input type="text" id="dirDonName" class="fc" placeholder="例如：王小明"></div>
-    <div class="fg"><label class="flabel">會員編號 (非會員可不填)</label><input type="text" id="dirDonMId" class="fc" placeholder="例如：M20260101001"></div>
-    <div class="fg"><label class="flabel">捐款金額<span class="req">*</span></label><input type="number" id="dirDonAmount" class="fc"></div>
-    <div class="fg"><label class="flabel">指定用途</label><select id="dirDonPurpose" class="fc"><option value="一般捐款">一般捐贈（全會統籌）</option><option value="復健課程">指定復健課程（太極、瑜伽）</option><option value="病友關懷">指定病友關懷與慰問</option></select></div>
-    <div class="fg"><label class="flabel">付款方式</label><select id="dirDonMethod" class="fc"><option value="現金">現金</option><option value="銀行轉帳">銀行轉帳</option></select></div>
-    <div class="fg"><label class="flabel">付款日期</label><input type="date" id="dirDonDate" class="fc" value="${today()}"></div>
-    <div class="fg"><label class="flabel">備註</label><input type="text" id="dirDonNote" class="fc"></div>
-    <button class="btn btn-success" onclick="doAddDonationDirect()">確認登錄</button>
-  `;
-  openModal(html);
+const html = `
+  <div class="modal-title">💝 補登線下愛心捐款</div>
+  <div class="fg"><label class="flabel">捐款人姓名<span class="req">*</span></label><input type="text" id="dirDonName" class="fc" placeholder="例如：王小明"></div>
+  <div class="fg"><label class="flabel">會員編號 (非會員可不填)</label><input type="text" id="dirDonMId" class="fc" placeholder="例如：M20260101001"></div>
+  <div class="fg"><label class="flabel">捐款金額<span class="req">*</span></label><input type="number" id="dirDonAmount" class="fc"></div>
+  <div class="fg"><label class="flabel">指定用途</label><select id="dirDonPurpose" class="fc"><option value="一般捐款">一般捐贈（全會統籌）</option><option value="復健課程">指定復健課程（太極、瑜伽）</option><option value="病友關懷">指定病友關懷與慰問</option></select></div>
+  <div class="fg"><label class="flabel">付款方式</label><select id="dirDonMethod" class="fc"><option value="現金">現金</option><option value="銀行轉帳">銀行轉帳</option></select></div>
+  <div class="fg"><label class="flabel">付款日期</label><input type="date" id="dirDonDate" class="fc" value="${today()}"></div>
+  <div class="fg"><label class="flabel">備註</label><input type="text" id="dirDonNote" class="fc"></div>
+  <button class="btn btn-success" onclick="doAddDonationDirect()">確認登錄</button>
+`;
+openModal(html);
 }
 
 async function doAddDonationDirect(){
-  const name = requireInput('dirDonName','捐款人姓名');
-  const amount = requireAmount('dirDonAmount','金額');
-  const purpose = $('dirDonPurpose').value;
-  const method = $('dirDonMethod').value;
-  const donateDate = requireInput('dirDonDate','付款日期');
-  if(!name || !amount || !donateDate) return;
+const name = requireInput('dirDonName','捐款人姓名');
+const amount = requireAmount('dirDonAmount','金額');
+const purpose = $('dirDonPurpose').value;
+const method = $('dirDonMethod').value;
+const donateDate = requireInput('dirDonDate','付款日期');
+if(!name || !amount || !donateDate) return;
 
-  runApi('donation.add', { name, memberId: $('dirDonMId').value.trim(), amount, purpose, method, donateDate, note: $('dirDonNote').value.trim() }, res => {
-    closeModal();
-    toast('愛心捐款已成功補登！收據編號：' + res.receiptNo, 's');
-    loadPendingDonations();
-  });
+runApi('donation.add', { name, memberId: $('dirDonMId').value.trim(), amount, purpose, method, donateDate, note: $('dirDonNote').value.trim() }, res => {
+  closeModal();
+  toast('愛心捐款已成功補登！收據編號：' + res.receiptNo, 's');
+  loadPendingDonations();
+});
 }
 
 /*=======================================================
  * 📈 登錄一般收入 (補助款、利息等)
  =======================================================*/
 function renderFinanceIncome(){
-  if(!adminGuard())return;
-  const subOpts = APP.subjects.filter(s => s.type === '收入').map(s => `<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('');
-  const accOpts = APP.accounts.map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
-  const projOpts = `<option value="">無特定專案 (全會統籌)</option>` + APP.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+if(!adminGuard())return;
+const subOpts = APP.subjects.filter(s => s.type === '收入').map(s => `<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('');
+const accOpts = APP.accounts.map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+const projOpts = `<option value="">無特定專案 (全會統籌)</option>` + APP.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
 
-  setMain(`
-    <div class="card">
-      <div class="card-title">📈 登錄一般收入</div>
-      <div class="notice info">本功能用於登錄政府補助款、銀行利息、發票中獎等其他非會費/非捐款收入。</div>
-      <div class="fg"><label class="flabel">收入日期<span class="req">*</span></label><input type="date" id="incDate" class="fc" value="${today()}"></div>
-      <div class="fg"><label class="flabel">會計科目<span class="req">*</span></label><select id="incSubject" class="fc">${subOpts}</select></div>
-      <div class="fg"><label class="flabel">收入金額<span class="req">*</span></label><input type="number" id="incAmount" class="fc" placeholder="請輸入金額"></div>
-      <div class="fg"><label class="flabel">入帳資金帳戶<span class="req">*</span></label><select id="incAccount" class="fc">${accOpts}</select></div>
-      <div class="fg"><label class="flabel">專案項目</label><select id="incProject" class="fc">${projOpts}</select></div>
-      <div class="fg"><label class="flabel">摘要/來源說明<span class="req">*</span></label><input type="text" id="incDesc" class="fc" placeholder="例如：衛福部115年第一期補助款"></div>
-      <div class="fg"><label class="flabel">備註</label><input type="text" id="incNote" class="fc"></div>
-      <button class="btn btn-primary" onclick="doAddIncome()">確認登錄</button>
-    </div>
-  `);
+setMain(`
+  <div class="card">
+    <div class="card-title">📈 登錄一般收入</div>
+    <div class="notice info">本功能用於登錄政府補助款、銀行利息、發票中獎等其他非會費/非捐款收入。</div>
+    <div class="fg"><label class="flabel">收入日期<span class="req">*</span></label><input type="date" id="incDate" class="fc" value="${today()}"></div>
+    <div class="fg"><label class="flabel">會計科目<span class="req">*</span></label><select id="incSubject" class="fc">${subOpts}</select></div>
+    <div class="fg"><label class="flabel">收入金額<span class="req">*</span></label><input type="number" id="incAmount" class="fc" placeholder="請輸入金額"></div>
+    <div class="fg"><label class="flabel">入帳資金帳戶<span class="req">*</span></label><select id="incAccount" class="fc">${accOpts}</select></div>
+    <div class="fg"><label class="flabel">專案項目</label><select id="incProject" class="fc">${projOpts}</select></div>
+    <div class="fg"><label class="flabel">摘要/來源說明<span class="req">*</span></label><input type="text" id="incDesc" class="fc" placeholder="例如：衛福部115年第一期補助款"></div>
+    <div class="fg"><label class="flabel">備註</label><input type="text" id="incNote" class="fc"></div>
+    <button class="btn btn-primary" onclick="doAddIncome()">確認登錄</button>
+  </div>
+`);
 }
 
 async function doAddIncome(){
-  const date = requireInput('incDate','收入日期');
-  const subjectCode = $('incSubject').value;
-  const amount = requireAmount('incAmount','金額');
-  const account = $('incAccount').value;
-  const projectName = $('incProject').value;
-  const description = requireInput('incDesc','摘要/來源說明');
-  if(!date || !amount || !description) return;
+const date = requireInput('incDate','收入日期');
+const subjectCode = $('incSubject').value;
+const amount = requireAmount('incAmount','金額');
+const account = $('incAccount').value;
+const projectName = $('incProject').value;
+const description = requireInput('incDesc','摘要/來源說明');
+if(!date || !amount || !description) return;
 
-  if(!confirmCritical('確定登錄此筆收入？登錄後系統將自動：\n1. 增加指定資金帳戶餘額\n2. 寫入財務流水帳\n3. 自動開立正式收據')) return;
+if(!confirmCritical('確定登錄此筆收入？登錄後系統將自動：\n1. 增加指定資金帳戶餘額\n2. 寫入財務流水帳\n3. 自動開立正式收據')) return;
 
-  runApi('finance.addIncome', { date, subjectCode, amount, account, projectName, description, note: $('incNote').value.trim() }, res => {
-    toast('一般收入已成功登錄！收據編號：' + res.receiptNo, 's');
-    go('adminHome');
-  });
+runApi('finance.addIncome', { date, subjectCode, amount, account, projectName, description, note: $('incNote').value.trim() }, res => {
+  toast('一般收入已成功登錄！收據編號：' + res.receiptNo, 's');
+  go('adminHome');
+});
 }
 
 /*=======================================================
  * 📉 申請支出核銷 (行政與活動核銷)
  =======================================================*/
 function renderFinanceExpense(){
-  if(!adminGuard())return;
-  const subOpts = APP.subjects.filter(s => s.type === '支出').map(s => `<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('');
-  const accOpts = APP.accounts.map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
-  const projOpts = `<option value="">無特定專案 (全會統籌)</option>` + APP.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+if(!adminGuard())return;
+const subOpts = APP.subjects.filter(s => s.type === '支出').map(s => `<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('');
+const accOpts = APP.accounts.map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+const projOpts = `<option value="">無特定專案 (全會統籌)</option>` + APP.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
 
-  setMain(`
-    <div class="card">
-      <div class="card-title">📉 申請支出核銷</div>
-      <div class="notice info">本功能用於登錄理監事或秘書處各項活動、行政支出的核銷申請。經審核通過並撥款後方會扣減帳戶餘額。</div>
-      <div class="fg"><label class="flabel">支出日期<span class="req">*</span></label><input type="date" id="expDate" class="fc" value="${today()}"></div>
-      <div class="fg"><label class="flabel">會計科目<span class="req">*</span></label><select id="expSubject" class="fc">${subOpts}</select></div>
-      <div class="fg"><label class="flabel">支出金額<span class="req">*</span></label><input type="number" id="expAmount" class="fc" placeholder="請輸入金額"></div>
-      <div class="fg"><label class="flabel">預計付款帳戶<span class="req">*</span></label><select id="expAccount" class="fc">${accOpts}</select></div>
-      <div class="fg"><label class="flabel">專案項目</label><select id="expProject" class="fc">${projOpts}</select></div>
-      <div class="fg"><label class="flabel">申請人<span class="req">*</span></label><input type="text" id="expApplicant" class="fc" value="${esc(APP.user.name)}"></div>
-      <div class="fg"><label class="flabel">受款人/廠商<span class="req">*</span></label><input type="text" id="expPayee" class="fc" placeholder="例如：某某印刷廠"></div>
-      <div class="fg"><label class="flabel">受款人銀行帳號</label><input type="text" id="expPayeeAccount" class="fc" placeholder="例如：第一銀行(007) 123-456-789"></div>
-      <div class="fg"><label class="flabel">用途說明<span class="req">*</span></label><input type="text" id="expDesc" class="fc" placeholder="例如：印製115年第一季會刊 100 本"></div>
-      <div class="fg"><label class="flabel">上傳發票/收據憑證</label><input type="file" id="expFile" class="fc" accept="image/*,application/pdf"></div>
-      <button class="btn btn-primary" onclick="doAddExpense()">送出核銷申請</button>
-    </div>
-  `);
+setMain(`
+  <div class="card">
+    <div class="card-title">📉 申請支出核銷</div>
+    <div class="notice info">本功能用於登錄理監事或秘書處各項活動、行政支出的核銷申請。經審核通過並撥款後方會扣減帳戶餘額。</div>
+    <div class="fg"><label class="flabel">支出日期<span class="req">*</span></label><input type="date" id="expDate" class="fc" value="${today()}"></div>
+    <div class="fg"><label class="flabel">會計科目<span class="req">*</span></label><select id="expSubject" class="fc">${subOpts}</select></div>
+    <div class="fg"><label class="flabel">支出金額<span class="req">*</span></label><input type="number" id="expAmount" class="fc" placeholder="請輸入金額"></div>
+    <div class="fg"><label class="flabel">預計付款帳戶<span class="req">*</span></label><select id="expAccount" class="fc">${accOpts}</select></div>
+    <div class="fg"><label class="flabel">專案項目</label><select id="expProject" class="fc">${projOpts}</select></div>
+    <div class="fg"><label class="flabel">申請人<span class="req">*</span></label><input type="text" id="expApplicant" class="fc" value="${esc(APP.user.name)}"></div>
+    <div class="fg"><label class="flabel">受款人/廠商<span class="req">*</span></label><input type="text" id="expPayee" class="fc" placeholder="例如：某某印刷廠"></div>
+    <div class="fg"><label class="flabel">受款人銀行帳號</label><input type="text" id="expPayeeAccount" class="fc" placeholder="例如：第一銀行(007) 123-456-789"></div>
+    <div class="fg"><label class="flabel">用途說明<span class="req">*</span></label><input type="text" id="expDesc" class="fc" placeholder="例如：印製115年第一季會刊 100 本"></div>
+    <div class="fg"><label class="flabel">上傳發票/收據憑證</label><input type="file" id="expFile" class="fc" accept="image/*,application/pdf"></div>
+    <button class="btn btn-primary" onclick="doAddExpense()">送出核銷申請</button>
+  </div>
+`);
 }
 
 async function doAddExpense(){
-  const date = requireInput('expDate','支出日期');
-  const subjectCode = $('expSubject').value;
-  const amount = requireAmount('expAmount','金額');
-  const account = $('expAccount').value;
-  const projectName = $('expProject').value;
-  const applicant = requireInput('expApplicant','申請人');
-  const payee = requireInput('expPayee','受款人');
-  const payeeAccount = $('expPayeeAccount').value.trim();
-  const description = requireInput('expDesc','用途說明');
-  if(!date || !amount || !applicant || !payee || !description) return;
+const date = requireInput('expDate','支出日期');
+const subjectCode = $('expSubject').value;
+const amount = requireAmount('expAmount','金額');
+const account = $('expAccount').value;
+const projectName = $('expProject').value;
+const applicant = requireInput('expApplicant','申請人');
+const payee = requireInput('expPayee','受款人');
+const payeeAccount = $('expPayeeAccount').value.trim();
+const description = requireInput('expDesc','用途說明');
+if(!date || !amount || !applicant || !payee || !description) return;
 
-  showLoad();
-  const file = await getFileData('expFile');
-  const payload = { date, subjectCode, amount, account, projectName, applicant, payee, payeeAccount, description, file };
+showLoad();
+const file = await getFileData('expFile');
+const payload = { date, subjectCode, amount, account, projectName, applicant, payee, payeeAccount, description, file };
 
-  const res = await api('expense.add', payload);
-  hideLoad();
-  if(res.success){
-    if(res.budgetWarning){
-      openModal(`
-        <div class="modal-title" style="color:var(--danger);">⚠️ 預算超支警告</div>
-        <div class="notice warn">${esc(res.budgetWarning)}</div>
-        <div class="notice success">核銷申請已成功送出！但因超支，請提醒理事會審核時特別注意。</div>
-        <button class="btn btn-primary" onclick="closeModal(); go('adminHome');">我知道了</button>
-      `);
-    } else {
-      toast('核銷申請已成功送出！','s');
-      go('adminHome');
-    }
+const res = await api('expense.add', payload);
+hideLoad();
+if(res.success){
+  if(res.budgetWarning){
+    openModal(`
+      <div class="modal-title" style="color:var(--danger);">⚠️ 預算超支警告</div>
+      <div class="notice warn">${esc(res.budgetWarning)}</div>
+      <div class="notice success">核銷申請已成功送出！但因超支，請提醒理事會審核時特別注意。</div>
+      <button class="btn btn-primary" onclick="closeModal(); go('adminHome');">我知道了</button>
+    `);
   } else {
-    toast(res.message, 'e');
+    toast('核銷申請已成功送出！','s');
+    go('adminHome');
   }
+} else {
+  toast(res.message, 'e');
+}
 }
 
 /*=======================================================
  * 🔍 支出審核與撥款 (管理員財務)
  =======================================================*/
 function renderExpenseList(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">🔍 支出審核與撥款</div>
-      <div class="tabs">
-        <button onclick="filterExpenses('全部')" class="tab active" id="tabExpAll">全部</button>
-        <button onclick="filterExpenses('待核准')" class="tab" id="tabExpPending">待核准</button>
-        <button onclick="filterExpenses('已核准')" class="tab" id="tabExpApproved">已核准 (待撥款)</button>
-        <button onclick="filterExpenses('已撥款')" class="tab" id="tabExpPaid">已撥款</button>
-      </div>
-      <div id="adminExpenseList"><div class="empty">載入中...</div></div>
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">🔍 支出審核與撥款</div>
+    <div class="tabs">
+      <button onclick="filterExpenses('全部')" class="tab active" id="tabExpAll">全部</button>
+      <button onclick="filterExpenses('待核准')" class="tab" id="tabExpPending">待核准</button>
+      <button onclick="filterExpenses('已核准')" class="tab" id="tabExpApproved">已核准 (待撥款)</button>
+      <button onclick="filterExpenses('已撥款')" class="tab" id="tabExpPaid">已撥款</button>
     </div>
-  `);
-  loadAllExpenses();
+    <div id="adminExpenseList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadAllExpenses();
 }
 
 let allExpensesCache = [];
 async function loadAllExpenses(){
-  const res = await api('expense.list');
-  if(res.success){
-    allExpensesCache = res.items;
-    filterExpenses('全部');
-  }
+const res = await api('expense.list');
+if(res.success){
+  allExpensesCache = res.items;
+  filterExpenses('全部');
+}
 }
 
 function filterExpenses(status){
-  const area = $('adminExpenseList'); if(!area) return;
-  document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
-  if(status === '全部') $('tabExpAll').classList.add('active');
-  if(status === '待核准') $('tabExpPending').classList.add('active');
-  if(status === '已核准') $('tabExpApproved').classList.add('active');
-  if(status === '已撥款') $('tabExpPaid').classList.add('active');
+const area = $('adminExpenseList'); if(!area) return;
+document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+if(status === '全部') $('tabExpAll').classList.add('active');
+if(status === '待核准') $('tabExpPending').classList.add('active');
+if(status === '已核准') $('tabExpApproved').classList.add('active');
+if(status === '已撥款') $('tabExpPaid').classList.add('active');
 
-  const filtered = status === '全部' ? allExpensesCache : allExpensesCache.filter(e => e.status === status);
-  if(!filtered.length){ area.innerHTML = `<div class="empty">無此狀態之支出核銷紀錄</div>`; return; }
+const filtered = status === '全部' ? allExpensesCache : allExpensesCache.filter(e => e.status === status);
+if(!filtered.length){ area.innerHTML = `<div class="empty">無此狀態之支出核銷紀錄</div>`; return; }
 
-  area.innerHTML = `
-    <div class="list">
-      ${filtered.map(e => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${esc(e.payee)} ｜ ${esc(e.subjectName)}</div>
-            <span class="badge ${e.status==='已撥款'?'bs':e.status==='待核准'?'bw':e.status==='已核准'?'bb':'bd'}">${esc(e.status)}</span>
-          </div>
-          <div class="item-meta">
-            核銷金額：<strong class="money" style="color:var(--danger);">${fmtMoney(e.amount)}</strong><br>
-            申請人：${esc(e.applicant)} ｜ 專案：${esc(e.projectName || '無特定專案')}<br>
-            用途說明：${esc(e.description)}<br>
-            預計付款帳戶：${esc(e.account)}<br>
-            ${e.payeeAccount ? `受款帳號：<strong>${esc(e.payeeAccount)}</strong><br>` : ''}
-            ${e.voucherNo && e.voucherNo !== '--' ? `會計傳票：<strong style="color:var(--purple);">${esc(e.voucherNo)}</strong><br>` : ''}
-            ${e.rejectReason ? `<span class="text-red-600 font-bold">退回原因：${esc(e.rejectReason)}</span>` : ''}
-          </div>
-          <div class="item-actions">
-            ${e.status === '待核准' ? `
-              <button class="btn btn-primary btn-xs" onclick="approveExpense('${esc(e.id)}')">✅ 准予核銷</button>
-              <button class="btn btn-danger btn-xs" onclick="rejectExpense('${esc(e.id)}')">❌ 退回申請</button>
-            ` : ''}
-            ${e.status === '已核准' ? `
-              <button class="btn btn-success btn-xs" onclick="confirmPaidExpense('${esc(e.id)}')">💵 執行撥款 (建立傳票)</button>
-            ` : ''}
-            ${e.fileUrl ? `<a href="${esc(e.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
-          </div>
+area.innerHTML = `
+  <div class="list">
+    ${filtered.map(e => `
+      <div class="item">
+        <div class="item-h">
+          <div class="item-title">${esc(e.payee)} ｜ ${esc(e.subjectName)}</div>
+          <span class="badge ${e.status==='已撥款'?'bs':e.status==='待核准'?'bw':e.status==='已核准'?'bb':'bd'}">${esc(e.status)}</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          核銷金額：<strong class="money" style="color:var(--danger);">${fmtMoney(e.amount)}</strong><br>
+          申請人：${esc(e.applicant)} ｜ 專案：${esc(e.projectName || '無特定專案')}<br>
+          用途說明：${esc(e.description)}<br>
+          預計付款帳戶：${esc(e.account)}<br>
+          ${e.payeeAccount ? `受款帳號：<strong>${esc(e.payeeAccount)}</strong><br>` : ''}
+          ${e.voucherNo && e.voucherNo !== '--' ? `會計傳票：<strong style="color:var(--purple);">${esc(e.voucherNo)}</strong><br>` : ''}
+          ${e.rejectReason ? `<span class="text-red-600 font-bold">退回原因：${esc(e.rejectReason)}</span>` : ''}
+        </div>
+        <div class="item-actions">
+          ${e.status === '待核准' ? `
+            <button class="btn btn-primary btn-xs" onclick="approveExpense('${esc(e.id)}')">✅ 准予核銷</button>
+            <button class="btn btn-danger btn-xs" onclick="rejectExpense('${esc(e.id)}')">❌ 退回申請</button>
+          ` : ''}
+          ${e.status === '已核准' ? `
+            <button class="btn btn-success btn-xs" onclick="confirmPaidExpense('${esc(e.id)}')">💵 執行撥款 (建立傳票)</button>
+          ` : ''}
+          ${e.fileUrl ? `<a href="${esc(e.fileUrl)}" target="_blank" class="btn btn-ghost btn-xs" style="text-decoration:none;">🔍 查看憑證</a>` : ''}
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 async function approveExpense(id){
-  if(!confirm('確定准予核銷此筆支出？\n核准後需由出納執行撥款才會扣減帳戶餘額。')) return;
-  runApi('expense.approve', { id }, () => {
-    toast('已核准該筆支出','s'); loadAllExpenses();
-  });
+if(!confirm('確定准予核銷此筆支出？\n核准後需由出納執行撥款才會扣減帳戶餘額。')) return;
+runApi('expense.approve', { id }, () => {
+  toast('已核准該筆支出','s'); loadAllExpenses();
+});
 }
 
 function rejectExpense(id){
-  const reason = prompt('請輸入退回原因：');
-  if(reason === null) return;
-  if(!reason.trim()){ toast('退回原因不能為空','e'); return; }
-  runApi('expense.reject', { id, reason: reason.trim() }, () => {
-    toast('已退回申請','s'); loadAllExpenses();
-  });
+const reason = prompt('請輸入退回原因：');
+if(reason === null) return;
+if(!reason.trim()){ toast('退回原因不能為空','e'); return; }
+runApi('expense.reject', { id, reason: reason.trim() }, () => {
+  toast('已退回申請','s'); loadAllExpenses();
+});
 }
 
 async function confirmPaidExpense(id){
-  if(!confirmCritical('確定執行撥款？\n撥款後系統將自動：\n1. 扣減指定資金帳戶餘額\n2. 累計預算已用金額\n3. 寫入財務流水帳\n4. 自動建立會計傳票')) return;
-  runApi('expense.confirmPaid', { id }, res => {
-    toast('撥款成功！已自動建立傳票：' + res.voucherNo, 's');
-    loadAllExpenses();
-    loadAdminDashboard();
-  });
+if(!confirmCritical('確定執行撥款？\n撥款後系統將自動：\n1. 扣減指定資金帳戶餘額\n2. 累計預算已用金額\n3. 寫入財務流水帳\n4. 自動建立會計傳票')) return;
+runApi('expense.confirmPaid', { id }, res => {
+  toast('撥款成功！已自動建立傳票：' + res.voucherNo, 's');
+  loadAllExpenses();
+  loadAdminDashboard();
+});
 }
 
 /*=======================================================
- * 📄 收據明細管理 (含安全作廢沖銷連動)
+ * 📄 收據明細管理與安全作廢
  =======================================================*/
 function renderReceiptList(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">📄 收據明細管理</div>
-      <div class="fg">
-        <input type="text" id="receiptSearch" class="fc" placeholder="🔍 輸入收據編號或繳款人姓名搜尋..." oninput="filterReceipts()">
-      </div>
-      <div id="adminReceiptList"><div class="empty">載入中...</div></div>
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">📄 收據明細管理</div>
+    <div class="fg">
+      <input type="text" id="receiptSearch" class="fc" placeholder="🔍 輸入收據編號或繳款人姓名搜尋..." oninput="filterReceipts()">
     </div>
-  `);
-  loadAllReceipts();
+    <div id="adminReceiptList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadAllReceipts();
 }
 
 let allReceiptsCache = [];
 async function loadAllReceipts(){
-  const res = await api('receipt.list');
-  if(res.success){
-    allReceiptsCache = res.items;
-    filterReceipts();
-  }
+const res = await api('receipt.list');
+if(res.success){
+  allReceiptsCache = res.items;
+  filterReceipts();
+}
 }
 
 function filterReceipts(){
-  const kw = $('receiptSearch') ? $('receiptSearch').value.trim().toLowerCase() : '';
-  const area = $('adminReceiptList'); if(!area) return;
-  const filtered = allReceiptsCache.filter(r => 
-    r.receiptNo.toLowerCase().includes(kw) || 
-    r.name.toLowerCase().includes(kw)
-  );
+const kw = $('receiptSearch') ? $('receiptSearch').value.trim().toLowerCase() : '';
+const area = $('adminReceiptList'); if(!area) return;
+const filtered = allReceiptsCache.filter(r => 
+  r.receiptNo.toLowerCase().includes(kw) || 
+  r.name.toLowerCase().includes(kw)
+);
 
-  if(!filtered.length){ area.innerHTML = `<div class="empty">找不到符合條件的收據</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${filtered.map(r => `
-        <div class="item" style="${r.status==='作廢'?'background:#fef2f2; border-color:#fecaca;':''}">
-          <div class="item-h">
-            <div class="item-title">${esc(r.name)} ｜ ${esc(r.receiptNo)}</div>
-            <span class="badge ${r.status==='有效'?'bs':'bd'}">${esc(r.status)}收據</span>
-          </div>
-          <div class="item-meta">
-            款項類型：<strong>${esc(r.type)}</strong> ｜ 項目：${esc(r.item)}<br>
-            收據金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
-            開立日期：${esc(r.date)}<br>
-            ${r.voidReason ? `<span class="text-red-600 font-bold">作廢原因：${esc(r.voidReason)}</span>` : ''}
-          </div>
-          <div class="item-actions">
-            ${r.status === '有效' ? `
-              <button class="btn btn-outline btn-xs" onclick="printReceipt('${esc(r.receiptNo)}')">🖨️ 列印/預覽雙聯收據</button>
-              <button class="btn btn-danger btn-xs" onclick="voidReceipt('${esc(r.receiptNo)}')">⚠️ 安全作廢與沖銷</button>
-            ` : `<button class="btn btn-ghost btn-xs" onclick="printReceipt('${esc(r.receiptNo)}')">🔍 檢視已作廢收據</button>`}
-          </div>
+if(!filtered.length){ area.innerHTML = `<div class="empty">找不到符合條件的收據</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${filtered.map(r => `
+      <div class="item" style="${r.status==='作廢'?'background:#fef2f2; border-color:#fecaca;':''}">
+        <div class="item-h">
+          <div class="item-title">${esc(r.name)} ｜ ${esc(r.receiptNo)}</div>
+          <span class="badge ${r.status==='有效'?'bs':'bd'}">${esc(r.status)}收據</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          款項類型：<strong>${esc(r.type)}</strong> ｜ 項目：${esc(r.item)}<br>
+          收據金額：<strong class="money">${fmtMoney(r.amount)}</strong><br>
+          開立日期：${esc(r.date)}<br>
+          ${r.voidReason ? `<span class="text-red-600 font-bold">作廢原因：${esc(r.voidReason)}</span>` : ''}
+        </div>
+        <div class="item-actions">
+          ${r.status === '有效' ? `
+            <button class="btn btn-outline btn-xs" onclick="printReceipt('${esc(r.receiptNo)}')">🖨️ 列印/預覽雙聯收據</button>
+            <button class="btn btn-danger btn-xs" onclick="voidReceipt('${esc(r.receiptNo)}')">⚠️ 安全作廢與沖銷</button>
+          ` : `<button class="btn btn-ghost btn-xs" onclick="printReceipt('${esc(r.receiptNo)}')">🔍 檢視已作廢收據</button>`}
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 async function printReceipt(receiptNo){
-  showLoad();
-  try {
-    const res = await api('receipt.pdf', { receiptNo });
-    hideLoad();
-    if(res.success){
-      const printArea = $('printArea');
-      printArea.innerHTML = `
-        <style>
-          @media print {
-            body * { display: none !important; }
-            #printArea, #printArea * { display: block !important; }
-            #printArea { position: absolute; left: 0; top: 0; width: 100%; }
-            .no-print { display: none !important; }
-          }
-        </style>
-        <div class="no-print" style="padding: 20px; text-align: center; background: #e2e8f0; border-bottom: 2px solid #cbd5e1; display:flex; justify-content:center; gap:10px;">
-          <button class="btn btn-primary btn-sm" onclick="window.print()" style="margin:0;">🖨️ 確定列印 / 另存 PDF</button>
-          <button class="btn btn-ghost btn-sm" onclick="closePrint()" style="margin:0;">關閉預覽</button>
-        </div>
-        ${res.html}
-      `;
-      printArea.classList.remove('hide');
-      document.body.style.overflow = 'hidden';
-    } else {
-      toast(res.message, 'e');
-    }
-  } catch(e){
-    hideLoad(); toast('載入失敗：'+e.message, 'e');
+showLoad();
+try {
+  const res = await api('receipt.pdf', { receiptNo });
+  hideLoad();
+  if(res.success){
+    const printArea = $('printArea');
+    printArea.innerHTML = `
+      <style>
+        @media print {
+          body * { display: none !important; }
+          #printArea, #printArea * { display: block !important; }
+          #printArea { position: absolute; left: 0; top: 0; width: 100%; }
+          .no-print { display: none !important; }
+        }
+      </style>
+      <div class="no-print" style="padding: 20px; text-align: center; background: #e2e8f0; border-bottom: 2px solid #cbd5e1; display:flex; justify-content:center; gap:10px;">
+        <button class="btn btn-primary btn-sm" onclick="window.print()" style="margin:0;">🖨️ 確定列印 / 另存 PDF</button>
+        <button class="btn btn-ghost btn-sm" onclick="closePrint()" style="margin:0;">關閉預覽</button>
+      </div>
+      ${res.html}
+    `;
+    printArea.classList.remove('hide');
+    document.body.style.overflow = 'hidden';
+  } else {
+    toast(res.message, 'e');
   }
+} catch(e){
+  hideLoad(); toast('載入失敗：'+e.message, 'e');
+}
 }
 
 function closePrint(){
-  const printArea = $('printArea');
-  printArea.innerHTML = '';
-  printArea.classList.add('hide');
-  document.body.style.overflow = 'auto';
+const printArea = $('printArea');
+printArea.innerHTML = '';
+printArea.classList.add('hide');
+document.body.style.overflow = 'auto';
 }
 
 function voidReceipt(receiptNo){
-  if(!confirmCritical('⚠️ 警告：確定要作廢此筆收據？\n作廢收據將會自動執行以下安全沖銷：\n1. 在財務流水帳中自動產生一筆「負數沖銷交易」\n2. 自動扣減對應資金帳戶的餘額\n3. 自動扣減會員的累計繳費/捐款額度\n\n此操作不可逆，請務必確認。')) return;
-  const reason = prompt('請輸入收據作廢原因：');
-  if(reason === null) return;
-  if(!reason.trim()){ toast('作廢原因不能為空','e'); return; }
+if(!confirmCritical('⚠️ 警告：確定要作廢此筆收據？\n作廢收據將會自動執行以下安全沖銷：\n1. 在財務流水帳中自動產生一筆「負數沖銷交易」\n2. 自動扣減對應資金帳戶的餘額\n3. 自動扣減會員的累計繳費/捐款額度\n\n此操作不可逆，請務必確認。')) return;
+const reason = prompt('請輸入收據作廢原因：');
+if(reason === null) return;
+if(!reason.trim()){ toast('作廢原因不能為空','e'); return; }
 
-  runApi('receipt.void', { receiptNo, reason: reason.trim() }, res => {
-    openModal(`
-      <div class="modal-title" style="color:var(--danger);">💾 作廢沖銷成功</div>
-      <div class="notice success">${esc(res.message)}</div>
-      <button class="btn btn-primary" onclick="closeModal(); loadAllReceipts();">我知道了</button>
-    `);
-  });
+runApi('receipt.void', { receiptNo, reason: reason.trim() }, res => {
+  openModal(`
+    <div class="modal-title" style="color:var(--danger);">💾 作廢沖銷成功</div>
+    <div class="notice success">${esc(res.message)}</div>
+    <button class="btn btn-primary" onclick="closeModal(); loadAllReceipts();">我知道了</button>
+  `);
+});
 }
 
 /*=======================================================
  * 🗂️ 會計傳票查詢
  =======================================================*/
 function renderVoucherList(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">🗂️ 會計傳票查詢</div>
-      <div id="adminVoucherList"><div class="empty">載入中...</div></div>
-    </div>
-  `);
-  loadAllVouchers();
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">🗂️ 會計傳票查詢</div>
+    <div id="adminVoucherList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadAllVouchers();
 }
 
 async function loadAllVouchers(){
-  const res = await api('voucher.list');
-  const area = $('adminVoucherList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前尚無已建立的會計傳票</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(v => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${esc(v.payee)} ｜ 傳票編號：${esc(v.voucherNo)}</div>
-            <span class="badge bs">已建立</span>
-          </div>
-          <div class="item-meta">
-            傳票日期：${esc(v.date)}<br>
-            會計科目：<strong>${esc(v.subjectCode)} ${esc(v.subjectName)}</strong><br>
-            傳票金額：<strong class="money" style="color:var(--danger);">${fmtMoney(v.amount)}</strong><br>
-            摘要說明：${esc(v.description)}<br>
-            來源核銷單號：<strong>${esc(v.expenseId)}</strong>
-          </div>
+const res = await api('voucher.list');
+const area = $('adminVoucherList'); if(!area) return;
+if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前尚無已建立的會計傳票</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${res.items.map(v => `
+      <div class="item">
+        <div class="item-h">
+          <div class="item-title">${esc(v.payee)} ｜ 傳票編號：${esc(v.voucherNo)}</div>
+          <span class="badge bs">已建立</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          傳票日期：${esc(v.date)}<br>
+          會計科目：<strong>${esc(v.subjectCode)} ${esc(v.subjectName)}</strong><br>
+          傳票金額：<strong class="money" style="color:var(--danger);">${fmtMoney(v.amount)}</strong><br>
+          摘要說明：${esc(v.description)}<br>
+          來源核銷單號：<strong>${esc(v.expenseId)}</strong>
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 /*=======================================================
  * 📊 年度預算設定
  =======================================================*/
 function renderBudgetManage(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">📊 年度預算設定</div>
-      <button class="btn btn-primary" onclick="openAddBudget()"><i class="fa-solid fa-plus mr-1"></i> 新增年度科目預算</button>
-      <div class="fg" style="margin-top:12px;">
-        <label class="flabel">選擇查詢年度</label>
-        <select id="budgetFilterYear" class="fc" onchange="loadBudgets()">${yearOptions()}</select>
-      </div>
-      <div class="divider"></div>
-      <div id="adminBudgetList"><div class="empty">載入中...</div></div>
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">📊 年度預算設定</div>
+    <button class="btn btn-primary" onclick="openAddBudget()"><i class="fa-solid fa-plus mr-1"></i> 新增年度科目預算</button>
+    <div class="fg" style="margin-top:12px;">
+      <label class="flabel">選擇查詢年度</label>
+      <select id="budgetFilterYear" class="fc" onchange="loadBudgets()">${yearOptions()}</select>
     </div>
-  `);
-  loadBudgets();
+    <div class="divider"></div>
+    <div id="adminBudgetList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadBudgets();
 }
 
 async function loadBudgets(){
-  const year = $('budgetFilterYear').value;
-  const res = await api('budget.list', { year });
-  const area = $('adminBudgetList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">該年度尚未設定任何預算</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(b => {
-        const rate = b.budgetAmt ? Math.round((b.usedAmt / b.budgetAmt) * 100) : 0;
-        return `
-          <div class="item">
-            <div class="item-h">
-              <div class="item-title">${esc(b.subjectCode)} ${esc(b.subjectName)}</div>
-              <span class="badge bb">${esc(b.year)} 年度</span>
-            </div>
-            <div class="item-meta">
-              ${b.projectName ? `專案項目：<strong>${esc(b.projectName)}</strong><br>` : ''}
-              預算額度：<strong class="money">${fmtMoney(b.budgetAmt)}</strong><br>
-              已用金額：<strong class="money" style="color:var(--danger);">${fmtMoney(b.usedAmt)}</strong> (${rate}%)<br>
-              剩餘額度：<strong class="money" style="color:var(--primary);">${fmtMoney(b.remainAmt)}</strong>
-            </div>
-            <div class="w-full bg-slate-200 h-3 rounded-full mt-2 overflow-hidden">
-              <div class="bg-teal-600 h-full" style="width: ${Math.min(100, rate)}%"></div>
-            </div>
+const year = $('budgetFilterYear').value;
+const res = await api('budget.list', { year });
+const area = $('adminBudgetList'); if(!area) return;
+if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">該年度尚未設定任何預算</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${res.items.map(b => {
+      const rate = b.budgetAmt ? Math.round((b.usedAmt / b.budgetAmt) * 100) : 0;
+      return `
+        <div class="item">
+          <div class="item-h">
+            <div class="item-title">${esc(b.subjectCode)} ${esc(b.subjectName)}</div>
+            <span class="badge bb">${esc(b.year)} 年度</span>
           </div>
-        `;
-      }).join('')}
-    </div>
-  `;
+          <div class="item-meta">
+            ${b.projectName ? `專案項目：<strong>${esc(b.projectName)}</strong><br>` : ''}
+            預算額度：<strong class="money">${fmtMoney(b.budgetAmt)}</strong><br>
+            已用金額：<strong class="money" style="color:var(--danger);">${fmtMoney(b.usedAmt)}</strong> (${rate}%)<br>
+            剩餘額度：<strong class="money" style="color:var(--primary);">${fmtMoney(b.remainAmt)}</strong>
+          </div>
+          <div class="w-full bg-slate-200 h-3 rounded-full mt-2 overflow-hidden">
+            <div class="bg-teal-600 h-full" style="width: ${Math.min(100, rate)}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('')}
+  </div>
+`;
 }
 
 function openAddBudget(){
-  const subOpts = APP.subjects.filter(s => s.type === '支出').map(s => `<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('');
-  const projOpts = `<option value="">無特定專案 (全會統籌)</option>` + APP.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
-  const html = `
-    <div class="modal-title">📊 設定科目年度預算</div>
-    <div class="fg"><label class="flabel">年度</label><select id="budYear" class="fc">${yearOptions()}</select></div>
-    <div class="fg"><label class="flabel">會計科目</label><select id="budSubject" class="fc">${subOpts}</select></div>
-    <div class="fg"><label class="flabel">專案項目</label><select id="budProject" class="fc">${projOpts}</select></div>
-    <div class="fg"><label class="flabel">預算金額<span class="req">*</span></label><input type="number" id="budAmount" class="fc" placeholder="請輸入預算金額"></div>
-    <div class="fg"><label class="flabel">備註說明</label><input type="text" id="budNote" class="fc"></div>
-    <button class="btn btn-primary" onclick="doAddBudget()">確認設定</button>
-  `;
-  openModal(html);
+const subOpts = APP.subjects.filter(s => s.type === '支出').map(s => `<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('');
+const projOpts = `<option value="">無特定專案 (全會統籌)</option>` + APP.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+const html = `
+  <div class="modal-title">📊 設定科目年度預算</div>
+  <div class="fg"><label class="flabel">年度</label><select id="budYear" class="fc">${yearOptions()}</select></div>
+  <div class="fg"><label class="flabel">會計科目</label><select id="budSubject" class="fc">${subOpts}</select></div>
+  <div class="fg"><label class="flabel">專案項目</label><select id="budProject" class="fc">${projOpts}</select></div>
+  <div class="fg"><label class="flabel">預算金額<span class="req">*</span></label><input type="number" id="budAmount" class="fc" placeholder="請輸入預算金額"></div>
+  <div class="fg"><label class="flabel">備註說明</label><input type="text" id="budNote" class="fc"></div>
+  <button class="btn btn-primary" onclick="doAddBudget()">確認設定</button>
+`;
+openModal(html);
 }
 
 async function doAddBudget(){
-  const year = $('budYear').value;
-  const subjectCode = $('budSubject').value;
-  const projectName = $('budProject').value;
-  const amount = requireAmount('budAmount','預算金額');
-  if(!amount) return;
+const year = $('budYear').value;
+const subjectCode = $('budSubject').value;
+const projectName = $('budProject').value;
+const amount = requireAmount('budAmount','預算金額');
+if(!amount) return;
 
-  runApi('budget.add', { year, subjectCode, projectName, amount, note: $('budNote').value.trim() }, () => {
-    closeModal(); toast('預算設定已成功建立/更新！','s'); loadBudgets();
-  });
+runApi('budget.add', { year, subjectCode, projectName, amount, note: $('budNote').value.trim() }, () => {
+  closeModal(); toast('預算設定已成功建立/更新！','s'); loadBudgets();
+});
 }
 
 /*=======================================================
  * 🎯 專案項目設定
  =======================================================*/
 function renderProjectManage(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">🎯 專案項目設定</div>
-      <button class="btn btn-primary" onclick="openAddProject()"><i class="fa-solid fa-plus mr-1"></i> 新增指定用途專案</button>
-      <div class="divider"></div>
-      <div id="adminProjectList"><div class="empty">載入中...</div></div>
-    </div>
-  `);
-  loadProjects();
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">🎯 專案項目設定</div>
+    <button class="btn btn-primary" onclick="openAddProject()"><i class="fa-solid fa-plus mr-1"></i> 新增指定用途專案</button>
+    <div class="divider"></div>
+    <div id="adminProjectList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadProjects();
 }
 
 async function loadProjects(){
-  const res = await api('project.list');
-  const area = $('adminProjectList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前尚無任何專案設定</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(p => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${esc(p.name)}</div>
-            <span class="badge bs">${esc(p.year)} 年度</span>
-          </div>
-          <div class="item-meta">
-            專案說明：${esc(p.note || '無')}<br>
-            目前狀態：<span class="badge bb">${esc(p.status)}</span>
-          </div>
+const res = await api('project.list');
+const area = $('adminProjectList'); if(!area) return;
+if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前尚無任何專案設定</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${res.items.map(p => `
+      <div class="item">
+        <div class="item-h">
+          <div class="item-title">${esc(p.name)}</div>
+          <span class="badge bs">${esc(p.year)} 年度</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          專案說明：${esc(p.note || '無')}<br>
+          目前狀態：<span class="badge bb">${esc(p.status)}</span>
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 function openAddProject(){
-  const html = `
-    <div class="modal-title">🎯 新增專案項目</div>
-    <div class="fg"><label class="flabel">年度</label><select id="projYear" class="fc">${yearOptions()}</select></div>
-    <div class="fg"><label class="flabel">專案名稱<span class="req">*</span></label><input type="text" id="projName" class="fc" placeholder="例如：115年病友太極復健班"></div>
-    <div class="fg"><label class="flabel">專案說明</label><input type="text" id="projNote" class="fc"></div>
-    <button class="btn btn-primary" onclick="doAddProject()">確認新增</button>
-  `;
-  openModal(html);
+const html = `
+  <div class="modal-title">🎯 新增專案項目</div>
+  <div class="fg"><label class="flabel">年度</label><select id="projYear" class="fc">${yearOptions()}</select></div>
+  <div class="fg"><label class="flabel">專案名稱<span class="req">*</span></label><input type="text" id="projName" class="fc" placeholder="例如：115年病友太極復健班"></div>
+  <div class="fg"><label class="flabel">專案說明</label><input type="text" id="projNote" class="fc"></div>
+  <button class="btn btn-primary" onclick="doAddProject()">確認新增</button>
+`;
+openModal(html);
 }
 
 async function doAddProject(){
-  const year = $('projYear').value;
-  const name = requireInput('projName','專案名稱');
-  if(!name) return;
+const year = $('projYear').value;
+const name = requireInput('projName','專案名稱');
+if(!name) return;
 
-  runApi('project.add', { year, name, note: $('projNote').value.trim() }, () => {
-    closeModal(); toast('專案項目已成功新增！','s'); loadProjects();
-  });
+runApi('project.add', { year, name, note: $('projNote').value.trim() }, () => {
+  closeModal(); toast('專案項目已成功新增！','s'); loadProjects();
+});
 }
 
 /*=======================================================
  * 🏷️ 會計科目管理
  =======================================================*/
 function renderSubjectManage(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">🏷️ 會計科目管理</div>
-      <div class="row">
-        <button class="btn btn-primary" onclick="openAddSubject()"><i class="fa-solid fa-plus mr-1"></i> 新增會計科目</button>
-        <button class="btn btn-outline" onclick="doInitDefaultSubjects()"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> 匯入官方預設科目</button>
-      </div>
-      <div class="divider"></div>
-      <div id="adminSubjectList"><div class="empty">載入中...</div></div>
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">🏷️ 會計科目管理</div>
+    <div class="row">
+      <button class="btn btn-primary" onclick="openAddSubject()"><i class="fa-solid fa-plus mr-1"></i> 新增會計科目</button>
+      <button class="btn btn-outline" onclick="doInitDefaultSubjects()"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> 匯入官方預設科目</button>
     </div>
-  `);
-  loadSubjects();
+    <div class="divider"></div>
+    <div id="adminSubjectList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadSubjects();
 }
 
 async function loadSubjects(){
-  const res = await api('subject.list');
-  const area = $('adminSubjectList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無任何會計科目</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(s => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${esc(s.code)} ｜ ${esc(s.name)}</div>
-            <span class="badge ${s.type==='收入'?'bs':'bd'}">${esc(s.type)}科目</span>
-          </div>
-          <div class="item-meta">
-            科目說明：${esc(s.note || '無')}
-          </div>
+const res = await api('subject.list');
+const area = $('adminSubjectList'); if(!area) return;
+if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無任何會計科目</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${res.items.map(s => `
+      <div class="item">
+        <div class="item-h">
+          <div class="item-title">${esc(s.code)} ｜ ${esc(s.name)}</div>
+          <span class="badge ${s.type==='收入'?'bs':'bd'}">${esc(s.type)}科目</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          科目說明：${esc(s.note || '無')}
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 function openAddSubject(){
-  const html = `
-    <div class="modal-title">🏷️ 新增會計科目</div>
-    <div class="fg"><label class="flabel">科目代號 (4碼)<span class="req">*</span></label><input type="text" id="subCode" class="fc" placeholder="例如：4105"></div>
-    <div class="fg"><label class="flabel">科目名稱<span class="req">*</span></label><input type="text" id="subName" class="fc" placeholder="例如：指定捐贈收入"></div>
-    <div class="fg"><label class="flabel">科目類型</label><select id="subType" class="fc"><option value="收入">收入</option><option value="支出">支出</option></select></div>
-    <div class="fg"><label class="flabel">說明</label><input type="text" id="subNote" class="fc"></div>
-    <button class="btn btn-primary" onclick="doAddSubject()">確認新增</button>
-  `;
-  openModal(html);
+const html = `
+  <div class="modal-title">🏷️ 新增會計科目</div>
+  <div class="fg"><label class="flabel">科目代號 (4碼)<span class="req">*</span></label><input type="text" id="subCode" class="fc" placeholder="例如：4105"></div>
+  <div class="fg"><label class="flabel">科目名稱<span class="req">*</span></label><input type="text" id="subName" class="fc" placeholder="例如：指定捐贈收入"></div>
+  <div class="fg"><label class="flabel">科目類型</label><select id="subType" class="fc"><option value="收入">收入</option><option value="支出">支出</option></select></div>
+  <div class="fg"><label class="flabel">說明</label><input type="text" id="subNote" class="fc"></div>
+  <button class="btn btn-primary" onclick="doAddSubject()">確認新增</button>
+`;
+openModal(html);
 }
 
 async function doAddSubject(){
-  const code = requireInput('subCode','科目代號');
-  const name = requireInput('subName','科目名稱');
-  const type = $('subType').value;
-  if(!code || !name) return;
+const code = requireInput('subCode','科目代號');
+const name = requireInput('subName','科目名稱');
+const type = $('subType').value;
+if(!code || !name) return;
 
-  runApi('subject.add', { code, name, type, note: $('subNote').value.trim() }, () => {
-    closeModal(); toast('會計科目已成功新增！','s'); loadSubjects();
-  });
+runApi('subject.add', { code, name, type, note: $('subNote').value.trim() }, () => {
+  closeModal(); toast('會計科目已成功新增！','s'); loadSubjects();
+});
 }
 
 async function doInitDefaultSubjects(){
-  if(!confirm('確定要一鍵建立官方預設的 24 個常用收支科目代碼？\n這將會自動跳過已存在的科目，不會影響既有資料。')) return;
-  runApi('subject.initDefaults', {}, res => {
-    toast(`成功建立 ${res.count} 個預設會計科目！`, 's');
-    loadSubjects();
-  });
+if(!confirm('確定要一鍵建立官方預設的 24 個常用收支科目代碼？\n這將會自動跳過已存在的科目，不會影響既有資料。')) return;
+runApi('subject.initDefaults', {}, res => {
+  toast(`成功建立 ${res.count} 個預設會計科目！`, 's');
+  loadSubjects();
+});
 }
 
 /*=======================================================
  * 🏦 資金帳戶管理
  =======================================================*/
 function renderAccountManage(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">🏦 資金帳戶管理</div>
-      <button class="btn btn-primary" onclick="openAddAccount()"><i class="fa-solid fa-plus mr-1"></i> 新增銀行帳戶/零用金</button>
-      <div class="divider"></div>
-      <div id="adminAccountList"><div class="empty">載入中...</div></div>
-    </div>
-  `);
-  loadAccounts();
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">🏦 資金帳戶管理</div>
+    <button class="btn btn-primary" onclick="openAddAccount()"><i class="fa-solid fa-plus mr-1"></i> 新增銀行帳戶/零用金</button>
+    <div class="divider"></div>
+    <div id="adminAccountList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadAccounts();
 }
 
 async function loadAccounts(){
-  const res = await api('account.list');
-  const area = $('adminAccountList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無任何資金帳戶</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(a => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${esc(a.name)}</div>
-            <span class="badge bs">目前餘額：${fmtMoney(a.balance)}</span>
-          </div>
-          <div class="item-meta">
-            銀行名稱：${esc(a.bankName)} (${esc(a.bankCode)})<br>
-            銀行帳號：<strong>${esc(a.accountNo)}</strong><br>
-            戶名：${esc(a.holder)}
-          </div>
+const res = await api('account.list');
+const area = $('adminAccountList'); if(!area) return;
+if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無任何資金帳戶</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${res.items.map(a => `
+      <div class="item">
+        <div class="item-h">
+          <div class="item-title">${esc(a.name)}</div>
+          <span class="badge bs">目前餘額：${fmtMoney(a.balance)}</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          銀行名稱：${esc(a.bankName)} (${esc(a.bankCode)})<br>
+          銀行帳號：<strong>${esc(a.accountNo)}</strong><br>
+          戶名：${esc(a.holder)}
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 function openAddAccount(){
-  const html = `
-    <div class="modal-title">🏦 新增資金帳戶</div>
-    <div class="fg"><label class="flabel">帳戶名稱 (全會唯一識別)<span class="req">*</span></label><input type="text" id="accName" class="fc" placeholder="例如：第一銀行三重埔分行"></div>
-    <div class="fg"><label class="flabel">銀行名稱</label><input type="text" id="accBankName" class="fc" placeholder="例如：第一銀行"></div>
-    <div class="fg"><label class="flabel">銀行代號</label><input type="text" id="accBankCode" class="fc" placeholder="例如：007"></div>
-    <div class="fg"><label class="flabel">銀行帳號</label><input type="text" id="accNo" class="fc" placeholder="例如：211-1015-0402"></div>
-    <div class="fg"><label class="flabel">戶名</label><input type="text" id="accHolder" class="fc" placeholder="例如：社團法人台灣帕金森病友權益促進會"></div>
-    <div class="fg"><label class="flabel">初始餘額 (開戶金額)<span class="req">*</span></label><input type="number" id="accInitBalance" class="fc" value="0"></div>
-    <button class="btn btn-primary" onclick="doAddAccount()">確認新增</button>
-  `;
-  openModal(html);
+const html = `
+  <div class="modal-title">🏦 新增資金帳戶</div>
+  <div class="fg"><label class="flabel">帳戶名稱 (全會唯一識別)<span class="req">*</span></label><input type="text" id="accName" class="fc" placeholder="例如：第一銀行三重埔分行"></div>
+  <div class="fg"><label class="flabel">銀行名稱</label><input type="text" id="accBankName" class="fc" placeholder="例如：第一銀行"></div>
+  <div class="fg"><label class="flabel">銀行代號</label><input type="text" id="accBankCode" class="fc" placeholder="例如：007"></div>
+  <div class="fg"><label class="flabel">銀行帳號</label><input type="text" id="accNo" class="fc" placeholder="例如：211-1015-0402"></div>
+  <div class="fg"><label class="flabel">戶名</label><input type="text" id="accHolder" class="fc" placeholder="例如：社團法人台灣帕金森病友權益促進會"></div>
+  <div class="fg"><label class="flabel">初始餘額 (開戶金額)<span class="req">*</span></label><input type="number" id="accInitBalance" class="fc" value="0"></div>
+  <button class="btn btn-primary" onclick="doAddAccount()">確認新增</button>
+`;
+openModal(html);
 }
 
 async function doAddAccount(){
-  const name = requireInput('accName','帳戶名稱');
-  const initBalance = Number($('accInitBalance').value || 0);
-  if(!name) return;
+const name = requireInput('accName','帳戶名稱');
+const initBalance = Number($('accInitBalance').value || 0);
+if(!name) return;
 
-  runApi('account.add', {
-    name, bankName: $('accBankName').value.trim(), bankCode: $('accBankCode').value.trim(),
-    accountNo: $('accNo').value.trim(), holder: $('accHolder').value.trim(), initBalance
-  }, () => {
-    closeModal(); toast('資金帳戶已成功建立！','s'); loadAccounts();
-  });
+runApi('account.add', {
+  name, bankName: $('accBankName').value.trim(), bankCode: $('accBankCode').value.trim(),
+  accountNo: $('accNo').value.trim(), holder: $('accHolder').value.trim(), initBalance
+}, () => {
+  closeModal(); toast('資金帳戶已成功建立！','s'); loadAccounts();
+});
 }
 
 /*=======================================================
  * 👔 管理人員設定
  =======================================================*/
 function renderStaffManage(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">👔 管理人員設定</div>
-      <button class="btn btn-primary" onclick="openAddStaff()"><i class="fa-solid fa-plus mr-1"></i> 新增理監事/工作人員</button>
-      <div class="divider"></div>
-      <div id="adminStaffList"><div class="empty">載入中...</div></div>
-    </div>
-  `);
-  loadStaffs();
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">👔 管理人員設定</div>
+    <button class="btn btn-primary" onclick="openAddStaff()"><i class="fa-solid fa-plus mr-1"></i> 新增理監事/工作人員</button>
+    <div class="divider"></div>
+    <div id="adminStaffList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadStaffs();
 }
 
 async function loadStaffs(){
-  const res = await api('staff.list');
-  const area = $('adminStaffList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無任何管理人員設定</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(s => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${esc(s.name)} ｜ ${esc(s.title)}</div>
-            <span class="badge bs">${esc(s.status)}</span>
-          </div>
-          <div class="item-meta">
-            聯絡電話：${esc(s.phone)}<br>
-            Email：${esc(s.email || '未填寫')}
-          </div>
+const res = await api('staff.list');
+const area = $('adminStaffList'); if(!area) return;
+if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無任何管理人員設定</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${res.items.map(s => `
+      <div class="item">
+        <div class="item-h">
+          <div class="item-title">${esc(s.name)} ｜ ${esc(s.title)}</div>
+          <span class="badge bs">${esc(s.status)}</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          聯絡電話：${esc(s.phone)}<br>
+          Email：${esc(s.email || '未填寫')}
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 function openAddStaff(){
-  const html = `
-    <div class="modal-title">👔 新增管理人員</div>
-    <div class="fg"><label class="flabel">人員姓名<span class="req">*</span></label><input type="text" id="stName" class="fc"></div>
-    <div class="fg"><label class="flabel">職稱/角色<span class="req">*</span></label><input type="text" id="stTitle" class="fc" placeholder="例如：執行秘書、常務理事"></div>
-    <div class="fg"><label class="flabel">聯絡電話<span class="req">*</span></label><input type="text" id="stPhone" class="fc" placeholder="例如：0912345678"></div>
-    <div class="fg"><label class="flabel">Email</label><input type="email" id="stEmail" class="fc"></div>
-    <button class="btn btn-primary" onclick="doAddStaff()">確認新增</button>
-  `;
-  openModal(html);
+const html = `
+  <div class="modal-title">👔 新增管理人員</div>
+  <div class="fg"><label class="flabel">人員姓名<span class="req">*</span></label><input type="text" id="stName" class="fc"></div>
+  <div class="fg"><label class="flabel">職稱/角色<span class="req">*</span></label><input type="text" id="stTitle" class="fc" placeholder="例如：執行秘書、常務理事"></div>
+  <div class="fg"><label class="flabel">聯絡電話<span class="req">*</span></label><input type="text" id="stPhone" class="fc" placeholder="例如：0912345678"></div>
+  <div class="fg"><label class="flabel">Email</label><input type="email" id="stEmail" class="fc"></div>
+  <button class="btn btn-primary" onclick="doAddStaff()">確認新增</button>
+`;
+openModal(html);
 }
 
 async function doAddStaff(){
-  const name = requireInput('stName','姓名');
-  const title = requireInput('stTitle','職稱');
-  const phone = requireInput('stPhone','電話');
-  if(!name || !title || !phone) return;
+const name = requireInput('stName','姓名');
+const title = requireInput('stTitle','職稱');
+const phone = requireInput('stPhone','電話');
+if(!name || !title || !phone) return;
 
-  runApi('staff.add', { name, title, phone, email: $('stEmail').value.trim() }, () => {
-    closeModal(); toast('管理人員已成功新增！','s'); loadStaffs();
-  });
+runApi('staff.add', { name, title, phone, email: $('stEmail').value.trim() }, () => {
+  closeModal(); toast('管理人員已成功新增！','s'); loadStaffs();
+});
 }
 
 /*=======================================================
  * 📢 公告發布管理
  =======================================================*/
 function renderAnnounceManage(){
-  if(!adminGuard())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">📢 公告發布管理</div>
-      <button class="btn btn-primary" onclick="openAddAnnounce()"><i class="fa-solid fa-plus mr-1"></i> 發布新系統公告</button>
-      <div class="divider"></div>
-      <div id="adminAnnounceList"><div class="empty">載入中...</div></div>
-    </div>
-  `);
-  loadAnnouncements();
+if(!adminGuard())return;
+setMain(`
+  <div class="card">
+    <div class="card-title">📢 公告發布管理</div>
+    <button class="btn btn-primary" onclick="openAddAnnounce()"><i class="fa-solid fa-plus mr-1"></i> 發布新系統公告</button>
+    <div class="divider"></div>
+    <div id="adminAnnounceList"><div class="empty">載入中...</div></div>
+  </div>
+`);
+loadAnnouncements();
 }
 
 async function loadAnnouncements(){
-  const res = await api('announcement.list');
-  const area = $('adminAnnounceList'); if(!area) return;
-  if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無任何公告紀錄</div>`; return; }
-  area.innerHTML = `
-    <div class="list">
-      ${res.items.map(r => `
-        <div class="item">
-          <div class="item-h">
-            <div class="item-title">${String(r.pinned)==='Y'?'📌 ':''}${esc(r.title)}</div>
-            <span class="badge ${r.status==='發布'?'bs':'bd'}">${esc(r.status)}</span>
-          </div>
-          <div class="item-meta">
-            發布日期：${esc(r.date)} ｜ 分類：${esc(r.category)}<br>
-            發布對象：<strong>${esc(r.target)}</strong><br>
-            公告內容：<span style="white-space:pre-wrap;">${esc(r.content)}</span>
-          </div>
-          <div class="item-actions">
-            <button class="btn btn-outline btn-xs" onclick="openEditAnnounce('${esc(r.id)}')">✏️ 編輯公告</button>
-            <button class="btn btn-danger btn-xs" onclick="deleteAnnounce('${esc(r.id)}')">🗑️ 刪除公告</button>
-          </div>
+const res = await api('announcement.list');
+const area = $('adminAnnounceList'); if(!area) return;
+if(!res.success || !res.items.length){ area.innerHTML = `<div class="empty">目前無任何公告紀錄</div>`; return; }
+area.innerHTML = `
+  <div class="list">
+    ${res.items.map(r => `
+      <div class="item">
+        <div class="item-h">
+          <div class="item-title">${String(r.pinned)==='Y'?'📌 ':''}${esc(r.title)}</div>
+          <span class="badge ${r.status==='發布'?'bs':'bd'}">${esc(r.status)}</span>
         </div>
-      `).join('')}
-    </div>
-  `;
+        <div class="item-meta">
+          發布日期：${esc(r.date)} ｜ 分類：${esc(r.category)}<br>
+          發布對象：<strong>${esc(r.target)}</strong><br>
+          公告內容：<span style="white-space:pre-wrap;">${esc(r.content)}</span>
+        </div>
+        <div class="item-actions">
+          <button class="btn btn-outline btn-xs" onclick="openEditAnnounce('${esc(r.id)}')">✏️ 編輯公告</button>
+          <button class="btn btn-danger btn-xs" onclick="deleteAnnounce('${esc(r.id)}')">🗑️ 刪除公告</button>
+        </div>
+      </div>
+    `).join('')}
+  </div>
+`;
 }
 
 function openAddAnnounce(){
-  const html = `
-    <div class="modal-title">📢 發布新公告</div>
-    <div class="fg"><label class="flabel">公告標題<span class="req">*</span></label><input type="text" id="annTitle" class="fc" placeholder="請輸入公告標題"></div>
-    <div class="fg"><label class="flabel">公告分類</label><select id="annCategory" class="fc"><option value="最新消息">最新消息</option><option value="活動通知">活動通知</option><option value="會務公告">會務公告</option></select></div>
-    <div class="fg"><label class="flabel">發布對象</label><select id="annTarget" class="fc"><option value="全部">全部（公開）</option><option value="一般會員">僅限會員</option><option value="理監事">僅限理監事</option></select></div>
-    <div class="fg"><label class="flabel">發布日期</label><input type="date" id="annDate" class="fc" value="${today()}"></div>
+const html = `
+  <div class="modal-title">📢 發布新公告</div>
+  <div class="fg"><label class="flabel">公告標題<span class="req">*</span></label><input type="text" id="annTitle" class="fc" placeholder="請輸入公告標題"></div>
+  <div class="fg"><label class="flabel">公告分類</label><select id="annCategory" class="fc"><option value="最新消息">最新消息</option><option value="活動通知">活動通知</option><option value="會務公告">會務公告</option></select></div>
+  <div class="fg"><label class="flabel">發布對象</label><select id="annTarget" class="fc"><option value="全部">全部（公開）</option><option value="一般會員">僅限會員</option><option value="理監事">僅限理監事</option></select></div>
+  <div class="fg"><label class="flabel">發布日期</label><input type="date" id="annDate" class="fc" value="${today()}"></div>
     <div class="fg"><label class="flabel">置頂公告</label><select id="annPinned" class="fc"><option value="N">否</option><option value="Y">是 (📌 置頂顯示)</option></select></div>
     <div class="fg"><label class="flabel">公告內容<span class="req">*</span></label><textarea id="annContent" class="fc" rows="4" placeholder="請輸入詳細公告內容..."></textarea></div>
     <button class="btn btn-primary" onclick="doAddAnnounce()">發布公告</button>
@@ -3016,33 +3001,33 @@ function openBindLineProfile(profile){
 async function doBindLineProfile(lineId, lineName){
   const name = requireInput('bindName','姓名');
   const phone = requireInput('bindPhone','電話');
-    if(!name || !phone) return;
+  if(!name || !phone) return;
 
-    runApi('auth.completeLineProfile', { lineId, lineName, name, phone }, res => {
-      APP.user = res.member;
-      localStorage.setItem('parkUser', JSON.stringify(res.member));
-      closeModal();
-      toast('LINE 帳號綁定成功！','s');
+  runApi('auth.completeLineProfile', { lineId, lineName, name, phone }, res => {
+    APP.user = res.member;
+    localStorage.setItem('parkUser', JSON.stringify(res.member));
+    closeModal();
+    toast('LINE 帳號綁定成功！','s');
+    updateLoginButton();
+    go('home');
+  });
+}
+
+// ===== 系統初始化啟動 =====
+window.onload = function(){
+  loadFontSize();
+  
+  const saved = localStorage.getItem('parkUser');
+  if(saved){
+    try {
+      APP.user = JSON.parse(saved);
       updateLoginButton();
-      go('home');
-    });
+    } catch(e){}
   }
 
-  // ===== 系統初始化啟動 =====
-  window.onload = function(){
-    loadFontSize();
-    
-    const saved = localStorage.getItem('parkUser');
-    if(saved){
-      try {
-        APP.user = JSON.parse(saved);
-        updateLoginButton();
-      } catch(e){}
-    }
-
-    initLiff();
-    go('home', {}, false);
-  };
-  </script>
-  </body>
-  </html>
+  initLiff();
+  go('home', {}, false);
+};
+</script>
+</body>
+</html>
