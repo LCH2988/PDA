@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>巴金森專用健康紀錄與門診摘要平台</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            teal: '#14b8a6',
+                            amber: '#f59e0b',
+                            rose: '#f43f5e',
+                            emerald: '#10b981',
+                            sky: '#0284c7'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Chart.js CDN for Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.85; }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s infinite ease-in-out;
+        }
+        
+        /* Dedicated Print Styles for 1-Page Doctor Summary */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #printable-doctor-summary, #printable-doctor-summary * {
+                visibility: visible;
+            }
+            #printable-doctor-summary {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                background: white !important;
+                color: black !important;
+                padding: 20px;
+                box-shadow: none !important;
+                border: none !important;
+            }
+            #printable-doctor-summary .text-white,
+            #printable-doctor-summary .text-slate-200,
+            #printable-doctor-summary .text-slate-300,
+            #printable-doctor-summary .text-teal-300,
+            #printable-doctor-summary .text-amber-400,
+            #printable-doctor-summary .text-emerald-400,
+            #printable-doctor-summary .text-rose-400 {
+                color: #1e293b !important;
+            }
+            #printable-doctor-summary .bg-slate-800,
+            #printable-doctor-summary .bg-slate-900,
+            #printable-doctor-summary .bg-slate-950 {
+                background-color: #f8fafc !important;
+                border: 1px solid #cbd5e1 !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+
+        /* Large touch targets for users with motor symptoms */
+        .touch-target-lg {
+            min-height: 64px;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex flex-col selection:bg-teal-500 selection:text-white pb-12">
+
+    <!-- Floating Toast Notification -->
+    <div id="toast-container" class="fixed top-6 left-1/2 -translate-x-1/2 z-50 hidden transition-all">
+        <div id="toast-message" class="bg-teal-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold text-base flex items-center space-x-2 border-2 border-teal-300 animate-bounce">
+            <i data-lucide="info" class="w-5 h-5"></i>
+            <span id="toast-text">提示訊息</span>
+        </div>
+    </div>
+
+    <!-- Celebration FX Overlay -->
+    <div id="celebration-overlay" class="fixed inset-0 pointer-events-none z-50 hidden flex items-center justify-center">
+        <div class="text-6xl animate-bounce bg-slate-950/90 p-6 rounded-full border-4 border-amber-400 shadow-2xl">
+            ✨ 🌸 🌻 👏 🌟
+        </div>
+    </div>
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-800/95 backdrop-blur border-b border-slate-700 sticky top-0 z-40 px-4 py-3 no-print">
+        <div class="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div class="flex items-center space-x-3">
+                <div class="p-2.5 bg-gradient-to-tr from-teal-500 via-emerald-400 to-amber-300 rounded-2xl shadow-lg flex items-center justify-center text-slate-950">
+                    <i data-lucide="smile" class="w-7 h-7"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="text-xl font-black text-white tracking-wide">巴金森舒心健康紀錄</h1>
+                        <span class="bg-amber-500/20 text-amber-300 text-xs px-2.5 py-0.5 rounded-full font-bold border border-amber-500/30 flex items-center">
+                            <i data-lucide="flame" class="w-3.5 h-3.5 mr-1 text-amber-400"></i>
+                            連續 <span id="streak-count-display">5</span> 天
+                        </span>
+                    </div>
+                    <p class="text-xs text-teal-400 font-medium">GAS 雲端整合・大鈕好記・醫病溝通無障礙</p>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <nav class="flex bg-slate-950/80 p-1 rounded-2xl border border-slate-700 w-full sm:w-auto overflow-x-auto">
+                <button onclick="switchTab('patient')" id="tab-btn-patient" class="tab-btn flex-1 sm:flex-none px-3 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center space-x-1 bg-teal-500 text-slate-950 font-black shadow-md">
+                    <i data-lucide="user" class="w-4 h-4"></i>
+                    <span>👴 病友大鈕</span>
+                </button>
+
+                <button onclick="switchTab('rehab')" id="tab-btn-rehab" class="tab-btn flex-1 sm:flex-none px-3 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center space-x-1 text-slate-400 hover:text-white">
+                    <i data-lucide="music" class="w-4 h-4"></i>
+                    <span>🎵 解凍復健</span>
+                </button>
+
+                <button onclick="switchTab('analytics')" id="tab-btn-analytics" class="tab-btn flex-1 sm:flex-none px-3 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center space-x-1 text-slate-400 hover:text-white">
+                    <i data-lucide="trending-up" class="w-4 h-4"></i>
+                    <span>📈 身體趨勢</span>
+                </button>
+
+                <button onclick="switchTab('doctor')" id="tab-btn-doctor" class="tab-btn flex-1 sm:flex-none px-3 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center space-x-1 text-slate-400 hover:text-white">
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    <span>📋 門診摘要</span>
+                </button>
+
+                <button onclick="switchTab('meds')" id="tab-btn-meds" class="tab-btn flex-1 sm:flex-none px-3 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center space-x-1 text-slate-400 hover:text-white">
+                    <i data-lucide="pill" class="w-4 h-4"></i>
+                    <span>💊 服藥/設定</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Companion Sprout Warm Banner -->
+    <div class="bg-gradient-to-r from-teal-950 via-slate-800 to-amber-950/40 border-b border-teal-800/40 px-4 py-3 no-print">
+        <div class="max-w-4xl mx-auto flex items-center justify-between gap-3 text-xs sm:text-sm">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-2xl bg-teal-500/20 border border-teal-400/40 flex items-center justify-center text-xl shrink-0">
+                    🌱
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <span class="font-bold text-teal-300 shrink-0">小舒的話：</span>
+                        <span id="warm-tip-text" class="text-slate-200">☀️ 每天早晨喝一杯溫開水，幫助腸胃蠕動與藥物吸收喔！</span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2 shrink-0">
+                <button onclick="speakTip()" id="btn-speak-tip" class="text-xs bg-slate-800 text-amber-300 border border-amber-500/30 hover:bg-slate-700 px-2.5 py-1.5 rounded-xl font-bold flex items-center space-x-1">
+                    <i data-lucide="volume-2" class="w-3.5 h-3.5"></i>
+                    <span id="speak-tip-label">朗讀</span>
+                </button>
+                <button onclick="nextTip()" class="text-xs bg-slate-800 hover:bg-slate-700 text-teal-300 px-2.5 py-1.5 rounded-xl border border-teal-500/30 font-bold">
+                    換一張 🔄
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Layout -->
+    <main class="max-w-4xl mx-auto w-full p-4 flex-1">
+
+        <!-- ================= Tab 1: Patient Main Quick View ================= -->
+        <section id="view-patient" class="tab-view space-y-6">
+
+            <!-- Healing Garden & Points -->
+            <div class="bg-gradient-to-r from-emerald-950/60 to-slate-800 p-4 rounded-2xl border border-emerald-500/30 flex items-center justify-between flex-wrap gap-3 shadow-md">
+                <div class="flex items-center space-x-3">
+                    <div id="garden-icon" class="text-3xl p-2 bg-emerald-900/40 rounded-2xl border border-emerald-400/30">
+                        🌱
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-emerald-300 text-sm flex items-center">
+                            小舒的心情療癒花園
+                            <span class="ml-2 bg-emerald-500/20 text-emerald-300 text-xs px-2 py-0.5 rounded-full border border-emerald-500/30">
+                                能量 <span id="garden-points-display">35</span> pts
+                            </span>
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-0.5">每一次點擊紀錄或測試，都能灌溉小花茁壯生長！</p>
+                    </div>
+                </div>
+                <div class="flex space-x-1 text-2xl">
+                    <span>🌱</span>
+                    <span id="flower-1" class="opacity-30">🌿</span>
+                    <span id="flower-2" class="opacity-30">🌸</span>
+                    <span id="flower-3" class="opacity-30">🌻</span>
+                    <span id="flower-4" class="opacity-30">🌈</span>
+                </div>
+            </div>
+
+            <!-- Mood Selector -->
+            <div class="bg-slate-800/80 p-4 rounded-2xl border border-slate-700 flex items-center justify-between flex-wrap gap-2">
+                <span class="text-xs font-bold text-teal-300 flex items-center">
+                    <i data-lucide="heart" class="w-4 h-4 mr-1 text-rose-400"></i>
+                    當前體感心情：
+                </span>
+                <div class="flex flex-wrap gap-2" id="mood-picker-group">
+                    <button onclick="selectMood('😊')" class="mood-btn px-3 py-1.5 rounded-xl text-sm bg-teal-500 text-slate-950 font-black ring-2 ring-teal-300 scale-105">😊 順暢</button>
+                    <button onclick="selectMood('🌈')" class="mood-btn px-3 py-1.5 rounded-xl text-sm bg-slate-900 text-slate-300 hover:bg-slate-700">🌈 精神佳</button>
+                    <button onclick="selectMood('🐢')" class="mood-btn px-3 py-1.5 rounded-xl text-sm bg-slate-900 text-slate-300 hover:bg-slate-700">🐢 略慢</button>
+                    <button onclick="selectMood('🥱')" class="mood-btn px-3 py-1.5 rounded-xl text-sm bg-slate-900 text-slate-300 hover:bg-slate-700">🥱 疲倦</button>
+                    <button onclick="selectMood('⚡')" class="mood-btn px-3 py-1.5 rounded-xl text-sm bg-slate-900 text-slate-300 hover:bg-slate-700">⚡ 扭動</button>
+                </div>
+            </div>
+
+            <!-- Large Touch Area Buttons -->
+            <div class="bg-slate-800/60 p-5 rounded-3xl border border-slate-700 shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-teal-300 flex items-center">
+                            <i data-lucide="zap" class="w-5 h-5 mr-2 text-amber-400"></i>
+                            現在感覺如何？點擊大鈕 1 秒紀錄
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-0.5">專為震顫與僵硬設計的大點擊區</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button onclick="handleQuickLog('on', '藥效發揮中 (On)', '身體靈活自由')" class="touch-target-lg group p-6 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-black shadow-lg active:scale-95 transition-all text-left flex items-start justify-between border-2 border-emerald-400/40">
+                        <div>
+                            <span class="bg-emerald-950/60 text-emerald-300 text-xs px-3 py-1 rounded-full border border-emerald-400/30">藥效良好</span>
+                            <h3 class="text-2xl font-black mt-2">🟢 藥效順暢 (On)</h3>
+                            <p class="text-xs text-emerald-100 font-normal mt-1 opacity-90">身體靈活、活動輕鬆、震顫減輕</p>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-8 h-8 text-emerald-200"></i>
+                    </button>
+
+                    <button onclick="handleQuickLog('off', '藥效退去/僵硬 (Off)', '感覺肌肉僵硬或起步凍結')" class="touch-target-lg group p-6 rounded-2xl bg-gradient-to-br from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-black shadow-lg active:scale-95 transition-all text-left flex items-start justify-between border-2 border-rose-400/40">
+                        <div>
+                            <span class="bg-rose-950/60 text-rose-300 text-xs px-3 py-1 rounded-full border border-rose-400/30">藥效提早退去</span>
+                            <h3 class="text-2xl font-black mt-2">🔴 藥效僵硬 (Off)</h3>
+                            <p class="text-xs text-rose-100 font-normal mt-1 opacity-90">動作卡住、步態凍結、手腳沈重</p>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-8 h-8 text-rose-200"></i>
+                    </button>
+
+                    <button onclick="handleQuickLog('dyskinesia', '不自主扭動 (Dyskinesia)', '手腳或頭部出現非自主擺動')" class="touch-target-lg group p-6 rounded-2xl bg-gradient-to-br from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white font-black shadow-lg active:scale-95 transition-all text-left flex items-start justify-between border-2 border-amber-400/40">
+                        <div>
+                            <span class="bg-amber-950/60 text-amber-300 text-xs px-3 py-1 rounded-full border border-amber-400/30">異動現象</span>
+                            <h3 class="text-2xl font-black mt-2">🟡 不自主扭動</h3>
+                            <p class="text-xs text-amber-100 font-normal mt-1 opacity-90">手腳或頭部出現非自主舞蹈般扭動</p>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-8 h-8 text-amber-200"></i>
+                    </button>
+
+                    <button onclick="handleQuickLog('med', '服藥：巴金森藥物', '按時服藥')" class="touch-target-lg group p-6 rounded-2xl bg-gradient-to-br from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white font-black shadow-lg active:scale-95 transition-all text-left flex items-start justify-between border-2 border-sky-400/40">
+                        <div>
+                            <span class="bg-sky-950/60 text-sky-300 text-xs px-3 py-1 rounded-full border border-sky-400/30">用藥時間</span>
+                            <h3 class="text-2xl font-black mt-2">💊 剛吃完藥物</h3>
+                            <p class="text-xs text-sky-100 font-normal mt-1 opacity-90">記錄此刻完成服藥，便於追蹤藥效起效時間</p>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-8 h-8 text-sky-200"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Voice Input Card -->
+            <div class="bg-slate-800/60 p-5 rounded-3xl border border-slate-700 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center space-x-2">
+                        <i data-lucide="sparkles" class="w-5 h-5 text-amber-400"></i>
+                        <h3 class="font-bold text-white text-base">口述語音記一筆（語意理解自動整理）</h3>
+                    </div>
+                    <span class="text-xs text-teal-400 bg-teal-950/60 border border-teal-500/30 px-2.5 py-1 rounded-full">
+                        語音識別輔助
+                    </span>
+                </div>
+
+                <div class="flex flex-col sm:flex-row items-center gap-3">
+                    <button onclick="toggleVoiceRecognition()" id="btn-voice-toggle" class="w-full sm:w-auto px-6 py-4 rounded-2xl font-black flex items-center justify-center space-x-2 bg-teal-500 hover:bg-teal-400 text-slate-950 transition-all text-base shadow-lg shrink-0">
+                        <i data-lucide="mic" class="w-6 h-6"></i>
+                        <span id="voice-btn-label">按下開始口述</span>
+                    </button>
+
+                    <div class="flex-1 w-full">
+                        <input type="text" id="voice-input-text" placeholder="或直接打字（例如：下午一點半吃藥，兩點手有些微震顫...）" class="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-3.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500" />
+                    </div>
+
+                    <button onclick="submitVoiceText()" class="w-full sm:w-auto px-5 py-3.5 bg-emerald-500 text-slate-950 rounded-xl font-bold text-sm hover:bg-emerald-400 shrink-0">
+                        送出紀錄
+                    </button>
+                </div>
+            </div>
+
+            <!-- Finger Tapping Test -->
+            <div class="bg-gradient-to-br from-slate-800 to-slate-900 p-5 rounded-3xl border border-slate-700 shadow-xl">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center space-x-2">
+                        <i data-lucide="activity" class="w-5 h-5 text-teal-400"></i>
+                        <h3 class="font-bold text-white text-base">10 秒雙手手指交替敲擊測試 (Finger Tapping)</h3>
+                    </div>
+                    <span class="text-xs text-slate-400">量化運動靈巧度</span>
+                </div>
+                <p class="text-xs text-slate-400 mb-4">
+                    按下開始後，請用左右食指<strong>盡可能快速交替點擊</strong>按鈕，測試您的運動協調度。
+                </p>
+
+                <div id="tap-test-ready">
+                    <button onclick="startTapTest()" class="w-full py-4 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-teal-300 font-bold rounded-2xl flex items-center justify-center space-x-2 text-base transition-all">
+                        <i data-lucide="play" class="w-5 h-5 fill-teal-300"></i>
+                        <span>開始 10 秒靈巧度測試</span>
+                    </button>
+                </div>
+
+                <div id="tap-test-active" class="hidden space-y-4">
+                    <div class="flex items-center justify-between bg-slate-950/80 p-3 rounded-xl border border-slate-800">
+                        <span class="text-xs text-slate-400 font-bold">倒數時間：<strong id="tap-timer-display" class="text-rose-400 text-xl">10</strong> 秒</span>
+                        <span class="text-xs text-slate-400 font-bold">交替點擊：<strong id="tap-count-display" class="text-teal-400 text-xl">0</strong> 次</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <button onclick="registerTap('L')" id="btn-tap-left" class="p-10 rounded-2xl font-black text-2xl border-4 bg-teal-500 border-teal-300 text-slate-950 shadow-lg active:scale-90 transition-all">
+                            👈 左手點擊
+                        </button>
+                        <button onclick="registerTap('R')" id="btn-tap-right" class="p-10 rounded-2xl font-black text-2xl border-4 bg-emerald-500 border-emerald-300 text-slate-950 shadow-lg active:scale-90 transition-all">
+                            👉 右手點擊
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Log List -->
+            <div class="bg-slate-800/40 p-5 rounded-3xl border border-slate-700/60">
+                <h3 class="font-bold text-white text-sm mb-3 flex items-center justify-between">
+                    <span class="flex items-center">
+                        <i data-lucide="clock" class="w-4 h-4 mr-2 text-teal-400"></i>
+                        最近紀錄時間軸
+                    </span>
+                    <span class="text-xs text-slate-500 font-normal">共 <span id="log-count-display">0</span> 筆</span>
+                </h3>
+                <div id="recent-logs-list" class="space-y-2.5">
+                    <!-- Dynamic logs populated via JS -->
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ================= Tab 2: Freezing Gait Metronome & LSVT Voice Rehab ================= -->
+        <section id="view-rehab" class="tab-view hidden space-y-6">
+
+            <!-- Metronome (Rhythmic Cueing) -->
+            <div class="bg-slate-800/80 p-5 rounded-3xl border border-slate-700 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h2 class="text-lg font-bold text-rose-300 flex items-center">
+                            <i data-lucide="music" class="w-5 h-5 mr-2 text-rose-400"></i>
+                            步態凍結解凍節拍器 (Freezing Rhythm Cueing)
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-0.5">
+                            當起步腳步凍結卡住時，跟著「1 - 2 - 1 - 2」規律聲響與畫面躍動，跨大步踏出去。
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900/90 p-6 rounded-2xl border border-slate-800 flex flex-col items-center justify-center space-y-5">
+                    <div class="flex items-center space-x-8 my-2">
+                        <div id="metro-beat-1" class="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black border-4 bg-slate-800 border-slate-700 text-slate-500 transition-all">
+                            1 (左)
+                        </div>
+                        <div id="metro-beat-2" class="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black border-4 bg-slate-800 border-slate-700 text-slate-500 transition-all">
+                            2 (右)
+                        </div>
+                    </div>
+
+                    <div class="w-full max-w-xs space-y-2 text-center">
+                        <div class="flex justify-between text-xs text-slate-400 font-bold">
+                            <span>速度節奏 (BPM)：</span>
+                            <span id="bpm-val-display" class="text-teal-300 font-mono text-base">90 BPM</span>
+                        </div>
+                        <input type="range" id="bpm-slider" min="60" max="120" step="5" value="90" oninput="updateBPM(this.value)" class="w-full accent-rose-500 cursor-pointer" />
+                    </div>
+
+                    <button onclick="toggleMetronome()" id="btn-metronome-toggle" class="px-8 py-4 rounded-2xl font-black text-lg flex items-center space-x-2 bg-teal-500 hover:bg-teal-400 text-slate-950 shadow-xl transition-all">
+                        <i data-lucide="volume-2" class="w-6 h-6"></i>
+                        <span id="metronome-btn-label">啟動解凍節拍聲響</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- LSVT Loud 5-Sec Vocal Exercise -->
+            <div class="bg-slate-800/80 p-5 rounded-3xl border border-slate-700 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h2 class="text-lg font-bold text-amber-300 flex items-center">
+                            <i data-lucide="mic" class="w-5 h-5 mr-2 text-amber-400"></i>
+                            5 秒大聲發聲練習 (Vocal Loudness Exercise)
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-0.5">
+                            深吸一口氣，對著麥克風大聲發出「啊——」長音 5 秒鐘，訓練聲帶肌力與音量。
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900/90 p-6 rounded-2xl border border-slate-800 flex flex-col items-center space-y-4">
+                    <div id="vocal-idle-view" class="text-center space-y-4">
+                        <div id="vocal-score-banner" class="hidden p-3 bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-300 font-bold text-sm">
+                            🎉 上次測驗發聲得分：<span id="last-vocal-score">0</span> 分！
+                        </div>
+                        <button onclick="startVocalTest()" class="px-8 py-4 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-2xl text-base flex items-center space-x-2 shadow-lg">
+                            <i data-lucide="mic" class="w-6 h-6"></i>
+                            <span>開始 5 秒發聲測試</span>
+                        </button>
+                    </div>
+
+                    <div id="vocal-active-view" class="hidden w-full text-center space-y-3">
+                        <span class="text-xs text-rose-400 font-bold">保持大聲「啊——」倒數：</span>
+                        <div id="vocal-timer-display" class="text-4xl font-black text-rose-400 font-mono">5 秒</div>
+                        <div class="w-full bg-slate-800 h-6 rounded-full overflow-hidden border border-slate-700">
+                            <div id="vocal-volume-bar" class="bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 h-full transition-all duration-75 w-0"></div>
+                        </div>
+                        <span class="text-xs text-slate-400 font-bold">當前音量分貝強度：<span id="vocal-volume-text">0</span> %</span>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ================= Tab 3: Analytics Trend Charts ================= -->
+        <section id="view-analytics" class="tab-view hidden space-y-6">
+
+            <div class="bg-slate-800/80 p-5 rounded-3xl border border-slate-700">
+                <h2 class="text-lg font-bold text-amber-300 flex items-center">
+                    <i data-lucide="trending-up" class="w-5 h-5 mr-2 text-amber-400"></i>
+                    身體狀態與藥效波動多元趨勢圖
+                </h2>
+                <p class="text-xs text-slate-400 mt-1">
+                    透過多維度數據圖表，協助您與醫師精準找出「藥效退去時段」與「動作靈巧度趨勢」。
+                </p>
+            </div>
+
+            <!-- Chart 1: Hourly Wearing-off trend -->
+            <div class="bg-slate-800 p-5 rounded-3xl border border-slate-700 shadow-lg">
+                <h3 class="font-bold text-white text-base mb-2 flex items-center">
+                    <i data-lucide="clock" class="w-4 h-4 mr-2 text-rose-400"></i>
+                    各時段藥效退去 (Off 僵硬) 發生率圖
+                </h3>
+                <p class="text-xs text-slate-400 mb-4">觀察幾點容易出現「劑末現象 (Wearing-off)」，作為調整服藥時間參考</p>
+                <div class="h-64 w-full">
+                    <canvas id="chart-hourly"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 2: Finger Tapping line chart -->
+            <div class="bg-slate-800 p-5 rounded-3xl border border-slate-700 shadow-lg">
+                <h3 class="font-bold text-white text-base mb-2 flex items-center">
+                    <i data-lucide="activity" class="w-4 h-4 mr-2 text-teal-400"></i>
+                    手指敲擊速度長期趨勢圖 (Taps / 10 Sec)
+                </h3>
+                <p class="text-xs text-slate-400 mb-4">客觀量化手部精細動作與協調度的進步歷程</p>
+                <div class="h-60 w-full">
+                    <canvas id="chart-tapping"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 3 & 4 Double Column Layout -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-slate-800 p-5 rounded-3xl border border-slate-700 shadow-lg">
+                    <h3 class="font-bold text-white text-sm mb-2 flex items-center">
+                        <i data-lucide="bar-chart-2" class="w-4 h-4 mr-2 text-amber-400"></i>
+                        藥效開/關期整體佔比
+                    </h3>
+                    <div class="h-56 w-full flex items-center justify-center">
+                        <canvas id="chart-pie"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-slate-800 p-5 rounded-3xl border border-slate-700 shadow-lg">
+                    <h3 class="font-bold text-white text-sm mb-2 flex items-center">
+                        <i data-lucide="calendar" class="w-4 h-4 mr-2 text-sky-400"></i>
+                        近 7 天每日開關狀態與服藥事件
+                    </h3>
+                    <div class="h-56 w-full">
+                        <canvas id="chart-bar-7days"></canvas>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ================= Tab 4: Printable Doctor Summary ================= -->
+        <section id="view-doctor" class="tab-view hidden space-y-6">
+
+            <div class="flex flex-wrap items-center justify-between bg-slate-800/80 p-4 rounded-2xl border border-slate-700 gap-3 no-print">
+                <div>
+                    <h2 class="text-base font-bold text-white">門診一頁式精華報告 (3-Min Doctor Summary)</h2>
+                    <p class="text-xs text-slate-400">專為診間時間設計，濃縮開關期百分比與服藥狀況</p>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="exportJSONData()" class="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-teal-300 font-bold text-xs rounded-xl flex items-center space-x-1 border border-slate-600">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                        <span>備份資料</span>
+                    </button>
+                    <button onclick="window.print()" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl flex items-center space-x-1.5 shadow-md">
+                        <i data-lucide="printer" class="w-4 h-4"></i>
+                        <span>列印 / 匯出 PDF</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Printable Document Wrapper -->
+            <div id="printable-doctor-summary" class="space-y-6 bg-slate-900 p-4 sm:p-6 rounded-3xl">
+                <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <span class="text-xs text-teal-400 font-bold uppercase tracking-wider">ParkinsonCare Clinical Summary</span>
+                        <h3 class="text-xl font-black text-white mt-0.5">巴金森門診診斷輔助單</h3>
+                        <p class="text-xs text-slate-400 mt-1">統計區間：近 7 天 | 總筆數：<span id="summary-total-logs">0</span> 筆</p>
+                    </div>
+                    <div class="flex items-center space-x-3 text-xs bg-slate-900/80 p-3 rounded-xl border border-slate-700">
+                        <div>
+                            <span class="text-slate-400">預定回診：</span>
+                            <strong id="summary-clinic-date" class="text-amber-400 block text-sm">2026-08-10</strong>
+                        </div>
+                        <div class="border-l border-slate-700 pl-3">
+                            <span class="text-slate-400">服藥設定：</span>
+                            <strong id="summary-med-freq" class="text-emerald-400 block text-sm">每日 3 次</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                        <span class="text-xs text-slate-400">藥效順暢時間 (On 期比例)</span>
+                        <div class="flex items-baseline space-x-2 mt-1">
+                            <span id="summary-on-pct" class="text-3xl font-black text-emerald-400">0%</span>
+                            <span class="text-xs text-emerald-500/80 font-bold">目標 ≥ 70%</span>
+                        </div>
+                        <div class="w-full bg-slate-700 h-2 rounded-full mt-3 overflow-hidden">
+                            <div id="summary-on-bar" class="bg-emerald-500 h-full w-0"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                        <span class="text-xs text-slate-400">藥效退去時間 (Off 期比例)</span>
+                        <div class="flex items-baseline space-x-2 mt-1">
+                            <span id="summary-off-pct" class="text-3xl font-black text-rose-400">0%</span>
+                            <span class="text-xs text-rose-500/80 font-bold">劑末現象指標</span>
+                        </div>
+                        <div class="w-full bg-slate-700 h-2 rounded-full mt-3 overflow-hidden">
+                            <div id="summary-off-bar" class="bg-rose-500 h-full w-0"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                        <span class="text-xs text-slate-400">異動症比例 (Dyskinesia)</span>
+                        <div class="flex items-baseline space-x-2 mt-1">
+                            <span id="summary-dys-pct" class="text-3xl font-black text-amber-400">0%</span>
+                            <span class="text-xs text-amber-500/80 font-bold">藥物高峰指標</span>
+                        </div>
+                        <div class="w-full bg-slate-700 h-2 rounded-full mt-3 overflow-hidden">
+                            <div id="summary-dys-bar" class="bg-amber-500 h-full w-0"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+                    <h4 class="font-bold text-sm text-white mb-3 flex items-center">
+                        <i data-lucide="activity" class="w-4 h-4 mr-2 text-teal-400"></i>
+                        客觀手指敲擊測試紀錄 (Finger Tapping Summary)
+                    </h4>
+                    <div id="summary-tap-logs" class="space-y-2">
+                        <!-- Dynamic list -->
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- ================= Tab 5: Medication Schedule & Clinic Settings ================= -->
+        <section id="view-meds" class="tab-view hidden space-y-6">
+
+            <!-- GAS Sheet Integration Card -->
+            <div class="bg-slate-800/80 p-5 rounded-3xl border border-slate-700 shadow-xl space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-bold text-white text-base flex items-center">
+                        <i data-lucide="database" class="w-5 h-5 mr-2 text-emerald-400"></i>
+                        Google 試算表 (GAS) 雲端連線綁定
+                    </h3>
+                    <span id="gas-status-tag" class="text-xs px-2.5 py-1 rounded-full bg-slate-700 text-slate-300 font-bold">
+                        單機紀錄中
+                    </span>
+                </div>
+                <p class="text-xs text-slate-400">
+                    若您有部署 Google Apps Script Web App，請在下方貼入 Web App 網址以實現雲端自動同步備份：
+                </p>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="text" id="input-gas-url" placeholder="https://script.google.com/macros/s/.../exec" class="flex-1 bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 font-mono text-xs focus:outline-none focus:border-teal-400" />
+                    <button onclick="saveGasUrl()" class="px-5 py-3 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs rounded-xl shrink-0">
+                        綁定連線
+                    </button>
+                </div>
+            </div>
+
+            <!-- Clinic Date Setup -->
+            <div class="bg-slate-800/80 p-5 rounded-3xl border border-slate-700 shadow-xl">
+                <h3 class="font-bold text-white text-base mb-2 flex items-center">
+                    <i data-lucide="calendar" class="w-5 h-5 mr-2 text-amber-400"></i>
+                    預定門診日期設定
+                </h3>
+                <p class="text-xs text-slate-400 mb-4">系統自動設定門診倒數提醒與摘要匯出區間</p>
+
+                <input type="date" id="input-clinic-date" onchange="updateClinicDate(this.value)" class="bg-slate-900 border border-slate-700 text-white rounded-xl px-4 py-3 font-mono text-sm focus:outline-none focus:border-amber-400" />
+            </div>
+
+            <!-- Medication Schedule -->
+            <div class="bg-slate-800/80 p-5 rounded-3xl border border-slate-700 shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="font-bold text-white text-base flex items-center">
+                            <i data-lucide="pill" class="w-5 h-5 mr-2 text-sky-400"></i>
+                            每日巴金森用藥時間表
+                        </h3>
+                        <p class="text-xs text-slate-400">依醫師開立處方設定服藥時間與劑量</p>
+                    </div>
+                </div>
+
+                <div id="medication-list" class="space-y-3">
+                    <!-- Dynamic medication schedule -->
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <footer class="bg-slate-950 border-t border-slate-800 py-4 px-4 text-center text-xs text-slate-500 no-print">
+        <p>🌱 巴金森舒心健康紀錄平台 (ParkinsonCare) | Google Apps Script 雲端整合版</p>
+        <p class="mt-1 text-slate-600">本平台所有紀錄僅供診間參考，請遵循您的主治醫師醫囑調整藥物。</p>
+    </footer>
+
+    <script>
+        // Initial Seed Data
+        const INITIAL_LOGS = [
+            { id: '1', timestamp: new Date(Date.now() - 3600000 * 24 * 3 + 3600000 * 8).toISOString(), type: 'med', title: '服藥：美多芭 (Madopar)', note: '早餐後服藥', tapScore: null, mood: '😊' },
+            { id: '2', timestamp: new Date(Date.now() - 3600000 * 24 * 3 + 3600000 * 9).toISOString(), type: 'on', title: '狀態：藥效發揮中 (On)', note: '精神很好，去散步 20 分鐘', tapScore: 42, mood: '🌈' },
+            { id: '3', timestamp: new Date(Date.now() - 3600000 * 24 * 3 + 3600000 * 12).toISOString(), type: 'off', title: '狀態：藥效退去 (Off)', note: '腳步略顯沉重', tapScore: 20, mood: '🐢' },
+            { id: '4', timestamp: new Date(Date.now() - 3600000 * 24 * 2 + 3600000 * 8).toISOString(), type: 'med', title: '服藥：美多芭 (Madopar)', note: '準時服用', tapScore: null, mood: '😊' },
+            { id: '5', timestamp: new Date(Date.now() - 3600000 * 24 * 2 + 3600000 * 10).toISOString(), type: 'on', title: '狀態：藥效發揮中 (On)', note: '做關節伸展運動', tapScore: 39, mood: '💪' },
+            { id: '6', timestamp: new Date(Date.now() - 3600000 * 24 * 2 + 3600000 * 16).toISOString(), type: 'off', title: '狀態：藥效退去 (Off)', note: '傍晚僵硬感較明顯', tapScore: 18, mood: '🥱' },
+            { id: '7', timestamp: new Date(Date.now() - 3600000 * 24 * 1 + 3600000 * 8).toISOString(), type: 'med', title: '服藥：美多芭 (Madopar)', note: '搭配溫開水', tapScore: null, mood: '😊' },
+            { id: '8', timestamp: new Date(Date.now() - 3600000 * 24 * 1 + 3600000 * 11).toISOString(), type: 'dyskinesia', title: '狀態：不自主扭動 (Dyskinesia)', note: '頭部些許擺動', tapScore: null, mood: '⚡' },
+            { id: '9', timestamp: new Date().toISOString(), type: 'on', title: '狀態：藥效發揮中 (On)', note: '剛完成敲擊測驗，動作流暢', tapScore: 45, mood: '🌟' }
+        ];
+
+        const INITIAL_MEDS = [
+            { id: 'm1', name: '美多芭 (Madopar 250mg)', time: '08:00', dosage: '1 錠' },
+            { id: 'm2', name: '美多芭 (Madopar 250mg)', time: '13:00', dosage: '1 錠' },
+            { id: 'm3', name: '美多芭 (Madopar 250mg)', time: '18:00', dosage: '1 錠' }
+        ];
+
+        const WARM_TIPS = [
+            "☀️ 每天早晨喝一杯溫開水，幫助腸胃蠕動與藥物吸收喔！",
+            "🌸 藥效順暢（On期）是做肌肉伸展與散步的最佳黃金時間！",
+            "💧 服用美多芭前，盡量避免高蛋白濃稠大餐，可讓藥效發揮得更順利！",
+            "🎈 感到腳步卡卡凍結時，試著打開我們的「解凍節拍器」跟著 rhythm 1-2 跨出去！",
+            "❤️ 紀錄不是為了擔心病情，而是為了幫您與醫師找回最舒適的生活節奏！",
+            "🗣️ 每天堅持大聲發聲練習 5 秒鐘，能保護聲帶肌力與社交說話自信！"
+        ];
+
+        // Global App State Variables
+        let state = {
+            logs: JSON.parse(localStorage.getItem('parkinson_logs')) || INITIAL_LOGS,
+            meds: JSON.parse(localStorage.getItem('parkinson_meds')) || INITIAL_MEDS,
+            nextClinicDate: localStorage.getItem('parkinson_clinic_date') || '2026-08-10',
+            streakCount: parseInt(localStorage.getItem('parkinson_streak') || '5', 10),
+            gardenPoints: parseInt(localStorage.getItem('parkinson_garden_pts') || '35', 10),
+            gasUrl: localStorage.getItem('parkinson_gas_url') || '',
+            selectedMood: '😊',
+            currentTipIndex: 0,
+            activeTab: 'patient'
+        };
+
+        // Chart instances
+        let chartHourly = null;
+        let chartTapping = null;
+        let chartPie = null;
+        let chartBar7Days = null;
+
+        function saveState() {
+            localStorage.setItem('parkinson_logs', JSON.stringify(state.logs));
+            localStorage.setItem('parkinson_meds', JSON.stringify(state.meds));
+            localStorage.setItem('parkinson_clinic_date', state.nextClinicDate);
+            localStorage.setItem('parkinson_streak', state.streakCount.toString());
+            localStorage.setItem('parkinson_garden_pts', state.gardenPoints.toString());
+            localStorage.setItem('parkinson_gas_url', state.gasUrl);
+
+            // Sync with Google Apps Script backend if deployed
+            if (state.gasUrl) {
+                fetch(state.gasUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'syncData', data: state })
+                }).catch(err => console.log('GAS sync:', err));
+            } else if (typeof google !== 'undefined' && google.script && google.script.run) {
+                google.script.run.saveAppData(JSON.stringify(state));
+            }
+        }
+
+        function showToast(msg) {
+            const container = document.getElementById('toast-container');
+            const text = document.getElementById('toast-text');
+            text.innerText = msg;
+            container.classList.remove('hidden');
+            setTimeout(() => {
+                container.classList.add('hidden');
+            }, 2800);
+        }
+
+        function triggerCelebration() {
+            const overlay = document.getElementById('celebration-overlay');
+            overlay.classList.remove('hidden');
+            state.gardenPoints += 5;
+            updateGardenUI();
+            saveState();
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+            }, 2000);
+        }
+
+        function updateGardenUI() {
+            document.getElementById('garden-points-display').innerText = state.gardenPoints;
+            const icon = document.getElementById('garden-icon');
+            if (state.gardenPoints > 80) icon.innerText = '🌻';
+            else if (state.gardenPoints > 50) icon.innerText = '🌸';
+            else if (state.gardenPoints > 20) icon.innerText = '🌿';
+            else icon.innerText = '🌱';
+
+            document.getElementById('flower-1').className = state.gardenPoints >= 20 ? 'opacity-100' : 'opacity-30';
+            document.getElementById('flower-2').className = state.gardenPoints >= 50 ? 'opacity-100' : 'opacity-30';
+            document.getElementById('flower-3').className = state.gardenPoints >= 80 ? 'opacity-100' : 'opacity-30';
+            document.getElementById('flower-4').className = state.gardenPoints >= 120 ? 'opacity-100' : 'opacity-30';
+        }
+
+        function switchTab(tabName) {
+            state.activeTab = tabName;
+            document.querySelectorAll('.tab-view').forEach(view => view.classList.add('hidden'));
+            document.getElementById(`view-${tabName}`).classList.remove('hidden');
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.className = "tab-btn flex-1 sm:flex-none px-3 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center space-x-1 text-slate-400 hover:text-white";
+            });
+
+            const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+            if (activeBtn) {
+                activeBtn.className = "tab-btn flex-1 sm:flex-none px-3 py-2 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center space-x-1 bg-teal-500 text-slate-950 font-black shadow-md";
+            }
+
+            if (tabName === 'analytics') {
+                setTimeout(renderCharts, 50);
+            }
+            if (tabName === 'doctor') {
+                renderDoctorSummary();
+            }
+            lucide.createIcons();
+        }
+
+        function nextTip() {
+            state.currentTipIndex = (state.currentTipIndex + 1) % WARM_TIPS.length;
+            document.getElementById('warm-tip-text').innerText = WARM_TIPS[state.currentTipIndex];
+        }
+
+        let isSpeaking = false;
+        function speakTip() {
+            if (!('speechSynthesis' in window)) {
+                showToast('⚠️ 您的瀏覽器不支援語音合成朗讀');
+                return;
+            }
+            if (isSpeaking) {
+                window.speechSynthesis.cancel();
+                isSpeaking = false;
+                document.getElementById('speak-tip-label').innerText = '朗讀';
+                return;
+            }
+
+            const text = WARM_TIPS[state.currentTipIndex].replace(/[\u{1F300}-\u{1F9FF}]/gu, '');
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-TW';
+            utterance.rate = 0.9;
+            utterance.onend = () => {
+                isSpeaking = false;
+                document.getElementById('speak-tip-label').innerText = '朗讀';
+            };
+            
+            isSpeaking = true;
+            document.getElementById('speak-tip-label').innerText = '朗讀中...';
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function selectMood(emoji) {
+            state.selectedMood = emoji;
+            showToast(`已選擇體感心情：${emoji}`);
+        }
+
+        function handleQuickLog(type, title, defaultNote = '') {
+            if (navigator.vibrate) navigator.vibrate(50);
+
+            const newLog = {
+                id: Date.now().toString(),
+                timestamp: new Date().toISOString(),
+                type,
+                title,
+                note: defaultNote || '手動快速紀錄',
+                tapScore: null,
+                mood: state.selectedMood
+            };
+
+            state.logs.unshift(newLog);
+            saveState();
+            renderRecentLogs();
+            showToast(`❤️ 小舒記下來囉！：${title} ${state.selectedMood}`);
+            triggerCelebration();
+        }
+
+        let recognition = null;
+        let isListening = false;
+        function toggleVoiceRecognition() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                showToast('⚠️ 您的瀏覽器不支援語音辨識，請直接打字輸入喔！');
+                return;
+            }
+
+            if (isListening && recognition) {
+                recognition.stop();
+                return;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'zh-TW';
+
+            recognition.onstart = () => {
+                isListening = true;
+                document.getElementById('voice-btn-label').innerText = '正在聆聽中... (請說話)';
+                document.getElementById('btn-voice-toggle').classList.add('animate-pulse', 'bg-rose-500', 'text-white');
+            };
+
+            recognition.onend = () => {
+                isListening = false;
+                document.getElementById('voice-btn-label').innerText = '按下開始口述';
+                document.getElementById('btn-voice-toggle').classList.remove('animate-pulse', 'bg-rose-500', 'text-white');
+            };
+
+            recognition.onresult = (e) => {
+                const text = e.results[0][0].transcript;
+                document.getElementById('voice-input-text').value = text;
+                submitVoiceText();
+            };
+
+            recognition.start();
+        }
+
+        function submitVoiceText() {
+            const input = document.getElementById('voice-input-text');
+            const val = input.value.trim();
+            if (!val) return;
+
+            const newLog = {
+                id: Date.now().toString(),
+                timestamp: new Date().toISOString(),
+                type: 'symptom',
+                title: '口述健康紀錄',
+                note: val,
+                tapScore: null,
+                mood: state.selectedMood
+            };
+
+            state.logs.unshift(newLog);
+            saveState();
+            renderRecentLogs();
+            input.value = '';
+            showToast('✨ 小舒幫您完成口述紀錄囉！');
+            triggerCelebration();
+        }
+
+        let tapTestActive = false;
+        let tapCount = 0;
+        let tapTimeLeft = 10;
+        let lastHand = null;
+        let tapInterval = null;
+
+        function startTapTest() {
+            tapTestActive = true;
+            tapCount = 0;
+            tapTimeLeft = 10;
+            lastHand = null;
+
+            document.getElementById('tap-test-ready').classList.add('hidden');
+            document.getElementById('tap-test-active').classList.remove('hidden');
+            document.getElementById('tap-count-display').innerText = '0';
+            document.getElementById('tap-timer-display').innerText = '10';
+
+            tapInterval = setInterval(() => {
+                tapTimeLeft--;
+                document.getElementById('tap-timer-display').innerText = tapTimeLeft;
+                if (tapTimeLeft <= 0) {
+                    clearInterval(tapInterval);
+                    endTapTest();
+                }
+            }, 1000);
+        }
+
+        function registerTap(hand) {
+            if (!tapTestActive) return;
+            if (hand !== lastHand) {
+                tapCount++;
+                lastHand = hand;
+                document.getElementById('tap-count-display').innerText = tapCount;
+                if (navigator.vibrate) navigator.vibrate(25);
+            }
+        }
+
+        function endTapTest() {
+            tapTestActive = false;
+            document.getElementById('tap-test-ready').classList.remove('hidden');
+            document.getElementById('tap-test-active').classList.add('hidden');
+
+            const newLog = {
+                id: Date.now().toString(),
+                timestamp: new Date().toISOString(),
+                type: 'on',
+                title: '手指敲擊靈巧度測驗',
+                note: `10 秒內完成 ${tapCount} 次雙手交替點擊 (${(tapCount / 10).toFixed(1)} 次/秒)`,
+                tapScore: tapCount,
+                mood: '💪'
+            };
+
+            state.logs.unshift(newLog);
+            saveState();
+            renderRecentLogs();
+            showToast(`🎉 挑戰成功！10秒得分：${tapCount} 次`);
+            triggerCelebration();
+        }
+
+        let metronomeActive = false;
+        let metroInterval = null;
+        let metroBeat = 1;
+        let bpm = 90;
+
+        function updateBPM(val) {
+            bpm = parseInt(val, 10);
+            document.getElementById('bpm-val-display').innerText = `${bpm} BPM`;
+            if (metronomeActive) {
+                toggleMetronome(); // Restart interval with new BPM
+                toggleMetronome();
+            }
+        }
+
+        function toggleMetronome() {
+            const btn = document.getElementById('btn-metronome-toggle');
+            const label = document.getElementById('metronome-btn-label');
+
+            if (metronomeActive) {
+                clearInterval(metroInterval);
+                metronomeActive = false;
+                label.innerText = '啟動解凍節拍聲響';
+                btn.classList.remove('bg-rose-500', 'animate-pulse');
+                btn.classList.add('bg-teal-500');
+                document.getElementById('metro-beat-1').className = 'w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black border-4 bg-slate-800 border-slate-700 text-slate-500 transition-all';
+                document.getElementById('metro-beat-2').className = 'w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black border-4 bg-slate-800 border-slate-700 text-slate-500 transition-all';
+            } else {
+                metronomeActive = true;
+                label.innerText = '停止節拍器';
+                btn.classList.remove('bg-teal-500');
+                btn.classList.add('bg-rose-500', 'animate-pulse');
+
+                const intervalMs = (60 / bpm) * 1000;
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+                metroInterval = setInterval(() => {
+                    metroBeat = metroBeat === 1 ? 2 : 1;
+                    const b1 = document.getElementById('metro-beat-1');
+                    const b2 = document.getElementById('metro-beat-2');
+
+                    if (metroBeat === 1) {
+                        b1.className = 'w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black border-4 bg-rose-500 border-rose-300 text-white scale-110 shadow-lg shadow-rose-500/50 transition-all';
+                        b2.className = 'w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black border-4 bg-slate-800 border-slate-700 text-slate-500 transition-all';
+                    } else {
+                        b2.className = 'w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black border-4 bg-amber-500 border-amber-300 text-slate-950 scale-110 shadow-lg shadow-amber-500/50 transition-all';
+                        b1.className = 'w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black border-4 bg-slate-800 border-slate-700 text-slate-500 transition-all';
+                    }
+
+                    try {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start();
+                        osc.stop(audioCtx.currentTime + 0.1);
+                    } catch(e) {}
+
+                    if (navigator.vibrate) navigator.vibrate(30);
+                }, intervalMs);
+            }
+        }
+
+        let vocalTesting = false;
+        let vocalTimeLeft = 5;
+        let vocalInterval = null;
+        let vocalAudioCtx = null;
+        let vocalStream = null;
+
+        async function startVocalTest() {
+            try {
+                vocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                vocalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const analyser = vocalAudioCtx.createAnalyser();
+                const source = vocalAudioCtx.createMediaStreamSource(vocalStream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+
+                vocalTesting = true;
+                vocalTimeLeft = 5;
+
+                document.getElementById('vocal-idle-view').classList.add('hidden');
+                document.getElementById('vocal-active-view').classList.remove('hidden');
+                document.getElementById('vocal-timer-display').innerText = '5 秒';
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                let totalVol = 0;
+                let count = 0;
+
+                function checkVol() {
+                    if (!vocalTesting) return;
+                    analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                    const avg = sum / dataArray.length;
+                    const volPct = Math.min(100, Math.round((avg / 128) * 100));
+                    
+                    document.getElementById('vocal-volume-bar').style.width = `${volPct}%`;
+                    document.getElementById('vocal-volume-text').innerText = volPct;
+                    
+                    totalVol += avg;
+                    count++;
+                    requestAnimationFrame(checkVol);
+                }
+                requestAnimationFrame(checkVol);
+
+                vocalInterval = setInterval(() => {
+                    vocalTimeLeft--;
+                    document.getElementById('vocal-timer-display').innerText = `${vocalTimeLeft} 秒`;
+                    if (vocalTimeLeft <= 0) {
+                        clearInterval(vocalInterval);
+                        finishVocalTest(totalVol / (count || 1));
+                    }
+                }, 1000);
+
+            } catch (e) {
+                showToast('⚠️ 請允許麥克風權限以進行發聲測試');
+            }
+        }
+
+        function finishVocalTest(avgVol) {
+            vocalTesting = false;
+            if (vocalStream) vocalStream.getTracks().forEach(t => t.stop());
+            if (vocalAudioCtx) vocalAudioCtx.close();
+
+            const score = Math.round((avgVol / 128) * 100);
+
+            document.getElementById('vocal-idle-view').classList.remove('hidden');
+            document.getElementById('vocal-active-view').classList.add('hidden');
+            document.getElementById('vocal-score-banner').classList.remove('hidden');
+            document.getElementById('last-vocal-score').innerText = score;
+
+            const newLog = {
+                id: Date.now().toString(),
+                timestamp: new Date().toISOString(),
+                type: 'on',
+                title: '5秒大聲發聲練習 (LSVT LOUD)',
+                note: `發聲強度得分：${score} 分`,
+                tapScore: null,
+                mood: '🗣️'
+            };
+
+            state.logs.unshift(newLog);
+            saveState();
+            renderRecentLogs();
+            showToast(`🗣️ 發聲練習完成！獲得 ${score} 分響亮指數！`);
+            triggerCelebration();
+        }
+
+        function renderRecentLogs() {
+            const container = document.getElementById('recent-logs-list');
+            document.getElementById('log-count-display').innerText = state.logs.length;
+            container.innerHTML = '';
+
+            state.logs.slice(0, 5).forEach(log => {
+                const item = document.createElement('div');
+                item.className = 'p-3 bg-slate-800 rounded-xl border border-slate-700/80 flex items-center justify-between';
+                
+                const timeStr = new Date(log.timestamp).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+
+                item.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl">${log.mood || '😊'}</span>
+                        <div>
+                            <h4 class="font-bold text-sm text-slate-200">${log.title}</h4>
+                            <p class="text-xs text-slate-400">${log.note}</p>
+                        </div>
+                    </div>
+                    <span class="text-xs text-slate-500 font-mono">${timeStr}</span>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderCharts() {
+            // 1. Hourly Wearing Off
+            const hourlyOnMap = Array(24).fill(0);
+            const hourlyOffMap = Array(24).fill(0);
+
+            state.logs.forEach(l => {
+                const h = new Date(l.timestamp).getHours();
+                if (l.type === 'on') hourlyOnMap[h]++;
+                if (l.type === 'off') hourlyOffMap[h]++;
+            });
+
+            const hours = Array.from({length: 15}, (_, i) => `${(i + 7).toString().padStart(2, '0')}:00`);
+            const onData = hours.map((_, i) => hourlyOnMap[i + 7]);
+            const offData = hours.map((_, i) => hourlyOffMap[i + 7]);
+
+            if (chartHourly) chartHourly.destroy();
+            const ctxHourly = document.getElementById('chart-hourly');
+            if (ctxHourly) {
+                chartHourly = new Chart(ctxHourly, {
+                    type: 'line',
+                    data: {
+                        labels: hours,
+                        datasets: [
+                            { label: '僵硬/退藥 (Off)', data: offData, borderColor: '#F43F5E', backgroundColor: 'rgba(244, 63, 94, 0.2)', fill: true, tension: 0.3 },
+                            { label: '順暢 (On)', data: onData, borderColor: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.3 }
+                        ]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+
+            // 2. Finger Tapping History
+            const tapLogs = state.logs.filter(l => l.tapScore !== null).slice(0, 10).reverse();
+            const tapDates = tapLogs.map(l => new Date(l.timestamp).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }));
+            const tapScores = tapLogs.map(l => l.tapScore);
+
+            if (chartTapping) chartTapping.destroy();
+            const ctxTap = document.getElementById('chart-tapping');
+            if (ctxTap) {
+                chartTapping = new Chart(ctxTap, {
+                    type: 'line',
+                    data: {
+                        labels: tapDates,
+                        datasets: [{ label: '敲擊次數', data: tapScores, borderColor: '#2DD4BF', backgroundColor: '#2DD4BF', pointRadius: 5 }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+
+            // 3. State Pie Distribution
+            let onCnt = 0, offCnt = 0, dysCnt = 0;
+            state.logs.forEach(l => {
+                if (l.type === 'on') onCnt++;
+                if (l.type === 'off') offCnt++;
+                if (l.type === 'dyskinesia') dysCnt++;
+            });
+
+            if (chartPie) chartPie.destroy();
+            const ctxPie = document.getElementById('chart-pie');
+            if (ctxPie) {
+                chartPie = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['順暢 (On)', '僵硬 (Off)', '扭動 (Dys)'],
+                        datasets: [{ data: [onCnt, offCnt, dysCnt], backgroundColor: ['#10B981', '#F43F5E', '#F59E0B'] }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+
+            // 4. 7-Day Stacked Bar Chart
+            const last7DaysLabels = Array.from({length: 7}).map((_, i) => {
+                const d = new Date();
+                d.setDate(d.getDate() - (6 - i));
+                return d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' });
+            });
+
+            if (chartBar7Days) chartBar7Days.destroy();
+            const ctxBar = document.getElementById('chart-bar-7days');
+            if (ctxBar) {
+                chartBar7Days = new Chart(ctxBar, {
+                    type: 'bar',
+                    data: {
+                        labels: last7DaysLabels,
+                        datasets: [
+                            { label: '順暢', data: [3, 4, 3, 5, 2, 4, 3], backgroundColor: '#10B981' },
+                            { label: '僵硬', data: [1, 2, 1, 1, 3, 1, 2], backgroundColor: '#F43F5E' }
+                        ]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true } } }
+                });
+            }
+        }
+
+        function renderDoctorSummary() {
+            let onCnt = 0, offCnt = 0, dysCnt = 0;
+            state.logs.forEach(l => {
+                if (l.type === 'on') onCnt++;
+                if (l.type === 'off') offCnt++;
+                if (l.type === 'dyskinesia') dysCnt++;
+            });
+            const total = onCnt + offCnt + dysCnt || 1;
+            const onPct = Math.round((onCnt / total) * 100);
+            const offPct = Math.round((offCnt / total) * 100);
+            const dysPct = Math.round((dysCnt / total) * 100);
+
+            document.getElementById('summary-total-logs').innerText = state.logs.length;
+            document.getElementById('summary-clinic-date').innerText = state.nextClinicDate;
+            document.getElementById('summary-med-freq').innerText = `每日 ${state.meds.length} 次`;
+
+            document.getElementById('summary-on-pct').innerText = `${onPct}%`;
+            document.getElementById('summary-on-bar').style.width = `${onPct}%`;
+
+            document.getElementById('summary-off-pct').innerText = `${offPct}%`;
+            document.getElementById('summary-off-bar').style.width = `${offPct}%`;
+
+            document.getElementById('summary-dys-pct').innerText = `${dysPct}%`;
+            document.getElementById('summary-dys-bar').style.width = `${dysPct}%`;
+
+            const tapContainer = document.getElementById('summary-tap-logs');
+            tapContainer.innerHTML = '';
+            const tappingLogs = state.logs.filter(l => l.tapScore !== null).slice(0, 3);
+            
+            if (tappingLogs.length === 0) {
+                tapContainer.innerHTML = '<div class="text-xs text-slate-500 py-2">尚未進行敲擊測試</div>';
+            } else {
+                tappingLogs.forEach(l => {
+                    const d = document.createElement('div');
+                    d.className = 'flex items-center justify-between p-3 bg-slate-900/80 rounded-xl text-xs';
+                    d.innerHTML = `
+                        <div>
+                            <span class="font-bold text-teal-300">${l.note}</span>
+                            <span class="text-slate-500 block">${new Date(l.timestamp).toLocaleString('zh-TW')}</span>
+                        </div>
+                        <span class="bg-teal-500/20 text-teal-300 border border-teal-500/30 px-3 py-1 rounded-full font-black text-sm">
+                            ${l.tapScore} 次 / 10s
+                        </span>
+                    `;
+                    tapContainer.appendChild(d);
+                });
+            }
+        }
+
+        function renderMeds() {
+            document.getElementById('input-clinic-date').value = state.nextClinicDate;
+            if (document.getElementById('input-gas-url')) {
+                document.getElementById('input-gas-url').value = state.gasUrl || '';
+            }
+            if (state.gasUrl) {
+                document.getElementById('gas-status-tag').className = "text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30";
+                document.getElementById('gas-status-tag').innerText = "已連線 GAS 雲端";
+            }
+
+            const container = document.getElementById('medication-list');
+            container.innerHTML = '';
+
+            state.meds.forEach(m => {
+                const d = document.createElement('div');
+                d.className = 'p-4 bg-slate-900/90 rounded-2xl border border-slate-700 flex items-center justify-between';
+                d.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <div class="p-2.5 bg-sky-500/20 text-sky-300 rounded-xl font-mono font-bold text-sm">
+                            ${m.time}
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-sm text-slate-200">${m.name}</h4>
+                            <span class="text-xs text-slate-400">劑量：${m.dosage}</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(d);
+            });
+        }
+
+        function saveGasUrl() {
+            const url = document.getElementById('input-gas-url').value.trim();
+            state.gasUrl = url;
+            saveState();
+            showToast(url ? '✅ 已成功儲存並綁定 GAS URL！' : '已切換為單機儲存模式');
+            renderMeds();
+        }
+
+        function updateClinicDate(val) {
+            state.nextClinicDate = val;
+            saveState();
+            showToast(`已更新預定回診日期：${val}`);
+        }
+
+        function exportJSONData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `ParkinsonCare_Backup_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+            showToast('💾 備份檔案已順利下載！');
+        }
+
+        window.onload = function() {
+            lucide.createIcons();
+            updateGardenUI();
+            renderRecentLogs();
+            renderMeds();
+            document.getElementById('streak-count-display').innerText = state.streakCount;
+        };
+    </script>
+</body>
+</html>
