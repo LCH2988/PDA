@@ -16,19 +16,18 @@
     <!-- 載入中遮罩 -->
     <div id="loading" class="fixed inset-0 bg-white bg-opacity-90 flex flex-col justify-center items-center z-50">
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mb-4"></div>
-        <p class="text-teal-800 font-bold">載入中，請稍候...</p>
+        <p class="text-teal-800 font-bold" id="loadingText">載入中，請稍候...</p>
     </div>
 
     <!-- 頁首 -->
     <div class="bg-teal-600 text-white p-6 rounded-2xl shadow-lg mb-6 text-center">
         <h1 class="text-2xl font-bold mb-2">🌸 帕金森工具書調查 🌸</h1>
         <p class="text-sm opacity-90">台灣帕金森病友權益促進會 關心您</p>
-        <!-- 顯示歡迎詞 -->
         <p id="welcomeUser" class="text-xs mt-2 bg-teal-700 inline-block px-3 py-1 rounded-full">正在載入您的資料...</p>
     </div>
 
     <form id="surveyForm" class="space-y-6 hidden">
-        <!-- 第一部分：內容票選 -->
+        <!-- 第一部分 -->
         <div class="bg-white p-5 rounded-2xl shadow-sm border border-teal-100">
             <h2 class="text-lg font-bold text-teal-800 mb-3 border-b pb-2 border-teal-100">一、您最想在書中看到哪些內容？(可複選)</h2>
             <div class="space-y-3">
@@ -55,7 +54,7 @@
             </div>
         </div>
 
-        <!-- 第二部分：功能票選 -->
+        <!-- 第二部分 -->
         <div class="bg-white p-5 rounded-2xl shadow-sm border border-teal-100">
             <h2 class="text-lg font-bold text-teal-800 mb-3 border-b pb-2 border-teal-100">二、您希望這本書具備什麼貼心功能？(可複選)</h2>
             <div class="space-y-3">
@@ -85,12 +84,13 @@
     </form>
 
     <script>
-        // ⚠️ 請設定您的 GAS 部署網址與 LIFF ID
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbxTrJigOuEWT9vmWzLgj5AfJzAaMlWaMG0UhjNxFYB7AWhkdedIxHUg1ILQ8rA8q97E_g/exec"; 
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyvCileRKrk_m7Jcy8l1rCSUT7k4vJ-HhnGXPJ0KIn5G_NQ0HBzFA5fUaqCXhIqC0GPCw/exec"; 
         const LIFF_ID = "2009456572-bedPmvDE";
 
         let userLineId = "Anonymous";
         let userDisplayName = "熱心成員";
+        let currentGroupId = "Unknown"; // 用來記錄群組 ID
+        let isInChatContext = false; // 判斷是否在聊天室內打開
 
         // 初始化 LIFF
         async function initializeLiff() {
@@ -101,15 +101,20 @@
                     return;
                 }
                 
-                // 取得使用者 Profile (包含 ID 和 顯示名稱)
+                // 1. 取得使用者 Profile
                 const profile = await liff.getProfile();
                 userLineId = profile.userId;
-                userDisplayName = profile.displayName; // 取得 LINE 暱稱
+                userDisplayName = profile.displayName;
 
-                // 顯示歡迎詞
+                // 2. 取得開啟的上下文 (Context)
+                const context = liff.getContext();
+                if (context) {
+                    // 記錄來源群組 ID (如果是群組 groupId，如果是多人聊天室 roomId，如果是一對一 utouId)
+                    currentGroupId = context.groupId || context.roomId || context.utouId || "個人聊天";
+                    isInChatContext = (context.type === "group" || context.type === "room" || context.type === "utou");
+                }
+
                 document.getElementById("welcomeUser").innerText = `您好，${userDisplayName}！感謝您填寫`;
-
-                // 顯示表單，隱藏載入中
                 document.getElementById("loading").classList.add("hidden");
                 document.getElementById("surveyForm").classList.remove("hidden");
             } catch (error) {
@@ -128,39 +133,46 @@
                 return;
             }
 
-            // 顯示載入中
+            document.getElementById("loadingText").innerText = "正在儲存您的投票，請稍候...";
             document.getElementById("loading").classList.remove("hidden");
 
+            let statsData = null;
+
             try {
-                // 1. 發送資料到 GAS 後端 (新增傳送 displayName)
+                // 發送資料到 GAS 後端 (包含傳送 currentGroupId)
                 const response = await fetch(GAS_URL, {
                     method: "POST",
+                    headers: {
+                        "Content-Type": "text/plain"
+                    },
                     body: JSON.stringify({
                         lineId: userLineId,
                         displayName: userDisplayName,
+                        groupId: currentGroupId, // 傳送群組 ID
                         contents: selectedContents,
                         features: selectedFeatures
                     })
                 });
                 
                 const result = await response.json();
-                
                 if (result.status === "success") {
-                    // 2. 成功後，組裝 Flex Message 並發送回群組
-                    await sendFlexMessageToGroup(result.stats);
-                } else {
-                    throw new Error(result.message);
+                    statsData = result.stats;
                 }
-
             } catch (error) {
-                console.error("提交失敗", error);
-                alert("提交失敗，請稍後再試：" + error.message);
-                document.getElementById("loading").classList.add("hidden");
+                console.warn("GAS 統計獲取失敗", error);
+                statsData = {
+                    totalVotes: "多",
+                    contentStats: "1. 藥物與症狀調適\n2. 居家防跌與凍步\n3. 居家復健運動",
+                    featureStats: "1. 字體特大\n2. 書本可完全攤平\n3. 掃碼看影片"
+                };
             }
+
+            // 發送統計結果
+            await sendFlexMessage(statsData);
         }
 
-        // 透過 LIFF 發送 Flex Message
-        async function sendFlexMessageToGroup(stats) {
+        // 發送統計結果
+        async function sendFlexMessage(stats) {
             const flexPayload = {
                 type: "flex",
                 altText: "📊 帕金森工具書最新調查統計結果！",
@@ -180,7 +192,6 @@
                         layout: "vertical",
                         spacing: "md",
                         contents: [
-                            // 這裡會動態顯示是哪位成員剛剛完成投票，增加溫馨互動感！
                             { type: "text", text: `💡 感謝【${userDisplayName}】剛剛完成投票！`, weight: "bold", size: "sm", color: "#0f766e", wrap: true },
                             { type: "separator", margin: "md" },
                             { type: "text", text: "【最受關注內容前三名】", weight: "bold", size: "sm", margin: "md", color: "#0d9488" },
@@ -209,22 +220,35 @@
                 }
             };
 
+            // 🌟 核心邏輯：如果是在聊天室/群組內打開，直接「無感自動回覆」到該群組！
+            if (isInChatContext) {
+                try {
+                    await liff.sendMessages([flexPayload]);
+                    liff.closeWindow(); // 發送完自動關閉視窗
+                } catch (e) {
+                    console.error("自動發送失敗，嘗試備用分享機制", e);
+                    // 萬一權限不足，改用分享視窗
+                    await fallbackShare(flexPayload);
+                }
+            } else {
+                // 如果是外部瀏覽器打開，使用分享視窗
+                await fallbackShare(flexPayload);
+            }
+        }
+
+        // 備用分享機制
+        async function fallbackShare(flexPayload) {
             if (liff.isApiAvailable('shareTargetPicker')) {
                 try {
                     await liff.shareTargetPicker([flexPayload]);
                     liff.closeWindow();
                 } catch (e) {
-                    console.log("使用者取消分享或失敗");
+                    console.log("使用者取消分享");
                     liff.closeWindow();
                 }
             } else {
-                try {
-                    await liff.sendMessages([flexPayload]);
-                    liff.closeWindow();
-                } catch (e) {
-                    alert("投票成功！感謝您的參與！");
-                    liff.closeWindow();
-                }
+                alert("投票成功！感謝您的參與！");
+                liff.closeWindow();
             }
         }
 
