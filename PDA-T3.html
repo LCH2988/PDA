@@ -1071,6 +1071,7 @@
         }
 
         // 發送自訂接龍到群組
+        // 優化後的自訂接龍發送功能
         async function shareCustomChainToGroup() {
             const qTitle = document.getElementById("adminShareQuestionSelect").value;
             if (!qTitle) {
@@ -1078,7 +1079,7 @@
                 return;
             }
 
-            showLoading("正在產生接龍並發送...");
+            showLoading("正在產生接龍並準備發送...");
             const eventId = document.getElementById("adminEventId").value;
 
             try {
@@ -1093,39 +1094,76 @@
                         return;
                     }
 
-                    // 組合接龍文字
-                    let chainText = `📊 《${currentEvent.title}》登記接龍\n`;
-                    chainText += `項目：${qTitle}\n`;
-                    chainText += `---------------------------\n`;
-
+                    // 1. 組合接龍文字 (格式：**名單 _ 項目**)
+                    let chainText = `**名單 _ ${qTitle}**\n`;
                     list.forEach((p, idx) => {
-                        const ans = p.answers[qTitle] || "未填寫";
-                        chainText += `${idx + 1}. ${p.name}  _  ${ans} (${p.status})\n`;
+                        const ans = p.answers[qTitle] || "無";
+                        chainText += `${idx + 1}. ${p.name}  _  ${ans}\n`;
                     });
 
-                    // 發送文字訊息至 LINE
                     const textPayload = {
                         type: "text",
                         text: chainText
                     };
 
+                    // 2. 判斷發送環境
                     if (isInChatContext) {
-                        await liff.sendMessages([textPayload]);
-                        alert("接龍已成功發布至群組！");
-                    } else {
-                        // 備用分享
-                        if (liff.isApiAvailable('shareTargetPicker')) {
-                            await liff.shareTargetPicker([textPayload]);
-                        } else {
-                            alert("接龍文字已產生，請手動複製：\n\n" + chainText);
+                        // 如果是在 LINE 群組內開啟，嘗試直接發送
+                        try {
+                            await liff.sendMessages([textPayload]);
+                            alert("接龍已成功發布至群組！");
+                        } catch (e) {
+                            console.warn("直接發送失敗，嘗試使用分享選擇器...", e);
+                            await fallbackShareTargetPicker(textPayload, chainText);
                         }
+                    } else {
+                        // 如果在外部瀏覽器或個人對話，直接使用分享選擇器或一鍵複製
+                        await fallbackShareTargetPicker(textPayload, chainText);
                     }
+                } else {
+                    alert("獲取名單失敗：" + result.message);
                 }
             } catch (e) {
-                alert("發送接龍失敗");
+                console.error(e);
+                alert("系統發生錯誤，無法發送接龍。");
             }
             hideLoading();
         }
+
+        // 備用發送與一鍵複製機制
+        async function fallbackShareTargetPicker(textPayload, rawText) {
+            if (liff.isApiAvailable('shareTargetPicker')) {
+                try {
+                    const res = await liff.shareTargetPicker([textPayload]);
+                    if (res) {
+                        alert("接龍已成功分享至指定的群組！");
+                    }
+                } catch (e) {
+                    // 萬一分享選擇器也被瀏覽器阻擋，則提供終極方案：一鍵複製
+                    showCopyDialog(rawText);
+                }
+            } else {
+                showCopyDialog(rawText);
+            }
+        }
+
+        // 終極備用方案：彈出視窗讓管理員複製文字
+        function showCopyDialog(text) {
+            // 建立一個臨時的 textarea 來複製文字
+            const tempTextArea = document.createElement("textarea");
+            tempTextArea.value = text;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            try {
+                document.execCommand("copy");
+                alert("【一鍵複製成功！】\n\n系統已自動複製接龍文字，您可以直接到 LINE 群組中「貼上」發送：\n\n" + text);
+            } catch (err) {
+                // 如果連自動複製都不支援，則顯示 prompt 讓用戶手動複製
+                window.prompt("請複製下方的接龍文字，並手動貼到 LINE 群組中：", text);
+            }
+            document.body.removeChild(tempTextArea);
+        }
+
 
         async function saveEvent() {
             const id = document.getElementById("adminEventId").value;
