@@ -110,6 +110,25 @@
       border: 2px dashed #818cf8;
     }
 
+    .mode-selector {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-bottom: 15px;
+      font-weight: 600;
+    }
+
+    .mode-selector label {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid #cbd5e1;
+    }
+
     .prize-select {
       padding: 8px 12px;
       font-size: 16px;
@@ -121,7 +140,7 @@
 
     .draw-box {
       margin: 20px 0;
-      padding: 30px;
+      padding: 25px;
       background: #ffffff;
       border-radius: 10px;
       min-height: 120px;
@@ -133,7 +152,7 @@
     }
 
     .winner-display {
-      font-size: 32px;
+      font-size: 28px;
       font-weight: bold;
       color: var(--primary-color);
       min-height: 48px;
@@ -202,7 +221,7 @@
   <div class="container">
     <div class="header">
       <h1>🎉 線上抽獎平台</h1>
-      <p>自動排除已抽出的獎品與中獎者，按抽獎順序紀錄得獎名單</p>
+      <p>支援批量抽獎、自動排除已中獎者與獎品下架</p>
     </div>
 
     <!-- 1. 資料匯入區塊 -->
@@ -227,8 +246,16 @@
     <!-- 2. 抽獎執行控制台 -->
     <div class="card control-panel">
       <h2>🎯 抽獎控制台</h2>
-      <div style="margin-top: 15px;">
-        <label for="prizeSelect">選擇欲抽取的獎品：</label>
+      
+      <!-- 模式選擇器 -->
+      <div class="mode-selector" style="margin-top: 15px;">
+        <label><input type="radio" name="drawMode" value="1" checked onclick="switchMode()"> 一次 1 個</label>
+        <label><input type="radio" name="drawMode" value="10" onclick="switchMode()"> 一次 10 個</label>
+        <label><input type="radio" name="drawMode" value="all" onclick="switchMode()"> 一次全抽</label>
+      </div>
+
+      <div style="margin-top: 10px;">
+        <label for="prizeSelect" id="prizeSelectLabel">選擇欲抽取的獎品：</label>
         <select id="prizeSelect" class="prize-select"></select>
         <button id="drawBtn" class="btn-success" onclick="startDraw()" disabled>開始抽獎</button>
       </div>
@@ -299,7 +326,7 @@
   <script>
     let prizes = [];
     let participants = [];
-    let winnersList = []; // 專門儲存依順序排列的中獎名單
+    let winnersList = [];
     let isDrawing = false;
 
     // 載入與解析輸入資料
@@ -325,7 +352,7 @@
       // 解析參與者
       const lines = participantText.split('\n').map(item => item.trim()).filter(item => item.length > 0);
       participants = [];
-      winnersList = []; // 清空中獎順序紀錄
+      winnersList = [];
 
       for (let line of lines) {
         const parts = line.split(/[,，]/);
@@ -341,16 +368,39 @@
         }
       }
 
-      updatePrizeSelect();
+      switchMode();
       renderTables();
       updateStats();
 
       document.getElementById('winnerDisplay').innerText = '❓';
-      document.getElementById('wishingText').innerText = '準備就緒，請選擇獎品並點擊開始抽獎！';
+      document.getElementById('wishingText').innerText = '準備就緒，請點擊開始抽獎！';
       alert(`成功載入 ${prizes.length} 份獎品與 ${participants.length} 位參與者！`);
     }
 
-    // 更新獎品下拉選單
+    // 切換抽獎模式 UI 控制
+    function switchMode() {
+      const mode = document.querySelector('input[name="drawMode"]:checked').value;
+      const prizeSelect = document.getElementById('prizeSelect');
+      const prizeLabel = document.getElementById('prizeSelectLabel');
+
+      updatePrizeSelect();
+
+      if (mode === '1') {
+        prizeSelect.style.display = 'inline-block';
+        prizeLabel.style.display = 'inline-block';
+        prizeLabel.innerText = '選擇欲抽取的獎品：';
+      } else {
+        prizeSelect.style.display = 'none';
+        prizeLabel.style.display = 'inline-block';
+        if (mode === '10') {
+          prizeLabel.innerText = '模式：一次按順序抽取 10 個獎品';
+        } else {
+          prizeLabel.innerText = '模式：一次將剩餘獎品全部抽出';
+        }
+      }
+    }
+
+    // 更新獎品選單
     function updatePrizeSelect() {
       const select = document.getElementById('prizeSelect');
       select.innerHTML = '';
@@ -376,9 +426,9 @@
       document.getElementById('drawBtn').disabled = false;
     }
 
-    // 渲染兩個表格（順序中獎表 & 全體狀態表）
+    // 渲染表格
     function renderTables() {
-      // 1. 渲染按抽獎順序的中獎表
+      // 1. 中獎順序表
       const winnersTbody = document.getElementById('winnersTableBody');
       winnersTbody.innerHTML = '';
 
@@ -397,7 +447,7 @@
         });
       }
 
-      // 2. 渲染全體人員表
+      // 2. 全體名單表
       const participantTbody = document.getElementById('participantTableBody');
       participantTbody.innerHTML = '';
 
@@ -421,7 +471,7 @@
       });
     }
 
-    // 更新統計數據
+    // 更新統計數字
     function updateStats() {
       const total = participants.length;
       const won = participants.filter(p => p.wonPrize !== null).length;
@@ -434,38 +484,53 @@
       document.getElementById('remainingPrizesCount').innerText = remainingPrizes;
     }
 
-    // 開始抽獎
+    // 開始抽獎 (支援單抽、10連抽、全抽)
     function startDraw() {
       if (isDrawing) return;
 
-      const prizeId = document.getElementById('prizeSelect').value;
-      if (prizeId === '') {
+      const mode = document.querySelector('input[name="drawMode"]:checked').value;
+      const availablePrizes = prizes.filter(p => !p.isDrawn);
+      const eligibleParticipants = participants.filter(p => p.wonPrize === null);
+
+      if (availablePrizes.length === 0) {
         alert('沒有可抽取的獎品或所有獎品已抽完！');
         return;
       }
-
-      const currentPrizeObj = prizes.find(p => p.id == prizeId);
-      if (!currentPrizeObj || currentPrizeObj.isDrawn) {
-        alert('該獎品已被抽出，請選擇其他獎品！');
-        return;
-      }
-
-      const eligibleParticipants = participants.filter(p => p.wonPrize === null);
-
       if (eligibleParticipants.length === 0) {
         alert('所有人皆已中獎，無剩餘可抽獎人員！');
         return;
       }
 
+      let drawCount = 1;
+      let targetPrizes = [];
+
+      // 根據模式計算需抽出的獎品數量與清單
+      if (mode === '1') {
+        const prizeId = document.getElementById('prizeSelect').value;
+        const currentPrizeObj = prizes.find(p => p.id == prizeId);
+        if (!currentPrizeObj || currentPrizeObj.isDrawn) {
+          alert('請選擇有效的獎品！');
+          return;
+        }
+        targetPrizes = [currentPrizeObj];
+        drawCount = 1;
+      } else if (mode === '10') {
+        drawCount = Math.min(10, availablePrizes.length, eligibleParticipants.length);
+        targetPrizes = availablePrizes.slice(0, drawCount);
+      } else if (mode === 'all') {
+        drawCount = Math.min(availablePrizes.length, eligibleParticipants.length);
+        targetPrizes = availablePrizes.slice(0, drawCount);
+      }
+
       isDrawing = true;
       document.getElementById('drawBtn').disabled = true;
-      document.getElementById('wishingText').innerText = `正在抽取 【${currentPrizeObj.name}】 中...`;
+      document.getElementById('wishingText').innerText = `正在抽取 ${drawCount} 個獎品中...`;
 
       let counter = 0;
       const duration = 2500;
       const intervalTime = 80;
 
-      // 跑馬燈動畫
+      // 跑馬燈滾動動畫
       const timer = setInterval(() => {
         const randomIndex = Math.floor(Math.random() * eligibleParticipants.length);
         const randomCandidate = eligibleParticipants[randomIndex];
@@ -475,28 +540,35 @@
         if (counter >= duration) {
           clearInterval(timer);
 
-          // 確定中獎者
-          const winnerIndex = Math.floor(Math.random() * eligibleParticipants.length);
-          const winner = eligibleParticipants[winnerIndex];
+          // 隨機抽選 drawCount 位不重複的中獎人員
+          const shuffledParticipants = [...eligibleParticipants].sort(() => 0.5 - Math.random());
+          const winners = shuffledParticipants.slice(0, drawCount);
 
-          // 註記狀態
-          winner.wonPrize = currentPrizeObj.name;
-          currentPrizeObj.isDrawn = true;
+          // 更新資料狀態
+          winners.forEach((winner, index) => {
+            const prizeObj = targetPrizes[index];
+            winner.wonPrize = prizeObj.name;
+            prizeObj.isDrawn = true;
 
-          // 加入順序中獎紀錄列表
-          winnersList.push({
-            id: winner.id,
-            name: winner.name,
-            prize: currentPrizeObj.name
+            winnersList.push({
+              id: winner.id,
+              name: winner.name,
+              prize: prizeObj.name
+            });
           });
 
-          // UI 更新
-          document.getElementById('winnerDisplay').innerText = `🎉 ${winner.id} - ${winner.name}`;
-          document.getElementById('wishingText').innerText = `恭喜獲得 【${currentPrizeObj.name}】！`;
+          // 畫面顯示結果
+          if (drawCount === 1) {
+            document.getElementById('winnerDisplay').innerText = `🎉 ${winners[0].id} - ${winners[0].name}`;
+            document.getElementById('wishingText').innerText = `恭喜獲得 【${targetPrizes[0].name}】！`;
+          } else {
+            document.getElementById('winnerDisplay').innerText = `🎉 成功抽出 ${drawCount} 位中獎者！`;
+            document.getElementById('wishingText').innerText = `已新增至下方「已中獎名單」中！`;
+          }
 
           renderTables();
           updateStats();
-          updatePrizeSelect();
+          switchMode(); // 重新整理下拉選單與介面
 
           isDrawing = false;
         }
