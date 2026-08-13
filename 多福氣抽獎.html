@@ -185,8 +185,14 @@
       border: 1px solid #a7f3d0;
     }
 
+    .badge-order {
+      background-color: #e0e7ff;
+      color: #3730a3;
+      font-weight: bold;
+    }
+
     .table-container {
-      max-height: 400px;
+      max-height: 350px;
       overflow-y: auto;
     }
   </style>
@@ -196,14 +202,14 @@
   <div class="container">
     <div class="header">
       <h1>🎉 線上抽獎平台</h1>
-      <p>自動排除已抽出的獎品與中獎者</p>
+      <p>自動排除已抽出的獎品與中獎者，按抽獎順序紀錄得獎名單</p>
     </div>
 
     <!-- 1. 資料匯入區塊 -->
     <div class="grid-2">
       <div class="card">
         <h2>1. 匯入獎品清單</h2>
-        <p style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">格式：每行一個獎品 (已展開之獎品項目)</p>
+        <p style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">格式：每行一個獎品</p>
         <textarea id="prizeInput" placeholder="1 宮古島雪鹽法蘭蘇&#10;2 宮古島雪鹽法蘭蘇&#10;3 虎牌保溫杯"></textarea>
       </div>
 
@@ -241,13 +247,35 @@
       </div>
     </div>
 
-    <!-- 3. 全體抽獎名單與中獎狀態顯示區 -->
-    <div class="card">
+    <!-- 3. 中獎名單 (依抽獎順序) -->
+    <div class="card" style="border-top: 4px solid var(--success-color);">
       <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h2>📋 個人抽籤名單狀態</h2>
+        <h2>🏆 已中獎名單 (依抽獎順序排列)</h2>
         <button onclick="exportCSV()" style="font-size: 13px; padding: 6px 12px;">匯出結果 CSV</button>
       </div>
 
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 15%;">抽獎順序</th>
+              <th style="width: 20%;">中獎人編號</th>
+              <th style="width: 25%;">中獎人姓名</th>
+              <th style="width: 40%;">獲得獎品</th>
+            </tr>
+          </thead>
+          <tbody id="winnersTableBody">
+            <tr>
+              <td colspan="4" style="text-align: center; color: var(--text-muted);">尚無中獎紀錄</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 4. 全體抽獎名單與中獎狀態顯示區 -->
+    <div class="card">
+      <h2>📋 全體抽籤名單狀態</h2>
       <div class="table-container">
         <table>
           <thead>
@@ -271,6 +299,7 @@
   <script>
     let prizes = [];
     let participants = [];
+    let winnersList = []; // 專門儲存依順序排列的中獎名單
     let isDrawing = false;
 
     // 載入與解析輸入資料
@@ -283,7 +312,7 @@
         return;
       }
 
-      // 解析獎品 (每個獎品項目增加 isDrawn 狀態)
+      // 解析獎品
       prizes = prizeText.split('\n')
         .map(item => item.trim())
         .filter(item => item.length > 0)
@@ -296,6 +325,7 @@
       // 解析參與者
       const lines = participantText.split('\n').map(item => item.trim()).filter(item => item.length > 0);
       participants = [];
+      winnersList = []; // 清空中獎順序紀錄
 
       for (let line of lines) {
         const parts = line.split(/[,，]/);
@@ -312,7 +342,7 @@
       }
 
       updatePrizeSelect();
-      renderTable();
+      renderTables();
       updateStats();
 
       document.getElementById('winnerDisplay').innerText = '❓';
@@ -320,12 +350,11 @@
       alert(`成功載入 ${prizes.length} 份獎品與 ${participants.length} 位參與者！`);
     }
 
-    // 更新獎品下拉選單 (自動剔除已抽出的獎品)
+    // 更新獎品下拉選單
     function updatePrizeSelect() {
       const select = document.getElementById('prizeSelect');
       select.innerHTML = '';
 
-      // 篩選出未抽取的獎品
       const availablePrizes = prizes.filter(p => !p.isDrawn);
 
       if (availablePrizes.length === 0) {
@@ -347,10 +376,30 @@
       document.getElementById('drawBtn').disabled = false;
     }
 
-    // 渲染名單表格
-    function renderTable() {
-      const tbody = document.getElementById('participantTableBody');
-      tbody.innerHTML = '';
+    // 渲染兩個表格（順序中獎表 & 全體狀態表）
+    function renderTables() {
+      // 1. 渲染按抽獎順序的中獎表
+      const winnersTbody = document.getElementById('winnersTableBody');
+      winnersTbody.innerHTML = '';
+
+      if (winnersList.length === 0) {
+        winnersTbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">尚無中獎紀錄</td></tr>';
+      } else {
+        winnersList.forEach((w, index) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><span class="badge badge-order">第 ${index + 1} 抽</span></td>
+            <td><strong>${escapeHtml(w.id)}</strong></td>
+            <td>${escapeHtml(w.name)}</td>
+            <td style="font-weight: bold; color: var(--primary-color);">${escapeHtml(w.prize)}</td>
+          `;
+          winnersTbody.appendChild(tr);
+        });
+      }
+
+      // 2. 渲染全體人員表
+      const participantTbody = document.getElementById('participantTableBody');
+      participantTbody.innerHTML = '';
 
       participants.forEach(p => {
         const tr = document.createElement('tr');
@@ -368,7 +417,7 @@
             ${isWon ? escapeHtml(p.wonPrize) : '-'}
           </td>
         `;
-        tbody.appendChild(tr);
+        participantTbody.appendChild(tr);
       });
     }
 
@@ -401,7 +450,6 @@
         return;
       }
 
-      // 自動過濾未中獎的人員
       const eligibleParticipants = participants.filter(p => p.wonPrize === null);
 
       if (eligibleParticipants.length === 0) {
@@ -431,42 +479,47 @@
           const winnerIndex = Math.floor(Math.random() * eligibleParticipants.length);
           const winner = eligibleParticipants[winnerIndex];
 
-          // 註記：人員中獎 & 獎品已抽出
+          // 註記狀態
           winner.wonPrize = currentPrizeObj.name;
           currentPrizeObj.isDrawn = true;
+
+          // 加入順序中獎紀錄列表
+          winnersList.push({
+            id: winner.id,
+            name: winner.name,
+            prize: currentPrizeObj.name
+          });
 
           // UI 更新
           document.getElementById('winnerDisplay').innerText = `🎉 ${winner.id} - ${winner.name}`;
           document.getElementById('wishingText').innerText = `恭喜獲得 【${currentPrizeObj.name}】！`;
 
-          renderTable();
+          renderTables();
           updateStats();
-          updatePrizeSelect(); // 重新整理下拉選單，移除已抽出的獎品
+          updatePrizeSelect();
 
           isDrawing = false;
         }
       }, intervalTime);
     }
 
-    // 匯出 CSV 結果
+    // 匯出 CSV 結果 (依抽獎順序)
     function exportCSV() {
-      if (participants.length === 0) {
-        alert('目前無可匯出的數據！');
+      if (winnersList.length === 0) {
+        alert('目前尚無中獎資料可匯出！');
         return;
       }
 
-      let csvContent = "\uFEFF編號,姓名,中獎狀態,獲得獎品\n";
-      participants.forEach(p => {
-        const status = p.wonPrize ? "已中獎" : "未中獎";
-        const prize = p.wonPrize ? p.wonPrize : "";
-        csvContent += `"${p.id}","${p.name}","${status}","${prize}"\n`;
+      let csvContent = "\uFEFF抽獎順序,中獎人編號,中獎人姓名,獲得獎品\n";
+      winnersList.forEach((w, index) => {
+        csvContent += `"第 ${index + 1} 抽","${w.id}","${w.name}","${w.prize}"\n`;
       });
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.setAttribute("href", url);
-      link.setAttribute("download", `抽獎結果_${new Date().toISOString().slice(0,10)}.csv`);
+      link.setAttribute("download", `中獎名單_依順序排列_${new Date().toISOString().slice(0,10)}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
