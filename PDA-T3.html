@@ -20,7 +20,7 @@
     <header class="bg-orange-600 text-white px-4 py-3.5 shadow-md sticky top-0 z-40 flex justify-between items-center">
         <div class="flex items-center space-x-2">
             <span class="text-lg font-extrabold tracking-wider">🚴‍♂️ 三鐵飛翔</span>
-            <span class="text-[10px] bg-orange-700 px-1.5 py-0.5 rounded-full font-bold border border-orange-500">V2.2</span>
+            <span class="text-[10px] bg-orange-700 px-1.5 py-0.5 rounded-full font-bold border border-orange-500">V3.0</span>
         </div>
         <div class="flex items-center space-x-2">
             <button id="adminBtn" onclick="enterAdminMode()" class="hidden bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95">
@@ -64,6 +64,31 @@
             <span class="text-[10px]">我的登記</span>
         </button>
     </nav>
+
+    <!-- ========================================== -->
+    <!-- ============= 登入 / 註冊彈窗 ============= -->
+    <!-- ========================================== -->
+    <div id="loginModal" class="fixed inset-0 bg-black/80 z-[60] hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-xs p-6 space-y-4 relative shadow-2xl">
+            <div class="text-center space-y-1">
+                <h3 class="text-lg font-extrabold text-orange-700">🔑 歡迎加入三鐵飛翔</h3>
+                <p class="text-xs text-slate-500">請輸入真實姓名與電話以完成快速綁定</p>
+            </div>
+            <form id="loginForm" onsubmit="handleLoginRegister(event)" class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-bold text-slate-600 mb-1">真實姓名 <span class="text-red-500">*</span></label>
+                    <input type="text" id="loginName" placeholder="請輸入真實姓名" class="w-full border border-slate-300 rounded-lg p-2.5 bg-white text-sm" required>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-600 mb-1">手機號碼 <span class="text-red-500">*</span></label>
+                    <input type="tel" id="loginPhone" placeholder="例如: 0912345678" class="w-full border border-slate-300 rounded-lg p-2.5 bg-white text-sm" required>
+                </div>
+                <button type="submit" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-xl text-sm transition-all active:scale-95 shadow-md">
+                    驗證並綁定 LINE 登入 🚀
+                </button>
+            </form>
+        </div>
+    </div>
 
     <!-- 1. 會員資料彈窗 -->
     <div id="profileModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
@@ -438,7 +463,7 @@
             hideLoading();
         }
 
-        // ----------------- 會員模組 -----------------
+        // ----------------- 會員登入/快速綁定模組 -----------------
         async function loginOrRegisterUser() {
             try {
                 const response = await fetch(GAS_URL, {
@@ -447,19 +472,23 @@
                     body: JSON.stringify({
                         action: "loginOrRegister",
                         lineId: userLineId,
-                        name: userDisplayName,
-                        phone: ""
+                        name: userDisplayName
                     })
                 });
                 const result = await response.json();
                 if (result.status === "success") {
-                    userProfile = result.user;
-                    document.getElementById("userName").innerText = userProfile.name || userDisplayName;
-                    
-                    // ⚠️ 請替換為您自己的 LINE User ID 或使用預設手機號碼登入管理員
-                    if (userLineId === "U1234567890" || userProfile.phone === "0912345678") {
-                        isAdmin = true;
-                        document.getElementById("adminBtn").classList.remove("hidden");
+                    if (result.isBound) {
+                        // 已綁定，直接登入
+                        userProfile = result.user;
+                        document.getElementById("userName").innerText = userProfile.name;
+                        if (result.isAdmin) {
+                            isAdmin = true;
+                            document.getElementById("adminBtn").classList.remove("hidden");
+                        }
+                    } else {
+                        // 未綁定，彈出手機註冊/登入視窗
+                        document.getElementById("loginName").value = userDisplayName;
+                        document.getElementById("loginModal").classList.remove("hidden");
                     }
                 }
             } catch (e) {
@@ -467,8 +496,52 @@
             }
         }
 
+        // 處理使用者手動輸入姓名、手機進行 LINE 快速綁定
+        async function handleLoginRegister(event) {
+            event.preventDefault();
+            const name = document.getElementById("loginName").value.trim();
+            const phone = document.getElementById("loginPhone").value.trim();
+
+            if (!name || !phone) {
+                alert("請填寫姓名與手機號碼！");
+                return;
+            }
+
+            showLoading("正在綁定並登入...");
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify({
+                        action: "bindUser",
+                        lineId: userLineId,
+                        name: name,
+                        phone: phone
+                    })
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    userProfile = result.user;
+                    document.getElementById("userName").innerText = userProfile.name;
+                    document.getElementById("loginModal").classList.add("hidden");
+                    
+                    if (result.isAdmin) {
+                        isAdmin = true;
+                        document.getElementById("adminBtn").classList.remove("hidden");
+                    }
+                    alert("🎉 LINE 快速登入綁定成功！");
+                } else {
+                    alert("綁定失敗：" + result.message);
+                }
+            } catch (e) {
+                alert("連線失敗，請稍後重試！");
+            }
+            hideLoading();
+        }
+
         function openProfileModal() {
-            document.getElementById("profileName").value = userProfile.name || userDisplayName;
+            if (!userProfile) return;
+            document.getElementById("profileName").value = userProfile.name || "";
             document.getElementById("profilePhone").value = userProfile.phone || "";
             document.getElementById("profileGender").value = userProfile.gender || "";
             document.getElementById("profileBirthday").value = userProfile.birthday ? userProfile.birthday.split('T')[0] : "";
@@ -478,49 +551,47 @@
         }
 
         async function saveProfile(event) {
-              event.preventDefault();
-              showLoading("正在儲存會員資料...");
-              try {
-                  const payload = {
-                      action: "saveProfile",
-                      lineId: userLineId,
-                      name: document.getElementById("profileName").value.trim(), // 新增姓名儲存
-                      phone: document.getElementById("profilePhone").value.trim(), // 新增電話儲存
-                      gender: document.getElementById("profileGender").value,
-                      birthday: document.getElementById("profileBirthday").value,
-                      idCard: document.getElementById("profileIdCard").value.trim().toUpperCase(),
-                      address: document.getElementById("profileAddress").value.trim()
-                  };
-                  const response = await fetch(GAS_URL, {
-                      method: "POST",
-                      headers: { "Content-Type": "text/plain" },
-                      body: JSON.stringify(payload)
-                  });
-                  const result = await response.json();
-                  if (result.status === "success") {
-                      userProfile = result.user;
-                      // 更新頂部導覽列顯示的姓名
-                      document.getElementById("userName").innerText = userProfile.name || userDisplayName;
-                      
-                      // 檢查是否因為輸入了管理員手機而獲得權限
-                      if (userLineId === "U1234567890" || userProfile.phone === "0912345678") {
-                          isAdmin = true;
-                          document.getElementById("adminBtn").classList.remove("hidden");
-                      } else {
-                          isAdmin = false;
-                          document.getElementById("adminBtn").classList.add("hidden");
-                      }
+            event.preventDefault();
+            showLoading("正在儲存會員資料...");
+            try {
+                const payload = {
+                    action: "saveProfile",
+                    lineId: userLineId,
+                    name: document.getElementById("profileName").value.trim(),
+                    phone: document.getElementById("profilePhone").value.trim(),
+                    gender: document.getElementById("profileGender").value,
+                    birthday: document.getElementById("profileBirthday").value,
+                    idCard: document.getElementById("profileIdCard").value.trim().toUpperCase(),
+                    address: document.getElementById("profileAddress").value.trim()
+                };
+                const response = await fetch(GAS_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    userProfile = result.user;
+                    document.getElementById("userName").innerText = userProfile.name;
+                    
+                    if (result.isAdmin) {
+                        isAdmin = true;
+                        document.getElementById("adminBtn").classList.remove("hidden");
+                    } else {
+                        isAdmin = false;
+                        document.getElementById("adminBtn").classList.add("hidden");
+                    }
 
-                      alert("會員資料更新成功！");
-                      closeModal("profileModal");
-                  } else {
-                      alert("儲存失敗：" + result.message);
-                  }
-              } catch (e) {
-                  alert("連線失敗");
-              }
-              hideLoading();
-          }
+                    alert("會員資料更新成功！");
+                    closeModal("profileModal");
+                } else {
+                    alert("儲存失敗：" + result.message);
+                }
+            } catch (e) {
+                alert("連線失敗");
+            }
+            hideLoading();
+        }
 
 
         // ----------------- 資料讀取 -----------------
@@ -1096,7 +1167,9 @@
             const selects = ["regManageEventSelect", "announceEventSelect"];
             selects.forEach(id => {
                 const el = document.getElementById(id);
-                el.innerHTML = '<option value="">-- 請選擇項目 --</option>';
+                
+
+                                el.innerHTML = '<option value="">-- 請選擇項目 --</option>';
                 allEvents.forEach(e => {
                     el.innerHTML += `<option value="${e.id}">${e.title} (${e.time.split(' ')[0]})</option>`;
                 });
@@ -1206,7 +1279,6 @@
                             }
                         }
 
-                        // 動態產生備註輸入欄位
                         let notesFormHtml = "";
                         const savedNotes = p.adminNotes || {}; 
 
@@ -1253,7 +1325,6 @@
                             </div>
                             <p class="text-slate-500">📞 電話：${p.phone || "無"}${ansText}</p>
                             
-                            <!-- 動態備註項目區 -->
                             <div id="notesContainer_${p.regId}_${p.name}" class="bg-orange-50/50 p-2.5 rounded-lg border border-orange-100 space-y-2 mt-2">
                                 <p class="font-bold text-orange-900 text-[10px]">✏️ 管理員備忘註記：</p>
                                 <div class="grid grid-cols-2 gap-2">
@@ -1261,7 +1332,7 @@
                                 </div>
                                 ${notesFormHtml ? `
                                 <button onclick="saveAdminDynamicNote('${p.regId}', '${p.name}')" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-1.5 rounded text-[10px] mt-1">
-                                    儲存註記 💾
+                                    儲記 💾
                                 </button>` : ''}
                             </div>
                         `;
@@ -1274,7 +1345,6 @@
             }
         }
 
-        // 儲存動態備註
         async function saveAdminDynamicNote(regId, attendeeName) {
             const cardEl = document.getElementById(`notesContainer_${regId}_${attendeeName}`);
             const noteFields = cardEl.querySelectorAll(".note-input-field");
@@ -1294,7 +1364,8 @@
                         action: "saveAdminNote",
                         regId: regId,
                         name: attendeeName,
-                        adminNotes: adminNotes
+                        adminNotes: adminNotes,
+                        lineId: userLineId // 後端安全驗證
                     })
                 });
                 const result = await response.json();
@@ -1309,7 +1380,6 @@
             hideLoading();
         }
 
-        // 管理端手動刪除單一登記
         async function adminDeleteRegistration(regId, eventId) {
             if (!confirm("確定要刪除此人的登記紀錄嗎？此動作將無法復原！")) return;
             showLoading("正在刪除登記...");
@@ -1320,7 +1390,8 @@
                     body: JSON.stringify({ 
                         action: "adminDeleteRegistration", 
                         regId: regId,
-                        eventId: eventId
+                        eventId: eventId,
+                        lineId: userLineId // 後端安全驗證
                     })
                 });
                 const result = await response.json();
@@ -1336,7 +1407,7 @@
             hideLoading();
         }
 
-        // ----------------- 模組 C：登記公告 (卡牌式接龍) 子邏輯 -----------------
+        // ----------------- 模組 C：登記公告 (卡牌式接龍) -----------------
         async function onAnnouncementEventSelect() {
             const eventId = document.getElementById("announceEventSelect").value;
             const panel = document.getElementById("announcementPanel");
@@ -1510,7 +1581,6 @@
             }
         }
 
-        // 產生卡牌式公告內容並發送至群組
         async function shareCustomChainToGroup() {
             const selectedTitles = [];
             document.querySelectorAll(".chain-select").forEach(sel => {
@@ -1607,7 +1677,7 @@
             document.body.removeChild(tempTextArea);
         }
 
-        // ----------------- 模組 D：分類管理子邏輯 -----------------
+        // ----------------- 模組 D：分類管理 -----------------
         function renderAdminCategoryList() {
             const container = document.getElementById("adminCategoryListContainer");
             container.innerHTML = "";
@@ -1640,7 +1710,11 @@
                 const response = await fetch(GAS_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify({ action: "addCategory", categoryName: catName })
+                    body: JSON.stringify({ 
+                        action: "addCategory", 
+                        categoryName: catName,
+                        lineId: userLineId // 後端安全驗證
+                    })
                 });
                 const result = await response.json();
                 if (result.status === "success") {
@@ -1665,7 +1739,11 @@
                 const response = await fetch(GAS_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify({ action: "deleteCategory", categoryName: catName })
+                    body: JSON.stringify({ 
+                        action: "deleteCategory", 
+                        categoryName: catName,
+                        lineId: userLineId // 後端安全驗證
+                    })
                 });
                 const result = await response.json();
                 if (result.status === "success") {
@@ -1745,7 +1823,8 @@
                         description: description,
                         files: files,
                         questions: questions,
-                        adminNotesConfig: adminNotesConfig 
+                        adminNotesConfig: adminNotesConfig,
+                        lineId: userLineId // 後端安全驗證
                     })
                 });
                 const result = await response.json();
@@ -1753,6 +1832,8 @@
                     alert("項目儲存成功！");
                     await fetchEvents();
                     exitAdminMode();
+                } else {
+                    alert("儲存失敗：" + result.message);
                 }
             } catch (e) {
                 alert("連線失敗");
@@ -1770,13 +1851,19 @@
                 const response = await fetch(GAS_URL, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify({ action: "deleteEvent", id: id })
+                    body: JSON.stringify({ 
+                        action: "deleteEvent", 
+                        id: id,
+                        lineId: userLineId // 後端安全驗證
+                    })
                 });
                 const result = await response.json();
                 if (result.status === "success") {
                     alert("項目已刪除！");
                     await fetchEvents();
                     exitAdminMode();
+                } else {
+                    alert("刪除失敗：" + result.message);
                 }
             } catch (e) {
                 alert("連線失敗");
@@ -1784,7 +1871,6 @@
             hideLoading();
         }
 
-        // 發送群組 Flex Message (雙按鈕：前往報名 + 報名清單)
         async function sendFlexMessage(eventTime, eventTitle, remainingSpots, myRegisteredAttendees, count, isUpdate) {
             const titleText = isUpdate ? "✏️ 登記資料已修改！" : "📢 項目登記成功！";
             
@@ -1835,7 +1921,7 @@
                                 action: {
                                     type: "uri",
                                     label: "前往登記 📝",
-                                    uri: `https://liff.me/${LIFF_ID}` 
+                                    uri: `https://liff.line.me/${LIFF_ID}` 
                                 },
                                 style: "secondary",
                                 height: "sm"
