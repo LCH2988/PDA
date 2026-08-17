@@ -674,8 +674,8 @@
     // ── 快取設定 ──
     const CACHE_TTL_EVENTS = 60000;     // 活動快取 60 秒
     const CACHE_TTL_CATS   = 300000;    // 分類快取 5 分鐘
-    const CACHE_KEY_EVENTS = "cache_events_v5";
-    const CACHE_KEY_CATS   = "cache_cats_v5";
+    const CACHE_KEY_EVENTS = "cache_events_v6";
+    const CACHE_KEY_CATS   = "cache_cats_v6";
 
     // ── 全域狀態 ──
     let userLineId = "", userDisplayName = "", userProfile = null;
@@ -2075,38 +2075,37 @@
     }
 
     // ============================================================
-    // 工具函式 (修正為 JSONP 請求，徹底解決 CORS 限制)
+    // 工具函式 (標準 Fetch + 自動追蹤重導向，完美解決 CORS 限制)
     // ============================================================
-    function getGAS(actionAndParams) {
-      return new Promise((resolve, reject) => {
-        const callbackName = "gasCallback_" + Math.random().toString(36).slice(2, 11);
-        
-        window[callbackName] = function(data) {
-          resolve(data);
-          document.body.removeChild(script);
-          delete window[callbackName];
-        };
-
-        const script = document.createElement("script");
-        const connector = actionAndParams.includes("?") ? "&" : "";
-        script.src = `${GAS_URL}?action=${actionAndParams}${connector}&callback=${callbackName}&_=${Date.now()}`;
-        
-        script.onerror = function() {
-          reject(new Error("JSONP 請求失敗"));
-          document.body.removeChild(script);
-          delete window[callbackName];
-        };
-
-        document.body.appendChild(script);
+    async function getGAS(actionAndParams) {
+      const connector = actionAndParams.includes("?") ? "&" : "";
+      const url = `${GAS_URL}?action=${actionAndParams}${connector}_=${Date.now()}`;
+      
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json"
+        },
+        redirect: "follow"
       });
+      
+      if (!res.ok) {
+        throw new Error(`HTTP 錯誤！狀態碼: ${res.status}`);
+      }
+      return res.json();
     }
 
     async function postGAS(payload) {
       const res = await fetch(GAS_URL, {
         method:"POST",
         headers:{ "Content-Type":"text/plain" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        redirect: "follow"
       });
+      
+      if (!res.ok) {
+        throw new Error(`HTTP 錯誤！狀態碼: ${res.status}`);
+      }
       return res.json();
     }
 
