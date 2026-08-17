@@ -669,7 +669,7 @@
   <script>
     // ⚠️ 請替換為您實際的 LIFF_ID 與 GAS 部署網址
     const LIFF_ID  = "2007905012-dQfXClGM";
-    const GAS_URL  = "https://script.google.com/macros/s/AKfycbx6rXSichdroig8TXVjwnkPFgDKdeyR7e2JwQrrYjVDvR9j4lG1sFAuSQi9qNf625Qz/exec";
+    const GAS_URL  = "https://script.google.com/macros/s/AKfycbyLoR7BMNuWjWVw5PrQAmujdNwynyZ4OIoB5s4KSj7nM0qlPVzwtOssoza8xN3NRZ8/exec";
 
     // ── 快取設定 ──
     const CACHE_TTL_EVENTS = 60000;     // 活動快取 60 秒
@@ -1068,12 +1068,13 @@
       div.className = "attendee-row";
 
       let questionsHtml = "";
-      (currentEvent.questions || []).forEach(q => {
+      const questions = currentEvent.questions || [];
+      questions.forEach(q => {
         if (q.title === "姓名") return;
         const req = q.required ? '<span style="color:var(--danger)">*</span>' : "";
         const reqAttr = q.required ? "required" : "";
         if (q.type === "select") {
-          const opts = q.options.split(",").map(o => `<option value="${o.trim()}">${o.trim()}</option>`).join("");
+          const opts = (q.options || "").split(",").map(o => `<option value="${o.trim()}">${o.trim()}</option>`).join("");
           questionsHtml += `<div>
             <label>${q.title} ${req}</label>
             <select data-qtitle="${q.title}" class="q-input" ${reqAttr}>
@@ -1264,7 +1265,7 @@
               <div style="display:flex;justify-content:space-between;align-items:center;border-top:2px solid rgba(148,163,184,.15);padding-top:10px">
                 <span style="font-weight:900">👥 登記數量：${reg.attendeeCount} 人/件</span>
                 <div style="display:flex;gap:8px">
-                  <button onclick="viewRegistrationDetails('${reg.regId}')" class="btn-secondary btn-sm" style="width:auto">🔍 明計</button>
+                  <button onclick="viewRegistrationDetails('${reg.regId}')" class="btn-secondary btn-sm" style="width:auto">🔍 明細</button>
                   <button onclick="openEditRegistration('${reg.eventId}','${reg.regId}')" ${isStop ? "disabled" : ""} class="btn-secondary btn-sm" style="width:auto;color:var(--warning);border-color:#fcd34d">✏️ 修改</button>
                 </div>
               </div>
@@ -1459,7 +1460,16 @@
       }
 
       // 載入照片預覽
-      uploadedPhotos = [...(ev.photos || [])];
+      let parsedPhotos = [];
+      try {
+        if (ev.photos) {
+          parsedPhotos = Array.isArray(ev.photos) ? ev.photos : JSON.parse(ev.photos);
+        }
+      } catch (e) {
+        console.error("解析活動照片失敗", e);
+        parsedPhotos = [];
+      }
+      uploadedPhotos = [...parsedPhotos];
       renderPhotoPreviews();
 
       document.getElementById("adminFilesContainer").innerHTML = "";
@@ -1896,62 +1906,7 @@
       document.body.removeChild(ta);
     }
 
-    // ── 分類管理 ──
-    function renderAdminCategoryList() {
-      const container = document.getElementById("adminCategoryListContainer");
-      if (allCategories.length === 0) {
-        container.innerHTML = `<p style="text-align:center;color:var(--text-light);padding:20px 0;font-weight:900">目前尚無自訂分類</p>`;
-        return;
-      }
-      const frag = document.createDocumentFragment();
-      allCategories.forEach((cat, i) => {
-        const idx = i % CAT_COLORS;
-        const div = document.createElement("div");
-        div.className = "card";
-        div.style.cssText = `display:flex;justify-content:space-between;align-items:center;background:var(--cat-${idx}-bg);border-color:var(--cat-${idx}-border);margin-bottom:10px;`;
-        div.innerHTML = `
-          <span style="font-weight:900;color:var(--cat-${idx}-text);font-size:var(--font-sm)">${cat}</span>
-          <button onclick="deleteCategory('${cat}')" class="btn-danger btn-sm" style="width:auto">✕ 刪除</button>
-        `;
-        frag.appendChild(div);
-      });
-      container.innerHTML = "";
-      container.appendChild(frag);
-    }
-
-    async function addNewCategory() {
-      const name = document.getElementById("newCategoryInput").value.trim();
-      if (!name) { showToast("請輸入分類名稱！"); return; }
-      showLoading("正在新增分類...");
-      try {
-        const res = await postGAS({ action:"addCategory", categoryName:name, lineId:userLineId });
-        if (res.status === "success") {
-          showToast("分類新增成功！");
-          document.getElementById("newCategoryInput").value = "";
-          cacheClear(CACHE_KEY_CATS);
-          await fetchCategories();
-          renderAdminCategoryList();
-        } else { showToast("新增失敗：" + res.message); }
-      } catch(e) { showToast("連線失敗"); }
-      hideLoading();
-    }
-
-    async function deleteCategory(name) {
-      if (!confirm(`確定要刪除分類「${name}」嗎？`)) return;
-      showLoading("正在刪除分類...");
-      try {
-        const res = await postGAS({ action:"deleteCategory", categoryName:name, lineId:userLineId });
-        if (res.status === "success") {
-          showToast("分類已刪除！");
-          cacheClear(CACHE_KEY_CATS);
-          await fetchCategories();
-          renderAdminCategoryList();
-        } else { showToast("刪除失敗：" + res.message); }
-      } catch(e) { showToast("連線失敗"); }
-      hideLoading();
-    }
-
-    // ── 活動儲存 / 刪除 (包含多圖與 HTML 簡章上傳) ──
+    // ── 項目儲存 / 刪除 (包含多圖與 HTML 簡章上傳) ──
     async function saveEvent() {
       const id = document.getElementById("adminEventId").value;
       const title = document.getElementById("adminTitle").value.trim();
@@ -2035,6 +1990,61 @@
       hideLoading();
     }
 
+    // ── 分類管理 ──
+    function renderAdminCategoryList() {
+      const container = document.getElementById("adminCategoryListContainer");
+      if (allCategories.length === 0) {
+        container.innerHTML = `<p style="text-align:center;color:var(--text-light);padding:20px 0;font-weight:900">目前尚無自訂分類</p>`;
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      allCategories.forEach((cat, i) => {
+        const idx = i % CAT_COLORS;
+        const div = document.createElement("div");
+        div.className = "card";
+        div.style.cssText = `display:flex;justify-content:space-between;align-items:center;background:var(--cat-${idx}-bg);border-color:var(--cat-${idx}-border);margin-bottom:10px;`;
+        div.innerHTML = `
+          <span style="font-weight:900;color:var(--cat-${idx}-text);font-size:var(--font-sm)">${cat}</span>
+          <button onclick="deleteCategory('${cat}')" class="btn-danger btn-sm" style="width:auto">✕ 刪除</button>
+        `;
+        frag.appendChild(div);
+      });
+      container.innerHTML = "";
+      container.appendChild(frag);
+    }
+
+    async function addNewCategory() {
+      const name = document.getElementById("newCategoryInput").value.trim();
+      if (!name) { showToast("請輸入分類名稱！"); return; }
+      showLoading("正在新增分類...");
+      try {
+        const res = await postGAS({ action:"addCategory", categoryName:name, lineId:userLineId });
+        if (res.status === "success") {
+          showToast("分類新增成功！");
+          document.getElementById("newCategoryInput").value = "";
+          cacheClear(CACHE_KEY_CATS);
+          await fetchCategories();
+          renderAdminCategoryList();
+        } else { showToast("新增失敗：" + res.message); }
+      } catch(e) { showToast("連線失敗"); }
+      hideLoading();
+    }
+
+    async function deleteCategory(name) {
+      if (!confirm(`確定要刪除分類「${name}」嗎？`)) return;
+      showLoading("正在刪除分類...");
+      try {
+        const res = await postGAS({ action:"deleteCategory", categoryName:name, lineId:userLineId });
+        if (res.status === "success") {
+          showToast("分類已刪除！");
+          cacheClear(CACHE_KEY_CATS);
+          await fetchCategories();
+          renderAdminCategoryList();
+        } else { showToast("刪除失敗：" + res.message); }
+      } catch(e) { showToast("連線失敗"); }
+      hideLoading();
+    }
+
     // ── Flex 訊息 ──
     async function sendFlexMessage(evTime, evTitle, remaining, myAtts, count, isUpdate) {
       const titleText = isUpdate ? "✏️ 登記資料已修改！" : "📢 項目登記成功！";
@@ -2075,43 +2085,31 @@
     }
 
     // ============================================================
-    // 工具函式 (標準 Fetch + 自動追蹤重導向，完美解決 CORS 限制)
+    // 工具函式 (最純粹的簡單請求，完美解決 GAS 302 重導向 CORS 限制)
     // ============================================================
-    // ============================================================
-    // 工具函式 (標準 Fetch + 自動追蹤重導向，完美解決 CORS 限制)
-    // ============================================================
-    // ============================================================
-// 工具函式 (最純粹的簡單請求，完美解決 GAS 302 重導向 CORS 限制)
-// ============================================================
-async function getGAS(actionAndParams) {
-  const url = `${GAS_URL}?action=${actionAndParams}`;
-  
-  // 💡 移除所有自訂 Headers，只保留最純粹的 fetch
-  const res = await fetch(url, {
-    method: "GET",
-    redirect: "follow" // 必須跟隨重導向
-  });
-  
-  if (!res.ok) {
-    throw new Error(`HTTP 錯誤！狀態碼: ${res.status}`);
-  }
-  return res.json();
-}
+    async function getGAS(actionAndParams) {
+      const url = `${GAS_URL}?action=${actionAndParams}`;
+      const res = await fetch(url, {
+        method: "GET",
+        redirect: "follow"
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP 錯誤！狀態碼: ${res.status}`);
+      }
+      return res.json();
+    }
 
-async function postGAS(payload) {
-  // 💡 移除所有自訂 Headers，將 Payload 作為純文字發送，避開 OPTIONS 預檢與 CORS 限制
-  const res = await fetch(GAS_URL, {
-    method: "POST",
-    body: JSON.stringify(payload),
-    redirect: "follow" // 必須跟隨重導向
-  });
-  
-  if (!res.ok) {
-    throw new Error(`HTTP 錯誤！狀態碼: ${res.status}`);
-  }
-  return res.json();
-}
-
+    async function postGAS(payload) {
+      const res = await fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        redirect: "follow"
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP 錯誤！狀態碼: ${res.status}`);
+      }
+      return res.json();
+    }
 
     function closeModal(id) {
       document.getElementById(id).classList.remove("show");
