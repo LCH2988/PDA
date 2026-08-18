@@ -21,8 +21,13 @@
         button {
             min-height: 56px !important;
         }
-        .cat-tab-bar::-webkit-scrollbar {
+        /* 隱藏捲軸 */
+        .no-scrollbar::-webkit-scrollbar {
             display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
         }
     </style>
 </head>
@@ -73,14 +78,46 @@
             </div>
         </div>
 
-        <!-- 類別標籤橫向滑動區 -->
-        <div>
-            <div id="categoryTabs" class="flex space-x-2 overflow-x-auto pb-1.5 cat-tab-bar"></div>
+        <!-- 🔍 篩選與搜尋區 (下拉式清單 + 關鍵字搜尋) -->
+        <div class="bg-white rounded-3xl p-5 shadow-sm border-2 border-slate-300 space-y-4">
+            <div>
+                <label class="block text-sm font-black text-slate-700 mb-1.5">📂 選擇活動分類</label>
+                <select id="categoryDropdown" onchange="filterByCategory(this.value)" class="w-full border-2 border-slate-400 rounded-2xl p-3 text-lg font-bold bg-white">
+                    <option value="all">載入中...</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-black text-slate-700 mb-1.5">🔍 搜尋關鍵字 (活動名稱、說明、地點)</label>
+                <input type="text" id="keywordSearch" oninput="filterByKeyword(this.value)" class="w-full border-2 border-slate-400 rounded-2xl p-3 text-lg font-bold bg-white" placeholder="請輸入關鍵字搜尋...">
+            </div>
         </div>
 
         <!-- 活動/商品列表容器 -->
         <div id="eventListContainer" class="space-y-4"></div>
     </main>
+
+    <!-- ================= 🖼️ Lightbox 全螢幕大圖輪播彈窗 ================= -->
+    <div id="lightboxModal" class="fixed inset-0 bg-black/95 z-50 hidden flex flex-col justify-between p-4 select-none">
+        <!-- 頂部控制列 -->
+        <div class="flex justify-between items-center text-white z-10 py-2">
+            <span id="lightboxIndicator" class="text-lg font-black bg-black/40 px-4 py-1.5 rounded-full">1 / 1</span>
+            <button onclick="closeLightbox()" class="bg-white/10 hover:bg-white/20 active:scale-95 text-white w-12 h-12 flex items-center justify-center rounded-full text-2xl font-black transition-all">✕</button>
+        </div>
+
+        <!-- 主圖顯示區 (支援左右切換) -->
+        <div class="relative flex-1 flex items-center justify-center">
+            <button onclick="changeLightboxImage(-1)" class="absolute left-2 bg-black/50 hover:bg-black/70 active:scale-90 text-white w-14 h-14 rounded-full flex items-center justify-center text-3xl font-black z-10 transition-all">◀</button>
+            <img id="lightboxMainImage" class="max-h-[65vh] max-w-full object-contain rounded-xl shadow-2xl transition-all duration-300" src="" alt="大圖">
+            <button onclick="changeLightboxImage(1)" class="absolute right-2 bg-black/50 hover:bg-black/70 active:scale-90 text-white w-14 h-14 rounded-full flex items-center justify-center text-3xl font-black z-10 transition-all">▶</button>
+        </div>
+
+        <!-- 底部微縮圖導覽列 -->
+        <div class="py-4 border-t border-white/10">
+            <div id="lightboxThumbnails" class="flex justify-center space-x-2.5 overflow-x-auto no-scrollbar py-2 px-4 max-w-md mx-auto">
+                <!-- 動態注入微縮圖 -->
+            </div>
+        </div>
+    </div>
 
     <!-- ================= 管理端後台彈窗 ================= -->
     <div id="adminPanel" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden overflow-y-auto">
@@ -148,6 +185,15 @@
                                     <textarea id="adminDescription" class="w-full border-2 border-slate-400 rounded-xl p-3 text-base font-bold h-24" placeholder="請輸入說明..."></textarea>
                                 </div>
                             </div>
+                            <!-- 🖼️ 圖片上傳/連結管理 -->
+                            <div class="border-t-2 border-slate-200 pt-3 space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm font-black text-slate-800">🖼️ 活動圖片展示：</span>
+                                    <button type="button" onclick="addAdminImageField()" class="bg-orange-100 text-orange-950 border border-orange-300 px-3 py-1.5 rounded-xl text-xs font-black">➕ 新增圖片</button>
+                                </div>
+                                <div id="adminImagesContainer" class="space-y-2"></div>
+                            </div>
+                            <!-- 📎 附件連結 -->
                             <div class="border-t-2 border-slate-200 pt-3 space-y-2">
                                 <div class="flex justify-between items-center">
                                     <span class="text-sm font-black text-slate-800">📎 附件下載：</span>
@@ -389,7 +435,7 @@
     <!-- ================= 系統 JavaScript 核心邏輯 ================= -->
     <script>
         const LIFF_ID = "2007905012-dQfXClGM"; 
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbzsKUhxS8eHuxerlKyMwRlhpPGhKiewZC4yBitsoc6cvGbLMj608dHFiwupG9YZkk88/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbwsaSFjcsfMkYpEaLmb5Q80vrzSQtI9kIJTP8x9i5GAgeZ0my_1gIEvP0EPcTp8T3tD/exec";
 
         let userLineId = "";
         let userDisplayName = "";
@@ -400,7 +446,15 @@
         let activeEventQuestions = [];
         let tempQuestions = []; 
         let currentParticipants = [];
+        
+        // 🔍 雙重篩選變數
         let currentFilterCategory = "all";
+        let currentSearchKeyword = "";
+        
+        // 🖼️ Lightbox 輪播狀態變數
+        let lightboxImages = [];
+        let currentLightboxIndex = 0;
+
         let isAdmin = false;
         let isInChatContext = false;
 
@@ -484,7 +538,7 @@
                         document.getElementById("loginModal").classList.remove("hidden");
                     }
 
-                    renderCategoryTabs();
+                    renderCategoryDropdown();
                     renderEventList();
                     renderAdminCategorySelect();
                     renderAdminEventSelects();
@@ -597,41 +651,96 @@
             hideLoading();
         }
 
-        function renderCategoryTabs() {
-            const container = document.getElementById("categoryTabs");
-            const allActive = currentFilterCategory === 'all';
-            let html = `
-                <button onclick="filterCategory('all')" class="cat-tab px-5 py-3 rounded-2xl text-base font-black shrink-0 border-2 transition-all active:scale-95 ${getCategoryStyle('all', allActive)}">
-                    全部項目
-                </button>
-            `;
+        // ----------------- 📂 類別下拉選單與關鍵字搜尋 -----------------
+        function renderCategoryDropdown() {
+            const dropdown = document.getElementById("categoryDropdown");
+            if (!dropdown) return;
+            
+            let html = `<option value="all" ${currentFilterCategory === 'all' ? 'selected' : ''}>🌟 顯示全部項目</option>`;
             allCategories.forEach(cat => {
-                const active = currentFilterCategory === cat;
-                html += `
-                    <button onclick="filterCategory('${cat}')" class="cat-tab px-5 py-3 rounded-2xl text-base font-black shrink-0 border-2 transition-all active:scale-95 ${getCategoryStyle(cat, active)}">
-                        ${cat}
-                    </button>
-                `;
+                html += `<option value="${cat}" ${currentFilterCategory === cat ? 'selected' : ''}>📁 ${cat}</option>`;
             });
-            container.innerHTML = html;
+            dropdown.innerHTML = html;
         }
 
-        function filterCategory(cat) {
+        function filterByCategory(cat) {
             currentFilterCategory = cat;
-            renderCategoryTabs();
             renderEventList();
         }
 
+        function filterByKeyword(keyword) {
+            currentSearchKeyword = keyword.trim().toLowerCase();
+            renderEventList();
+        }
+
+        // ----------------- 🖼️ 多媒體微縮照片牆與 Lightbox 邏輯 -----------------
+        function openLightbox(imagesJsonStr, startIndex) {
+            try {
+                lightboxImages = JSON.parse(decodeURIComponent(imagesJsonStr));
+            } catch (e) {
+                lightboxImages = [];
+            }
+            if (!lightboxImages || lightboxImages.length === 0) return;
+            
+            currentLightboxIndex = startIndex;
+            document.getElementById("lightboxModal").classList.remove("hidden");
+            updateLightboxUI();
+        }
+
+        function closeLightbox() {
+            document.getElementById("lightboxModal").classList.add("hidden");
+        }
+
+        function updateLightboxUI() {
+            if (currentLightboxIndex < 0) currentLightboxIndex = lightboxImages.length - 1;
+            if (currentLightboxIndex >= lightboxImages.length) currentLightboxIndex = 0;
+
+            const mainImg = document.getElementById("lightboxMainImage");
+            mainImg.src = lightboxImages[currentLightboxIndex];
+
+            document.getElementById("lightboxIndicator").innerText = `${currentLightboxIndex + 1} / ${lightboxImages.length}`;
+
+            // 渲染底部微縮圖
+            const thumbsContainer = document.getElementById("lightboxThumbnails");
+            thumbsContainer.innerHTML = "";
+            lightboxImages.forEach((imgUrl, idx) => {
+                const isActive = idx === currentLightboxIndex;
+                const thumb = document.createElement("img");
+                thumb.src = imgUrl;
+                thumb.className = `w-14 h-14 object-cover rounded-xl cursor-pointer border-3 transition-all ${isActive ? 'border-orange-500 scale-110 shadow-md' : 'border-transparent opacity-60 hover:opacity-100'}`;
+                thumb.onclick = () => {
+                    currentLightboxIndex = idx;
+                    updateLightboxUI();
+                };
+                thumbsContainer.appendChild(thumb);
+            });
+        }
+
+        function changeLightboxImage(dir) {
+            currentLightboxIndex += dir;
+            updateLightboxUI();
+        }
+
+        // ----------------- 渲染活動列表 (含 2 張小圖微縮照片牆) -----------------
         function renderEventList() {
             const container = document.getElementById("eventListContainer");
             container.innerHTML = "";
 
-            const filtered = allEvents.filter(e => currentFilterCategory === "all" || e.category === currentFilterCategory);
+            const filtered = allEvents.filter(event => {
+                const matchCategory = (currentFilterCategory === "all" || event.category === currentFilterCategory);
+                
+                const titleMatch = event.title.toLowerCase().includes(currentSearchKeyword);
+                const descMatch = event.description ? event.description.toLowerCase().includes(currentSearchKeyword) : false;
+                const locMatch = event.location ? event.location.toLowerCase().includes(currentSearchKeyword) : false;
+                const matchKeyword = !currentSearchKeyword || (titleMatch || descMatch || locMatch);
+                
+                return matchCategory && matchKeyword;
+            });
 
             if (filtered.length === 0) {
                 container.innerHTML = `
                     <div class="bg-white rounded-3xl p-10 text-center border-2 border-slate-300">
-                        <p class="text-slate-600 text-lg font-black">目前此分類尚無項目 🌸</p>
+                        <p class="text-slate-600 text-lg font-black">找不到符合篩選條件的項目 🌸</p>
                     </div>
                 `;
                 return;
@@ -644,6 +753,34 @@
                     : `<span class="bg-emerald-100 text-emerald-950 border-2 border-emerald-400 px-4 py-1 rounded-full text-sm font-black">開放登記</span>`;
 
                 const catStyle = getCategoryStyle(event.category, false);
+
+                // 🖼️ 2 張微縮照片牆渲染邏輯
+                let mediaWallHtml = "";
+                if (event.images && event.images.length > 0) {
+                    const encodedImages = encodeURIComponent(JSON.stringify(event.images));
+                    if (event.images.length === 1) {
+                        mediaWallHtml = `
+                            <div class="w-full h-48 rounded-2xl overflow-hidden border-2 border-slate-200 cursor-pointer active:scale-[0.99] transition-all">
+                                <img onclick="openLightbox('${encodedImages}', 0)" src="${event.images[0]}" class="w-full h-full object-cover" alt="活動圖片">
+                            </div>`;
+                    } else {
+                        const remainingCount = event.images.length - 2;
+                        mediaWallHtml = `
+                            <div class="grid grid-cols-2 gap-2.5 h-36">
+                                <div class="h-full rounded-2xl overflow-hidden border-2 border-slate-200 cursor-pointer active:scale-[0.98] transition-all">
+                                    <img onclick="openLightbox('${encodedImages}', 0)" src="${event.images[0]}" class="w-full h-full object-cover" alt="活動圖片 1">
+                                </div>
+                                <div class="relative h-full rounded-2xl overflow-hidden border-2 border-slate-200 cursor-pointer active:scale-[0.98] transition-all">
+                                    <img onclick="openLightbox('${encodedImages}', 1)" src="${event.images[1]}" class="w-full h-full object-cover" alt="活動圖片 2">
+                                    ${remainingCount > 0 ? `
+                                    <div onclick="openLightbox('${encodedImages}', 1)" class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white font-black">
+                                        <span class="text-2xl">+${remainingCount}</span>
+                                        <span class="text-xs tracking-wider">查看更多</span>
+                                    </div>` : ''}
+                                </div>
+                            </div>`;
+                    }
+                }
 
                 let filesHtml = "";
                 if (event.files && event.files.length > 0) {
@@ -665,6 +802,7 @@
                         <span class="text-sm font-black px-3.5 py-1 rounded-xl border ${catStyle}">${event.category}</span>
                         ${statusBadge}
                     </div>
+                    ${mediaWallHtml}
                     <div class="space-y-1">
                         <h3 class="text-xl font-black text-slate-950 leading-snug">${event.title}</h3>
                         <p class="text-base text-slate-700 font-bold leading-relaxed">${event.description || "無詳細說明"}</p>
@@ -691,6 +829,7 @@
             });
         }
 
+        // ----------------- 登記報名邏輯 -----------------
         function openRegisterModal(eventId) {
             if (!userProfile || !userProfile.phone || !userProfile.idCard) {
                 alert("為確保活動保險與權益核對，請先完善會員資料（需填寫身分證字號與電話）！");
@@ -952,7 +1091,7 @@
                             </div>
                             <p class="text-slate-700 text-base font-bold">📅 時間：${reg.eventTime}</p>
                             <div class="flex justify-between items-center border-t-2 border-slate-200 pt-2.5 mt-2">
-                              <span class="font-black text-slate-900 text-base">👥 數量：${reg.attendeeCount} 人/件</span>
+                                <span class="font-black text-slate-900 text-base">👥 數量：${reg.attendeeCount} 人/件</span>
                                 <div class="flex space-x-2">
                                     <button onclick="viewRegistrationDetails('${reg.regId}')" class="bg-orange-100 hover:bg-orange-200 text-orange-950 border border-orange-300 px-3.5 py-2 rounded-xl font-black text-sm">
                                         🔍 明細
@@ -1020,7 +1159,6 @@
                     closeModal("myRegistrationsModal");
                     document.getElementById("registerModal").classList.remove("hidden");
 
-                    // 🛠️ 解決 DOM 渲染延遲的非同步處理，確保舊問卷答案精準寫入
                     result.attendees.forEach((att, idx) => {
                         addAttendeeForm(att.name, att.phone, idx === 0);
                     });
@@ -1187,6 +1325,7 @@
             document.getElementById("adminEventId").value = "";
             document.getElementById("eventForm").reset();
             
+            document.getElementById("adminImagesContainer").innerHTML = "";
             document.getElementById("adminFilesContainer").innerHTML = "";
             document.getElementById("adminQuestionsContainer").innerHTML = "";
             document.getElementById("adminNotesConfigContainer").innerHTML = "";
@@ -1215,6 +1354,12 @@
                 document.getElementById("adminTime").value = event.time.replace(" ", "T");
             }
 
+            const imagesContainer = document.getElementById("adminImagesContainer");
+            imagesContainer.innerHTML = "";
+            if (event.images && event.images.length > 0) {
+                event.images.forEach(imgUrl => addAdminImageField(imgUrl));
+            }
+
             const filesContainer = document.getElementById("adminFilesContainer");
             filesContainer.innerHTML = "";
             if (event.files && event.files.length > 0) {
@@ -1236,6 +1381,17 @@
             }
 
             document.getElementById("adminDeleteEventBtn").classList.remove("hidden");
+        }
+
+        function addAdminImageField(url = "") {
+            const container = document.getElementById("adminImagesContainer");
+            const div = document.createElement("div");
+            div.className = "flex space-x-2 items-center admin-image-row";
+            div.innerHTML = `
+                <input type="url" placeholder="請輸入展示圖片連結 (URL)" value="${url}" class="flex-1 border-2 border-slate-300 rounded-xl p-3 text-sm font-bold" required>
+                <button type="button" onclick="this.parentElement.remove()" class="text-red-600 font-black text-sm border-2 border-red-200 bg-white px-3 py-2 rounded-xl">✕</button>
+            `;
+            container.appendChild(div);
         }
 
         function addAdminFileField(name = "", url = "") {
@@ -1862,6 +2018,13 @@
                 return;
             }
 
+            const images = [];
+            document.querySelectorAll(".admin-image-row input").forEach(input => {
+                if (input.value.trim()) {
+                    images.push(input.value.trim());
+                }
+            });
+
             const files = [];
             document.querySelectorAll(".admin-file-row").forEach(row => {
                 const inputs = row.querySelectorAll("input");
@@ -1913,6 +2076,7 @@
                         limit: parseInt(limit),
                         status: status,
                         description: description,
+                        images: images,
                         files: files,
                         questions: questions,
                         adminNotesConfig: adminNotesConfig,
@@ -1974,7 +2138,7 @@
                 if (catData.status === "success") allCategories = catData.categories;
                 if (evData.status === "success") allEvents = evData.events;
 
-                renderCategoryTabs();
+                renderCategoryDropdown();
                 renderEventList();
                 renderAdminCategorySelect();
                 renderAdminEventSelects();
