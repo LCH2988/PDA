@@ -45,12 +45,23 @@
                     <span class="text-xs bg-orange-950 text-orange-100 px-2.5 py-0.5 rounded-full font-black mt-1 inline-block">活動與購物登記</span>
                 </div>
             </div>
+           
+            <!-- 替換修改為以下： -->
             <div class="flex items-center space-x-2">
+                <!-- 後台按鈕 -->
                 <button id="adminBtn" onclick="enterAdminMode()" class="hidden bg-slate-950 hover:bg-black border-2 border-white text-white text-base font-black px-4 py-2 rounded-2xl transition-all active:scale-95 shadow">
                     ⚙️ 後台
                 </button>
-                <img id="userAvatar" onclick="openProfileModal()" class="w-12 h-12 rounded-full border-3 border-white shadow cursor-pointer hidden object-cover" src="" alt="頭像">
+                
+                <!-- 👤 登入按鈕 (未登入時顯示) -->
+                <button id="loginHeaderBtn" onclick="handleHeaderLogin()" class="bg-white hover:bg-slate-100 text-orange-700 text-base font-black px-4 py-2 rounded-2xl border-2 border-orange-700 transition-all active:scale-95 shadow">
+                    👤 登入
+                </button>
+                
+                <!-- 🖼️ LINE 大頭貼 (已登入時顯示，點擊觸發登出) -->
+                <img id="userAvatar" onclick="handleHeaderLogout()" class="w-12 h-12 rounded-full border-3 border-white shadow cursor-pointer hidden object-cover hover:opacity-80 active:scale-95 transition-all" src="" alt="頭像" title="點擊登出">
             </div>
+
         </div>
     </header>
 
@@ -525,67 +536,138 @@
                 await liff.init({ liffId: LIFF_ID });
                 isInChatContext = liff.isInClient() && ["utou", "room", "group"].includes(liff.getContext()?.type);
                 
-                if (!liff.isLoggedIn()) {
-                    liff.login();
-                    return;
-                }
-
-                const profile = await liff.getProfile();
-                userLineId = profile.userId;
-                userDisplayName = profile.displayName;
-                
-                const avatarEl = document.getElementById("userAvatar");
-                if (profile.pictureUrl) {
-                    avatarEl.src = profile.pictureUrl;
-                    avatarEl.classList.remove("hidden");
-                }
-
-                const response = await fetch(GAS_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify({
-                        action: "initApp",
-                        lineId: userLineId,
-                        name: userDisplayName
-                    })
-                });
-                const result = await response.json();
-
-                if (result.status === "success") {
-                    allCategories = result.categories || [];
-                    allEvents = result.events || [];
-                    allRegisteredUsers = result.allUsers || []; // 👥 載入所有已註冊團員資料
+                // 判斷當前 LINE 是否已登入
+                if (liff.isLoggedIn()) {
+                    // 1. 已登入狀態：顯示大頭貼，隱藏登入按鈕
+                    const profile = await liff.getProfile();
+                    userLineId = profile.userId;
+                    userDisplayName = profile.displayName;
                     
-                    if (result.isBound) {
-                        userProfile = result.user;
-                        document.getElementById("userName").innerText = userProfile.name;
-                        if (result.isAdmin) {
-                            isAdmin = true;
-                            document.getElementById("adminBtn").classList.remove("hidden");
-                        }
+                    document.getElementById("loginHeaderBtn").classList.add("hidden"); // 隱藏登入按鈕
+                    
+                    const avatarEl = document.getElementById("userAvatar");
+                    if (profile.pictureUrl) {
+                        avatarEl.src = profile.pictureUrl;
+                        avatarEl.classList.remove("hidden"); // 顯示頭像
                     } else {
-                        document.getElementById("loginName").value = userDisplayName;
-                        document.getElementById("loginModal").classList.remove("hidden");
+                        // 若無頭像，使用預設圖示
+                        avatarEl.src = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+                        avatarEl.classList.remove("hidden");
                     }
 
-                    renderCategoryDropdown();
-                    renderEventList();
-                    renderAdminCategorySelect();
-                    renderAdminEventSelects();
+                    // 呼叫後端初始化
+                    const response = await fetch(GAS_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "text/plain" },
+                        body: JSON.stringify({
+                            action: "initApp",
+                            lineId: userLineId,
+                            name: userDisplayName
+                        })
+                    });
+                    const result = await response.json();
 
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const actionParam = urlParams.get("action");
-                    const eventIdParam = urlParams.get("eventId");
-                    if (actionParam === "viewlist" && eventIdParam) {
-                        openParticipantsModal(eventIdParam);
+                    if (result.status === "success") {
+                        allCategories = result.categories || [];
+                        allEvents = result.events || [];
+                        allRegisteredUsers = result.allUsers || [];
+                        
+                        if (result.isBound) {
+                            userProfile = result.user;
+                            document.getElementById("userName").innerText = userProfile.name;
+                            if (result.isAdmin) {
+                                isAdmin = true;
+                                document.getElementById("adminBtn").classList.remove("hidden");
+                            }
+                        } else {
+                            document.getElementById("loginName").value = userDisplayName;
+                            document.getElementById("loginModal").classList.remove("hidden");
+                        }
+
+                        renderCategoryDropdown();
+                        renderEventList();
+                        renderAdminCategorySelect();
+                        renderAdminEventSelects();
                     }
+                } else {
+                    // 2. 未登入狀態：顯示登入按鈕，隱藏大頭貼與後台
+                    setGuestUI();
+                    
+                    // 載入公開的活動與分類資料 (不需 LINE ID)
+                    await loadPublicData();
                 }
+
+                const urlParams = new URLSearchParams(window.location.search);
+                const actionParam = urlParams.get("action");
+                const eventIdParam = urlParams.get("eventId");
+                if (actionParam === "viewlist" && eventIdParam) {
+                    openParticipantsModal(eventIdParam);
+                }
+
             } catch (e) {
                 console.error("初始化失敗", e);
                 alert("系統初始化失敗，請確認網路或於 LINE 內開啟！");
             }
             hideLoading();
         }
+
+        // 👤 點擊右上角「登入」按鈕
+        function handleHeaderLogin() {
+            if (!liff.isLoggedIn()) {
+                liff.login();
+            }
+        }
+
+        // 🚪 點擊大頭貼觸發「登出」
+        function handleHeaderLogout() {
+            if (confirm("確定要登出系統嗎？\n登出後將無法進行活動登記與查看個人紀錄。")) {
+                liff.logout();
+                alert("您已成功登出！");
+                
+                // 重設為遊客 UI
+                setGuestUI();
+                
+                // 重新載入公開資料
+                loadPublicData();
+            }
+        }
+
+        // 👥 設定為遊客（未登入）UI 狀態
+        function setGuestUI() {
+            userLineId = "";
+            userDisplayName = "";
+            userProfile = null;
+            isAdmin = false;
+
+            document.getElementById("userName").innerText = "遊客 (請先登入)";
+            document.getElementById("loginHeaderBtn").classList.remove("hidden"); // 顯示登入按鈕
+            document.getElementById("userAvatar").classList.add("hidden");        // 隱藏大頭貼
+            document.getElementById("adminBtn").classList.add("hidden");          // 隱藏後台按鈕
+        }
+
+        // 🌐 載入遊客模式下的公開活動資料
+        async function loadPublicData() {
+            showLoading("正在載入公開項目...");
+            try {
+                const [catRes, evRes] = await Promise.all([
+                    fetch(`${GAS_URL}?action=getCategories`),
+                    fetch(`${GAS_URL}?action=getEvents`)
+                ]);
+                const catData = await catRes.json();
+                const evData = await evRes.json();
+                
+                if (catData.status === "success") allCategories = catData.categories;
+                if (evData.status === "success") allEvents = evData.events;
+
+                renderCategoryDropdown();
+                renderEventList();
+            } catch (e) {
+                console.error("載入公開資料失敗", e);
+            }
+            hideLoading();
+        }
+
+
 
         async function handleLoginRegister(event) {
             event.preventDefault();
