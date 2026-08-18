@@ -515,7 +515,7 @@
     <!-- 系統 JavaScript 核心邏輯 -->
     <script>
         const LIFF_ID = "2007905012-dQfXClGM"; 
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbwBoLX0o23zjMpHbfRKdJL5ZlOR7RNcr-8julmFSQf2LFhrcpfX0WWkcJSXA-_OsXTa/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbylneGDm8lObT17-tbBIJYmbGNNNPcGbRmiJv1ed4V27SVPnxXLwoblTkNw1_xexoXM/exec";
 
         let userLineId = "";
         let userDisplayName = "";
@@ -652,10 +652,20 @@
                             userRole = result.isAdmin ? "admin" : "member";
                             isAdmin = result.isAdmin;
                             setLoggedInUI(userProfile.name, profile.pictureUrl, userRole);
+                            
+                            // 🌟 修正：會員/管理員登入後執行選單與活動列表渲染
+                            renderCategoryDropdown();
+                            renderEventList();
+                            if (isAdmin) {
+                                renderAdminCategorySelect();
+                                renderAdminEventSelects();
+                            }
                         } else {
                             openAuthModal();
                             switchAuthTab('register');
                             document.getElementById("regName").value = userDisplayName;
+                            renderCategoryDropdown();
+                            renderEventList();
                         }
                     }
                 } else if (localUser) {
@@ -791,7 +801,7 @@
                     headers: { "Content-Type": "text/plain" },
                     body: JSON.stringify({
                         action: "bindUser",
-                        lineId: "",
+                        lineId: userLineId || "", // 若在 LINE 環境下自動帶入 lineId 進行綁定
                         name: name,
                         phone: phone,
                         gender: gender,
@@ -802,11 +812,17 @@
                 const result = await response.json();
                 if (result.status === "success") {
                     userProfile = { name, phone, gender, birthday: gregBirth, idCard };
-                    userRole = "guest";
-                    localStorage.setItem("san_tie_user", JSON.stringify({ name, phone }));
-                    setLoggedInUI(name, "", userRole);
+                    isAdmin = result.isAdmin || false;
+                    userRole = isAdmin ? "admin" : (userLineId ? "member" : "guest");
+                    
+                    if (!userLineId) {
+                        localStorage.setItem("san_tie_user", JSON.stringify({ name, phone }));
+                    }
+
+                    const avatarUrl = (liff.isLoggedIn() && liff.getProfile) ? (await liff.getProfile()).pictureUrl : "";
+                    setLoggedInUI(name, avatarUrl, userRole);
                     closeModal("authModal");
-                    alert("🎉 註冊成功！您已成功登入為【遊客】。");
+                    alert(`🎉 註冊成功！您已成功登入為【${userRole === 'member' ? '正式會員' : (userRole === 'admin' ? '管理員' : '遊客')}】。`);
                     await reloadEventsData();
                 } else {
                     alert("註冊失敗：" + result.message);
