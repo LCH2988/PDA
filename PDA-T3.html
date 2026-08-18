@@ -308,8 +308,8 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-black text-slate-800 mb-1">生日</label>
-                        <input type="date" id="profileBirthday" class="w-full border-2 border-slate-400 rounded-xl p-3 text-base font-bold">
+                        <label class="block text-sm font-black text-slate-800 mb-1">生日 (民國 年/月/日) *</label>
+                        <input type="text" id="profileBirthday" class="w-full border-2 border-slate-400 rounded-xl p-3 text-base font-bold" placeholder="例如：75/10/25" required>
                     </div>
                 </div>
                 <div>
@@ -437,7 +437,7 @@
     <!-- ================= 系統 JavaScript 核心邏輯 ================= -->
     <script>
         const LIFF_ID = "2007905012-dQfXClGM"; 
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbwm1Yho67gfOHCtf0UTb9fAibZKoL_1iyZ2QhnVD1XdNfjBDwPgO4AX9TSCuM-QGGxx/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbwIs9Jmx4qWSYRig7YPw6hmVG7jsYumo0lsjfk8H2zkkPNexaExuDH81FaMHcoI2iyU/exec";
 
         let userLineId = "";
         let userDisplayName = "";
@@ -448,6 +448,7 @@
         let activeEventQuestions = [];
         let tempQuestions = []; 
         let currentParticipants = [];
+        let allRegisteredUsers = []; // 👥 存放所有已註冊團員名單(用於同行人搜尋帶入)
         
         // 🔍 雙重篩選變數
         let currentFilterCategory = "all";
@@ -472,6 +473,32 @@
             { bgLight: "bg-teal-100", textDark: "text-teal-950", border: "border-teal-400", bgActive: "bg-teal-700 text-white border-teal-800" },
             { bgLight: "bg-indigo-100", textDark: "text-indigo-950", border: "border-indigo-400", bgActive: "bg-indigo-700 text-white border-indigo-800" }
         ];
+
+        // 🗓️ 西元轉民國 (例如: "1986-10-25" -> "75/10/25")
+        function gregToRoc(gregStr) {
+            if (!gregStr) return "";
+            const parts = gregStr.split('-'); 
+            if (parts.length !== 3) return gregStr;
+            const rocYear = parseInt(parts[0]) - 1911;
+            return `${rocYear}/${parseInt(parts[1])}/${parseInt(parts[2])}`;
+        }
+
+        // 🗓️ 民國轉西元 (例如: "75/10/25" -> "1986-10-25")
+        function rocToGreg(rocStr) {
+            if (!rocStr) return "";
+            let clean = rocStr.replace(/[-\s]/g, '/');
+            const parts = clean.split('/');
+            if (parts.length !== 3) return null;
+            
+            const rocYear = parseInt(parts[0]);
+            const month = parts[1].padStart(2, '0');
+            const day = parts[2].padStart(2, '0');
+            
+            if (isNaN(rocYear) || isNaN(month) || isNaN(day)) return null;
+            
+            const gregYear = rocYear + 1911;
+            return `${gregYear}-${month}-${day}`;
+        }
 
         function maskName(name) {
             if (!name) return "";
@@ -527,6 +554,7 @@
                 if (result.status === "success") {
                     allCategories = result.categories || [];
                     allEvents = result.events || [];
+                    allRegisteredUsers = result.allUsers || []; // 👥 載入所有已註冊團員資料
                     
                     if (result.isBound) {
                         userProfile = result.user;
@@ -592,6 +620,7 @@
                         document.getElementById("adminBtn").classList.remove("hidden");
                     }
                     alert("🎉 快速綁定成功！");
+                    await reloadEventsData();
                 } else {
                     alert("綁定失敗：" + result.message);
                 }
@@ -606,7 +635,7 @@
             document.getElementById("profileName").value = userProfile.name || "";
             document.getElementById("profilePhone").value = userProfile.phone || "";
             document.getElementById("profileGender").value = userProfile.gender || "";
-            document.getElementById("profileBirthday").value = userProfile.birthday ? userProfile.birthday.split('T')[0] : "";
+            document.getElementById("profileBirthday").value = userProfile.birthday ? gregToRoc(userProfile.birthday.split('T')[0]) : "";
             document.getElementById("profileIdCard").value = userProfile.idCard || "";
             document.getElementById("profileAddress").value = userProfile.address || "";
             document.getElementById("profileModal").classList.remove("hidden");
@@ -621,6 +650,14 @@
                 return;
             }
 
+            const rocBirth = document.getElementById("profileBirthday").value.trim();
+            const gregBirth = rocToGreg(rocBirth);
+            if (!gregBirth) {
+                alert("生日格式錯誤！請輸入正確的民國格式，例如：75/10/25");
+                document.getElementById("profileBirthday").focus();
+                return;
+            }
+
             showLoading("正在儲存會員資料...");
             try {
                 const payload = {
@@ -629,7 +666,7 @@
                     name: document.getElementById("profileName").value.trim(),
                     phone: document.getElementById("profilePhone").value.trim(),
                     gender: document.getElementById("profileGender").value,
-                    birthday: document.getElementById("profileBirthday").value,
+                    birthday: gregBirth,
                     idCard: idCard,
                     address: document.getElementById("profileAddress").value.trim()
                 };
@@ -644,6 +681,7 @@
                     document.getElementById("userName").innerText = userProfile.name;
                     alert("會員資料更新成功！");
                     closeModal("profileModal");
+                    await reloadEventsData();
                 } else {
                     alert("儲存失敗：" + result.message);
                 }
@@ -764,7 +802,7 @@
             } catch (e) {
                 alert("上傳連線失敗，請確認雲端資料夾 ID 是否設定正確！");
             }
-            inputEl.value = ""; // 清空 input 以利下次選取
+            inputEl.value = ""; 
             hideLoading();
         }
 
@@ -820,7 +858,7 @@
             container.appendChild(div);
         }
 
-        // ----------------- 渲染活動列表 (含 2 張小圖微縮照片牆) -----------------
+        // ----------------- 渲染活動列表 -----------------
         function renderEventList() {
             const container = document.getElementById("eventListContainer");
             container.innerHTML = "";
@@ -928,7 +966,7 @@
             });
         }
 
-        // ----------------- 登記報名邏輯 -----------------
+        // ----------------- 登記報名邏輯 (支援關鍵字搜尋帶入 & 非會員註冊) -----------------
         function openRegisterModal(eventId) {
             if (!userProfile || !userProfile.phone || !userProfile.idCard) {
                 alert("為確保活動保險與權益核對，請先完善會員資料（需填寫身分證字號與電話）！");
@@ -943,19 +981,22 @@
             const submitBtn = document.getElementById("regSubmitBtn");
             submitBtn.setAttribute("onclick", "submitMultiRegistration()");
             
-            addAttendeeForm(userProfile.name, userProfile.phone, true);
+            // 帶入本人資料
+            addAttendeeForm(userProfile.name, userProfile.phone, true, userProfile.gender, gregToRoc(userProfile.birthday ? userProfile.birthday.split('T')[0] : ""), userProfile.idCard);
             document.getElementById("registerModal").classList.remove("hidden");
         }
 
-        function addAttendeeForm(name = "", phone = "", isSelf = false) {
+        // 👥 核心：動態渲染登記表單 (支援本人、已註冊團員自動帶入、非會員個資填寫)
+        function addAttendeeForm(name = "", phone = "", isSelf = false, gender = "", birthday = "", idCard = "") {
             const container = document.getElementById("attendeesContainer");
             const index = container.children.length;
             const div = document.createElement("div");
-            div.className = "p-4 bg-slate-50 rounded-2xl border-2 border-slate-300 space-y-3 attendee-row";
+            div.className = "p-4 bg-slate-50 rounded-2xl border-2 border-slate-300 space-y-3 attendee-row relative";
             
+            // 1. 產生自訂調查問題的 HTML
             let questionsHtml = "";
             currentEvent.questions.forEach(q => {
-                if (q.title === "姓名") return; 
+                if (q.title === "姓名" || q.title === "電話" || q.title === "性別" || q.title === "生日" || q.title === "身分證字號") return; 
                 
                 const reqMark = q.required ? '<span class="text-red-500">*</span>' : '';
                 const reqAttr = q.required ? 'required' : '';
@@ -982,32 +1023,125 @@
                 }
             });
 
+            // 2. 產生同行人搜尋帶入與個資欄位 HTML
             div.innerHTML = `
-                ${isSelf ? '' : `<button type="button" onclick="this.parentElement.remove()" class="text-red-700 font-black text-sm float-right border border-red-300 bg-white px-3 py-1 rounded-xl">❌ 移除</button>`}
-                <p class="font-black text-orange-950 text-base mb-1">${isSelf ? '👤 本人 (主要聯絡人)' : `👥 同行人/合併登記 #${index + 1}`}</p>
-                <div class="grid grid-cols-1 gap-2">
+                ${isSelf ? '' : `
+                <button type="button" onclick="this.parentElement.remove()" class="text-red-700 font-black text-sm absolute top-3 right-3 border border-red-300 bg-white px-3 py-1 rounded-xl shadow-sm z-10">❌ 移除</button>
+                
+                <!-- 🔍 關鍵字搜尋帶入已註冊團員 -->
+                <div class="bg-amber-50 p-3 rounded-xl border border-amber-300 space-y-1.5 mb-2">
+                    <label class="block text-xs font-black text-amber-950">🔍 快速帶入已註冊團員 (輸入姓名關鍵字)：</label>
+                    <input type="text" class="w-full border-2 border-amber-400 rounded-xl p-2 text-sm bg-white font-bold search-user-input" placeholder="輸入姓名搜尋..." oninput="searchAndFillUser(this, ${index})">
+                    <div class="hidden bg-white border-2 border-amber-300 rounded-xl max-h-32 overflow-y-auto shadow-lg text-sm font-bold search-results-dropdown"></div>
+                </div>
+                `}
+                
+                <p class="font-black text-orange-950 text-base mb-1">${isSelf ? '👤 本人 (主要聯絡人)' : `👥 同行人 / 合併登記`}</p>
+                
+                <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="block text-xs font-black text-slate-700 mb-1">姓名 <span class="text-red-500">*</span></label>
                         <input type="text" class="w-full border-2 border-slate-400 rounded-xl p-3 text-base bg-white font-bold att-name" value="${name}" required ${isSelf ? 'readonly' : ''}>
                     </div>
                     <div>
-                        <label class="block text-xs font-black text-slate-700 mb-1">電話 ${isSelf ? '<span class="text-red-500">*</span>' : '(保險核對選填)'}</label>
+                        <label class="block text-xs font-black text-slate-700 mb-1">電話 ${isSelf ? '<span class="text-red-500">*</span>' : '(選填)'}</label>
                         <input type="tel" class="w-full border-2 border-slate-400 rounded-xl p-3 text-base bg-white font-bold att-phone" value="${phone}" ${isSelf ? 'required readonly' : ''}>
                     </div>
                 </div>
+
+                <!-- 📋 非會員保險/個資填寫區 -->
+                <div class="bg-white p-3 rounded-xl border border-slate-300 space-y-2.5">
+                    <p class="text-xs font-black text-slate-500 border-b pb-1">📋 保險與核對個資 (非會員請務必填寫)</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-black text-slate-700 mb-1">性別</label>
+                            <select class="w-full border-2 border-slate-400 rounded-xl p-3 text-base bg-white font-bold att-gender">
+                                <option value="">請選擇</option>
+                                <option value="男" ${gender === '男' ? 'selected' : ''}>男</option>
+                                <option value="女" ${gender === '女' ? 'selected' : ''}>女</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-black text-slate-700 mb-1">生日 (民國)</label>
+                            <input type="text" class="w-full border-2 border-slate-400 rounded-xl p-3 text-base bg-white font-bold att-birthday" value="${birthday}" placeholder="例如: 75/10/25">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-black text-slate-700 mb-1">身分證字號</label>
+                        <input type="text" class="w-full border-2 border-slate-400 rounded-xl p-3 text-base bg-white font-bold uppercase att-idcard" value="${idCard}" placeholder="請輸入身分證字號">
+                    </div>
+                </div>
+
                 ${questionsHtml}
             `;
             container.appendChild(div);
         }
 
+        // 🔍 關鍵字搜尋並即時顯示下拉選單
+        function searchAndFillUser(inputEl, rowIndex) {
+            const keyword = inputEl.value.trim().toLowerCase();
+            const dropdown = inputEl.nextElementSibling;
+            dropdown.innerHTML = "";
+
+            if (!keyword) {
+                dropdown.classList.add("hidden");
+                return;
+            }
+
+            // 從已註冊團員庫中篩選
+            const matched = allRegisteredUsers.filter(u => u.name.toLowerCase().includes(keyword));
+
+            if (matched.length === 0) {
+                dropdown.innerHTML = `<div class="p-2.5 text-slate-500">找不到相符的團員</div>`;
+                dropdown.classList.remove("hidden");
+                return;
+            }
+
+            matched.forEach(u => {
+                const item = document.createElement("div");
+                item.className = "p-2.5 hover:bg-orange-100 cursor-pointer border-b border-slate-100 text-slate-900 transition-all flex justify-between items-center";
+                item.innerHTML = `
+                    <span>👤 ${u.name} (${u.phone ? u.phone.substring(u.phone.length - 4) : '無電話'})</span>
+                    <span class="text-xs bg-orange-600 text-white px-2 py-0.5 rounded-full font-black">帶入</span>
+                `;
+                item.onclick = () => {
+                    fillAttendeeData(rowIndex, u);
+                    dropdown.classList.add("hidden");
+                    inputEl.value = ""; // 清空搜尋框
+                };
+                dropdown.appendChild(item);
+            });
+            dropdown.classList.remove("hidden");
+        }
+
+        // ⚡ 一鍵帶入團員資料至指定欄位
+        function fillAttendeeData(rowIndex, user) {
+            const rows = document.querySelectorAll(".attendee-row");
+            const row = rows[rowIndex];
+            if (!row) return;
+
+            row.querySelector(".att-name").value = user.name || "";
+            row.querySelector(".att-phone").value = user.phone || "";
+            row.querySelector(".att-gender").value = user.gender || "";
+            row.querySelector(".att-birthday").value = user.birthday ? gregToRoc(user.birthday.split('T')[0]) : "";
+            row.querySelector(".att-idcard").value = user.idCard || "";
+            
+            alert(`🎉 已成功帶入【${user.name}】的完整個資！`);
+        }
+
+        // 📝 提交登記 (支援個資西元轉換與驗證)
         async function submitMultiRegistration() {
             const rows = document.querySelectorAll(".attendee-row");
             const attendees = [];
             let isValid = true;
 
-            rows.forEach(row => {
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
                 const nameInput = row.querySelector(".att-name");
                 const phoneInput = row.querySelector(".att-phone");
+                const genderInput = row.querySelector(".att-gender");
+                const birthdayInput = row.querySelector(".att-birthday");
+                const idCardInput = row.querySelector(".att-idcard");
                 
                 if (!nameInput.value.trim()) {
                     isValid = false;
@@ -1016,7 +1150,38 @@
                     nameInput.classList.remove("border-red-500");
                 }
 
-                const answers = { "姓名": nameInput.value.trim() };
+                // 轉換生日為西元
+                let gregBirth = "";
+                if (birthdayInput.value.trim()) {
+                    gregBirth = rocToGreg(birthdayInput.value.trim());
+                    if (!gregBirth) {
+                        alert(`第 ${i+1} 位登記者的生日格式錯誤！請輸入正確的民國格式，例如：75/10/25`);
+                        birthdayInput.classList.add("border-red-500");
+                        return;
+                    }
+                    birthdayInput.classList.remove("border-red-500");
+                }
+
+                // 驗證身分證格式
+                let idCard = idCardInput.value.trim().toUpperCase();
+                if (idCard) {
+                    const idReg = /^[A-Z][12]\d{8}$/;
+                    if (!idReg.test(idCard)) {
+                        alert(`第 ${i+1} 位登記者的身分證字號格式錯誤！`);
+                        idCardInput.classList.add("border-red-500");
+                        return;
+                    }
+                    idCardInput.classList.remove("border-red-500");
+                }
+
+                const answers = { 
+                    "姓名": nameInput.value.trim(),
+                    "電話": phoneInput.value.trim(),
+                    "性別": genderInput.value,
+                    "生日": gregBirth,
+                    "身分證字號": idCard
+                };
+
                 row.querySelectorAll(".q-input").forEach(qInput => {
                     const title = qInput.getAttribute("data-qtitle");
                     if (qInput.hasAttribute("required") && !qInput.value.trim()) {
@@ -1031,9 +1196,12 @@
                 attendees.push({
                     name: nameInput.value.trim(),
                     phone: phoneInput.value.trim(),
+                    gender: genderInput.value,
+                    birthday: gregBirth,
+                    idCard: idCard,
                     answers: answers
                 });
-            });
+            }
 
             if (!isValid) {
                 alert("請完整填寫所有必填欄位！");
@@ -1072,7 +1240,7 @@
                         false
                     );
                     
-                    alert(`🎉 登記成功！\n錄取狀態：【${result.queueStatus}】${result.queueStatus === '候補' ? ` (候補第 ${result.queueIndex} 位)` : ''}`);
+                    alert(`🎉 登記成功！\n錄取狀態：【${result.queueStatus}】`);
                     await reloadEventsData();
                 } else {
                     alert("登記失敗：" + result.message);
@@ -1221,7 +1389,7 @@
                     result.attendees.forEach((att, idx) => {
                         let ansText = "";
                         for (let key in att.answers) {
-                            if (key !== "姓名") {
+                            if (key !== "姓名" && key !== "電話" && key !== "性別" && key !== "生日" && key !== "身分證字號") {
                                 ansText += `<br>• ${key}：<span class="text-slate-950 font-black">${att.answers[key]}</span>`;
                             }
                         }
@@ -1233,7 +1401,9 @@
                                 <span class="font-black text-slate-950 text-lg">#${idx+1} ${att.name}</span>
                                 <span class="px-3 py-1 rounded-full text-xs font-black ${att.queueStatus === '候補' ? 'bg-amber-200 text-amber-950 border border-amber-400' : 'bg-emerald-200 text-emerald-950 border border-emerald-400'}">${att.queueStatus}</span>
                             </div>
-                            <p class="text-slate-700 text-base font-bold">📞 電話：${att.phone || "無"}${ansText}</p>
+                            <p class="text-slate-700 text-base font-bold">📞 電話：${att.phone || "無"}</p>
+                            <p class="text-slate-700 text-base font-bold">👤 性別：${att.gender || "未填"} | 生日：${att.birthday ? gregToRoc(att.birthday.split('T')[0]) : "未填"}</p>
+                            <p class="text-slate-700 text-base font-bold">🪪 身分證：${att.idCard ? maskName(att.idCard) : "未填"}${ansText}</p>
                         `;
                         container.appendChild(div);
                     });
@@ -1259,7 +1429,7 @@
                     document.getElementById("registerModal").classList.remove("hidden");
 
                     result.attendees.forEach((att, idx) => {
-                        addAttendeeForm(att.name, att.phone, idx === 0);
+                        addAttendeeForm(att.name, att.phone, idx === 0, att.gender, att.birthday ? gregToRoc(att.birthday.split('T')[0]) : "", att.idCard);
                     });
 
                     setTimeout(() => {
@@ -1291,9 +1461,13 @@
             const attendees = [];
             let isValid = true;
 
-            rows.forEach(row => {
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
                 const nameInput = row.querySelector(".att-name");
                 const phoneInput = row.querySelector(".att-phone");
+                const genderInput = row.querySelector(".att-gender");
+                const birthdayInput = row.querySelector(".att-birthday");
+                const idCardInput = row.querySelector(".att-idcard");
                 
                 if (!nameInput.value.trim()) {
                     isValid = false;
@@ -1302,7 +1476,32 @@
                     nameInput.classList.remove("border-red-500");
                 }
 
-                const answers = { "姓名": nameInput.value.trim() };
+                let gregBirth = "";
+                if (birthdayInput.value.trim()) {
+                    gregBirth = rocToGreg(birthdayInput.value.trim());
+                    if (!gregBirth) {
+                        alert(`第 ${i+1} 位登記者的生日格式錯誤！請輸入民國格式，例如：75/10/25`);
+                        return;
+                    }
+                }
+
+                let idCard = idCardInput.value.trim().toUpperCase();
+                if (idCard) {
+                    const idReg = /^[A-Z][12]\d{8}$/;
+                    if (!idReg.test(idCard)) {
+                        alert(`第 ${i+1} 位登記者的身分證字號格式錯誤！`);
+                        return;
+                    }
+                }
+
+                const answers = { 
+                    "姓名": nameInput.value.trim(),
+                    "電話": phoneInput.value.trim(),
+                    "性別": genderInput.value,
+                    "生日": gregBirth,
+                    "身分證字號": idCard
+                };
+
                 row.querySelectorAll(".q-input").forEach(qInput => {
                     const title = qInput.getAttribute("data-qtitle");
                     if (qInput.hasAttribute("required") && !qInput.value.trim()) {
@@ -1315,9 +1514,12 @@
                 attendees.push({
                     name: nameInput.value.trim(),
                     phone: phoneInput.value.trim(),
+                    gender: genderInput.value,
+                    birthday: gregBirth,
+                    idCard: idCard,
                     answers: answers
                 });
-            });
+            }
 
             if (!isValid) {
                 alert("請完整填寫所有必填欄位！");
@@ -1584,7 +1786,7 @@
                         
                         let ansText = "";
                         for (let key in p.answers) {
-                            if (key !== "姓名") {
+                            if (key !== "姓名" && key !== "電話" && key !== "性別" && key !== "生日" && key !== "身分證字號") {
                                 ansText += `<br>• ${key}：<span class="text-slate-950 font-black">${p.answers[key]}</span>`;
                             }
                         }
@@ -1632,7 +1834,9 @@
                                     🗑️ 刪除
                                 </button>
                             </div>
-                            <p class="text-slate-700 font-bold">📞 電話：${p.phone || "無"}${ansText}</p>
+                            <p class="text-slate-700 font-bold">📞 電話：${p.phone || "無"}</p>
+                            <p class="text-slate-700 font-bold">👤 性別：${p.gender || "未填"} | 生日：${p.birthday ? gregToRoc(p.birthday.split('T')[0]) : "未填"}</p>
+                            <p class="text-slate-700 font-bold">🪪 身分證：${p.idCard || "未填"}${ansText}</p>
                             
                             <div id="notesContainer_${p.regId}_${p.name}" class="bg-orange-50/70 p-4 rounded-2xl border-2 border-orange-200 space-y-2.5 mt-2">
                                 <p class="font-black text-orange-950 text-sm">✏️ 管理員備忘註記：</p>
@@ -1725,8 +1929,8 @@
                 return;
             }
 
-            const headers = ["編號", "登記ID", "姓名", "電話", "錄取狀態"];
-            const qTitles = questions.map(q => q.title).filter(t => t !== "姓名");
+            const headers = ["編號", "登記ID", "姓名", "電話", "性別", "生日(西元)", "身分證字號", "錄取狀態"];
+            const qTitles = questions.map(q => q.title).filter(t => !["姓名", "電話", "性別", "生日", "身分證字號"].includes(t));
             headers.push(...qTitles);
 
             const noteTitles = notesConfig.map(n => n.title);
@@ -1740,6 +1944,9 @@
                     p.regId,
                     `"${p.name.replace(/"/g, '""')}"`,
                     `"\t${p.phone}"`,
+                    `"${p.gender || ''}"`,
+                    `"${p.birthday ? p.birthday.split('T')[0] : ''}"`,
+                    `"${p.idCard || ''}"`,
                     p.status
                 ];
 
@@ -1849,7 +2056,7 @@
                 const result = await response.json();
                 
                 if (result.status === "success") {
-                    activeEventQuestions = result.questions.filter(q => q.title !== "姓名");
+                    activeEventQuestions = result.questions.filter(q => !["姓名", "電話", "性別", "生日", "身分證字號"].includes(q.title));
                     currentParticipants = result.participants;
 
                     document.getElementById("chainItemsContainer").innerHTML = "";
@@ -2216,15 +2423,18 @@
 
         async function reloadEventsData() {
             try {
-                const [catRes, evRes] = await Promise.all([
+                const [catRes, evRes, userRes] = await Promise.all([
                     fetch(`${GAS_URL}?action=getCategories`),
-                    fetch(`${GAS_URL}?action=getEvents`)
+                    fetch(`${GAS_URL}?action=getEvents`),
+                    fetch(`${GAS_URL}?action=getUsersList&lineId=${userLineId}`) // 👥 重新載入團員庫
                 ]);
                 const catData = await catRes.json();
                 const evData = await evRes.json();
+                const userData = await userRes.json();
                 
                 if (catData.status === "success") allCategories = catData.categories;
                 if (evData.status === "success") allEvents = evData.events;
+                if (userData.status === "success") allRegisteredUsers = userData.users || [];
 
                 renderCategoryDropdown();
                 renderEventList();
