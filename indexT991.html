@@ -2,14 +2,14 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1.0,user-scalable=no"/>
   <title>台灣帕金森病友權益促進會 - 全方位管理平台</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght=400;600;700;900&display=swap');
 
 :root {
   --fs-base: 20px;
@@ -52,6 +52,18 @@ body.fs-large {}
 body.fs-xlarge {
   --fs-base:24px;--fs-sm:21px;--fs-xs:19px;--fs-lg:28px;--fs-xl:32px;--fs-title:30px;
   --btn-h:80px;--input-h:76px;--nav-h:100px;
+}
+
+/* 核心優化：防手震模式全局 CSS 控制，解決 SPA 重新渲染失效問題 */
+body.tremor-mode .btn,
+body.tremor-mode .fc,
+body.tremor-mode .nitem,
+body.tremor-mode .accessible-touch-target {
+  padding-top: 24px !important;
+  padding-bottom: 24px !important;
+  margin-top: 12px !important;
+  margin-bottom: 12px !important;
+  min-height: 84px !important;
 }
 
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -279,6 +291,14 @@ textarea.fc{min-height:120px;resize:vertical;}
   </nav>
 </div>
 
+<!-- 🖼️ 圖片放大 Lightbox 燈箱 -->
+<div id="lightboxModal" class="fixed inset-0 bg-black/95 z-50 flex flex-col items-center justify-center p-4 hidden" onclick="closeLightbox()">
+  <div class="relative max-w-full max-h-[80vh] flex items-center justify-center">
+    <img id="lightboxImage" src="" alt="放大圖片" class="max-w-full max-h-[75vh] rounded-xl object-contain border-2 border-white/20">
+  </div>
+  <button onclick="closeLightbox()" class="mt-6 btn btn-primary max-w-xs">✕ 關閉視窗</button>
+</div>
+
 <div id="modalMask" class="modal-mask" onclick="maskClose(event)">
   <div id="modal" class="modal"><div class="modal-handle"></div></div>
 </div>
@@ -321,7 +341,7 @@ function showBack(show){
 }
 
 // ===== 部署設定 =====
-const API_BASE='https://script.google.com/macros/s/AKfycbySgQOSs5RH78M7VFPh5DKqcvonyWzroDEcFCqrCzvAU1cSMdHSfQ140vBaovw8WNTdwA/exec';
+const API_BASE='https://script.google.com/macros/s/AKfycbxxDvqZd0PeEtewhO5_wmNQlPWQCSlAuv4yg-Q7Cb7yPKZJOB4TOVhQYduEvdoKPaFA/exec';
 const LIFF_ID='2009456572-588gzru4';
 const ORG_NAME='社團法人台灣帕金森病友權益促進會';
 const ADMIN_TYPES=['管理員','理事長','理監事','理事','監事','會計','出納','總幹事','行政秘書長'];
@@ -346,7 +366,6 @@ let isSpeakingTip=false;
 let isListening=false;
 let isProcessingAI=false;
 
-// 修正：健康紀錄全域變數補全
 let currentHealthState='ON';
 let exerciseMinutes=30;
 let healthChart1=null, healthChart2=null;
@@ -369,9 +388,16 @@ let vocalTimeLeft=5;
 let vocalAudioCtx=null;
 let vocalTimer=null;
 
+// 論壇相關全域變數
+let forumPosts=[];
+let currentForumCategory='全部';
+let forumSearchQuery='';
+let selectedForumImages=[];
+let bookmarkedPostIds=JSON.parse(localStorage.getItem('PARKINSON_BOOKMARKS')||'[]');
+
 const ROUTES={
   home:renderHome,
-  healthCenter:renderHealthCenter, // 新增：健康紀錄與復健獨立功能區塊
+  healthCenter:renderHealthCenter,
   memberCenter:renderMemberCenter,
   editProfile:renderEditProfile,
   myPayments:renderMyPayments,
@@ -393,7 +419,10 @@ const ROUTES={
   reportCenter:renderReportCenter,
   staffManage:renderStaffManage,
   systemSetting:renderSystemSetting,
-  announceManage:renderAnnounceManage
+  announceManage:renderAnnounceManage,
+  // 新增：論壇路由
+  forumHome:renderForumHome,
+  forumCreatePost:renderForumCreatePost
 };
 
 function go(page,params={},push=true){
@@ -435,19 +464,16 @@ function loadFontSize(){
 
 function toggleTremorMode(){
   isTremorMode=!isTremorMode;
+  const body=$('appBody');
   if(isTremorMode){
-    document.querySelectorAll('.btn,.tremor-safe-btn').forEach(b=>{
-      b.style.paddingTop='24px';b.style.paddingBottom='24px';b.style.marginTop='12px';b.style.marginBottom='12px';
-    });
+    body.classList.add('tremor-mode');
     openModal(`
       <div class="modal-title">防手震模式已開啟</div>
       <div class="notice success">按鈕間距與點擊區域已放大，防止手指抖動時誤按。</div>
       <button class="btn btn-primary" onclick="closeModal()">我知道了</button>
     `);
   }else{
-    document.querySelectorAll('.btn,.tremor-safe-btn').forEach(b=>{
-      b.style.paddingTop='';b.style.paddingBottom='';b.style.marginTop='';b.style.marginBottom='';
-    });
+    body.classList.remove('tremor-mode');
   }
 }
 
@@ -632,1495 +658,526 @@ function renderLoggedInHome(){
       </div>
     </div>
 
-    <!-- 交流論壇 -->
+    <!-- 🍵 交流論壇入口 (整合進來) -->
     <div class="card" style="border-color:#fbcfe8;background:#fff5f7;">
-      <div class="card-title" style="border-left-color:#be185d;color:#be185d;">💖 帕友專屬關懷與交流</div>
+      <div class="card-title" style="border-left-color:#be185d;color:#be185d;">🍵 帕友專屬溫馨交流園地</div>
       <div class="notice info" style="background:#fff;border-color:#fbcfe8;">
-        本區專為病友與照顧者設計，提供心靈支持、精選好文與互動論壇。
+        本區專為病友與照顧者設計，提供心靈支持、經驗分享與互助論壇。
       </div>
-      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;">
-        <a href="https://www.facebook.com/groups/taiwanparkinson" target="_blank" class="btn btn-outline" style="color:#be185d;border-color:#fbcfe8;text-decoration:none;background:#fff;margin:0;width:auto;">
-          🍵 心靈雞湯 (精選好文與活動分享)
-        </a>
-      </div>
+      <button class="btn btn-outline" onclick="go('forumHome')" style="color:#be185d;border-color:#fbcfe8;background:#fff;margin:0;">
+        💬 進入溫馨交流論壇
+      </button>
     </div>
   `);
 }
 
 /*=======================================================
- * ♿ 獨立功能區塊：帕友健康與復健中心
+ * 💬 溫馨交流論壇模組 (整合進來)
  *=======================================================*/
-function renderHealthCenter(){
+function renderForumHome() {
   if(!requireLogin())return;
-  const u=APP.user;
+  
   setMain(`
-    <div class="card" style="border-color:#d8b4fe;background:#faf5ff;padding:16px;">
-      <div class="card-title" style="border-left-color:var(--purple);color:var(--purple);margin-bottom:12px;">
-        ♿ 帕友健康與復健中心
-      </div>
+    <div class="hero" style="background:linear-gradient(135deg,#16522d,#113c20,#091e11);">
+      <h1 class="text-2xl font-black">🍵 帕友溫馨交流園地</h1>
+      <div class="tagline">分享經驗、互相扶持、溫馨陪伴</div>
+    </div>
 
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:16px;">
-        <button id="nav-tab-tab-record" onclick="switchHealthTab('tab-record')" style="padding:10px 8px;border-radius:12px;font-weight:900;font-size:14px;border:2px solid #6b21a8;background:#6b21a8;color:#fff;text-align:center;min-height:48px;">
-          1. 健康打卡
-        </button>
-        <button id="nav-tab-tab-rehab" onclick="switchHealthTab('tab-rehab')" style="padding:10px 8px;border-radius:12px;font-weight:900;font-size:14px;border:2px solid #e2e8f0;background:#fff;color:#334155;text-align:center;min-height:48px;">
-          2. 解凍復健
-        </button>
-        <button id="nav-tab-tab-stats" onclick="switchHealthTab('tab-stats')" style="padding:10px 8px;border-radius:12px;font-weight:900;font-size:14px;border:2px solid #e2e8f0;background:#fff;color:#334155;text-align:center;min-height:48px;">
-          3. 趨勢統計
-        </button>
-        <button id="nav-tab-tab-doctor" onclick="switchHealthTab('tab-doctor')" style="padding:10px 8px;border-radius:12px;font-weight:900;font-size:14px;border:2px solid #e2e8f0;background:#fff;color:#334155;text-align:center;min-height:48px;">
-          4. 看診摘要
-        </button>
-      </div>
-
-      <!-- 頁籤 1：健康打卡 -->
-      <div id="tab-record" class="health-tab-content">
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-          <span style="font-size:14px;font-weight:900;color:#6b21a8;">❤️ 當前體感心情：</span>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;" id="moodSelector">
-            <button onclick="setMood('😊',this)" style="padding:6px 10px;border-radius:8px;font-size:14px;background:#f3e8ff;color:#581c87;border:2px solid #7c3aed;font-weight:900;min-height:36px;">😊 順暢</button>
-            <button onclick="setMood('🌈',this)" style="padding:6px 10px;border-radius:8px;font-size:14px;background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;font-weight:700;min-height:36px;">🌈 精神好</button>
-            <button onclick="setMood('🐢',this)" style="padding:6px 10px;border-radius:8px;font-size:14px;background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;font-weight:700;min-height:36px;">🐢 慢動作</button>
-            <button onclick="setMood('🥱',this)" style="padding:6px 10px;border-radius:8px;font-size:14px;background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;font-weight:700;min-height:36px;">🥱 疲倦</button>
-            <button onclick="setMood('⚡',this)" style="padding:6px 10px;border-radius:8px;font-size:14px;background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;font-weight:700;min-height:36px;">⚡ 扭動</button>
-          </div>
-        </div>
-
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:12px;">
-          <label style="display:block;font-weight:900;color:#0f172a;margin-bottom:8px;">⚡ 1. 目前藥效狀態 (ON/OFF 波動)：</label>
-          <div id="onOffContainer" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-            <button onclick="recordState(event,'ON','ON (順暢)')" style="padding:12px;border-radius:12px;border:2px solid #10b981;background:#f0fdf4;color:#064e3b;font-weight:900;font-size:16px;min-height:64px;">
-              🟢 ON<br><span style="font-size:12px;">活動順暢</span>
-            </button>
-            <button onclick="recordState(event,'OFF','OFF (僵硬)')" style="padding:12px;border-radius:12px;border:2px solid #cbd5e1;background:#fff;color:#334155;font-weight:900;font-size:16px;min-height:64px;">
-              🔴 OFF<br><span style="font-size:12px;">僵硬/無力</span>
-            </button>
-            <button onclick="recordState(event,'DYS','異動症')" style="padding:12px;border-radius:12px;border:2px solid #cbd5e1;background:#fff;color:#334155;font-weight:900;font-size:16px;min-height:64px;">
-              🟡 異動症<br><span style="font-size:12px;">手腳不由自主</span>
-            </button>
-          </div>
-          <div id="stateToast" class="hide" style="margin-top:8px;padding:8px;background:#d1fae5;color:#064e3b;font-weight:900;font-size:14px;border-radius:8px;text-align:center;"></div>
-        </div>
-
-        <!-- AI 語音口述 -->
-        <div style="background:#faf5ff;padding:12px;border-radius:12px;border:2px solid #e9d5ff;margin-bottom:12px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-            <span style="font-weight:900;color:#581c87;font-size:14px;"><i class="fa-solid fa-wand-magic-sparkles" style="color:#f59e0b;"></i> AI 語音口述記錄</span>
-            <span style="font-size:12px;background:#e9d5ff;color:#6b21a8;padding:2px 8px;border-radius:999px;font-weight:900;">Gemini 智慧彙整</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button onclick="toggleVoiceInput()" id="voiceBtn" style="padding:10px 16px;border-radius:12px;background:#6b21a8;color:#fff;font-weight:900;font-size:14px;display:flex;align-items:center;gap:8px;min-height:48px;">
-                <i class="fa-solid fa-microphone" id="voiceIco"></i> <span id="voiceText">開始口述</span>
-              </button>
-              <input type="text" id="voiceInputText" class="fc" style="min-height:48px;padding:10px 14px;flex:1;min-width:150px;" placeholder="或直接輸入：下午常有僵硬感...">
-              <button onclick="processVoiceAI()" class="btn btn-outline btn-sm" style="margin:0;min-height:48px;">送出 AI</button>
-            </div>
-          </div>
-          <div id="aiStatus" class="hide" style="font-size:12px;color:#92400e;font-weight:900;margin-top:6px;"></div>
-        </div>
-
-        <!-- 手指敲擊測試 -->
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:12px;">
-          <label style="display:block;font-weight:900;color:#0f172a;margin-bottom:4px;">🖐️ 2. 手指敲擊靈巧度測試 (10秒)：</label>
-          <p style="font-size:12px;color:#64748b;margin-bottom:8px;">點擊開始後，請用左右食指盡可能快速交替點擊按鈕，測試協調度。</p>
-          <div id="tapTestArea">
-            <button onclick="startTapTest()" class="btn btn-outline btn-sm" style="margin:0;width:100%;"><i class="fa-solid fa-play" style="margin-right:4px;"></i> 開始 10 秒靈巧度測試</button>
-          </div>
-        </div>
-
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:12px;">
-          <label style="display:block;font-weight:900;color:#0f172a;margin-bottom:8px;">💊 3. 今日服藥打卡：</label>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-            <button onclick="toggleMed(event,'早藥')" style="padding:8px;border-radius:8px;background:#f1f5f9;color:#334155;font-weight:900;font-size:14px;border:2px solid #94a3b8;min-height:48px;">早藥</button>
-            <button onclick="toggleMed(event,'午藥')" style="padding:8px;border-radius:8px;background:#f1f5f9;color:#334155;font-weight:900;font-size:14px;border:2px solid #94a3b8;min-height:48px;">午藥</button>
-            <button onclick="toggleMed(event,'晚藥')" style="padding:8px;border-radius:8px;background:#f1f5f9;color:#334155;font-weight:900;font-size:14px;border:2px solid #94a3b8;min-height:48px;">晚藥</button>
-          </div>
-        </div>
-
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:12px;">
-          <label style="display:block;font-weight:900;color:#0f172a;margin-bottom:8px;">🏃 4. 今日復健運動：</label>
-          <div style="display:flex;align-items:center;justify-content:space-between;background:#f8fafc;padding:8px;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:8px;">
-            <span style="font-weight:900;color:#334155;">運動時間：</span>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <button onclick="adjustExercise(-10)" style="width:40px;height:40px;background:#f1f5f9;border:2px solid #94a3b8;border-radius:50%;font-weight:900;font-size:18px;min-height:40px;">-</button>
-              <span style="font-weight:900;font-size:20px;color:#6b21a8;"><span id="exerciseMins">30</span> 分鐘</span>
-              <button onclick="adjustExercise(10)" style="width:40px;height:40px;background:#f1f5f9;border:2px solid #94a3b8;border-radius:50%;font-weight:900;font-size:18px;min-height:40px;">+</button>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-            <button onclick="toggleTag(event)" class="exercise-tag" style="padding:8px;background:#f1f5f9;border:2px solid #cbd5e1;border-radius:8px;font-weight:700;font-size:14px;color:#334155;min-height:44px;">太極拳</button>
-            <button onclick="toggleTag(event)" class="exercise-tag" style="padding:8px;background:#f1f5f9;border:2px solid #cbd5e1;border-radius:8px;font-weight:700;font-size:14px;color:#334155;min-height:44px;">復健律動</button>
-            <button onclick="toggleTag(event)" class="exercise-tag" style="padding:8px;background:#f1f5f9;border:2px solid #cbd5e1;border-radius:8px;font-weight:700;font-size:14px;color:#334155;min-height:44px;">伸展瑜伽</button>
-            <button onclick="toggleTag(event)" class="exercise-tag" style="padding:8px;background:#f1f5f9;border:2px solid #cbd5e1;border-radius:8px;font-weight:700;font-size:14px;color:#334155;min-height:44px;">散步健走</button>
-          </div>
-        </div>
-
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:12px;">
-          <label style="display:block;font-weight:900;color:#0f172a;margin-bottom:8px;">⚠️ 5. 今日不適症狀 (可多選)：</label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <button onclick="toggleSymptom(event)" class="symptom-btn" style="padding:8px;background:#f8fafc;border:2px solid #cbd5e1;border-radius:8px;font-weight:700;font-size:14px;color:#334155;text-align:left;min-height:48px;">🤝 手腳顫抖</button>
-            <button onclick="toggleSymptom(event)" class="symptom-btn" style="padding:8px;background:#f8fafc;border:2px solid #cbd5e1;border-radius:8px;font-weight:700;font-size:14px;color:#334155;text-align:left;min-height:48px;">🚶 步態凍結</button>
-            <button onclick="toggleSymptom(event)" class="symptom-btn" style="padding:8px;background:#f8fafc;border:2px solid #cbd5e1;border-radius:8px;font-weight:700;font-size:14px;color:#334155;text-align:left;min-height:48px;">🤕 險些跌倒</button>
-            <button onclick="toggleSymptom(event)" class="symptom-btn" style="padding:8px;background:#f8fafc;border:2px solid #cbd5e1;border-radius:8px;font-weight:700;font-size:14px;color:#334155;text-align:left;min-height:48px;">💤 睡眠障礙</button>
-          </div>
-        </div>
-
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:12px;">
-          <label style="display:block;font-weight:900;color:#0f172a;margin-bottom:8px;">💬 6. 回診想問醫師的問題備忘：</label>
-          <textarea id="doctorQuestion" class="fc" style="min-height:80px;" placeholder="例如：下午常有僵硬感，是否需要調整服藥時間？"></textarea>
-        </div>
-
-        <button class="btn btn-success" onclick="saveDailyRecord()">
-          <i class="fa-solid fa-cloud-arrow-up" style="margin-right:4px;"></i> 儲存今日完整紀錄 (同步雲端)
-        </button>
-      </div>
-
-      <!-- 頁籤 2：解凍復健 -->
-      <div id="tab-rehab" class="health-tab-content hide">
-        <div style="background:#fff;padding:16px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:12px;">
-          <h4 style="font-weight:900;color:#991b1b;font-size:16px;margin-bottom:8px;"><i class="fa-solid fa-music" style="margin-right:4px;"></i> 步態凍結解凍節拍器 (Freezing Rhythm)</h4>
-          <p style="font-size:12px;color:#64748b;margin-bottom:12px;">當起步腳步凍結卡住時，跟著「1 - 2 - 1 - 2」規律聲響與畫面躍動，跨大步踏出去。</p>
-          <div style="background:#0f172a;padding:16px;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:16px;">
-            <div style="display:flex;align-items:center;gap:24px;">
-              <div id="beat1" style="width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;border:4px solid #334155;background:#1e293b;color:#475569;transition:all 0.1s;">1 (左)</div>
-              <div id="beat2" style="width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;border:4px solid #334155;background:#1e293b;color:#475569;transition:all 0.1s;">2 (右)</div>
-            </div>
-            <div style="width:100%;max-width:280px;text-align:center;">
-              <div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;font-weight:900;margin-bottom:4px;">
-                <span>節奏速度 (BPM)：</span>
-                <span style="color:#5eead4;font-family:monospace;font-size:16px;" id="bpmVal">90 BPM</span>
-              </div>
-              <input type="range" min="60" max="120" step="5" value="90" id="bpmSlider" oninput="updateBpm(this.value)" style="width:100%;accent-color:#f43f5e;cursor:pointer;">
-            </div>
-            <button onclick="toggleMetronome()" id="metronomeBtn" style="padding:12px 24px;border-radius:12px;font-weight:900;background:#14b8a6;color:#0f172a;display:flex;align-items:center;gap:8px;min-height:48px;">
-              <i class="fa-solid fa-volume-high"></i> <span>啟動解凍節拍聲響</span>
-            </button>
-          </div>
-        </div>
-
-        <div style="background:#fff;padding:16px;border-radius:12px;border:1px solid #e2e8f0;">
-          <h4 style="font-weight:900;color:#92400e;font-size:16px;margin-bottom:8px;"><i class="fa-solid fa-microphone" style="margin-right:4px;"></i> 5 秒大聲發聲練習 (Vocal Loudness)</h4>
-          <p style="font-size:12px;color:#64748b;margin-bottom:12px;">深吸一口氣，對著麥克風大聲發出「啊——」長音 5 秒鐘，訓練聲帶肌力與社交說話自信。</p>
-          <div style="background:#0f172a;padding:16px;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:12px;" id="vocalTestArea">
-            <button onclick="startVocalTest()" style="padding:12px 24px;background:#fbbf24;color:#0f172a;font-weight:900;border-radius:12px;font-size:14px;display:flex;align-items:center;gap:8px;min-height:48px;margin:0 auto;">
-              <i class="fa-solid fa-microphone"></i> <span>開始 5 秒發聲測試</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 頁籤 3：趨勢統計 -->
-      <div id="tab-stats" class="health-tab-content hide">
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:12px;">
-          <h4 style="font-weight:900;color:#0f172a;margin-bottom:8px;"><i class="fa-solid fa-chart-simple" style="color:#6b21a8;margin-right:4px;"></i> 近 7 天藥效狀態分佈 (ON/OFF)</h4>
-          <div style="height:180px;position:relative;">
-            <canvas id="onOffChart"></canvas>
-          </div>
-        </div>
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid #e2e8f0;">
-          <h4 style="font-weight:900;color:#0f172a;margin-bottom:8px;"><i class="fa-solid fa-chart-line" style="color:#2563eb;margin-right:4px;"></i> 近 7 天運動量與身體靈敏度趨勢</h4>
-          <div style="height:180px;position:relative;">
-            <canvas id="exerciseChart"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <!-- 頁籤 4：看診摘要 -->
-      <div id="tab-doctor" class="health-tab-content hide">
-        <div class="empty">健康數據載入中...</div>
+    <!-- 篩選器 -->
+    <div class="card">
+      <p class="font-black text-slate-700 mb-3 text-center text-lg"><i class="fa-solid fa-filter mr-1"></i>請選擇想看的內容：</p>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+        <button onclick="filterForumCategory('全部')" class="btn btn-sm forum-cat-btn" id="fcat-全部" style="margin:0;">全部文章</button>
+        <button onclick="filterForumCategory('用藥與復健')" class="btn btn-sm btn-ghost forum-cat-btn" id="fcat-用藥與復健" style="margin:0;">💊 用藥復健</button>
+        <button onclick="filterForumCategory('經驗分享')" class="btn btn-sm btn-ghost forum-cat-btn" id="fcat-經驗分享" style="margin:0;">💡 經驗分享</button>
+        <button onclick="filterForumCategory('我的收藏')" class="btn btn-sm btn-ghost forum-cat-btn" id="fcat-我的收藏" style="margin:0;background:#fef3c7;color:#78350f;">⭐ 我的收藏</button>
       </div>
     </div>
-    <button class="btn btn-ghost" onclick="go('home')">返回首頁</button>
+
+    <!-- 搜尋與重新整理 -->
+    <div class="card" style="padding:16px;">
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="forumSearchInput" oninput="handleForumSearch()" placeholder="🔍 輸入關鍵字搜尋..." class="fc" style="min-height:50px;padding:8px 16px;flex:1;">
+        <button onclick="loadForumPosts()" class="btn btn-outline btn-sm" style="margin:0;min-height:50px;width:60px;">
+          <i class="fa-solid fa-rotate-right"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 貼文數量與發文按鈕 -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:0 8px;">
+      <span id="forumCountDisplay" class="badge bb">共 0 篇貼文</span>
+      <button onclick="go('forumCreatePost')" class="btn btn-success btn-sm" style="margin:0;">
+        <i class="fa-solid fa-plus mr-1"></i>發表新貼文
+      </button>
+    </div>
+
+    <!-- 文章列表 -->
+    <div id="forumPostsList"><div class="empty">貼文載入中...</div></div>
   `);
+  
+  updateForumCategoryUI();
+  loadForumPosts();
 }
 
-// ===== 健康日誌互動與復健邏輯 =====
-function nextTip(){
-  currentTipIndex=(currentTipIndex+1)%WARM_TIPS.length;
-  const tipEl=$('warmTipText');
-  if(tipEl)tipEl.textContent=WARM_TIPS[currentTipIndex];
-}
-
-function speakTip(){
-  if(!('speechSynthesis' in window)){
-    toast('⚠️ 您的瀏覽器不支援語音合成朗讀','e');
-    return;
+async function loadForumPosts() {
+  const listArea = $('forumPostsList');
+  if(!listArea) return;
+  listArea.innerHTML = `<div class="empty"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i>資料同步中...</div>`;
+  
+  try {
+    const res = await api('forum.getPosts');
+    if(res.success) {
+      forumPosts = res.items;
+      renderForumPostsList();
+    } else {
+      listArea.innerHTML = `<div class="empty text-red-600">載入失敗：${esc(res.message)}</div>`;
+    }
+  } catch(e) {
+    listArea.innerHTML = `<div class="empty text-red-600">連線失敗：${esc(e.message)}</div>`;
   }
-  const btn=$('speakTipBtn');
-  if(isSpeakingTip){
-    window.speechSynthesis.cancel();
-    isSpeakingTip=false;
-    if(btn)btn.innerHTML='<i class="fa-solid fa-volume-high"></i> <span>朗讀</span>';
-    return;
-  }
-  const text=WARM_TIPS[currentTipIndex].replace(/[\u{1F300}-\u{1F9FF}]/gu,'');
-  const utterance=new SpeechSynthesisUtterance(text);
-  utterance.lang='zh-TW';utterance.rate=0.85;
-  utterance.onend=()=>{
-    isSpeakingTip=false;
-    if(btn)btn.innerHTML='<i class="fa-solid fa-volume-high"></i> <span>朗讀</span>';
-  };
-  utterance.onerror=()=>{
-    isSpeakingTip=false;
-    if(btn)btn.innerHTML='<i class="fa-solid fa-volume-high"></i> <span>朗讀</span>';
-  };
-  isSpeakingTip=true;
-  if(btn)btn.innerHTML='<i class="fa-solid fa-circle-stop" style="color:#ef4444;"></i> <span>停止</span>';
-  window.speechSynthesis.speak(utterance);
 }
 
-function setMood(mood,btn){
-  selectedMood=mood;
-  const parent=$('moodSelector');
-  if(!parent)return;
-  parent.querySelectorAll('button').forEach(b=>{
-    b.style.background='#f1f5f9';b.style.color='#334155';b.style.border='1px solid #cbd5e1';b.style.fontWeight='700';
+function renderForumPostsList() {
+  const listArea = $('forumPostsList');
+  if(!listArea) return;
+
+  const isAdmin = isAdminUser(APP.user);
+
+  let filtered = forumPosts.filter(p => {
+    let matchCat = (currentForumCategory === '全部') || (p.category === currentForumCategory);
+    if (currentForumCategory === '我的收藏') {
+      matchCat = bookmarkedPostIds.includes(p.postId);
+    }
+    const matchSearch = !forumSearchQuery || 
+      p.title.toLowerCase().includes(forumSearchQuery.toLowerCase()) || 
+      p.content.toLowerCase().includes(forumSearchQuery.toLowerCase()) ||
+      p.author.toLowerCase().includes(forumSearchQuery.toLowerCase());
+    return matchCat && matchSearch;
   });
-  btn.style.background='#f3e8ff';btn.style.color='#581c87';btn.style.border='2px solid #7c3aed';btn.style.fontWeight='900';
-  toast(`已選擇心情體感：${mood}`,'s');
-}
 
-function recordState(evt,type,label){
-  currentHealthState=type;
-  const toastEl=$('stateToast');
-  if(toastEl){
-    toastEl.innerHTML=`<i class="fa-solid fa-check-circle" style="margin-right:8px;"></i> 已選擇目前藥效狀態：【${esc(label)}】(儲存後將同步至雲端)`;
-    toastEl.classList.remove('hide');
-  }
-  document.querySelectorAll('#onOffContainer button').forEach(b=>{
-    b.style.border='2px solid #cbd5e1';b.style.background='#fff';b.style.color='#334155';
+  // 依置頂與時間排序
+  filtered.sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    return new Date(b.createdAt.replace(' ', 'T')) - new Date(a.createdAt.replace(' ', 'T'));
   });
-  const activeBtn=evt.currentTarget;
-  if(type==='ON'){
-    activeBtn.style.border='2px solid #10b981';activeBtn.style.background='#f0fdf4';activeBtn.style.color='#064e3b';
-  }else if(type==='OFF'){
-    activeBtn.style.border='2px solid #f43f5e';activeBtn.style.background='#fff1f2';activeBtn.style.color='#881337';
-  }else if(type==='DYS'){
-    activeBtn.style.border='2px solid #f59e0b';activeBtn.style.background='#fffbeb';activeBtn.style.color='#78350f';
-  }
-}
 
-function toggleVoiceInput(){
-  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
-    toast('⚠️ 您的瀏覽器不支援語音辨識，請直接文字輸入描述喔！','e');
+  $('forumCountDisplay').innerText = `共 ${filtered.length} 篇貼文`;
+
+  if(filtered.length === 0) {
+    listArea.innerHTML = `<div class="empty">目前沒有符合的文章</div>`;
     return;
   }
-  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-  const recognition=new SpeechRecognition();
-  recognition.lang='zh-TW';recognition.interimResults=false;
-  recognition.onstart=()=>{
-    isListening=true;
-    const ico=$('voiceIco');const txt=$('voiceText');
-    if(ico)ico.className='fa-solid fa-microphone-slash';
-    if(txt)txt.textContent='正在聆聽中...';
+
+  listArea.innerHTML = `<div class="list">` + filtered.map(post => {
+    const hasLiked = (post.likes || []).includes(APP.user.memberId);
+    const isBookmarked = bookmarkedPostIds.includes(post.postId);
+    const images = post.images || [];
+    const links = post.links || [];
+
+    return `
+      <div class="item" style="border-color:${post.isPinned ? '#f59e0b' : '#cbd5e1'};background:${post.isPinned ? '#fffbeb' : '#fff'};">
+        <div class="item-h" style="border-bottom:1px solid #e2e8f0;padding-bottom:8px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            ${post.isPinned ? `<span class="badge bw" style="background:#fef3c7;color:#d97706;"><i class="fa-solid fa-thumbtack mr-1"></i>置頂</span>` : ''}
+            <span class="badge bb">${esc(post.category)}</span>
+            <span style="font-weight:900;color:var(--primary);"><i class="fa-regular fa-user mr-1"></i>${esc(post.author)}</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">${esc(post.createdAt)}</div>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <h3 style="font-size:var(--fs-base);font-weight:950;color:var(--text);margin-bottom:6px;">${esc(post.title)}</h3>
+          <p style="font-size:var(--fs-sm);color:#334155;white-space:pre-wrap;line-height:1.6;">${esc(post.content)}</p>
+          
+          <!-- 多圖展示 -->
+          ${images.length > 0 ? `
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;">
+              ${images.map(img => `<img src="${img}" onclick="openLightbox('${img}')" style="width:100%;height:70px;object-cover;border-radius:8px;cursor:pointer;border:1px solid #cbd5e1;">`).join('')}
+            </div>
+          ` : ''}
+
+          <!-- 附加連結 -->
+          ${links.length > 0 ? `
+            <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #cbd5e1;">
+              <div style="font-size:12px;font-weight:800;color:var(--muted);margin-bottom:4px;"><i class="fa-solid fa-paperclip mr-1"></i>附加連結：</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                ${links.map(link => `<a href="${link.url}" target="_blank" class="badge bs" style="text-decoration:none;"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>${esc(link.name)}</a>`).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- 互動按鈕 -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;border-top:1px solid #e2e8f0;padding-top:8px;margin-bottom:8px;">
+          <button onclick="handleForumLike('${post.postId}')" class="btn btn-xs" style="margin:0;background:${hasLiked?'#fee2e2':'#f1f5f9'};color:${hasLiked?'#dc2626':'#475569'};border:1px solid ${hasLiked?'#fca5a5':'#cbd5e1'};">
+            <i class="${hasLiked?'fa-solid':'fa-regular'} fa-heart"></i> 讚 (${(post.likes||[]).length})
+          </button>
+          <button onclick="toggleForumBookmark('${post.postId}')" class="btn btn-xs" style="margin:0;background:${isBookmarked?'#fef3c7':'#f1f5f9'};color:${isBookmarked?'#d97706':'#475569'};border:1px solid ${isBookmarked?'#fcd34d':'#cbd5e1'};">
+            <i class="${isBookmarked?'fa-solid':'fa-regular'} fa-bookmark"></i> 收藏
+          </button>
+          
+          <!-- 管理員專屬：置頂與刪除 -->
+          ${isAdmin ? `
+            <div style="display:flex;gap:4px;">
+              <button onclick="handleForumPin('${post.postId}')" class="btn btn-xs btn-outline" style="margin:0;flex:1;padding:0;" title="置頂"><i class="fa-solid fa-thumbtack"></i></button>
+              <button onclick="handleForumDelete('${post.postId}')" class="btn btn-xs btn-danger" style="margin:0;flex:1;padding:0;" title="刪除"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          ` : `<div></div>`}
+        </div>
+
+        <!-- 留言區 -->
+        <div style="background:#f8fafc;border-radius:12px;padding:8px;margin-top:8px;">
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+            ${(post.replies && post.replies.length > 0) ? post.replies.map(r => `
+              <div style="background:#fff;padding:6px 10px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px;">
+                <div style="display:flex;justify-content:between;font-weight:900;color:var(--primary);font-size:12px;">
+                  <span>👴 ${esc(r.author)}</span>
+                  <span style="color:var(--muted);font-weight:normal;">${esc(r.createdAt)}</span>
+                </div>
+                <div style="font-weight:700;color:var(--text);margin-top:2px;">${esc(r.content)}</div>
+              </div>
+            `).join('') : '<div style="text-align:center;font-size:12px;color:var(--muted);padding:4px 0;">歡迎留言給予鼓勵！</div>'}
+          </div>
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="freply-${post.postId}" placeholder="寫下回覆..." class="fc" style="min-height:38px;height:38px;padding:4px 10px;font-size:14px;border-radius:8px;">
+            <button onclick="handleForumReply('${post.postId}')" class="btn btn-xs btn-primary" style="margin:0;min-height:38px;height:38px;border-radius:8px;">留言</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('') + `</div>`;
+}
+
+function filterForumCategory(cat) {
+  currentForumCategory = cat;
+  updateForumCategoryUI();
+  renderForumPostsList();
+}
+
+function updateForumCategoryUI() {
+  document.querySelectorAll('.forum-cat-btn').forEach(btn => {
+    btn.classList.add('btn-ghost');
+  });
+  const activeBtn = $('fcat-' + currentForumCategory);
+  if(activeBtn) activeBtn.classList.remove('btn-ghost');
+}
+
+function handleForumSearch() {
+  forumSearchQuery = $('forumSearchInput').value.trim();
+  renderForumPostsList();
+}
+
+// 論壇發文頁面
+function renderForumCreatePost() {
+  if(!requireLogin())return;
+  selectedForumImages = [];
+  
+  setMain(`
+    <div class="card">
+      <div class="card-title">✍️ 發表新貼文</div>
+      
+      <div class="fg">
+        <label class="flabel">1. 選擇主題分類</label>
+        <select id="fpostCat" class="fc">
+          <option value="經驗分享">💡 經驗分享</option>
+          <option value="用藥與復健">💊 用藥復健</option>
+          <option value="照護心得">🤝 照護心得</option>
+          <option value="門診諮詢">🩺 門診諮詢</option>
+        </select>
+      </div>
+
+      <div class="fg">
+        <label class="flabel">2. 填寫標題</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <input type="text" id="fpostTitle" placeholder="例如：今天散步走了20分鐘" class="fc">
+          <button type="button" onclick="startForumSpeech('fpostTitle', this)" class="btn btn-outline btn-sm" style="margin:0;">
+            <i class="fa-solid fa-microphone text-red-600 mr-1"></i> 按我用語音輸入標題
+          </button>
+        </div>
+      </div>
+
+      <div class="fg">
+        <label class="flabel">3. 填寫詳細內容</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <textarea id="fpostContent" placeholder="寫下今天的身體狀況、用藥後的反應..." class="fc" style="min-height:120px;"></textarea>
+          <button type="button" onclick="startForumSpeech('fpostContent', this)" class="btn btn-outline btn-sm" style="margin:0;">
+            <i class="fa-solid fa-microphone text-red-600 mr-1"></i> 按我用語音輸入內容
+          </button>
+        </div>
+      </div>
+
+      <div class="fg">
+        <label class="flabel">4. 附上照片 (最多3張)</label>
+        <input type="file" id="fpostFiles" accept="image/*" multiple onchange="handleForumImages(event)" class="hide">
+        <button type="button" onclick="$('fpostFiles').click()" class="btn btn-ghost" style="border:2px dashed var(--border);width:100%;">
+          <i class="fa-solid fa-camera text-emerald-700 mr-1"></i> 點此拍照或選取照片
+        </button>
+        <div id="fimagePreviews" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;"></div>
+      </div>
+
+      <div class="fg">
+        <label class="flabel">5. 附加檔案連結 (選填)</label>
+        <div id="flinkInputs" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
+        <button type="button" onclick="addForumLinkField()" class="btn btn-ghost btn-sm" style="margin:0;width:100%;">
+          <i class="fa-solid fa-plus mr-1"></i> 新增一筆連結
+        </button>
+      </div>
+
+      <div class="row" style="margin-top:24px;">
+        <button onclick="submitForumPost()" class="btn btn-success">📤 確認送出貼文</button>
+        <button onclick="go('forumHome')" class="btn btn-ghost">取消</button>
+      </div>
+    </div>
+  `);
+  
+  addForumLinkField();
+}
+
+function addForumLinkField(name='', url='') {
+  const container = $('flinkInputs');
+  if(!container) return;
+  const div = document.createElement('div');
+  div.style.display = 'flex';
+  div.style.gap = '6px';
+  div.style.alignItems = 'center';
+  div.style.background = '#f8fafc';
+  div.style.padding = '8px';
+  div.style.borderRadius = '12px';
+  div.style.border = '1px solid #cbd5e1';
+  div.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
+      <input type="text" placeholder="連結名稱 (如: 復健影片)" value="${name}" class="flink-name fc" style="min-height:36px;height:36px;padding:4px 8px;font-size:14px;">
+      <input type="text" placeholder="網址 (https://...)" value="${url}" class="flink-url fc" style="min-height:36px;height:36px;padding:4px 8px;font-size:14px;">
+    </div>
+    <button type="button" onclick="this.parentElement.remove()" class="btn btn-danger btn-xs" style="margin:0;min-height:36px;height:36px;width:36px;display:flex;align-items:center;justify-content:center;padding:0;"><i class="fa-solid fa-trash"></i></button>
+  `;
+  container.appendChild(div);
+}
+
+function handleForumImages(event) {
+  const files = Array.from(event.target.files);
+  if(selectedForumImages.length + files.length > 3) {
+    toast('最多只能附加 3 張照片喔！', 'w');
+    return;
+  }
+  files.forEach(file => {
+    if(file.size > 2 * 1024 * 1024) {
+      toast('單張圖片請勿超過 2MB', 'w');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      selectedForumImages.push(e.target.result);
+      renderForumImagePreviews();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderForumImagePreviews() {
+  const container = $('fimagePreviews');
+  if(!container) return;
+  container.innerHTML = selectedForumImages.map((img, idx) => `
+    <div style="position:relative;">
+      <img src="${img}" style="width:100%;height:80px;object-cover;border-radius:12px;border:2px solid var(--primary);">
+      <button type="button" onclick="removeForumImage(${idx})" style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:      12px;font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.2);">✕</button>
+    </div>
+  `).join('');
+}
+
+function removeForumImage(idx) {
+  selectedForumImages.splice(idx, 1);
+  renderForumImagePreviews();
+}
+
+// 語音輸入 (論壇專用)
+function startForumSpeech(inputId, btnElement) {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('⚠️ 您的瀏覽器不支援語音辨識', 'e');
+    return;
+  }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'zh-TW';
+  recognition.interimResults = false;
+
+  const originalHtml = btnElement.innerHTML;
+  btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i><span>正在聆聽中...</span>`;
+  
+  recognition.onstart = () => { isListening = true; };
+  recognition.onend = () => {
+    isListening = false;
+    btnElement.innerHTML = originalHtml;
   };
-  recognition.onend=()=>{
-    isListening=false;
-    const ico=$('voiceIco');const txt=$('voiceText');
-    if(ico)ico.className='fa-solid fa-microphone';
-    if(txt)txt.textContent='開始口述';
+  recognition.onerror = () => {
+    isListening = false;
+    btnElement.innerHTML = originalHtml;
+    toast('沒聽清楚，請再試一次喔', 'w');
   };
-  recognition.onerror=()=>{
-    isListening=false;
-    const ico=$('voiceIco');const txt=$('voiceText');
-    if(ico)ico.className='fa-solid fa-microphone';
-    if(txt)txt.textContent='開始口述';
-    toast('語音辨識稍微迷路了，請再試一次喔！','e');
-  };
-  recognition.onresult=(event)=>{
-    const transcript=event.results[0][0].transcript;
-    const input=$('voiceInputText');
-    if(input)input.value=transcript;
-    toast('語音辨識成功！正在進行 AI 智慧分析...','s');
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    const targetInput = $(inputId);
+    if (targetInput) {
+      targetInput.value = targetInput.value ? (targetInput.value + ' ' + transcript) : transcript;
+    }
+    toast('語音辨識成功！', 's');
   };
   recognition.start();
 }
 
-async function processVoiceAI(){
-  const inputEl=$('voiceInputText');
-  const text=inputEl?inputEl.value.trim():'';
-  if(!text){toast('請先說話或輸入文字描述喔！','e');return;}
-  isProcessingAI=true;
-  const statusEl=$('aiStatus');
-  if(statusEl){statusEl.textContent='🤖 小舒正在認真聽懂您的話語並整理中...';statusEl.classList.remove('hide');}
-  try{
-    const res=await api('health.processAI',{text});
-    isProcessingAI=false;
-    if(statusEl)statusEl.classList.add('hide');
-    if(res.success&&res.parsed){
-      const p=res.parsed;
-      const container=$('onOffContainer');
-      if(container){
-        const btns=container.querySelectorAll('button');
-        if(p.type==='on'&&btns[0]){btns[0].click();}
-        else if(p.type==='off'&&btns[1]){btns[1].click();}
-        else if(p.type==='dyskinesia'&&btns[2]){btns[2].click();}
+// 送出論壇文章 (共用人員管制)
+async function submitForumPost() {
+  const category = $('fpostCat').value;
+  const title = requireInput('fpostTitle', '標題');
+  const content = requireInput('fpostContent', '詳細內容');
+  if(!title || !content) return;
+
+  // 收集附加連結
+  const links = [];
+  const names = document.querySelectorAll('.flink-name');
+  const urls = document.querySelectorAll('.flink-url');
+  names.forEach((el, idx) => {
+    const name = el.value.trim();
+    const url = urls[idx].value.trim();
+    if (name && url) { links.push({ name, url }); }
+  });
+
+  const payload = {
+    category: category,
+    title: title,
+    content: content,
+    author: APP.user.name,
+    authorId: APP.user.memberId,
+    authorRole: isAdminUser(APP.user) ? 'admin' : 'member',
+    images: selectedForumImages,
+    links: links
+  };
+
+  showLoad();
+  try {
+    const res = await api('forum.addPost', payload);
+    hideLoad();
+    if(res.success) {
+      toast('🎉 貼文發表成功！', 's');
+      go('forumHome');
+    } else {
+      toast(res.message, 'e');
+    }
+  } catch(e) {
+    hideLoad();
+    toast('連線失敗：' + e.message, 'e');
+  }
+}
+
+// 論壇按讚功能
+async function handleForumLike(postId) {
+  try {
+    const res = await api('forum.toggleLike', { postId: postId, userId: APP.user.memberId });
+    if(res.success) {
+      // 尋找快取中的貼文並更新讚數
+      const post = forumPosts.find(p => p.postId === postId);
+      if(post) {
+        post.likes = res.likes;
+        renderForumPostsList();
       }
-      const dqEl=$('doctorQuestion');
-      if(p.note&&dqEl)dqEl.value=p.note;
-      toast(`✨ AI 整理完成：${p.title}`,'s');
-    }else{
-      const dqEl=$('doctorQuestion');
-      if(dqEl)dqEl.value=text;
-      toast('已將您的口述直接記錄於下方備忘錄中','s');
     }
-  }catch(err){
-    isProcessingAI=false;
-    if(statusEl)statusEl.classList.add('hide');
-    const dqEl=$('doctorQuestion');
-    if(dqEl)dqEl.value=text;
-    toast('AI 服務暫時忙碌，已直接填入備忘錄','s');
+  } catch(e) {
+    toast('按讚失敗', 'e');
   }
 }
 
-function startTapTest(){
-  tapTestActive=true;tapCount=0;tapTimeLeft=10;lastTapHand=null;
-  const area=$('tapTestArea');
-  area.innerHTML=`
-    <div style="background:#0f172a;padding:12px;border-radius:12px;display:flex;justify-content:space-between;align-items:center;color:#fff;margin-bottom:8px;">
-      <span style="font-size:14px;font-weight:900;">倒數時間：<strong style="color:#f43f5e;font-size:18px;" id="tapTimerVal">10</strong> 秒</span>
-      <span style="font-size:14px;font-weight:900;">交替點擊：<strong style="color:#14b8a6;font-size:18px;" id="tapCountVal">0</strong> 次</span>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <button onclick="registerTap('L')" id="tapL" style="padding:32px 16px;border-radius:16px;font-weight:900;font-size:18px;background:#14b8a6;color:#0f172a;border:4px solid #5eead4;min-height:80px;">👈 左手點擊</button>
-      <button onclick="registerTap('R')" id="tapR" style="padding:32px 16px;border-radius:16px;font-weight:900;font-size:18px;background:#10b981;color:#0f172a;border:4px solid #6ee7b7;min-height:80px;">👉 右手點擊</button>
-    </div>
-  `;
-  tapTimer=setInterval(()=>{
-    tapTimeLeft--;
-    const timerVal=$('tapTimerVal');
-    if(timerVal)timerVal.textContent=tapTimeLeft;
-    if(tapTimeLeft<=0){clearInterval(tapTimer);endTapTest();}
-  },1000);
+// 論壇收藏功能
+function toggleForumBookmark(postId) {
+  const idx = bookmarkedPostIds.indexOf(postId);
+  if (idx > -1) {
+    bookmarkedPostIds.splice(idx, 1);
+    toast('已移出收藏', 's');
+  } else {
+    bookmarkedPostIds.push(postId);
+    toast('已加入收藏！', 's');
+  }
+  localStorage.setItem('PARKINSON_BOOKMARKS', JSON.stringify(bookmarkedPostIds));
+  renderForumPostsList();
 }
 
-function registerTap(hand){
-  if(!tapTestActive)return;
-  if(hand!==lastTapHand){
-    tapCount++;lastTapHand=hand;
-    const countVal=$('tapCountVal');
-    if(countVal)countVal.textContent=tapCount;
-    const tapL=$('tapL');const tapR=$('tapR');
-    if(hand==='L'){
-      if(tapL){tapL.style.background='#1e293b';tapL.style.color='#475569';tapL.style.border='4px solid #334155';}
-      if(tapR){tapR.style.background='#10b981';tapR.style.color='#0f172a';tapR.style.border='4px solid #6ee7b7';}
-    }else{
-      if(tapR){tapR.style.background='#1e293b';tapR.style.color='#475569';tapR.style.border='4px solid #334155';}
-      if(tapL){tapL.style.background='#14b8a6';tapL.style.color='#0f172a';tapL.style.border='4px solid #5eead4';}
+// 論壇留言功能
+async function handleForumReply(postId) {
+  const input = $('freply-' + postId);
+  const content = input ? input.value.trim() : '';
+  if(!content) return;
+
+  const payload = {
+    postId: postId,
+    author: APP.user.name,
+    authorId: APP.user.memberId,
+    content: content
+  };
+
+  try {
+    const res = await api('forum.addReply', payload);
+    if(res.success) {
+      input.value = '';
+      toast('留言成功！', 's');
+      loadForumPosts(); // 重新整理
+    } else {
+      toast(res.message, 'e');
     }
-    if(navigator.vibrate)navigator.vibrate(25);
+  } catch(e) {
+    toast('留言失敗', 'e');
   }
 }
 
-function endTapTest(){
-  tapTestActive=false;
-  const finalScore=tapCount;
-  const area=$('tapTestArea');
-  area.innerHTML=`
-    <div style="padding:12px;background:#d1fae5;color:#064e3b;font-weight:900;border-radius:12px;text-align:center;font-size:14px;margin-bottom:8px;">
-      🎉 測試完成！10 秒內雙手交替點擊了 <strong>${finalScore}</strong> 次！
-    </div>
-    <button onclick="startTapTest()" class="btn btn-outline btn-sm" style="margin:0;width:100%;"><i class="fa-solid fa-rotate-right" style="margin-right:4px;"></i> 重新測試</button>
-  `;
-  window.__lastTapScore=finalScore;
-  toast(`測試完成！獲得 ${finalScore} 分靈巧指數！`,'s');
-}
-
-function updateBpm(val){
-  bpm=parseInt(val,10);
-  const bpmVal=$('bpmVal');
-  if(bpmVal)bpmVal.textContent=bpm+' BPM';
-  if(metronomeActive){toggleMetronome();toggleMetronome();}
-}
-
-async function toggleMetronome(){
-  const btn=$('metronomeBtn');
-  const b1=$('beat1');const b2=$('beat2');
-  if(metronomeActive){
-    clearInterval(metronomeInterval);metronomeActive=false;
-    if(btn){btn.style.background='#14b8a6';btn.style.color='#0f172a';btn.innerHTML='<i class="fa-solid fa-volume-high"></i> <span>啟動解凍節拍聲響</span>';}
-    if(b1){b1.style.background='#1e293b';b1.style.border='4px solid #334155';b1.style.color='#475569';b1.style.transform='';}
-    if(b2){b2.style.background='#1e293b';b2.style.border='4px solid #334155';b2.style.color='#475569';b2.style.transform='';}
-  }else{
-    metronomeActive=true;
-    if(btn){btn.style.background='#dc2626';btn.style.color='#fff';btn.innerHTML='<i class="fa-solid fa-circle-stop"></i> <span>停止節拍器</span>';}
-    const intervalMs=(60/bpm)*1000;
-    
-    const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    if(audioCtx.state==='suspended'){await audioCtx.resume();}
-    
-    metronomeInterval=setInterval(()=>{
-      metronomeBeat=(metronomeBeat===1)?2:1;
-      if(metronomeBeat===1){
-        if(b1){b1.style.background='#ef4444';b1.style.border='4px solid #fca5a5';b1.style.color='#fff';b1.style.transform='scale(1.1)';}
-        if(b2){b2.style.background='#1e293b';b2.style.border='4px solid #334155';b2.style.color='#475569';b2.style.transform='';}
-      }else{
-        if(b1){b1.style.background='#1e293b';b1.style.border='4px solid #334155';b1.style.color='#475569';b1.style.transform='';}
-        if(b2){b2.style.background='#f59e0b';b2.style.border='4px solid #fcd34d';b2.style.color='#0f172a';b2.style.transform='scale(1.1)';}
-      }
-      try{
-        const osc=audioCtx.createOscillator();
-        const gain=audioCtx.createGain();
-        osc.type='sine';
-        osc.frequency.setValueAtTime(metronomeBeat===1?800:600,audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.1,audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.1);
-        osc.connect(gain);gain.connect(audioCtx.destination);
-        osc.start();osc.stop(audioCtx.currentTime+0.1);
-      }catch(e){}
-      if(navigator.vibrate)navigator.vibrate(30);
-    },intervalMs);
-  }
-}
-
-async function startVocalTest(){
-  try{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-    const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    if(audioCtx.state==='suspended'){await audioCtx.resume();}
-    const analyser=audioCtx.createAnalyser();
-    const source=audioCtx.createMediaStreamSource(stream);
-    source.connect(analyser);analyser.fftSize=256;
-    vocalAudioCtx={audioCtx,stream};
-    vocalTesting=true;vocalTimeLeft=5;vocalScore=0;
-    const area=$('vocalTestArea');
-    area.innerHTML=`
-      <div style="width:100%;text-align:center;">
-        <span style="font-size:12px;color:#f87171;font-weight:900;">保持大聲「啊——」倒數：</span>
-        <div style="font-size:30px;font-weight:900;color:#f87171;font-family:monospace;margin:4px 0;" id="vocalTimerVal">5 秒</div>
-        <div style="width:100%;background:#1e293b;height:16px;border-radius:999px;overflow:hidden;border:1px solid #334155;margin-bottom:4px;">
-          <div id="vocalVolBar" style="background:linear-gradient(to right,#34d399,#fbbf24,#f87171);height:100%;transition:width 0.075s;width:0%;"></div>
-        </div>
-        <span style="font-size:12px;color:#94a3b8;font-weight:900;">當前音量強度：<span id="vocalVolVal">0</span> %</span>
-      </div>
-    `;
-    const dataArray=new Uint8Array(analyser.frequencyBinCount);
-    let totalVol=0;let count=0;
-    const checkVolume=()=>{
-      if(!vocalTesting)return;
-      analyser.getByteFrequencyData(dataArray);
-      let sum=0;for(let i=0;i<dataArray.length;i++)sum+=dataArray[i];
-      const average=sum/dataArray.length;
-      const volPercent=Math.min(100,Math.round((average/128)*100));
-      const volBar=$('vocalVolBar');const volVal=$('vocalVolVal');
-      if(volBar)volBar.style.width=volPercent+'%';
-      if(volVal)volVal.textContent=volPercent;
-      totalVol+=average;count++;
-      requestAnimationFrame(checkVolume);
-    };
-    requestAnimationFrame(checkVolume);
-    vocalTimer=setInterval(()=>{
-      vocalTimeLeft--;
-      const timerVal=$('vocalTimerVal');
-      if(timerVal)timerVal.textContent=vocalTimeLeft+' 秒';
-      if(vocalTimeLeft<=0){clearInterval(vocalTimer);stopVocalTest(totalVol/(count||1));}
-    },1000);
-  }catch(err){
-    toast('⚠️ 請允許麥克風權限以進行發聲測試','e');
-  }
-}
-
-function stopVocalTest(avgVol){
-  vocalTesting=false;
-  if(vocalAudioCtx){
-    vocalAudioCtx.stream.getTracks().forEach(t=>t.stop());
-    vocalAudioCtx.audioCtx.close();
-  }
-  const score=Math.round((avgVol/128)*100);
-  vocalScore=score;window.__lastVocalScore=score;
-  const area=$('vocalTestArea');
-  area.innerHTML=`
-    <div style="padding:12px;background:#fef3c7;color:#78350f;font-weight:900;border-radius:12px;text-align:center;font-size:14px;margin-bottom:8px;">
-      🎉 發聲測驗完成！獲得 <strong>${score}</strong> 分響亮指數！
-    </div>
-    <button onclick="startVocalTest()" style="padding:12px 24px;background:#fbbf24;color:#0f172a;font-weight:900;border-radius:12px;font-size:14px;display:flex;align-items:center;gap:8px;min-height:48px;margin:0 auto;">
-      <i class="fa-solid fa-microphone"></i> <span>重新測試</span>
-    </button>
-  `;
-  toast(`發聲練習完成！獲得 ${score} 分！`,'s');
-}
-
-function toggleMed(evt,label){
-  const btn=evt.currentTarget;
-  if(btn.innerText.includes('✅')){
-    btn.innerText=label;
-    btn.style.background='#f1f5f9';btn.style.color='#334155';btn.style.border='2px solid #94a3b8';
-  }else{
-    btn.innerText=`✅ 已服${label}`;
-    btn.style.background='#d1fae5';btn.style.color='#064e3b';btn.style.border='2px solid #10b981';
-  }
-}
-
-function adjustExercise(val){
-  exerciseMinutes=Math.max(0,exerciseMinutes+val);
-  const el=$('exerciseMins');
-  if(el)el.textContent=exerciseMinutes;
-}
-
-function toggleTag(evt){
-  const btn=evt.currentTarget;
-  if(btn.style.background==='rgb(243, 232, 255)'||btn.style.background==='#f3e8ff'){
-    btn.style.background='#f1f5f9';btn.style.border='2px solid #cbd5e1';btn.style.color='#334155';btn.style.fontWeight='700';
-  }else{
-    btn.style.background='#f3e8ff';btn.style.border='2px solid #7c3aed';btn.style.color='#581c87';btn.style.fontWeight='900';
-  }
-}
-
-function toggleSymptom(evt){
-  const btn=evt.currentTarget;
-  if(btn.style.border.includes('rgb(244, 63, 94)')||btn.style.border.includes('#f43f5e')){
-    btn.style.background='#f8fafc';btn.style.border='2px solid #cbd5e1';btn.style.color='#334155';btn.style.fontWeight='700';
-  }else{
-    btn.style.background='#fff1f2';btn.style.border='2px solid #f43f5e';btn.style.color='#881337';btn.style.fontWeight='900';
-  }
-}
-
-/*=======================================================
- * 🔑 登入與註冊模組
- *=======================================================*/
-function openLogin(){
-  if(APP.user){logout();return;}
-  openModal(`
-    <div class="modal-title">🔑 選擇登入方式</div>
-    <div class="notice info">建議使用 LINE 快速登入，能自動綁定帳號並接收協會的重要關懷通知。</div>
-    <button class="btn btn-line" onclick="doLineLogin()"><i class="fa-brands fa-line" style="margin-right:4px;"></i> LINE 一鍵快速登入</button>
-    <button class="btn btn-primary" onclick="openPhoneLogin()"><i class="fa-solid fa-mobile-screen" style="margin-right:4px;"></i> 使用電話號碼登入</button>
-    <button class="btn btn-outline" onclick="openRegister()"><i class="fa-solid fa-user-plus" style="margin-right:4px;"></i> 申請加入會員</button>
-  `);
-}
-
-function openPhoneLogin(){
-  openModal(`
-    <div class="modal-title">📱 電話號碼登入</div>
-    <div class="fg">
-      <label class="flabel">真實姓名<span class="req">*</span></label>
-      <input type="text" id="loginName" class="fc" placeholder="請輸入您的真實姓名">
-    </div>
-    <div class="fg">
-      <label class="flabel">聯絡電話/手機<span class="req">*</span></label>
-      <input type="tel" id="loginPhone" class="fc" placeholder="請輸入註冊時填寫的電話">
-    </div>
-    <button class="btn btn-primary" onclick="submitPhoneLogin()">確認登入</button>
-  `);
-}
-
-async function submitPhoneLogin(){
-  const name=requireInput('loginName','真實姓名');
-  const phone=requireInput('loginPhone','聯絡電話/手機');
-  if(!name||!phone)return;
+// 管理員專屬：置頂切換
+async function handleForumPin(postId) {
+  if(!confirm('確定要切換此貼文的置頂狀態嗎？')) return;
   showLoad();
-  try{
-    const res=await api('auth.loginByPhone',{name,phone});
+  try {
+    const res = await api('forum.togglePin', { postId: postId });
     hideLoad();
-    if(res.success){
-      APP.user=res.member;localStorage.setItem('parkUser',JSON.stringify(res.member));
-      updateLoginButton();closeModal();toast(`歡迎回來，${res.member.name}！`,'s');go('home');
-    }else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('登入連線失敗：'+e.message,'e');}
-}
-
-async function initLiff(){
-  try{
-    await liff.init({liffId:LIFF_ID});
-    APP.liffReady=true;
-    if(liff.isLoggedIn()){
-      const profile=await liff.getProfile();
-      APP.liffProfile=profile;
-      autoLineLogin(profile.userId,profile.displayName);
+    if(res.success) {
+      toast(res.isPinned ? '已成功置頂貼文！' : '已取消置頂狀態', 's');
+      loadForumPosts();
+    } else {
+      toast(res.message, 'e');
     }
-  }catch(err){console.log('LIFF 初始化失敗或非 LINE 瀏覽器環境',err);}
-}
-
-function doLineLogin(){
-  if(!APP.liffReady){toast('LINE 登入模組準備中，請稍後再試','w');return;}
-  if(!liff.isLoggedIn()){liff.login();}
-  else{toast('LINE 已登入，正在為您載入個人資料...','s');}
-}
-
-async function autoLineLogin(lineId,lineName){
-  showLoad();
-  try{
-    const res=await api('auth.loginByLine',{lineId});
+  } catch(e) {
     hideLoad();
-    if(res.success){
-      if(res.isFirstLogin){openLineBindingModal(lineId,lineName);}
-      else{
-        APP.user=res.member;localStorage.setItem('parkUser',JSON.stringify(res.member));
-        updateLoginButton();toast(`歡迎回來，${res.member.name}！`,'s');go('home');
-      }
-    }else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('LINE 登入失敗：'+e.message,'e');}
+    toast('操作失敗', 'e');
+  }
 }
 
-function openLineBindingModal(lineId,lineName){
-  openModal(`
-    <div class="modal-title">🤝 綁定您的 LINE 帳號</div>
-    <div class="notice info">這是您第一次使用此 LINE 登入。請輸入您的真實姓名與電話，系統將為您自動對接會籍。</div>
-    <div class="fg">
-      <label class="flabel">真實姓名<span class="req">*</span></label>
-      <input type="text" id="bindName" class="fc" placeholder="請輸入您的姓名">
-    </div>
-    <div class="fg">
-      <label class="flabel">手機號碼<span class="req">*</span></label>
-      <input type="tel" id="bindPhone" class="fc" placeholder="請輸入您的手機號碼">
-    </div>
-    <button class="btn btn-line" onclick="submitLineBinding('${jsStr(lineId)}','${jsStr(lineName)}')">確認綁定並登入</button>
-  `);
-}
-
-async function submitLineBinding(lineId,lineName){
-  const name=requireInput('bindName','真實姓名');
-  const phone=requireInput('bindPhone','手機號碼');
-  if(!name||!phone)return;
+// 管理員專屬：刪除文章
+async function handleForumDelete(postId) {
+  if(!confirm('⚠️ 警告：確定要永久刪除此篇貼文與其所有留言嗎？此操作無法還原。')) return;
   showLoad();
-  try{
-    const res=await api('auth.completeLineProfile',{lineId,lineName,name,phone});
+  try {
+    const res = await api('forum.deletePost', { postId: postId });
     hideLoad();
-    if(res.success){
-      APP.user=res.member;localStorage.setItem('parkUser',JSON.stringify(res.member));
-      updateLoginButton();closeModal();toast('LINE 帳號綁定成功！','s');go('home');
-    }else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('綁定失敗：'+e.message,'e');}
-}
-
-function openRegister(){
-  openModal(`
-    <div class="modal-title">✏️ 申請加入會員</div>
-    <div class="notice info">填寫以下基本資料，秘書處審核通過後，將為您開通專屬會籍！</div>
-    <div class="fg">
-      <label class="flabel">真實姓名<span class="req">*</span></label>
-      <input type="text" id="regName" class="fc" placeholder="請輸入您的真實姓名">
-    </div>
-    <div class="fg">
-      <label class="flabel">手機號碼<span class="req">*</span></label>
-      <input type="tel" id="regPhone" class="fc" placeholder="請輸入您的手機號碼">
-    </div>
-    <div class="fg">
-      <label class="flabel">常用暱稱</label>
-      <input type="text" id="regNickname" class="fc" placeholder="希望大家怎麼稱呼您">
-    </div>
-    <button class="btn btn-success" onclick="submitRegister()">送出入會申請</button>
-  `);
-}
-
-async function submitRegister(){
-  const name=requireInput('regName','真實姓名');
-  const phone=requireInput('regPhone','手機號碼');
-  const nickname=$('regNickname').value.trim();
-  if(!name||!phone)return;
-  showLoad();
-  try{
-    const res=await api('auth.registerByPhone',{name,phone,nickname});
-    hideLoad();
-    if(res.success){
-      closeModal();
-      openModal(`
-        <div class="modal-title">🎉 申請已送出</div>
-        <div class="notice success">您的入會申請已成功提交！秘書處將於 1-3 個工作天內完成審核，並透過電話或 LINE 通知您。</div>
-        <button class="btn btn-primary" onclick="closeModal()">我知道了</button>
-      `);
-    }else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('申請失敗：'+e.message,'e');}
-}
-
-function requireLogin(){
-  if(!APP.user){toast('請先登入系統喔！','w');openLogin();return false;}
-  return true;
-}
-
-/*=======================================================
- * 👤 會員中心與個人資料維護
- *=======================================================*/
-function renderMemberCenter(){
-  if(!requireLogin())return;
-  const u=APP.user;
-  setMain(`
-    <div class="card">
-      <div class="card-title">👤 會員中心</div>
-      <div class="list">
-        <div class="item">
-          <div class="item-title">${esc(u.name)} (${esc(u.nickname||'無暱稱')})</div>
-          <div class="item-meta">
-            會員編號：<strong>${esc(u.memberId)}</strong><br>
-            身分證字號：<strong>${esc(u.identityId||'未填寫')}</strong><br>
-            手機號碼：<strong>${esc(u.mobile||u.phone||'未填寫')}</strong><br>
-            電子郵件：<strong>${esc(u.email||'未填寫')}</strong><br>
-            通訊地址：<strong>${esc(u.address||'未填寫')}</strong><br>
-            入會日期：<strong>${fmtDate(u.joinDate)}</strong><br>
-            會籍到期：<strong>${esc(u.expiryDate)}</strong>
-          </div>
-          <div class="item-actions">
-            <button class="btn btn-primary btn-sm" onclick="go('editProfile')">✏️ 編輯個人與健康資料</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `);
-}
-
-function renderEditProfile(){
-  if(!requireLogin())return;
-  const u=APP.user;
-  setMain(`
-    <div class="card">
-      <div class="card-title">✏️ 編輯個人與臨床健康資料</div>
-      <div class="notice info">填寫完整的臨床健康資訊，能讓系統在您看診時，自動產生更精準的病情摘要報告。</div>
-      <h4 style="font-weight:900;color:#0f172a;border-left:4px solid #0f766e;padding-left:8px;margin-bottom:12px;">基本資料</h4>
-      <div class="fg"><label class="flabel">暱稱</label><input type="text" id="editNickname" class="fc" value="${esc(u.nickname||'')}" placeholder="希望大家怎麼稱呼您"></div>
-      <div class="fg"><label class="flabel">身分證字號/統一編號</label><input type="text" id="editIdentityId" class="fc" value="${esc(u.identityId||'')}" placeholder="請輸入身分證字號(申報扣除額用)"></div>
-      <div class="fg"><label class="flabel">聯絡電話</label><input type="tel" id="editPhone" class="fc" value="${esc(u.phone||'')}" placeholder="市話或備用電話"></div>
-      <div class="fg"><label class="flabel">通訊地址</label><input type="text" id="editAddress" class="fc" value="${esc(u.address||'')}" placeholder="請輸入您的通訊地址"></div>
-      <h4 style="font-weight:900;color:#0f172a;border-left:4px solid #0f766e;padding-left:8px;margin-bottom:12px;margin-top:24px;">臨床與用藥資訊</h4>
-      <div class="fg"><label class="flabel">確診年份 (西元)</label><input type="number" id="editDiagYear" class="fc" value="${esc(u.diagnosisYear||'')}" placeholder="例如：2018"></div>
-      <div class="fg"><label class="flabel">主治醫師</label><input type="text" id="editDoctor" class="fc" value="${esc(u.doctor||'')}" placeholder="例如：林教授"></div>
-      <div class="fg"><label class="flabel">就診醫院</label><input type="text" id="editHospital" class="fc" value="${esc(u.hospital||'')}" placeholder="例如：台大醫院"></div>
-      <div class="fg"><label class="flabel">目前服用藥物</label><textarea id="editMedication" class="fc" placeholder="例如：美多芭 1天3次、泰舒達 1天1次">${esc(u.medication||'')}</textarea></div>
-      <div class="fg"><label class="flabel">手術歷史 (如 DBS 深腦刺激術)</label><input type="text" id="editSurgery" class="fc" value="${esc(u.surgery||'')}" placeholder="若無請填無"></div>
-      <div class="fg">
-        <label class="flabel">健康日誌同意書</label>
-        <select id="editConsent" class="fc">
-          <option value="同意"${u.healthConsent==='同意'?' selected':''}>同意 (允許系統統計您的去識別化數據作學術與關懷參考)</option>
-          <option value="不同意"${u.healthConsent!=='同意'?' selected':''}>不同意</option>
-        </select>
-      </div>
-      <div class="row">
-        <button class="btn btn-success" onclick="submitProfileUpdate()">💾 儲存並同步雲端</button>
-        <button class="btn btn-ghost" onclick="goBack()">取消</button>
-      </div>
-    </div>
-  `);
-}
-
-async function submitProfileUpdate(){
-  const nickname=$('editNickname').value.trim();
-  const identityId=$('editIdentityId').value.trim().toUpperCase();
-  const phone=$('editPhone').value.trim();
-  const address=$('editAddress').value.trim();
-  const diagnosisYear=$('editDiagYear').value.trim();
-  const doctor=$('editDoctor').value.trim();
-  const hospital=$('editHospital').value.trim();
-  const medication=$('editMedication').value.trim();
-  const surgery=$('editSurgery').value.trim();
-  const healthConsent=$('editConsent').value;
-  const payload={memberId:APP.user.memberId,nickname,identityId,phone,address,diagnosisYear,doctor,hospital,medication,surgery,healthConsent};
-  showLoad();
-  try{
-    const res=await api('member.updateProfile',payload);
-    hideLoad();
-    if(res.success){APP.user={...APP.user,...payload};localStorage.setItem('parkUser',JSON.stringify(APP.user));toast('個人健康資料已同步更新至雲端！','s');go('home');}
-    else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('同步失敗：'+e.message,'e');}
-}
-
-/*=======================================================
- * 💳 會費繳納與愛心捐款申報 (病友端)
- *=======================================================*/
-function renderMyPayments(){
-  if(!requireLogin())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">💳 常年會費繳納紀錄</div>
-      <button class="btn btn-primary" onclick="openPaymentApply()"><i class="fa-solid fa-file-invoice-dollar" style="margin-right:4px;"></i> 申報繳納常年會費</button>
-      <div class="divider"></div>
-      <div id="myPaymentList"><div class="empty">常年會費紀錄載入中...</div></div>
-    </div>
-  `);
-  loadMyPayments();
-}
-
-async function loadMyPayments(){
-  try{
-    const res=await api('payment.list',{memberId:APP.user.memberId});
-    const area=$('myPaymentList');if(!area)return;
-    if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前尚無會費繳納紀錄</div>`;return;}
-    area.innerHTML=`<div class="list">`+res.items.map(p=>`
-      <div class="item">
-        <div class="item-h">
-          <div class="item-title">${esc(p.year)} 年度常年會費</div>
-          <div class="badge ${p.status==='已確認'?'bs':p.status==='已退回'?'bd':'bw'}">${esc(p.status)}</div>
-        </div>
-        <div class="item-meta">
-          繳費金額：<strong class="money">${fmtMoney(p.amount)}</strong><br>
-          付款方式：<strong>${esc(p.method)}</strong><br>
-          匯款日期：<strong>${fmtDate(p.date)}</strong><br>
-          收據編號：<strong>${esc(p.receiptNo||'尚未開立')}</strong>
-          ${p.rejectReason?`<br><span style="color:#be123c;font-weight:900;">退回原因：${esc(p.rejectReason)}</span>`:''}
-        </div>
-      </div>
-    `).join('')+`</div>`;
-  }catch(e){$('myPaymentList').innerHTML=`<div class="empty" style="color:#dc2626;">載入失敗，請重試</div>`;}
-}
-
-function openPaymentApply(){
-  openModal(`
-    <div class="modal-title">申報常年會費繳納</div>
-    <div class="notice info">請先透過ATM或臨櫃匯款至本會專戶後，在此填寫匯款資訊並上傳收據憑證。<br>
-    <strong>第一銀行 (007) 三重埔分行<br>帳號：233-10-098741<br>戶名：${ORG_NAME}</strong></div>
-    <div class="fg"><label class="flabel">繳納年度<span class="req">*</span></label><select id="payYear" class="fc">${yearOptions()}</select></div>
-    <div class="fg"><label class="flabel">繳費金額<span class="req">*</span></label><input type="number" id="payAmount" class="fc" value="1000"></div>
-    <div class="fg"><label class="flabel">付款方式<span class="req">*</span></label><select id="payMethod" class="fc"><option value="銀行轉帳">銀行轉帳/ATM</option><option value="郵政劃撥">郵政劃撥</option><option value="現場繳現">現場現金繳納</option></select></div>
-    <div class="fg"><label class="flabel">匯款日期<span class="req">*</span></label><input type="date" id="payDate" class="fc" value="${today()}"></div>
-    <div class="fg"><label class="flabel">匯款帳號後五碼 / 備註</label><input type="text" id="payNote" class="fc" placeholder="請輸入匯款帳號後五碼以利對帳"></div>
-    <div class="fg"><label class="flabel">上傳匯款憑證/收據照片</label><input type="file" id="payFile" class="fc" accept="image/*"></div>
-    <button class="btn btn-success" onclick="submitPaymentApply()">送出審核申報</button>
-  `);
-}
-
-async function submitPaymentApply(){
-  const year=$('payYear').value;
-  const amount=requireAmount('payAmount','繳費金額');
-  const method=$('payMethod').value;
-  const date=requireInput('payDate','匯款日期');
-  const note=$('payNote').value.trim();
-  if(!amount||!date)return;
-  showLoad();
-  let fileObj=null;try{fileObj=await getFileData('payFile');}catch(e){}
-  const payload={memberId:APP.user.memberId,name:APP.user.name,phone:APP.user.mobile||APP.user.phone||'',year,amount,method,date,note,file:fileObj};
-  try{
-    const res=await api('payment.apply',payload);
-    hideLoad();
-    if(res.success){closeModal();toast('常年會費申報成功！秘書處核對後將自動開立電子收據。','s');loadMyPayments();}
-    else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('申報失敗：'+e.message,'e');}
-}
-
-function renderMyDonations(){
-  if(!requireLogin())return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">💖 愛心捐款紀錄</div>
-      <button class="btn btn-primary" onclick="openDonationApply()"><i class="fa-solid fa-hand-holding-heart" style="margin-right:4px;"></i> 申報愛心捐款</button>
-      <div class="divider"></div>
-      <div id="myDonationList"><div class="empty">捐款紀錄載入中...</div></div>
-    </div>
-  `);
-  loadMyDonations();
-}
-
-async function loadMyDonations(){
-  try{
-    const res=await api('donation.myList',{memberId:APP.user.memberId});
-    const area=$('myDonationList');if(!area)return;
-    if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前尚無捐款紀錄，感謝您的善心</div>`;return;}
-    area.innerHTML=`<div class="list">`+res.items.map(d=>`
-      <div class="item">
-        <div class="item-h">
-          <div class="item-title">愛心捐款 (${esc(d.purpose)})</div>
-          <div class="badge ${d.status==='已確認'?'bs':d.status==='已退回'?'bd':'bw'}">${esc(d.status)}</div>
-        </div>
-        <div class="item-meta">
-          捐款金額：<strong class="money">${fmtMoney(d.amount)}</strong><br>
-          付款方式：<strong>${esc(d.method)}</strong><br>
-          捐款日期：<strong>${fmtDate(d.date)}</strong><br>
-          收據編號：<strong>${esc(d.receiptNo||'尚未開立')}</strong>
-          ${d.rejectReason?`<br><span style="color:#be123c;font-weight:900;">退回原因：${esc(d.rejectReason)}</span>`:''}
-        </div>
-      </div>
-    `).join('')+`</div>`;
-  }catch(e){$('myDonationList').innerHTML=`<div class="empty" style="color:#dc2626;">載入失敗，請重試</div>`;}
-}
-
-function openDonationApply(){
-  openModal(`
-    <div class="modal-title">申報愛心捐款</div>
-    <div class="notice info">感謝您的善心支持！請匯款至本會專戶後在此填寫申報，本捐款收據可於年度所得稅中列舉扣除。<br>
-    <strong>第一銀行 (007) 三重埔分行<br>帳號：233-10-098741<br>戶名：${ORG_NAME}</strong></div>
-    <div class="fg"><label class="flabel">捐款金額<span class="req">*</span></label><input type="number" id="donAmount" class="fc" placeholder="請輸入您的捐款金額" value="1000"></div>
-    <div class="fg"><label class="flabel">身分證字號/統一編號 (申報抵稅用)<span class="req">*</span></label><input type="text" id="donIdentityId" class="fc" placeholder="請輸入身分證字號" value="${esc(APP.user?.identityId||'')}"></div>
-    <div class="fg"><label class="flabel">指定用途<span class="req">*</span></label><select id="donPurpose" class="fc"><option value="一般會務">一般會務 (支持協會日常運作)</option><option value="病友關懷基金">病友關懷基金 (專款用於病友慰問與急難救助)</option><option value="復健課程基金">復健課程基金 (專款用於開辦太極、律動班)</option></select></div>
-    <div class="fg"><label class="flabel">付款方式<span class="req">*</span></label><select id="donMethod" class="fc"><option value="銀行轉帳">銀行轉帳/ATM</option><option value="郵政劃撥">郵政劃撥</option><option value="現場繳現">現場現金繳納</option></select></div>
-    <div class="fg"><label class="flabel">匯款日期<span class="req">*</span></label><input type="date" id="donDate" class="fc" value="${today()}"></div>
-    <div class="fg"><label class="flabel">匯款帳號後五碼 / 備註</label><input type="text" id="donNote" class="fc" placeholder="請輸入匯款帳號後五碼以利對帳"></div>
-    <div class="fg"><label class="flabel">上傳匯款憑證/收據照片</label><input type="file" id="donFile" class="fc" accept="image/*"></div>
-    <button class="btn btn-success" onclick="submitDonationApply()">送出審核申報</button>
-  `);
-}
-
-async function submitDonationApply(){
-  const amount=requireAmount('donAmount','捐款金額');
-  const identityId=requireInput('donIdentityId','身分證字號/統一編號').toUpperCase();
-  const purpose=$('donPurpose').value;
-  const method=$('donMethod').value;
-  const date=requireInput('donDate','匯款日期');
-  const note=$('donNote').value.trim();
-  if(!amount||!identityId||!date)return;
-  showLoad();
-  let fileObj=null;try{fileObj=await getFileData('donFile');}catch(e){}
-  const payload={memberId:APP.user.memberId,name:APP.user.name,phone:APP.user.mobile||APP.user.phone||'',amount,identityId,purpose,method,date,note,file:fileObj};
-  try{
-    const res=await api('donation.apply',payload);
-    hideLoad();
-    if(res.success){
-      // 自動更新前端快取中的身分證字號
-      APP.user.identityId = identityId;
-      localStorage.setItem('parkUser',JSON.stringify(APP.user));
-      closeModal();
-      toast('捐款申報成功！感謝您的愛心與支持！','s');
-      loadMyDonations();
+    if(res.success) {
+      toast('貼文已成功刪除', 's');
+      loadForumPosts();
+    } else {
+      toast(res.message, 'e');
     }
-    else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('申報失敗：'+e.message,'e');}
-}
-
-/*=======================================================
- * ⚙️ 管理員後台
- *=======================================================*/
-function renderAdminHome(){
-  if(!requireLogin()||!isAdminUser(APP.user)){toast('您無權限存取此管理頁面喔！','e');go('home');return;}
-  setMain(`
-    <div class="hero" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));">
-      <h1>⚙️ 秘書處行政與財務大控台</h1>
-      <div class="tagline">全方位會務管理 ｜ 嚴格遵循內政部社會團體財務處理辦法</div>
-    </div>
-    <div class="card" style="padding:16px;">
-      <div class="card-title">📊 當前待辦與會務概況</div>
-      <div id="adminDashboardStats"><div class="empty">數據載入中...</div></div>
-    </div>
-    <div class="card">
-      <div class="card-title">👥 會籍與關懷管理</div>
-      <div class="module-grid">
-        <button class="module-btn blue" onclick="go('memberManage')"><span class="m-icon">👥</span><div class="m-label-group"><span>會員名冊維護</span><span class="m-sub">管理會員資料、健康資訊與會籍</span></div></button>
-        <button class="module-btn orange" onclick="go('pendingPayments')"><span class="m-icon">💳</span><div class="m-label-group"><span>常年會費審核</span><span class="m-sub">審核病友申報會費並開立收據</span></div></button>
-        <button class="module-btn green" onclick="go('pendingDonations')"><span class="m-icon">💖</span><div class="m-label-group"><span>愛心捐款審核</span><span class="m-sub">審核社會捐款並開立抵稅收據</span></div></button>
-        <button class="module-btn purple" onclick="go('announceManage')"><span class="m-icon">📢</span><div class="m-label-group"><span>公告消息發布</span><span class="m-sub">發布最新公告、活動與衛教消息</span></div></button>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">💰 財務與會計傳票核銷</div>
-      <div class="module-grid">
-        <button class="module-btn green" onclick="go('financeIncome')"><span class="m-icon">📥</span><div class="m-label-group"><span>一般收入登錄</span><span class="m-sub">登錄政府補助、利息等其他收入</span></div></button>
-        <button class="module-btn red" onclick="go('financeExpense')"><span class="m-icon">📤</span><div class="m-label-group"><span>支出核銷申請</span><span class="m-sub">登錄憑證、申請傳票核銷</span></div></button>
-        <button class="module-btn blue" onclick="go('expenseList')"><span class="m-icon">🔍</span><div class="m-label-group"><span>支出核銷審核</span><span class="m-sub">審核秘書處支出並產生傳票</span></div></button>
-        <button class="module-btn orange" onclick="go('receiptList')"><span class="m-icon">🧾</span><div class="m-label-group"><span>收據明細中心</span><span class="m-sub">查詢、列印與安全作廢收據</span></div></button>
-        <button class="module-btn purple" onclick="go('voucherList')"><span class="m-icon">📖</span><div class="m-label-group"><span>會計傳票明細</span><span class="m-sub">查詢已開立之法定會計傳票</span></div></button>
-        <button class="module-btn blue" onclick="go('reportCenter')"><span class="m-icon">📊</span><div class="m-label-group"><span>法定九大報表</span><span class="m-sub">收支決算表、日記帳、分類帳等</span></div></button>
-      </div>
-    </div>
-  `);
-  loadAdminDashboard();
-}
-
-async function loadAdminDashboard(){
-  try{
-    const res=await api('dashboard.admin');
-    const area=$('adminDashboardStats');if(!area)return;
-    if(!res.success){area.innerHTML=`<div class="empty" style="color:#dc2626;">數據載入失敗</div>`;return;}
-    const d=res.dashboard;
-    area.innerHTML=`
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
-        <div style="background:#eff6ff;padding:12px;border-radius:12px;border:1px solid #bfdbfe;text-align:center;">
-          <div style="font-size:12px;color:#1d4ed8;font-weight:900;">總會員數</div>
-          <div style="font-size:24px;font-weight:900;color:#1e3a8a;">${d.members.total} 人</div>
-        </div>
-        <div style="background:#f0fdf4;padding:12px;border-radius:12px;border:1px solid #bbf7d0;text-align:center;">
-          <div style="font-size:12px;color:#15803d;font-weight:900;">有效會籍</div>
-          <div style="font-size:24px;font-weight:900;color:#14532d;">${d.members.active} 人</div>
-        </div>
-        <div style="background:#fffbeb;padding:12px;border-radius:12px;border:1px solid #fef08a;text-align:center;cursor:pointer;" onclick="go('pendingPayments')">
-          <div style="font-size:12px;color:#b45309;font-weight:900;">待審會費</div>
-          <div style="font-size:24px;font-weight:900;color:#78350f;">${d.pending.fees} 筆</div>
-        </div>
-        <div style="background:#fff1f2;padding:12px;border-radius:12px;border:1px solid #fecdd3;text-align:center;cursor:pointer;" onclick="go('pendingDonations')">
-          <div style="font-size:12px;color:#be123c;font-weight:900;">待審捐款</div>
-          <div style="font-size:24px;font-weight:900;color:#881337;">${d.pending.donations} 筆</div>
-        </div>
-      </div>
-    `;
-  }catch(e){const a=$('adminDashboardStats');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">連線失敗</div>`;}
-}
-
-/*=======================================================
- * 👥 會員名冊管理
- *=======================================================*/
-function renderMemberManage(){
-  if(!requireLogin()||!isAdminUser(APP.user))return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">👥 會員名冊管理</div>
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-        <button class="btn btn-primary btn-sm" onclick="openAddMember()"><i class="fa-solid fa-user-plus" style="margin-right:4px;"></i> 手動新增會員</button>
-        <input type="text" id="memberSearch" class="fc" style="min-height:54px;flex:1;" placeholder="搜尋姓名、電話、編號..." oninput="filterMembers()">
-      </div>
-      <div id="adminMemberList"><div class="empty">會員名冊載入中...</div></div>
-    </div>
-  `);
-  loadAdminMembers();
-}
-
-let __allMembers=[];
-async function loadAdminMembers(){
-  try{
-    const res=await api('member.listAll');
-    const area=$('adminMemberList');if(!area)return;
-    if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前名冊中無任何會員</div>`;return;}
-    __allMembers=res.items;renderMemberListHtml(__allMembers);
-  }catch(e){const a=$('adminMemberList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入名冊失敗</div>`;}
-}
-
-function renderMemberListHtml(list){
-  const area=$('adminMemberList');if(!area)return;
-  area.innerHTML=`<div class="list">`+list.map(m=>`
-    <div class="item">
-      <div class="item-h">
-        <div class="item-title">${esc(m.name)} (${esc(m.nickname||'無暱稱')})</div>
-        <span class="badge ${m.isActive?'bs':'bd'}">${m.isActive?'有效會籍':'尚未啟用/過期'}</span>
-      </div>
-      <div class="item-meta">
-        會員編號：<strong>${esc(m.memberId)}</strong> ｜ 類型：<strong>${esc(m.type)}</strong><br>
-        身分證字號：<strong>${esc(m.identityId||'未填寫')}</strong><br>
-        手機號碼：<strong>${esc(m.mobile||m.phone||'未填寫')}</strong><br>
-        會籍到期：<strong>${esc(m.expiryDate)}</strong> ｜ 狀態：<strong>${esc(m.status)}</strong><br>
-        累計繳費：<strong class="money">${fmtMoney(m.totalFee)}</strong> ｜ 累計捐款：<strong class="money">${fmtMoney(m.totalDonation)}</strong>
-      </div>
-      <div class="item-actions">
-        <button class="btn btn-outline btn-sm" onclick="go('memberDetail',{memberId:'${jsStr(m.memberId)}'})">🔍 詳細與健康資料</button>
-        <button class="btn btn-ghost btn-sm" onclick="openAdminEditMember('${jsStr(m.memberId)}')">✏️ 快速編輯</button>
-      </div>
-    </div>
-  `).join('')+`</div>`;
-}
-
-function filterMembers(){
-  const q=$('memberSearch').value.toLowerCase().trim();
-  if(!q){renderMemberListHtml(__allMembers);return;}
-  const filtered=__allMembers.filter(m=>
-    m.name.toLowerCase().includes(q)||
-    (m.nickname&&m.nickname.toLowerCase().includes(q))||
-    m.memberId.toLowerCase().includes(q)||
-    (m.mobile&&String(m.mobile).includes(q))||
-    (m.phone&&String(m.phone).includes(q))
-  );
-  renderMemberListHtml(filtered);
-}
-
-function openAddMember(){
-  openModal(`
-    <div class="modal-title">手動新增會員</div>
-    <div class="fg"><label class="flabel">姓名<span class="req">*</span></label><input type="text" id="addMemName" class="fc" placeholder="請輸入姓名"></div>
-    <div class="fg"><label class="flabel">身分證字號/統一編號</label><input type="text" id="addMemIdentityId" class="fc" placeholder="請輸入身分證字號"></div>
-    <div class="fg"><label class="flabel">手機號碼<span class="req">*</span></label><input type="tel" id="addMemMobile" class="fc" placeholder="請輸入手機號碼"></div>
-    <div class="fg"><label class="flabel">會員類型<span class="req">*</span></label><select id="addMemType" class="fc"><option value="一般會員">一般會員</option><option value="永久會員">永久會員</option><option value="贊助會員">贊助會員</option><option value="關懷對象">非會員/關懷對象</option></select></div>
-    <div class="fg"><label class="flabel">會籍有效期限</label><input type="date" id="addMemExpiry" class="fc" value="${today().substring(0,4)}-12-31"></div>
-    <button class="btn btn-success" onclick="submitAddMember()">確認新增</button>
-  `);
-}
-
-async function submitAddMember(){
-  const name=requireInput('addMemName','姓名');
-  const identityId=$('addMemIdentityId').value.trim().toUpperCase();
-  const mobile=requireInput('addMemMobile','手機號碼');
-  const type=$('addMemType').value;const expiryDate=$('addMemExpiry').value;
-  if(!name||!mobile)return;
-  showLoad();
-  try{
-    const res=await api('member.add',{name,identityId,mobile,type,expiryDate,status:'有效會員'});
+  } catch(e) {
     hideLoad();
-    if(res.success){closeModal();toast('會員新增成功！','s');loadAdminMembers();}
-    else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('新增失敗：'+e.message,'e');}
+    toast('操作失敗', 'e');
+  }
 }
 
-function openAdminEditMember(memberId){
-  const m=__allMembers.find(x=>x.memberId===memberId);if(!m)return;
-  openModal(`
-    <div class="modal-title">✏️ 快速編輯會員</div>
-    <div class="fg"><label class="flabel">姓名<span class="req">*</span></label><input type="text" id="editMemName" class="fc" value="${esc(m.name)}"></div>
-    <div class="fg"><label class="flabel">身分證字號/統一編號</label><input type="text" id="editMemIdentityId" class="fc" value="${esc(m.identityId||'')}"></div>
-    <div class="fg"><label class="flabel">手機號碼<span class="req">*</span></label><input type="tel" id="editMemMobile" class="fc" value="${esc(m.mobile||m.phone||'')}"></div>
-    <div class="fg"><label class="flabel">會員類型<span class="req">*</span></label><select id="editMemType" class="fc">
-      <option value="一般會員"${m.type==='一般會員'?' selected':''}>一般會員</option>
-      <option value="永久會員"${m.type==='永久會員'?' selected':''}>永久會員</option>
-      <option value="贊助會員"${m.type==='贊助會員'?' selected':''}>贊助會員</option>
-      <option value="關懷對象"${m.type==='關懷對象'?' selected':''}>非會員/關懷對象</option>
-    </select></div>
-    <div class="fg"><label class="flabel">會籍狀態<span class="req">*</span></label><select id="editMemStatus" class="fc">
-      <option value="有效會員"${m.status==='有效會員'?' selected':''}>有效會員</option>
-      <option value="待審核"${m.status==='待審核'?' selected':''}>待審核</option>
-      <option value="已停用"${m.status==='已停用'?' selected':''}>已停用</option>
-    </select></div>
-    <div class="fg"><label class="flabel">會籍有效期限</label><input type="date" id="editMemExpiry" class="fc" value="${fmtDate(m.expiryDate)}"></div>
-    <button class="btn btn-success" onclick="submitAdminEditMember('${jsStr(memberId)}')">儲存更新</button>
-  `);
+// 燈箱放大功能
+function openLightbox(src) {
+  $('lightboxImage').src = src;
+  $('lightboxModal').classList.remove('hidden');
 }
-
-async function submitAdminEditMember(memberId){
-  const name=requireInput('editMemName','姓名');
-  const identityId=$('editMemIdentityId').value.trim().toUpperCase();
-  const mobile=requireInput('editMemMobile','手機號碼');
-  const type=$('editMemType').value;const status=$('editMemStatus').value;const expiryDate=$('editMemExpiry').value;
-  if(!name||!mobile)return;
-  showLoad();
-  try{
-    const res=await api('member.adminUpdate',{memberId,name,identityId,mobile,type,status,expiryDate});
-    hideLoad();
-    if(res.success){closeModal();toast('會員資料更新成功！','s');loadAdminMembers();}
-    else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('更新失敗：'+e.message,'e');}
-}
-
-async function renderMemberDetail(params){
-  if(!requireLogin()||!isAdminUser(APP.user))return;
-  const memberId=params.memberId;showLoad();
-  try{
-    const res=await api('member.getDetail',{memberId});hideLoad();
-    if(!res.success){toast(res.message,'e');goBack();return;}
-    const m=res.member;
-    setMain(`
-      <div class="card">
-        <div class="card-title">🔍 會員詳細資料 [${esc(m.memberId)}]</div>
-        <div class="item-meta" style="font-size:var(--fs-base);line-height:1.8;">
-          姓名：<strong>${esc(m.name)} (${esc(m.nickname||'無暱稱')})</strong><br>
-          類型：<strong>${esc(m.type)}</strong> ｜ 狀態：<strong>${esc(m.status)}</strong><br>
-          身分證字號/統編：<strong>${esc(m.identityId||'未填寫')}</strong><br>
-          手機號碼：<strong>${esc(m.mobile||m.phone||'未填寫')}</strong><br>
-          電子郵件：<strong>${esc(m.email||'未填寫')}</strong><br>
-          通訊地址：<strong>${esc(m.address||'未填寫')}</strong><br>
-          會籍到期日：<strong>${esc(m.expiryDate)}</strong><br>
-          累計繳會費：<strong class="money">${fmtMoney(m.totalFee)}</strong><br>
-          累計捐款額：<strong class="money">${fmtMoney(m.totalDonation)}</strong>
-        </div>
-      </div>
-      <div class="card" style="border-color:#d8b4fe;background:#faf5ff;">
-        <div class="card-title" style="border-left-color:var(--purple);color:var(--purple);">🩺 臨床健康與用藥資訊</div>
-        <div class="item-meta" style="font-size:var(--fs-base);line-height:1.8;">
-          確診年份：<strong>西元 ${esc(m.diagnosisYear||'未填寫')} 年</strong><br>
-          就診醫院：<strong>${esc(m.hospital||'未填寫')}</strong> ｜ 主治醫師：<strong>${esc(m.doctor||'未填寫')}</strong><br>
-          目前服用藥物：<strong style="color:#6b21a8;">${esc(m.medication||'未填寫')}</strong><br>
-          手術歷史：<strong>${esc(m.surgery||'無')}</strong><br>
-          健康日誌同意書：<strong>${esc(m.healthConsent||'不同意')}</strong>
-        </div>
-        <div class="divider"></div>
-        <button class="btn btn-outline btn-sm" onclick="previewMemberDoctorReport('${jsStr(m.memberId)}')" style="margin:0;"><i class="fa-solid fa-file-medical" style="margin-right:4px;"></i> 產生 14 天看診摘要報告</button>
-      </div>
-      <button class="btn btn-ghost" onclick="goBack()">返回會員名冊</button>
-    `);
-  }catch(e){hideLoad();toast('載入詳細資料失敗：'+e.message,'e');}
-}
-
-async function previewMemberDoctorReport(memberId){
-  showLoad();
-  try{
-    const res=await api('health.getDoctorReport',{memberId});hideLoad();
-    if(res.success){
-      const printArea=$('printArea');
-      printArea.innerHTML=`
-        <div style="padding:15px;text-align:center;background:#e2e8f0;border-bottom:2px solid #cbd5e1;display:flex;justify-content:center;gap:10px;margin-bottom:20px;">
-          <button class="btn btn-primary btn-sm" onclick="window.print()" style="margin:0;">🖨️ 確定列印 / 另存 PDF</button>
-          <button class="btn btn-ghost btn-sm" onclick="closePrint()" style="margin:0;">關閉預覽</button>
-        </div>
-        <div style="padding:20px;background:#fff;">
-          <h2 style="text-align:center;font-weight:900;margin-bottom:20px;">台灣帕金森病友權益促進會 - 病友門診病情摘要</h2>
-          ${res.html}
-        </div>
-      `;
-      printArea.classList.remove('hide');document.body.style.overflow='hidden';
-    }else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('載入病情摘要失敗：'+e.message,'e');}
+function closeLightbox() {
+  $('lightboxModal').classList.add('hidden');
 }
 
 /*=======================================================
- * 💳 財務與審核模組 (會費、捐款、一般收支)
- *=======================================================*/
-function renderPendingPayments(){
-  if(!requireLogin()||!isAdminUser(APP.user))return;
-  setMain(`<div class="card"><div class="card-title">💳 待審核常年會費申報</div><div id="adminPendingPaymentList"><div class="empty">常年會費申報載入中...</div></div></div>`);
-  loadPendingPayments();
-}
-async function loadPendingPayments(){
-  try{
-    const res=await api('payment.pendingList');const area=$('adminPendingPaymentList');if(!area)return;
-    if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前沒有待審核的會費申報</div>`;return;}
-    area.innerHTML=`<div class="list">`+res.items.map(p=>`
-      <div class="item">
-        <div class="item-title">${esc(p.name)} - 申報 ${esc(p.year)} 年度常年會費</div>
-        <div class="item-meta">
-          會員編號：<strong>${esc(p.memberId)}</strong> ｜ 聯絡電話：<strong>${esc(p.phone||'未填寫')}</strong><br>
-          申報金額：<strong class="money">${fmtMoney(p.amount)}</strong> ｜ 付款方式：<strong>${esc(p.method)}</strong><br>
-          匯款日期：<strong>${fmtDate(p.date)}</strong> ｜ 申報時間：<strong>${fmtDate(p.createdAt)}</strong><br>
-          備註/後五碼：<strong>${esc(p.note||'無')}</strong>
-          ${p.fileUrl?`<br><a href="${p.fileUrl}" target="_blank" style="color:#0f766e;font-weight:900;">🔍 檢視匯款憑證照片</a>`:'<br><span style="color:#94a3b8;">無上傳憑證</span>'}
-        </div>
-        <div class="item-actions">
-          <button class="btn btn-success btn-sm" onclick="confirmPaymentAdmin('${jsStr(p.id)}')">✅ 同意並開立電子收據</button>
-          <button class="btn btn-danger btn-sm" onclick="openRejectPayment('${jsStr(p.id)}')">❌ 退回申報</button>
-        </div>
-      </div>
-    `).join('')+`</div>`;
-  }catch(e){const a=$('adminPendingPaymentList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入待審會費失敗</div>`;}
-}
-async function confirmPaymentAdmin(id){
-  if(!confirm('確定已核對此筆匯款，並同意開立正式電子收據？'))return;
-  showLoad();
-  try{const res=await api('payment.confirm',{id});hideLoad();if(res.success){toast(`審核通過！已自動產生收據：${res.receiptNo}`,'s');loadPendingPayments();}else{toast(res.message,'e');}}
-  catch(e){hideLoad();toast('審核連線失敗：'+e.message,'e');}
-}
-function openRejectPayment(id){
-  openModal(`<div class="modal-title">❌ 退回會費申報</div><div class="fg"><label class="flabel">退回原因/說明<span class="req">*</span></label><input type="text" id="rejectPayReason" class="fc" placeholder="例如：後五碼不符，請重新申報"></div><button class="btn btn-danger" onclick="submitRejectPayment('${jsStr(id)}')">確認退回</button>`);
-}
-async function submitRejectPayment(id){
-  const reason=requireInput('rejectPayReason','退回原因/說明');if(!reason)return;
-  showLoad();
-  try{const res=await api('payment.reject',{id,reason});hideLoad();if(res.success){closeModal();toast('已成功退回該筆申報！','s');loadPendingPayments();}else{toast(res.message,'e');}}
-  catch(e){hideLoad();toast('操作失敗：'+e.message,'e');}
-}
-
-function renderPendingDonations(){
-  if(!requireLogin()||!isAdminUser(APP.user))return;
-  setMain(`<div class="card"><div class="card-title">💖 待審核愛心捐款申報</div><div id="adminPendingDonationList"><div class="empty">愛心捐款申報載入中...</div></div></div>`);
-  loadPendingDonations();
-}
-async function loadPendingDonations(){
-  try{
-    const res=await api('donation.pendingList');const area=$('adminPendingDonationList');if(!area)return;
-    if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前沒有待審核的愛心捐款</div>`;return;}
-    area.innerHTML=`<div class="list">`+res.items.map(d=>`
-      <div class="item">
-        <div class="item-title">${esc(d.name)} - 捐款 ${esc(d.purpose)}</div>
-        <div class="item-meta">
-          會員編號：<strong>${esc(d.memberId)}</strong> ｜ 身分證字號/統編：<strong>${esc(d.identityId||'未提供')}</strong><br>
-          捐款金額：<strong class="money">${fmtMoney(d.amount)}</strong> ｜ 付款方式：<strong>${esc(d.method)}</strong><br>
-          捐款日期：<strong>${fmtDate(d.date)}</strong> ｜ 申報時間：<strong>${fmtDate(d.createdAt)}</strong><br>
-          備註/後五碼：<strong>${esc(d.note||'無')}</strong>
-          ${d.fileUrl?`<br><a href="${d.fileUrl}" target="_blank" style="color:#0f766e;font-weight:900;">🔍 檢視匯款憑證照片</a>`:'<br><span style="color:#94a3b8;">無上傳憑證</span>'}
-        </div>
-        <div class="item-actions">
-          <button class="btn btn-success btn-sm" onclick="confirmDonationAdmin('${jsStr(d.id)}')">✅ 同意並開立正式收據</button>
-          <button class="btn btn-danger btn-sm" onclick="openRejectDonation('${jsStr(d.id)}')">❌ 退回申報</button>
-        </div>
-      </div>
-    `).join('')+`</div>`;
-  }catch(e){const a=$('adminPendingDonationList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入待審捐款失敗</div>`;}
-}
-async function confirmDonationAdmin(id){
-  if(!confirm('確定已核對此筆愛心捐款，並同意開立正式電子收據？\n系統將會自動將身分證字號同步更新至該病友的個人資料中。'))return;
-  showLoad();
-  try{const res=await api('donation.confirm',{id});hideLoad();if(res.success){toast(`審核通過！已自動產生收據：${res.receiptNo}，身分證字號已同步歸戶！`,'s');loadPendingDonations();}else{toast(res.message,'e');}}
-  catch(e){hideLoad();toast('審核連線失敗：'+e.message,'e');}
-}
-function openRejectDonation(id){
-  openModal(`<div class="modal-title">❌ 退回愛心捐款申報</div><div class="fg"><label class="flabel">退回原因/說明<span class="req">*</span></label><input type="text" id="rejectDonReason" class="fc" placeholder="例如：金額不符，請確認後重新申報"></div><button class="btn btn-danger" onclick="submitRejectDonation('${jsStr(id)}')">確認退回</button>`);
-}
-async function submitRejectDonation(id){
-  const reason=requireInput('rejectDonReason','退回原因/說明');if(!reason)return;
-  showLoad();
-  try{const res=await api('donation.reject',{id,reason});hideLoad();if(res.success){closeModal();toast('已成功退回該筆捐款申報！','s');loadPendingDonations();}else{toast(res.message,'e');}}
-  catch(e){hideLoad();toast('操作失敗：'+e.message,'e');}
-}
-
-function renderFinanceIncome(){
-  if(!requireLogin()||!isAdminUser(APP.user))return;
-  setMain(`<div class="card"><div class="card-title">📥 一般收入登錄</div><div class="notice info">登錄常年會費與捐款以外的一般收入（如政府補助、利息收入、義賣收入等）。系統將自動開立對應收據並更新資金帳戶餘額。</div><div class="fg"><label class="flabel">入帳日期<span class="req">*</span></label><input type="date" id="incDate" class="fc" value="${today()}"></div><div class="fg"><label class="flabel">會計科目<span class="req">*</span></label><select id="incSubject" class="fc"><option value="">載入中...</option></select></div><div class="fg"><label class="flabel">入帳金額<span class="req">*</span></label><input type="number" id="incAmount" class="fc" placeholder="請輸入入帳金額"></div><div class="fg"><label class="flabel">入帳資金帳戶<span class="req">*</span></label><select id="incAccount" class="fc"><option value="">載入中...</option></select></div><div class="fg"><label class="flabel">對應專案 (選填)</label><select id="incProject" class="fc"><option value="">無對應專案</option></select></div><div class="fg"><label class="flabel">收入來源與說明<span class="req">*</span></label><input type="text" id="incDesc" class="fc" placeholder="例如：衛福部 115 年度高齡關懷專案第一期補助款"></div><div class="fg"><label class="flabel">備註</label><input type="text" id="incNote" class="fc" placeholder="其他備註說明"></div><button class="btn btn-success" onclick="submitGeneralIncome()">💾 確認登錄收入</button></div>`);
-  loadIncomeDropdowns();
-}
-async function loadIncomeDropdowns(){
-  try{
-    const [subRes,accRes,prjRes]=await Promise.all([api('subject.list'),api('account.list'),api('project.list')]);
-    if(subRes.success){const incSubs=subRes.items.filter(s=>s.type==='收入');$('incSubject').innerHTML=incSubs.map(s=>`<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('');}
-    if(accRes.success){$('incAccount').innerHTML=accRes.items.map(a=>`<option value="${esc(a.name)}">${esc(a.name)} (餘額：${fmtMoney(a.balance)})</option>`).join('');}
-    if(prjRes.success){$('incProject').innerHTML='<option value="">無對應專案</option>'+prjRes.items.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');}
-  }catch(e){toast('載入下拉選單失敗：'+e.message,'e');}
-}
-async function submitGeneralIncome(){
-  const date=requireInput('incDate','入帳日期');const subjectCode=$('incSubject').value;const amount=requireAmount('incAmount','入帳金額');const account=$('incAccount').value;const projectName=$('incProject').value;const description=requireInput('incDesc','收入來源與說明');const note=$('incNote').value.trim();
-  if(!date||!subjectCode||!amount||!account||!description)return;
-  if(!confirmCritical(`確定登錄此筆金額為 ${fmtMoney(amount)} 的一般收入？\n系統將直接更新帳戶餘額並開立收據。`))return;
-  showLoad();
-  try{const res=await api('finance.addIncome',{date,subjectCode,amount,account,projectName,description,note});hideLoad();if(res.success){toast(`一般收入登錄成功！已開立收據：${res.receiptNo}`,'s');go('adminHome');}else{toast(res.message,'e');}}
-  catch(e){hideLoad();toast('登錄失敗：'+e.message,'e');}
-}
-
-function renderFinanceExpense(){
-  if(!requireLogin()||!isAdminUser(APP.user))return;
-  setMain(`<div class="card"><div class="card-title">📤 支出核銷申請</div><div class="notice info">秘書處同仁在此填寫日常會務支出核銷。<br><strong>💡 本次升級：申請送出後，系統將自動生成【支出憑證單】PDF。請列印並由經辦人/申請人簽名，連同發票收據實體寄回，確認無誤後出納方可執行撥款。</strong></div><div class="fg"><label class="flabel">支出日期<span class="req">*</span></label><input type="date" id="expDate" class="fc" value="${today()}"></div><div class="fg"><label class="flabel">會計科目<span class="req">*</span></label><select id="expSubject" class="fc"><option value="">載入中...</option></select></div><div class="fg"><label class="flabel">支出金額<span class="req">*</span></label><input type="number" id="expAmount" class="fc" placeholder="請輸入支出金額"></div><div class="fg"><label class="flabel">扣款資金帳戶<span class="req">*</span></label><select id="expAccount" class="fc"><option value="">載入中...</option></select></div><div class="fg"><label class="flabel">對應專案 (選填)</label><select id="expProject" class="fc"><option value="">無對應專案</option></select></div><div class="fg"><label class="flabel">申請人/經辦人<span class="req">*</span></label><input type="text" id="expApplicant" class="fc" value="${esc(APP.user.name)}"></div><div class="fg"><label class="flabel">受款人/廠商<span class="req">*</span></label><input type="text" id="expPayee" class="fc" placeholder="請輸入受款人或廠商名稱"></div><div class="fg"><label class="flabel">受款人帳戶資訊</label><input type="text" id="expPayeeAccount" class="fc" placeholder="例如：第一銀行 (007) 123456789012"></div><div class="fg"><label class="flabel">用途說明<span class="req">*</span></label><input type="text" id="expDesc" class="fc" placeholder="例如：購買理監事會議便當 15 個"></div><div class="fg"><label class="flabel">上傳發票/收據憑證照片</label><input type="file" id="expFile" class="fc" accept="image/*"></div><button class="btn btn-primary" onclick="submitExpenseApply()">📤 送出核銷申請並生成憑證單</button></div>`);
-  loadExpenseDropdowns();
-}
-async function loadExpenseDropdowns(){
-  try{
-    const [subRes,accRes,prjRes]=await Promise.all([api('subject.list'),api('account.list'),api('project.list')]);
-    if(subRes.success){const expSubs=subRes.items.filter(s=>s.type==='支出');$('expSubject').innerHTML=expSubs.map(s=>`<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('');}
-    if(accRes.success){$('expAccount').innerHTML=accRes.items.map(a=>`<option value="${esc(a.name)}">${esc(a.name)} (餘額：${fmtMoney(a.balance)})</option>`).join('');}
-    if(prjRes.success){$('expProject').innerHTML='<option value="">無對應專案</option>'+prjRes.items.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');}
-  }catch(e){toast('載入下拉選單失敗：'+e.message,'e');}
-}
-async function submitExpenseApply(){
-  const date=requireInput('expDate','支出日期');const subjectCode=$('expSubject').value;const amount=requireAmount('expAmount','支出金額');const account=$('expAccount').value;const projectName=$('expProject').value;const applicant=requireInput('expApplicant','申請人');const payee=requireInput('expPayee','受款人/廠商');const payeeAccount=$('expPayeeAccount').value.trim();const description=requireInput('expDesc','用途說明');
-  if(!date||!subjectCode||!amount||!account||!applicant||!payee||!description)return;
-  showLoad();let fileObj=null;try{fileObj=await getFileData('expFile');}catch(e){}
-  const payload={date,subjectCode,amount,account,projectName,applicant,payee,payeeAccount,description,file:fileObj};
-  try{
-    const res=await api('expense.add',payload);hideLoad();
-    if(res.success){
-      // 申請成功，自動彈出支出憑證單 PDF 預覽，供列印簽名
-      openModal(`
-        <div class="modal-title" style="color:var(--success);">🎉 申請成功！請列印支出憑證單</div>
-        <div class="notice success">系統已自動生成【支出憑證單】。請點擊下方按鈕預覽、列印或另存為 PDF。簽名後連同實體發票憑證寄回，確認無誤後方能撥款。</div>
-        ${res.budgetWarning ? `<div class="notice warn">${esc(res.budgetWarning)}</div>` : ''}
-        <div style="display:flex;gap:8px;flex-direction:column;">
-          <button class="btn btn-primary" onclick="previewVoucherSlip('${jsStr(res.id)}')">🖨️ 預覽與列印【支出憑證單】</button>
-          <button class="btn btn-ghost" onclick="closeModal();go('adminHome');">返回管理首頁</button>
-        </div>
-      `);
-    }else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('申請失敗：'+e.message,'e');}
-}
-
-async function previewVoucherSlip(expenseId){
-  showLoad();
-  try{
-    const res=await api('expense.getSlipHtml',{id:expenseId});hideLoad();
-    if(res.success){
-      const pa=$('printArea');
-      pa.innerHTML=`
-        <div style="padding:15px;text-align:center;background:#e2e8f0;border-bottom:2px solid #cbd5e1;display:flex;justify-content:center;gap:10px;margin-bottom:20px;">
-          <button class="btn btn-primary btn-sm" onclick="window.print()" style="margin:0;">🖨️ 確定列印 / 另存 PDF</button>
-          <button class="btn btn-ghost btn-sm" onclick="closePrint()" style="margin:0;">關閉預覽</button>
-        </div>
-        <div style="padding:20px;background:#fff;">
-          ${res.html}
-        </div>
-      `;
-      pa.classList.remove('hide');document.body.style.overflow='hidden';
-    }else{toast(res.message,'e');}
-  }catch(e){hideLoad();toast('載入憑證單失敗：'+e.message,'e');}
-}
-
-function renderExpenseList(){
-  if(!requireLogin()||!isAdminUser(APP.user))return;
-  setMain(`<div class="card"><div class="card-title">🔍 支出核銷審核中心</div><div class="tabs"><button class="tab active" onclick="switchExpenseFilter('待核准',this)">待核准</button><button class="tab" onclick="switchExpenseFilter('待撥款',this)">待撥款</button><button class="tab" onclick="switchExpenseFilter('已撥款',this)">已撥款</button><button class="tab" onclick="switchExpenseFilter('已退回',this)">已退回</button></div><div id="adminExpenseList"><div class="empty">支出核銷載入中...</div></div></div>`);
-  loadAdminExpenses('待核准');
-}
-let __allExpenses=[];
-async function loadAdminExpenses(status){
-  try{
-    const res=await api('expense.list');const area=$('adminExpenseList');if(!area)return;
-    if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前沒有此狀態的支出核銷申請</div>`;return;}
-    __allExpenses=res.items;renderExpenseListByStatus(status);
-  }catch(e){const a=$('adminExpenseList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入失敗：${e.message}</div>`;}
-}
-function renderExpenseListByStatus(status){
-  const list=__allExpenses.filter(x=>x.status===status);const area=$('adminExpenseList');if(!area)return;
-  if(!list.length){area.innerHTML=`<div class="empty">目前沒有【${status}】的核銷申請</div>`;return;}
-  area.innerHTML=`<div class="list">`+list.map(e=>{
-    let actionHtml='';
-    if(status==='待核准'){actionHtml=`<button class="btn btn-success btn-sm" onclick="approveExpenseAdmin('${jsStr(e.id)}')">✅ 核准 (轉待撥款)</button><button class="btn btn-primary btn-sm" onclick="previewVoucherSlip('${jsStr(e.id)}')">📄 補印憑證單</button><button class="btn btn-danger btn-sm" onclick="openRejectExpense('${jsStr(e.id)}')">❌ 退回申請</button>`;}
-    else if(status==='待撥款'){actionHtml=`<button class="btn btn-warn btn-sm" onclick="confirmPaidExpenseAdmin('${jsStr(e.id)}')">💰 確認憑證無誤，執行撥款</button><button class="btn btn-primary btn-sm" onclick="previewVoucherSlip('${jsStr(e.id)}')">📄 檢視憑證單</button><button class="btn btn-danger btn-sm" onclick="openRejectExpense('${jsStr(e.id)}')">❌ 退回申請</button>`;}
-    else {actionHtml=`<button class="btn btn-outline btn-sm" onclick="previewVoucherSlip('${jsStr(e.id)}')">📄 檢視憑證單</button>`;}
-    return `<div class="item"><div class="item-h"><div class="item-title">${esc(e.description)}</div><div class="badge ${e.status==='已撥款'?'bs':e.status==='已退回'?'bd':'bw'}">${esc(e.status)}</div></div><div class="item-meta">核銷單號：<strong>${esc(e.id)}</strong> ｜ 傳票編號：<strong>${esc(e.voucherNo||'--')}</strong><br>支出金額：<strong class="money" style="color:var(--danger);">${fmtMoney(e.amount)}</strong> ｜ 扣款帳戶：<strong>${esc(e.account)}</strong><br>申請人：<strong>${esc(e.applicant)}</strong> ｜ 受款人：<strong>${esc(e.payee)}</strong><br>受款帳戶：<strong>${esc(e.payeeAccount||'無')}</strong><br>支出日期：<strong>${fmtDate(e.date)}</strong> ｜ 專案：<strong>${esc(e.projectName||'無')}</strong>${e.rejectReason?`<br><span style="color:#be123c;font-weight:900;">退回原因：${esc(e.rejectReason)}</span>`:''}${e.fileUrl?`<br><a href="${e.fileUrl}" target="_blank" style="color:#0f766e;font-weight:900;">🔍 檢視憑證照片</a>`:'<br><span style="color:#94a3b8;">無上傳憑證</span>'}</div><div class="item-actions">${actionHtml}</div></div>`;
-  }).join('')+`</div>`;
-}
-function switchExpenseFilter(status,btn){document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');renderExpenseListByStatus(status);}
-async function approveExpenseAdmin(id){if(!confirm('確定核准此筆核銷申請，將其狀態轉為「待撥款」？\n請提醒申請人列印憑證單簽名寄回。'))return;showLoad();try{const res=await api('expense.approve',{id});hideLoad();if(res.success){toast('已核准！等待實體簽名憑證寄回。','s');loadAdminExpenses('待核准');}else{toast(res.message,'e');}}catch(e){hideLoad();toast('操作失敗：'+e.message,'e');}}
-async function confirmPaidExpenseAdmin(id){if(!confirmCritical('確定已收到有經辦人/申請人簽名的實體【支出憑證單】且發票收據無誤，並已完成實際撥款？\n此操作將正式扣減資金帳戶、沖銷預算、並正式開立「會計傳票」！'))return;showLoad();try{const res=await api('expense.confirmPaid',{id});hideLoad();if(res.success){openModal(`<div class="modal-title">💰 撥款成功</div><div class="notice success">已成功撥款！系統已自動產生法定會計傳票，編號為：<strong>${res.voucherNo}</strong></div><button class="btn btn-primary" onclick="closeModal();loadAdminExpenses('待撥款');">我知道了</button>`);}else{toast(res.message,'e');}}catch(e){hideLoad();toast('操作失敗：'+e.message,'e');}}
-function openRejectExpense(id){openModal(`<div class="modal-title">❌ 退回核銷申請</div><div class="fg"><label class="flabel">退回原因/說明<span class="req">*</span></label><input type="text" id="rejectExpReason" class="fc" placeholder="例如：發票模糊不清，請重新上傳"></div><button class="btn btn-danger" onclick="submitRejectExpense('${jsStr(id)}')">確認退回</button>`);}
-async function submitRejectExpense(id){const reason=requireInput('rejectExpReason','退回原因');if(!reason)return;showLoad();try{const res=await api('expense.reject',{id,reason});hideLoad();if(res.success){closeModal();toast('已成功退回該筆核銷申請！','s');loadAdminExpenses('待核准');}else{toast(res.message,'e');}}catch(e){hideLoad();toast('操作失敗：'+e.message,'e');}}
-
-function renderReceiptList(){if(!requireLogin()||!isAdminUser(APP.user))return;setMain(`<div class="card"><div class="card-title">🧾 收據明細中心</div><div class="notice info">此處記錄本會開立的所有正式收據。支持線上預覽、列印雙聯收據，以及「安全作廢與自動反向退款沖銷」功能。</div><input type="text" id="receiptSearch" class="fc" style="margin-bottom:16px;" placeholder="搜尋收據編號、姓名..." oninput="filterReceipts()"><div id="adminReceiptList"><div class="empty">收據明細載入中...</div></div></div>`);loadAdminReceipts();}
-let __allReceipts=[];
-async function loadAdminReceipts(){try{const res=await api('receipt.list');const area=$('adminReceiptList');if(!area)return;if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前尚無任何收據開立紀錄</div>`;return;}__allReceipts=res.items;__allReceipts.sort((a,b)=>b.receiptNo.localeCompare(a.receiptNo));renderReceiptListHtml(__allReceipts);}catch(e){const a=$('adminReceiptList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入失敗：${e.message}</div>`;}}
-function renderReceiptListHtml(list){const area=$('adminReceiptList');if(!area)return;area.innerHTML=`<div class="list">`+list.map(r=>`<div class="item"><div class="item-h"><div class="item-title">收據：${esc(r.receiptNo)}</div><div class="badge ${r.status==='有效'?'bs':'bd'}">${esc(r.status)}</div></div><div class="item-meta">繳款人：<strong>${esc(r.name)}</strong> ｜ 會員編號：<strong>${esc(r.memberId)}</strong><br>實收金額：<strong class="money">${fmtMoney(r.amount)}</strong> ｜ 開立日期：<strong>${fmtDate(r.date)}</strong><br>款項類別：<strong>${esc(r.type)}</strong> ｜ 項目：<strong>${esc(r.item)}</strong>${r.voidReason?`<br><span style="color:#be123c;font-weight:900;">作廢原因：${esc(r.voidReason)}</span>`:''}</div><div class="item-actions">${r.status==='有效'?`<button class="btn btn-primary btn-sm" onclick="previewReceipt('${jsStr(r.receiptNo)}')">🖨️ 預覽與列印</button><button class="btn btn-danger btn-sm" onclick="openVoidReceipt('${jsStr(r.receiptNo)}')">⚠️ 安全作廢與沖銷</button>`:'<span style="color:#94a3b8;font-weight:900;">該收據已失效</span>'}</div></div>`).join('')+`</div>`;}
-function filterReceipts(){const q=$('receiptSearch').value.toLowerCase().trim();if(!q){renderReceiptListHtml(__allReceipts);return;}const filtered=__allReceipts.filter(r=>r.receiptNo.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)||r.memberId.toLowerCase().includes(q));renderReceiptListHtml(filtered);}
-async function previewReceipt(receiptNo){showLoad();try{const res=await api('receipt.pdf',{receiptNo});hideLoad();if(res.success){const pa=$('printArea');pa.innerHTML=`<div style="padding:15px;text-align:center;background:#e2e8f0;border-bottom:2px solid #cbd5e1;display:flex;justify-content:center;gap:10px;margin-bottom:20px;"><button class="btn btn-primary btn-sm" onclick="window.print()" style="margin:0;">🖨️ 確定列印 / 另存 PDF</button><button class="btn btn-ghost btn-sm" onclick="closePrint()" style="margin:0;">關閉預覽</button></div>${res.html}`;pa.classList.remove('hide');document.body.style.overflow='hidden';}else{toast(res.message,'e');}}catch(e){hideLoad();toast('載入收據失敗：'+e.message,'e');}}
-function closePrint(){$('printArea').classList.add('hide');$('printArea').innerHTML='';document.body.style.overflow='auto';}
-function openVoidReceipt(receiptNo){openModal(`<div class="modal-title" style="color:#dc2626;">⚠️ 安全作廢收據</div><div class="notice warn">注意：作廢收據是極為嚴肅的會計操作！<br>系統將自動：<br>1. 將收據狀態標記為「作廢」<br>2. <strong>自動產生一筆反向負數沖銷交易</strong>，扣減對應資金帳戶餘額<br>3. 扣減該會員的累計繳費/捐款額度。</div><div class="fg"><label class="flabel">作廢原因/退款說明<span class="req">*</span></label><input type="text" id="voidReason" class="fc" placeholder="例如：病友重複匯款，已人工退匯"></div><button class="btn btn-danger" onclick="submitVoidReceipt('${jsStr(receiptNo)}')">確認安全作廢並沖銷</button>`);}
-async function submitVoidReceipt(receiptNo){const reason=requireInput('voidReason','作廢原因');if(!reason)return;if(!confirmCritical(`您確定要作廢收據 ${receiptNo} 嗎？\n此操作無法復原，且會直接修正會計帳目。`))return;showLoad();try{const res=await api('receipt.void',{receiptNo,reason});hideLoad();if(res.success){closeModal();openModal(`<div class="modal-title">✅ 作廢與沖銷成功</div><div class="notice success">${esc(res.message)}</div><button class="btn btn-primary" onclick="closeModal();loadAdminReceipts();">我知道了</button>`);}else{toast(res.message,'e');}}catch(e){hideLoad();toast('操作失敗：'+e.message,'e');}}
-
-function renderVoucherList(){if(!requireLogin()||!isAdminUser(APP.user))return;setMain(`<div class="card"><div class="card-title">📖 會計傳票明細</div><div class="notice info">本會開立的所有法定會計傳票。包含傳票編號、借貸分錄、金額、對應會計科目與專案。</div><input type="text" id="voucherSearch" class="fc" style="margin-bottom:16px;" placeholder="搜尋傳票編號、科目、摘要..." oninput="filterVouchers()"><div id="adminVoucherList"><div class="empty">會計傳票載入中...</div></div></div>`);loadAdminVouchers();}
-let __allVouchers=[];
-async function loadAdminVouchers(){try{const res=await api('voucher.list');const area=$('adminVoucherList');if(!area)return;if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前尚無任何會計傳票紀錄</div>`;return;}__allVouchers=res.items;__allVouchers.sort((a,b)=>b.voucherNo.localeCompare(a.voucherNo));renderVoucherListHtml(__allVouchers);}catch(e){const a=$('adminVoucherList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入失敗：${e.message}</div>`;}}
-function renderVoucherListHtml(list){const area=$('adminVoucherList');if(!area)return;area.innerHTML=`<div class="list">`+list.map(v=>`<div class="item"><div class="item-h"><div class="item-title">傳票編號：${esc(v.voucherNo)}</div><span class="badge bb">${esc(v.type)}</span></div><div class="item-meta">傳票日期：<strong>${fmtDate(v.date)}</strong> ｜ 經辦人：<strong>${esc(v.creator||'系統')}</strong><br>會計科目：<strong>${esc(v.subjectCode)} ${esc(v.subjectName)}</strong><br>借方金額：<strong class="money">${fmtMoney(v.debit)}</strong> ｜ 貸方金額：<strong class="money" style="color:var(--danger);">${fmtMoney(v.credit)}</strong><br>摘要說明：<strong>${esc(v.summary)}</strong><br>對應資金帳戶：<strong>${esc(v.account||'無')}</strong> ｜ 專案：<strong>${esc(v.projectName||'無')}</strong></div></div>`).join('')+`</div>`;}
-function filterVouchers(){const q=$('voucherSearch').value.toLowerCase().trim();if(!q){renderVoucherListHtml(__allVouchers);return;}const filtered=__allVouchers.filter(v=>v.voucherNo.toLowerCase().includes(q)||v.subjectCode.toLowerCase().includes(q)||v.subjectName.toLowerCase().includes(q)||v.summary.toLowerCase().includes(q));renderVoucherListHtml(filtered);}
-
-function renderBudgetManage(){if(!requireLogin()||!isAdminUser(APP.user))return;setMain(`<div class="card"><div class="card-title">📅 年度預算編列</div><div class="notice info">依據「社會團體財務處理辦法」，於年度開始前編列各會計科目之預算額度，作為支出核銷之控制基準。</div><div style="display:flex;gap:8px;margin-bottom:16px;"><select id="budgetYearSel" class="fc" style="max-width:180px;" onchange="loadAdminBudgets()">${yearOptions()}</select><button class="btn btn-primary btn-sm" onclick="openAddBudget()" style="margin:0;"><i class="fa-solid fa-plus" style="margin-right:4px;"></i> 新增預算編列</button></div><div id="adminBudgetList"><div class="empty">預算資料載入中...</div></div></div>`);loadAdminBudgets();}
-async function loadAdminBudgets(){const year=$('budgetYearSel').value;try{const res=await api('budget.list',{year});const area=$('adminBudgetList');if(!area)return;if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">此年度尚未編列任何預算</div>`;return;}area.innerHTML=`<div class="list">`+res.items.map(b=>`<div class="item"><div class="item-title">${esc(b.year)} 年度 - ${esc(b.subjectCode)} ${esc(b.subjectName)}</div><div class="item-meta">預算總額：<strong class="money">${fmtMoney(b.amount)}</strong><br>已執行金額：<strong class="money" style="color:var(--danger);">${fmtMoney(b.executed)}</strong><br>預算執行率：<strong>${b.amount>0?Math.round((b.executed/b.amount)*100):0}%</strong></div></div>`).join('')+`</div>`;}catch(e){const a=$('adminBudgetList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入預算失敗</div>`;}}
-async function openAddBudget(){showLoad();try{const res=await api('subject.list');hideLoad();if(!res.success){toast('載入會計科目失敗','e');return;}const expSubs=res.items.filter(s=>s.type==='支出');openModal(`<div class="modal-title">新增年度預算編列</div><div class="fg"><label class="flabel">年度<span class="req">*</span></label><select id="addBudYear" class="fc">${yearOptions()}</select></div><div class="fg"><label class="flabel">會計科目<span class="req">*</span></label><select id="addBudSubject" class="fc">${expSubs.map(s=>`<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('')}</select></div><div class="fg"><label class="flabel">預算金額<span class="req">*</span></label><input type="number" id="addBudAmount" class="fc" placeholder="請輸入預算額度"></div><button class="btn btn-success" onclick="submitAddBudget()">確認編列</button>`);}catch(e){hideLoad();toast('載入失敗：'+e.message,'e');}}
-async function submitAddBudget(){const year=$('addBudYear').value;const subjectCode=$('addBudSubject').value;const amount=requireAmount('addBudAmount','預算金額');if(!amount)return;showLoad();try{const res=await api('budget.add',{year,subjectCode,amount});hideLoad();if(res.success){closeModal();toast('預算編列成功！','s');loadAdminBudgets();}else{toast(res.message,'e');}}catch(e){hideLoad();toast('編列失敗：'+e.message,'e');}}
-
-function renderProjectManage(){if(!requireLogin()||!isAdminUser(APP.user))return;setMain(`<div class="card"><div class="card-title">📂 專案項目管理</div><button class="btn btn-primary btn-sm" style="margin-bottom:16px;" onclick="openAddProject()"><i class="fa-solid fa-plus" style="margin-right:4px;"></i> 新增專案項目</button><div id="adminProjectList"><div class="empty">專案載入中...</div></div></div>`);loadAdminProjects();}
-async function loadAdminProjects(){try{const res=await api('project.list');const area=$('adminProjectList');if(!area)return;if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前尚無任何專案項目</div>`;return;}area.innerHTML=`<div class="list">`+res.items.map(p=>`<div class="item"><div class="item-h"><div class="item-title">${esc(p.name)}</div><span class="badge ${p.status==='進行中'?'bs':'bd'}">${esc(p.status)}</span></div><div class="item-meta">專案負責人：<strong>${esc(p.manager||'未指定')}</strong><br>專案收入：<strong class="money">${fmtMoney(p.income)}</strong> ｜ 專案支出：<strong class="money" style="color:var(--danger);">${fmtMoney(p.expense)}</strong><br>專案結餘：<strong class="money">${fmtMoney(p.income-p.expense)}</strong></div></div>`).join('')+`</div>`;}catch(e){const a=$('adminProjectList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入專案失敗</div>`;}}
-function openAddProject(){openModal(`<div class="modal-title">新增專案項目</div><div class="fg"><label class="flabel">專案名稱<span class="req">*</span></label><input type="text" id="addPrjName" class="fc" placeholder="例如：115 年度太極拳復健班"></div><div class="fg"><label class="flabel">負責人</label><input type="text" id="addPrjManager" class="fc" placeholder="請輸入專案負責人姓名"></div><button class="btn btn-success" onclick="submitAddProject()">確認新增</button>`);}
-async function submitAddProject(){const name=requireInput('addPrjName','專案名稱');const manager=$('addPrjManager').value.trim();if(!name)return;showLoad();try{const res=await api('project.add',{name,manager,status:'進行中'});hideLoad();if(res.success){closeModal();toast('專案新增成功！','s');loadAdminProjects();}else{toast(res.message,'e');}}catch(e){hideLoad();toast('新增失敗：'+e.message,'e');}}
-
-function renderSubjectManage(){if(!requireLogin()||!isAdminUser(APP.user))return;setMain(`<div class="card"><div class="card-title">📖 會計科目維護</div><button class="btn btn-primary btn-sm" style="margin-bottom:16px;" onclick="openAddSubject()"><i class="fa-solid fa-plus" style="margin-right:4px;"></i> 新增會計科目</button><div id="adminSubjectList"><div class="empty">會計科目載入中...</div></div></div>`);loadAdminSubjects();}
-async function loadAdminSubjects(){try{const res=await api('subject.list');const area=$('adminSubjectList');if(!area)return;if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前尚無會計科目</div>`;return;}area.innerHTML=`<div class="list">`+res.items.map(s=>`<div class="item"><div class="item-title">${esc(s.code)} ｜ ${esc(s.name)}</div><div class="item-meta">科目類別：<strong>${esc(s.type)}</strong> ｜ 說明：<strong>${esc(s.description||'無')}</strong></div></div>`).join('')+`</div>`;}catch(e){const a=$('adminSubjectList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入科目失敗</div>`;}}
-function openAddSubject(){openModal(`<div class="modal-title">新增會計科目</div><div class="fg"><label class="flabel">科目代碼<span class="req">*</span></label><input type="text" id="addSubCode" class="fc" placeholder="例如：4111"></div><div class="fg"><label class="flabel">科目名稱<span class="req">*</span></label><input type="text" id="addSubName" class="fc" placeholder="例如：入會費收入"></div><div class="fg"><label class="flabel">科目類別<span class="req">*</span></label><select id="addSubClass" class="fc"><option value="收入">收入類</option><option value="支出">支出類</option><option value="資產">資產類</option><option value="負債">負債類</option><option value="淨值">淨值類</option></select></div><div class="fg"><label class="flabel">科目說明</label><input type="text" id="addSubDesc" class="fc" placeholder="科目用途說明"></div><button class="btn btn-success" onclick="submitAddSubject()">確認新增</button>`);}
-async function submitAddSubject(){const code=requireInput('addSubCode','科目代碼');const name=requireInput('addSubName','科目名稱');const type=$('addSubClass').value;const description=$('addSubDesc').value.trim();if(!code||!name)return;showLoad();try{const res=await api('subject.add',{code,name,type,description});hideLoad();if(res.success){closeModal();toast('會計科目新增成功！','s');loadAdminSubjects();}else{toast(res.message,'e');}}catch(e){hideLoad();toast('新增失敗：'+e.message,'e');}}
-
-function renderAccountManage(){if(!requireLogin()||!isAdminUser(APP.user))return;setMain(`<div class="card"><div class="card-title">🏦 資金帳戶維護</div><button class="btn btn-primary btn-sm" style="margin-bottom:16px;" onclick="openAddAccount()"><i class="fa-solid fa-plus" style="margin-right:4px;"></i> 新增資金帳戶</button><div id="adminAccountList"><div class="empty">資金帳戶載入中...</div></div></div>`);loadAdminAccounts();}
-async function loadAdminAccounts(){try{const res=await api('account.list');const area=$('adminAccountList');if(!area)return;if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前尚無任何資金帳戶</div>`;return;}area.innerHTML=`<div class="list">`+res.items.map(a=>`<div class="item"><div class="item-title">${esc(a.name)}</div><div class="item-meta">帳戶餘額：<strong class="money">${fmtMoney(a.balance)}</strong><br>帳戶類型：<strong>${esc(a.type)}</strong> ｜ 備註：<strong>${esc(a.note||'無')}</strong></div></div>`).join('')+`</div>`;}catch(e){const a=$('adminAccountList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入帳戶失敗</div>`;}}
-function openAddAccount(){openModal(`<div class="modal-title">新增資金帳戶</div><div class="fg"><label class="flabel">帳戶名稱<span class="req">*</span></label><input type="text" id="addAccName" class="fc" placeholder="例如：第一銀行專戶"></div><div class="fg"><label class="flabel">帳戶類型<span class="req">*</span></label><select id="addAccType" class="fc"><option value="銀行存款">銀行存款</option><option value="郵政劃撥">郵政劃撥</option><option value="庫存現金">庫存現金/零用金</option></select></div><div class="fg"><label class="flabel">初始餘額</label><input type="number" id="addAccBalance" class="fc" value="0"></div><button class="btn btn-success" onclick="submitAddAccount()">確認新增</button>`);}
-async function submitAddAccount(){const name=requireInput('addAccName','帳戶名稱');const type=$('addAccType').value;const balance=Number($('addAccBalance').value||0);if(!name)return;showLoad();try{const res=await api('account.add',{name,type,balance});hideLoad();if(res.success){closeModal();toast('資金帳戶新增成功！','s');loadAdminAccounts();}else{toast(res.message,'e');}}catch(e){hideLoad();toast('新增失敗：'+e.message,'e');}}
-
-function renderStaffManage(){if(!requireLogin()||!isAdminUser(APP.user))return;setMain(`<div class="card"><div class="card-title">👔 管理人員權限名冊</div><div class="notice info">此處管理有權限登入後台之理監事、秘書處同仁與出納會計。</div><div id="adminStaffList"><div class="empty">管理人員載入中...</div></div></div>`);loadAdminStaffs();}
-async function loadAdminStaffs(){try{const res=await api('staff.list');const area=$('adminStaffList');if(!area)return;if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前尚無任何管理人員</div>`;return;}area.innerHTML=`<div class="list">`+res.items.map(s=>`<div class="item"><div class="item-title">${esc(s.name)} (${esc(s.nickname||'無暱稱')})</div><div class="item-meta">職稱/權限：<strong style="color:#0f766e;">${esc(s.type)}</strong><br>手機號碼：<strong>${esc(s.mobile||s.phone||'未填寫')}</strong> ｜ 會員編號：<strong>${esc(s.memberId)}</strong></div></div>`).join('')+`</div>`;}catch(e){const a=$('adminStaffList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入失敗</div>`;}}
-
-function renderSystemSetting(){if(!requireLogin()||!isAdminUser(APP.user))return;setMain(`<div class="card"><div class="card-title">⚙️ 系統全域設定</div><div class="notice info">設定本系統的核心參數，包含組織名稱、電子公章與 API 串接金鑰。</div><div class="fg"><label class="flabel">組織全銜<span class="req">*</span></label><input type="text" id="sysOrgName" class="fc" value="${esc(ORG_NAME)}"></div><div class="fg"><label class="flabel">統一編號</label><input type="text" id="sysTaxId" class="fc" placeholder="請輸入組織統一編號"></div><div class="fg"><label class="flabel">電子印信公章 (Base64 或圖片網址)</label><input type="text" id="sysSeal" class="fc" placeholder="用於收據自動蓋章"></div><div class="fg"><label class="flabel">Gemini API 金鑰 (AI 語意分析)</label><input type="password" id="sysGeminiKey" class="fc" placeholder="請輸入 Gemini API Key"></div><button class="btn btn-success" onclick="submitSystemSetting()">💾 儲存設定</button></div>`);loadSystemSettings();}
-async function loadSystemSettings(){try{const res=await api('system.getSettings');if(res.success&&res.settings){const s={};res.settings.forEach(item=>{s[item.key]=item.value;});$('sysOrgName').value=s.org_name||ORG_NAME;$('sysTaxId').value=s.tax_id||'';$('sysSeal').value=s.seal_url||'';$('sysGeminiKey').value=s.gemini_api_key||'';}}catch(e){}}
-async function submitSystemSetting(){const orgName=requireInput('sysOrgName','組織全銜');const taxId=$('sysTaxId').value.trim();const sealUrl=$('sysSeal').value.trim();const geminiKey=$('sysGeminiKey').value.trim();if(!orgName)return;showLoad();try{const settingsArray=[{key:'org_name',value:orgName,description:'組織全銜'},{key:'tax_id',value:taxId,description:'統一編號'},{key:'seal_url',value:sealUrl,description:'電子印信印章 Base64 或網址'},{key:'gemini_api_key',value:geminiKey,description:'Google Gemini API 金鑰'}];const res=await api('system.saveSettings',{settings:settingsArray});hideLoad();if(res.success){toast('系統全域設定儲存成功！','s');go('adminHome');}else{toast(res.message,'e');}}catch(e){hideLoad();toast('儲存失敗：'+e.message,'e');}}
-
-function renderAnnounceManage(){if(!requireLogin()||!isAdminUser(APP.user))return;setMain(`<div class="card"><div class="card-title">📢 公告消息發布管理</div><button class="btn btn-primary btn-sm" style="margin-bottom:16px;" onclick="openAddAnnounce()"><i class="fa-solid fa-plus" style="margin-right:4px;"></i> 發布新公告</button><div id="adminAnnList"><div class="empty">公告列表載入中...</div></div></div>`);
-
-loadAdminAnnouncements();}
-async function loadAdminAnnouncements(){try{const res=await api('announcement.list');const area=$('adminAnnList');if(!area)return;if(!res.success||!res.items.length){area.innerHTML=`<div class="empty">目前尚無任何公告消息</div>`;return;}area.innerHTML=`<div class="list">`+res.items.map(a=>`<div class="item"><div class="item-h"><div class="item-title">${String(a.pinned)==='Y'?'📌 ':''}${esc(a.title)}</div><span class="badge bb">${esc(a.category)}</span></div><div class="item-meta">發布日期：<strong>${esc(a.date)}</strong> ｜ 目標對象：<strong>${esc(a.target)}</strong><br>公告內容：<div style="font-size:var(--fs-sm);white-space:pre-wrap;background:#f8fafc;padding:10px;border-radius:8px;margin-top:6px;border:1px solid var(--border);">${esc(a.content)}</div></div><div class="item-actions"><button class="btn btn-danger btn-xs" onclick="deleteAnnounce('${jsStr(a.id)}')">🗑️ 刪除公告</button></div></div>`).join('')+`</div>`;}catch(e){const a=$('adminAnnList');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">載入公告失敗</div>`;}}
-
-function openAddAnnounce(){openModal(`<div class="modal-title">發布新公告</div><div class="fg"><label class="flabel">公告標題<span class="req">*</span></label><input type="text" id="addAnnTitle" class="fc" placeholder="例如：115 年度理監事聯席會議召開通知"></div><div class="fg"><label class="flabel">公告類別<span class="req">*</span></label><select id="addAnnCat" class="fc"><option value="最新消息">最新消息</option><option value="活動公告">活動公告</option><option value="衛教資訊">衛教資訊</option><option value="會務公告">會務公告</option></select></div><div class="fg"><label class="flabel">目標對象<span class="req">*</span></label><select id="addAnnTarget" class="fc"><option value="全部">全部對象 (包含未登入大眾)</option><option value="全體會員">全體會員 (僅限登入會員)</option><option value="理監事">僅限理監事</option></select></div><div class="fg"><label class="flabel">公告內容<span class="req">*</span></label><textarea id="addAnnContent" class="fc" placeholder="請輸入公告詳細內容"></textarea></div><div class="fg"><label class="flabel">是否置頂</label><select id="addAnnPinned" class="fc"><option value="N">否</option><option value="Y">是 (置頂顯示)</option></select></div><button class="btn btn-success" onclick="submitAddAnnounce()">確認發布</button>`);}
-async function submitAddAnnounce(){const title=requireInput('addAnnTitle','公告標題');const category=$('addAnnCat').value;const target=$('addAnnTarget').value;const content=requireInput('addAnnContent','公告內容');const pinned=$('addAnnPinned').value;if(!title||!content)return;showLoad();try{const res=await api('announcement.add',{title,category,target,content,pinned,date:today()});hideLoad();if(res.success){closeModal();toast('公告發布成功！','s');loadAdminAnnouncements();}else{toast(res.message,'e');}}catch(e){hideLoad();toast('發布失敗：'+e.message,'e');}}
-async function deleteAnnounce(id){if(!confirm('確定要永久刪除此公告嗎？'))return;showLoad();try{const res=await api('announcement.delete',{id});hideLoad();if(res.success){toast('公告已成功刪除','s');loadAdminAnnouncements();}else{toast(res.message,'e');}}catch(e){hideLoad();toast('刪除失敗：'+e.message,'e');}}
-
-/*=======================================================
- * 📊 財務九大法定報表中心
- *=======================================================*/
-function renderReportCenter(){
-  if(!requireLogin()||!isAdminUser(APP.user))return;
-  setMain(`
-    <div class="card">
-      <div class="card-title">📊 財務與會計法定九大報表</div>
-      <div class="notice info">本報表中心嚴格遵循「社會團體財務處理辦法」與「非營利組織會計準則」設計，提供理監事與主管機關即時稽核。</div>
-      <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:16px;">
-        <div><label class="flabel" style="font-size:14px;">選擇年度</label><select id="repYear" class="fc" style="min-height:48px;">${yearOptions()}</select></div>
-        <div><label class="flabel" style="font-size:14px;">選擇月份</label><select id="repMonth" class="fc" style="min-height:48px;">${monthOptions()}</select></div>
-        <div><label class="flabel" style="font-size:14px;">選擇報表種類</label>
-          <select id="repType" class="fc" style="min-height:48px;" onchange="onReportTypeChange()">
-            <option value="1">1. 收支決算表 (法定格式)</option>
-            <option value="2">2. 現金出納表 (收支明細)</option>
-            <option value="3">3. 日記帳 (會計分錄序時帳)</option>
-            <option value="4">4. 總分類帳 (科目明細帳)</option>
-            <option value="5">5. 財產目錄 (固定資產表)</option>
-            <option value="6">6. 資金帳戶餘額表 (銀行對帳)</option>
-            <option value="7">7. 預算執行對照表 (超支稽核)</option>
-            <option value="8">8. 專案收支明細表 (活動結餘)</option>
-            <option value="9">9. 財務狀況表 (資產負債簡表)</option>
-          </select>
-        </div>
-      </div>
-      <div id="repSubjectFilterArea" class="hide">
-        <label class="flabel" style="font-size:14px;">篩選會計科目</label>
-        <select id="repSubjectFilter" class="fc" style="min-height:48px;margin-bottom:16px;"><option value="">載入中...</option></select>
-      </div>
-      <button class="btn btn-primary" onclick="generateReport()"><i class="fa-solid fa-chart-pie" style="margin-right:4px;"></i> 產生法定報表</button>
-      <div class="divider"></div>
-      <div id="reportResultArea"><div class="empty">請選擇報表條件並點擊「產生法定報表」</div></div>
-    </div>
-  `);
-  loadReportSubjects();
-}
-function onReportTypeChange(){const type=$('repType').value;if(type==='4'){$('repSubjectFilterArea').classList.remove('hide');}else{$('repSubjectFilterArea').classList.add('hide');}}
-async function loadReportSubjects(){try{const res=await api('subject.list');if(res.success){$('repSubjectFilter').innerHTML='<option value="">全部會計科目</option>'+res.items.map(s=>`<option value="${esc(s.code)}">${esc(s.code)} ${esc(s.name)}</option>`).join('');}}catch(e){}}
-async function generateReport(){
-  const year=$('repYear').value;const month=$('repMonth').value;const type=$('repType').value;const subjectCode=$('repSubjectFilter')?$('repSubjectFilter').value:'';
-  showLoad();
-  try{
-    const res=await api('report.generate',{year,month,type,subjectCode});hideLoad();
-    const area=$('reportResultArea');if(!area)return;
-    if(res.success){area.innerHTML=`<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;"><button class="btn btn-outline btn-xs" onclick="printReportResult()"><i class="fa-solid fa-print"></i> 列印此報表</button></div><div style="overflow-x:auto;background:#fff;padding:16px;border:2px solid #cbd5e1;border-radius:12px;" id="reportPrintContainer">${res.html}</div>`;}
-    else{area.innerHTML=`<div class="empty" style="color:#dc2626;">${esc(res.message)}</div>`;}
-  }catch(e){hideLoad();const a=$('reportResultArea');if(a)a.innerHTML=`<div class="empty" style="color:#dc2626;">產生報表失敗：${e.message}</div>`;}
-}
-function printReportResult(){const container=$('reportPrintContainer');if(!container)return;const content=container.innerHTML;const pa=$('printArea');pa.innerHTML=`<div style="padding:15px;text-align:center;background:#e2e8f0;border-bottom:2px solid #cbd5e1;display:flex;justify-content:center;gap:10px;margin-bottom:20px;"><button class="btn btn-primary btn-sm" onclick="window.print()" style="margin:0;">🖨️ 確定列印 / 另存 PDF</button><button class="btn btn-ghost btn-sm" onclick="closePrint()" style="margin:0;">關閉預覽</button></div><div style="padding:20px;background:#fff;">${content}</div>`;pa.classList.remove('hide');document.body.style.overflow='hidden';}
-
-/*=======================================================
- * ♿ 帕友健康日誌頁籤切換與圖表初始化
+ * ♿ 帕友健康日誌頁籤切換與圖表初始化 (保留原功能)
  *=======================================================*/
 function switchHealthTab(tabId){
   document.querySelectorAll('.health-tab-content').forEach(el=>el.classList.add('hide'));
@@ -2185,3 +1242,4 @@ window.addEventListener('DOMContentLoaded',()=>{
 </script>
 </body>
 </html>
+
