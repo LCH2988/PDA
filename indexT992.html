@@ -856,1422 +856,862 @@
             event.preventDefault();
             const name = document.getElementById("regName").value.trim();
             const nickname = document.getElementById("regNickname").value.trim();
-            const phone = document.getElementById("regPhone").value.trim();
-            const gender = document.getElementById("regGender").value;
-            const birthday = document.getElementById("regBirthday").value.trim();
-            const idCard = document.getElementById("regIdCard").value.trim().toUpperCase();
+            const phone = document.getElementById("regPhone").value.
 
-            let gregBirth = "";
-            if (birthday) {
-                gregBirth = rocToGreg(birthday);
-                if (!gregBirth) {
-                    alert("生日格式錯誤！請輸入正確的民國格式，例如：75/10/25");
-                    return;
-                }
-            }
-
-            const idReg = /^[A-Z][12]\d{8}$/;
-            if (!idReg.test(idCard)) {
-                alert("身分證字號格式錯誤！");
-                return;
-            }
-
-            showLoading("正在註冊帳號並綁定...");
-            try {
-                const payload = {
-                    action: "bindUser",
-                    lineId: userLineId,
-                    name: name,
-                    nickname: nickname,
-                    phone: phone,
-                    gender: gender,
-                    birthday: gregBirth,
-                    idCard: idCard
-                };
-
-                const response = await fetch(GAS_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify(payload)
-                });
-                const result = await response.json();
-                
-                if (result.status === "success") {
-                    userProfile = { name, nickname, phone, gender, birthday: gregBirth, idCard, address: "" };
-                    
-                    if (userLineId) {
-                        userRole = "member";
-                        alert("🎉 註冊與 LINE 綁定成功！您已成為【正式會員】，享有完整報名與接龍權限。");
-                    } else {
-                        userRole = "guest";
-                        localStorage.setItem("san_tie_user", JSON.stringify({ name, phone }));
-                        alert("🎉 註冊成功！您已成功登入為【遊客】。");
+            <!DOCTYPE html>
+            <html lang="zh-TW">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                <title>台灣帕金森病友權益促進會 - 活動登記與接龍系統</title>
+                <!-- Tailwind CSS -->
+                <script src="https://cdn.tailwindcss.com"></script>
+                <!-- LINE LIFF SDK -->
+                <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang TC", "Microsoft JhengHei", sans-serif;
+                        -webkit-tap-highlight-color: transparent;
+                        font-size: 20px !important;
                     }
-                    
-                    setLoggedInUI(name, "", userRole);
-                    closeModal("authModal");
-                    await reloadEventsData();
-                } else {
-                    alert("註冊失敗：" + result.message);
-                }
-            } catch (e) {
-                alert("連線失敗");
-            }
-            hideLoading();
-        }
-
-        function openAuthModal() {
-            document.getElementById("authModal").classList.remove("hidden");
-            switchAuthTab('login');
-        }
-
-        function switchAuthTab(tab) {
-            if (tab === 'login') {
-                document.getElementById("authLoginForm").classList.remove("hidden");
-                document.getElementById("authRegisterForm").classList.add("hidden");
-                document.getElementById("authTabBtn_login").className = "py-4 text-lg font-black text-emerald-800 border-b-4 border-emerald-800 bg-white";
-                document.getElementById("authTabBtn_register").className = "py-4 text-lg font-black text-stone-500";
-            } else {
-                document.getElementById("authLoginForm").classList.add("hidden");
-                document.getElementById("authRegisterForm").classList.remove("hidden");
-                document.getElementById("authTabBtn_login").className = "py-4 text-lg font-black text-stone-500";
-                document.getElementById("authTabBtn_register").className = "py-4 text-lg font-black text-emerald-800 border-b-4 border-emerald-800 bg-white";
-            }
-        }
-
-        function handleHeaderLogin() {
-            if (!liff.isLoggedIn()) {
-                liff.login();
-            }
-        }
-
-        async function handleSilentNormalLogin(name, phone) {
-            try {
-                const response = await fetch(`${GAS_URL}?action=getUsersList`);
-                const result = await response.json();
-                if (result.status === "success") {
-                    allRegisteredUsers = result.users || [];
-                    const found = allRegisteredUsers.find(u => u.name === name);
-                    if (found) {
-                        userProfile = found;
-                        userRole = "guest";
-                        isAdmin = false;
-                        setLoggedInUI(userProfile.name, "", userRole);
-                        await loadPublicData();
-                    } else {
-                        localStorage.removeItem("san_tie_user");
-                        setGuestUI();
-                        await loadPublicData();
+                    /* 針對帕金森病友與年長者：超大輸入框、超粗外框與防誤觸高度 */
+                    input, select, textarea {
+                        min-height: 64px !important;
+                        font-size: 22px !important;
+                        border-width: 3px !important;
                     }
-                }
-            } catch (e) {
-                setGuestUI();
-            }
-        }
+                    button {
+                        min-height: 64px !important;
+                        font-size: 22px !important;
+                        border-width: 3px !important;
+                    }
+                    .border-3 {
+                        border-width: 3px;
+                    }
+                    .no-scrollbar::-webkit-scrollbar {
+                        display: none;
+                    }
+                    .no-scrollbar {
+                        -ms-overflow-style: none;
+                        scrollbar-width: none;
+                    }
+                    .active-scale:active {
+                        transform: scale(0.96);
+                    }
+                </style>
+            </head>
+            <body class="bg-stone-100 text-stone-900 min-h-screen pb-28 font-bold selection:bg-emerald-200">
 
-        function handleHeaderLogout() {
-            if (confirm("確定要登出系統嗎？")) {
-                if (liff.isLoggedIn()) {
-                    liff.logout();
-                }
-                localStorage.removeItem("san_tie_user");
-                alert("您已成功登出！");
-                setGuestUI();
-                loadPublicData();
-            }
-        }
-
-        function setGuestUI() {
-            userLineId = "";
-            userDisplayName = "";
-            userProfile = null;
-            userRole = "guest";
-            isAdmin = false;
-
-            document.getElementById("userName").innerText = "訪客 (請先登入)";
-            document.getElementById("userRoleText").innerText = "登入後即可瀏覽與登記活動項目";
-            document.getElementById("loginHeaderBtn").classList.remove("hidden");
-            document.getElementById("userAvatarContainer").classList.add("hidden");
-            document.getElementById("adminBtn").classList.add("hidden");
-            
-            document.getElementById("editProfileBtn").classList.add("hidden");
-            document.getElementById("profileQuickBtn").classList.add("hidden");
-            document.getElementById("myRegQuickBtn").classList.add("hidden");
-        }
-
-        function setLoggedInUI(name, avatarUrl, role) {
-            let displayName = name;
-            if (userProfile && userProfile.nickname) {
-                displayName = `${name} ( ${userProfile.nickname} )`;
-            }
-            document.getElementById("userName").innerText = displayName;
-            document.getElementById("loginHeaderBtn").classList.add("hidden");
-            
-            const avatarContainer = document.getElementById("userAvatarContainer");
-            const avatarEl = document.getElementById("userAvatar");
-            const roleBadge = document.getElementById("userRoleBadge");
-            const roleText = document.getElementById("userRoleText");
-
-            if (avatarEl) avatarEl.src = avatarUrl || "https://cdn-icons-png.flaticon.com/512/149/149071.png";
-            if (avatarContainer) avatarContainer.classList.remove("hidden");
-
-            if (role === "admin") {
-                if (roleBadge) {
-                    roleBadge.innerText = "管理員";
-                    roleBadge.className = "absolute -bottom-1 -right-1 text-xs px-2 py-0.5 rounded-full font-black text-white bg-stone-950 shadow-sm";
-                }
-                roleText.innerHTML = "👑 系統管理員權限";
-                document.getElementById("adminBtn").classList.remove("hidden");
-                document.getElementById("editProfileBtn").classList.remove("hidden");
-                document.getElementById("profileQuickBtn").classList.remove("hidden");
-                document.getElementById("myRegQuickBtn").classList.remove("hidden");
-            } else if (role === "member") {
-                if (roleBadge) {
-                    roleBadge.innerText = "正式";
-                    roleBadge.className = "absolute -bottom-1 -right-1 text-xs px-2 py-0.5 rounded-full font-black text-white bg-emerald-600 shadow-sm";
-                }
-                roleText.innerHTML = "🌷 正式會員 (享完整報名權限)";
-                document.getElementById("adminBtn").classList.add("hidden");
-                document.getElementById("editProfileBtn").classList.remove("hidden");
-                document.getElementById("profileQuickBtn").classList.remove("hidden");
-                document.getElementById("myRegQuickBtn").classList.remove("hidden");
-            } else {
-                if (roleBadge) {
-                    roleBadge.innerText = "遊客";
-                    roleBadge.className = "absolute -bottom-1 -right-1 text-xs px-2 py-0.5 rounded-full font-black text-white bg-orange-500 shadow-sm";
-                }
-                roleText.innerHTML = "🔒 遊客帳號 (僅限瀏覽，可請正式會員代報名)";
-                document.getElementById("adminBtn").classList.add("hidden");
-                document.getElementById("editProfileBtn").classList.add("hidden");
-                document.getElementById("profileQuickBtn").classList.add("hidden");
-                document.getElementById("myRegQuickBtn").classList.add("hidden");
-            }
-        }
-
-        async function loadPublicData() {
-            showLoading("正在載入公開項目...");
-            try {
-                const [catRes, evRes] = await Promise.all([
-                    fetch(`${GAS_URL}?action=getCategories`),
-                    fetch(`${GAS_URL}?action=getEvents`)
-                ]);
-                const catData = await catRes.json();
-                const evData = await evRes.json();
-                
-                if (catData.status === "success") allCategories = catData.categories;
-                if (evData.status === "success") allEvents = evData.events;
-
-                renderCategoryBigButtons();
-                renderEventList();
-            } catch (e) {
-                console.error("載入公開資料失敗", e);
-            }
-            hideLoading();
-        }
-
-        async function reloadEventsData() {
-            try {
-                const [catRes, evRes, userRes] = await Promise.all([
-                    fetch(`${GAS_URL}?action=getCategories`),
-                    fetch(`${GAS_URL}?action=getEvents`),
-                    fetch(`${GAS_URL}?action=getUsersList`) 
-                ]);
-                const catData = await catRes.json();
-                const evData = await evRes.json();
-                const userData = await userRes.json();
-                
-                if (catData.status === "success") allCategories = catData.categories;
-                if (evData.status === "success") allEvents = evData.events;
-                if (userData.status === "success") allRegisteredUsers = userData.users || [];
-
-                renderCategoryBigButtons();
-                renderEventList();
-                renderAdminCategorySelect();
-                renderAdminEventSelects();
-            } catch (e) {
-                console.error("重新載入失敗", e);
-            }
-        }
-
-        function openProfileModal() {
-            if (userRole === "guest") {
-                alert("遊客帳號不需填寫完整會員資料，若需報名請請正式會員代報！");
-                return;
-            }
-            if (!userProfile) return;
-            document.getElementById("profileName").value = userProfile.name || "";
-            document.getElementById("profileNickname").value = userProfile.nickname || "";
-            document.getElementById("profilePhone").value = userProfile.phone || "";
-            document.getElementById("profileGender").value = userProfile.gender || "";
-            document.getElementById("profileBirthday").value = userProfile.birthday ? gregToRoc(formatStandardDate(userProfile.birthday)) : "";
-            document.getElementById("profileIdCard").value = userProfile.idCard || "";
-            document.getElementById("profileAddress").value = userProfile.address || "";
-            document.getElementById("profileModal").classList.remove("hidden");
-        }
-
-        async function saveProfile(event) {
-            event.preventDefault();
-            const idCard = document.getElementById("profileIdCard").value.trim().toUpperCase();
-            const idReg = /^[A-Z][12]\d{8}$/;
-            if (!idReg.test(idCard)) {
-                alert("請輸入正確的身分證字號格式！");
-                return;
-            }
-
-            const rocBirth = document.getElementById("profileBirthday").value.trim();
-            const gregBirth = rocToGreg(rocBirth);
-            if (!gregBirth) {
-                alert("生日格式錯誤！請輸入正確的民國格式，例如：75/10/25");
-                document.getElementById("profileBirthday").focus();
-                return;
-            }
-
-            const btn = document.getElementById("saveProfileBtn");
-            btn.disabled = true;
-            showLoading("正在儲存會員資料...");
-            try {
-                const payload = {
-                    action: "saveProfile",
-                    lineId: userLineId,
-                    name: document.getElementById("profileName").value.trim(),
-                    nickname: document.getElementById("profileNickname").value.trim(),
-                    phone: document.getElementById("profilePhone").value.trim(),
-                    gender: document.getElementById("profileGender").value,
-                    birthday: gregBirth,
-                    idCard: idCard,
-                    address: document.getElementById("profileAddress").value.trim()
-                };
-                const response = await fetch(GAS_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify(payload)
-                });
-                const result = await response.json();
-                if (result.status === "success") {
-                    userProfile = result.user;
-                    setLoggedInUI(userProfile.name, "", userRole);
-                    alert("會員資料更新成功！");
-                    closeModal("profileModal");
-                    await reloadEventsData();
-                } else {
-                    alert("儲存失敗：" + result.message);
-                }
-            } catch (e) {
-                alert("連線失敗");
-            } finally {
-                btn.disabled = false;
-                hideLoading();
-            }
-        }
-
-        function renderCategoryBigButtons() {
-            const container = document.getElementById("categoryBigButtonsContainer");
-            if (!container) return;
-            container.innerHTML = "";
-
-            allCategories.forEach(cat => {
-                const isSelected = currentFilterCategory === cat;
-                const styleObj = getCategoryStyle(cat, isSelected);
-                
-                const activeEventCount = allEvents.filter(e => e.category === cat && e.status === "啟動").length;
-                
-                let badgeHtml = "";
-                if (activeEventCount > 0) {
-                    badgeHtml = `<span class="bg-red-500 text-white text-sm font-black px-3.5 py-1.5 rounded-full shadow-sm animate-bounce">🔥 ${activeEventCount} 件活動</span>`;
-                } else {
-                    badgeHtml = `<span class="bg-stone-300 text-stone-600 text-sm font-black px-3 py-1 rounded-full">🌸 暫無活動</span>`;
-                }
-
-                const btn = document.createElement("button");
-                btn.className = `w-full min-h-[80px] rounded-2xl p-4 flex items-center justify-between transition-all active-scale ${styleObj.style}`;
-                btn.onclick = () => selectCategory(cat);
-                
-                btn.innerHTML = `
-                    <div class="flex items-center space-x-4">
-                        <span class="text-3xl">${styleObj.icon}</span>
-                        <div class="text-left">
-                            <span class="text-xl font-black tracking-wide block">${cat}</span>
-                            <div class="mt-1 inline-block">${badgeHtml}</div>
+                <!-- 頂部導覽列 -->
+                <header class="bg-gradient-to-r from-emerald-800 via-emerald-700 to-teal-600 text-white sticky top-0 z-40 shadow-xl border-b-4 border-emerald-950">
+                    <div class="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
+                        <div class="flex items-center space-x-3">
+                            <div class="bg-white p-2 rounded-2xl shadow-md">
+                                <span class="text-4xl">🌷</span>
+                            </div>
+                            <div>
+                                <h1 class="text-2xl font-black tracking-wide leading-none">帕金森促進會</h1>
+                                <span class="text-sm bg-emerald-950 text-emerald-100 px-3 py-1 rounded-full font-black mt-1.5 inline-block">活動登記與接龍</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button id="adminBtn" onclick="enterAdminMode()" class="hidden bg-stone-950 hover:bg-black border-3 border-white text-white text-lg font-black px-4 py-2 rounded-2xl transition-all active-scale shadow-md">
+                                ⚙️ 後台
+                            </button>
+                            <button id="loginHeaderBtn" onclick="openAuthModal()" class="bg-emerald-900 hover:bg-emerald-950 text-white text-base font-black px-4 py-2 rounded-2xl border-3 border-emerald-300 transition-all active-scale shadow-md">
+                                👤 登入/註冊
+                            </button>
+                            <div id="userAvatarContainer" class="hidden relative">
+                                <img id="userAvatar" onclick="handleHeaderLogout()" class="w-14 h-14 rounded-full border-3 border-white shadow-md cursor-pointer object-cover hover:opacity-80 active-scale transition-all" src="" alt="頭像" title="點擊登出">
+                                <span id="userRoleBadge" class="absolute -bottom-1 -right-1 text-xs px-2 py-0.5 rounded-full font-black text-white shadow-sm"></span>
+                            </div>
                         </div>
                     </div>
-                    <div class="flex items-center">
-                        ${isSelected ? '<span class="text-emerald-100 bg-emerald-950 px-3 py-1 rounded-full text-sm font-black">已篩選 🌟</span>' : '<span class="text-stone-500 text-lg">篩選 ➔</span>'}
-                    </div>
-                `;
-                container.appendChild(btn);
-            });
-        }
+                </header>
 
-        // ==========================================
-        // 💡 關鍵優化：首頁即直接顯示活動，點選類別在原地進行篩選
-        // ==========================================
-        function selectCategory(cat) {
-            currentFilterCategory = cat;
-            renderCategoryBigButtons();
-            
-            document.getElementById("selectedCategoryTitle").innerText = `📁 ${cat} - 活動列表`;
-            document.getElementById("clearFilterBtn").classList.remove("hidden");
-            renderEventList();
-            
-            // 平滑滾動到活動列表區段，提供良好視覺反饋
-            document.getElementById("eventListSection").scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function clearCategoryFilter() {
-            currentFilterCategory = "";
-            renderCategoryBigButtons();
-            
-            document.getElementById("selectedCategoryTitle").innerText = "所有活動列表";
-            document.getElementById("clearFilterBtn").classList.add("hidden");
-            renderEventList();
-        }
-
-        function filterByKeyword(keyword) {
-            currentSearchKeyword = keyword.trim().toLowerCase();
-            renderEventList();
-        }
-
-        function openLightbox(imagesJsonStr, startIndex) {
-            try {
-                lightboxImages = JSON.parse(decodeURIComponent(imagesJsonStr));
-            } catch (e) {
-                lightboxImages = [];
-            }
-            if (!lightboxImages || lightboxImages.length === 0) return;
-            
-            currentLightboxIndex = startIndex;
-            document.getElementById("lightboxModal").classList.remove("hidden");
-            updateLightboxUI();
-        }
-
-        function closeLightbox() {
-            document.getElementById("lightboxModal").classList.add("hidden");
-        }
-
-        function updateLightboxUI() {
-            if (currentLightboxIndex < 0) currentLightboxIndex = lightboxImages.length - 1;
-            if (currentLightboxIndex >= lightboxImages.length) currentLightboxIndex = 0;
-
-            const mainImg = document.getElementById("lightboxMainImage");
-            mainImg.src = lightboxImages[currentLightboxIndex];
-            document.getElementById("lightboxIndicator").innerText = `${currentLightboxIndex + 1} / ${lightboxImages.length}`;
-
-            const thumbsContainer = document.getElementById("lightboxThumbnails");
-            thumbsContainer.innerHTML = "";
-            lightboxImages.forEach((imgUrl, idx) => {
-                const isActive = idx === currentLightboxIndex;
-                const thumb = document.createElement("img");
-                thumb.src = imgUrl;
-                thumb.className = `w-16 h-14 object-cover rounded-xl cursor-pointer border-3 transition-all ${isActive ? 'border-emerald-500 scale-110 shadow-md' : 'border-transparent opacity-60 hover:opacity-100'}`;
-                thumb.onclick = () => {
-                    currentLightboxIndex = idx;
-                    updateLightboxUI();
-                };
-                thumbsContainer.appendChild(thumb);
-            });
-        }
-
-        function changeLightboxImage(dir) {
-            currentLightboxIndex += dir;
-            updateLightboxUI();
-        }
-
-        function triggerImageUpload() {
-            const container = document.getElementById("adminImagesContainer");
-            if (container.children.length >= 5) {
-                alert("最多只能上傳 5 張活動照片！");
-                return;
-            }
-            document.getElementById("imageUploadInput").click();
-        }
-
-        function triggerFileUpload() {
-            document.getElementById("fileUploadInput").click();
-        }
-
-        async function uploadImageToDrive(inputEl) {
-            const file = inputEl.files[0];
-            if (!file) return;
-            if (file.size > 5 * 1024 * 1024) {
-                alert("照片大小請勿超過 5MB！");
-                inputEl.value = "";
-                return;
-            }
-
-            showLoading("正在上傳照片至 Google 雲端...");
-            try {
-                const base64Data = await fileToBase64(file);
-                const response = await fetch(GAS_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify({
-                        action: "uploadFileToDrive",
-                        fileName: file.name,
-                        mimeType: file.type,
-                        base64Data: base64Data,
-                        lineId: userLineId || "GUEST_UPLOAD"
-                    })
-                });
-                const result = await response.json();
-                if (result.status === "success") {
-                    addAdminImagePreview(result.fileUrl);
-                } else {
-                    alert("上傳失敗：" + result.message);
-                }
-            } catch (e) {
-                alert("上傳連線失敗，請確認雲端資料夾 ID 設定！");
-            }
-            inputEl.value = ""; 
-            hideLoading();
-        }
-
-        async function uploadFileToDrive(inputEl) {
-            const file = inputEl.files[0];
-            if (!file) return;
-            if (file.size > 8 * 1024 * 1024) {
-                alert("檔案大小請勿超過 8MB！");
-                inputEl.value = "";
-                return;
-            }
-
-            showLoading("正在上傳附件至 Google 雲端...");
-            try {
-                const base64Data = await fileToBase64(file);
-                const response = await fetch(GAS_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify({
-                        action: "uploadFileToDrive",
-                        fileName: file.name,
-                        mimeType: file.type,
-                        base64Data: base64Data,
-                        lineId: userLineId || "GUEST_UPLOAD"
-                    })
-                });
-                const result = await response.json();
-                if (result.status === "success") {
-                    addAdminFileField(result.fileName, result.fileUrl);
-                } else {
-                    alert("上傳失敗：" + result.message);
-                }
-            } catch (e) {
-                alert("上傳連線失敗，請確認雲端資料夾 ID 設定！");
-            }
-            inputEl.value = "";
-            hideLoading();
-        }
-
-        function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-            });
-        }
-
-        function addAdminImagePreview(url = "") {
-            const container = document.getElementById("adminImagesContainer");
-            const div = document.createElement("div");
-            div.className = "relative group aspect-square rounded-xl overflow-hidden border-3 border-stone-300 admin-image-row";
-            div.innerHTML = `
-                <img src="${url}" class="w-full h-full object-cover">
-                <input type="hidden" value="${url}">
-                <button type="button" onclick="this.parentElement.remove()" class="absolute top-1 right-1 bg-red-600 text-white w-8 h-8 flex items-center justify-center rounded-full text-base font-black shadow-md">✕</button>
-            `;
-            container.appendChild(div);
-        }
-
-        function renderEventList() {
-            const container = document.getElementById("eventListContainer");
-            container.innerHTML = "";
-
-            const filtered = allEvents.filter(event => {
-                const matchCategory = !currentFilterCategory || (event.category === currentFilterCategory);
-                const titleMatch = event.title.toLowerCase().includes(currentSearchKeyword);
-                const descMatch = event.description ? event.description.toLowerCase().includes(currentSearchKeyword) : false;
-                const locMatch = event.location ? event.location.toLowerCase().includes(currentSearchKeyword) : false;
-                const matchKeyword = !currentSearchKeyword || (titleMatch || descMatch || locMatch);
-                return matchCategory && matchKeyword;
-            });
-
-            if (filtered.length === 0) {
-                container.innerHTML = `
-                    <div class="bg-white rounded-3xl p-10 text-center border-3 border-stone-300">
-                        <p class="text-stone-600 text-xl font-black">目前尚無符合的活動項目 🌸</p>
-                    </div>
-                `;
-                return;
-            }
-
-            filtered.forEach(event => {
-                const isStop = event.status === "停止";
-                const statusBadge = isStop 
-                    ? `<span class="bg-stone-200 text-stone-800 border-3 border-stone-400 px-4 py-1 rounded-full text-base font-black">已截止</span>`
-                    : `<span class="bg-emerald-100 text-emerald-950 border-3 border-emerald-400 px-4 py-1 rounded-full text-base font-black">開放登記</span>`;
-
-                const styleObj = getCategoryStyle(event.category, false);
-
-                let mediaWallHtml = "";
-                if (event.images && event.images.length > 0) {
-                    const encodedImages = encodeURIComponent(JSON.stringify(event.images));
-                    if (event.images.length === 1) {
-                        mediaWallHtml = `
-                            <div class="w-full h-56 rounded-2xl overflow-hidden border-3 border-stone-200 cursor-pointer active-scale transition-all">
-                                <img onclick="openLightbox('${encodedImages}', 0)" src="${event.images[0]}" class="w-full h-full object-cover" alt="活動圖片">
-                            </div>`;
-                    } else {
-                        const remainingCount = event.images.length - 2;
-                        mediaWallHtml = `
-                            <div class="grid grid-cols-2 gap-3 h-44">
-                                <div class="h-full rounded-2xl overflow-hidden border-3 border-stone-200 cursor-pointer active-scale transition-all">
-                                    <img onclick="openLightbox('${encodedImages}', 0)" src="${event.images[0]}" class="w-full h-full object-cover" alt="活動圖片 1">
-                                </div>
-                                <div class="relative h-full rounded-2xl overflow-hidden border-3 border-stone-200 cursor-pointer active-scale transition-all">
-                                    <img onclick="openLightbox('${encodedImages}', 1)" src="${event.images[1]}" class="w-full h-full object-cover" alt="活動圖片 2">
-                                    ${remainingCount > 0 ? `
-                                    <div onclick="openLightbox('${encodedImages}', 1)" class="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white font-black">
-                                        <span class="text-3xl">+${remainingCount}</span>
-                                        <span class="text-sm tracking-wider">查看更多</span>
-                                    </div>` : ''}
-                                </div>
-                            </div>`;
-                    }
-                }
-
-                let filesHtml = "";
-                if (event.files && event.files.length > 0) {
-                    filesHtml = `<div class="pt-1 flex flex-wrap gap-2">`;
-                    event.files.forEach(f => {
-                        filesHtml += `
-                            <a href="${f.url}" target="_blank" class="inline-flex items-center text-base font-black text-emerald-950 bg-emerald-50 px-4 py-2.5 rounded-xl border-2 border-emerald-300">
-                                📎 ${f.name} ➔
-                            </a>`;
-                    });
-                    filesHtml += `</div>`;
-                }
-
-                const card = document.createElement("div");
-                card.className = "bg-white rounded-3xl p-6 border-3 border-stone-300 shadow-md space-y-4";
-                card.innerHTML = `
-                    <div class="flex justify-between items-center">
-                        <span class="text-base font-black px-4 py-1.5 rounded-xl border ${styleObj.style}">${styleObj.icon} ${event.category}</span>
-                        ${statusBadge}
-                    </div>
-                    ${mediaWallHtml}
-                    <div class="space-y-2">
-                        <h3 class="text-2xl font-black text-stone-950 leading-snug">${event.title}</h3>
-                        <p class="text-lg text-stone-700 font-bold leading-relaxed">${event.description || "無詳細說明"}</p>
-                    </div>
-                    ${filesHtml}
-                    <div class="bg-stone-50 p-5 rounded-2xl border-3 border-stone-200 space-y-3 text-lg text-stone-900">
-                        <p class="flex items-center"><span class="mr-2 text-2xl">📅</span><span class="font-black text-stone-950">截止時間：</span>${formatStandardTime(event.time)}</p>
-                        <p class="flex items-center"><span class="mr-2 text-2xl">📍</span><span class="font-black text-stone-950">活動地點：</span>${event.location}</p>
-                        <p class="flex items-center"><span class="mr-2 text-2xl">👥</span><span class="font-black text-stone-950">登記上限：</span>${event.limit} 人</p>
-                    </div>
-                    <div class="grid grid-cols-1 gap-3 pt-1">
-                        <button onclick="openRegisterModal('${event.id}')" ${(isStop || userRole === 'guest') ? 'disabled' : ''} 
-                                class="w-full bg-emerald-700 hover:bg-emerald-800 text-white disabled:bg-stone-300 disabled:text-stone-500 font-black py-4.5 rounded-2xl text-xl flex items-center justify-center space-x-2 transition-all active-scale shadow-md">
-                            <span>${userRole === 'guest' ? '限會員報名 🔒' : '我要登記 📝'}</span>
-                        </button>
-                        <button onclick="openParticipantsModal('${event.id}')" 
-                                class="w-full bg-white hover:bg-stone-50 text-emerald-950 border-3 border-emerald-600 font-black py-4 rounded-2xl text-xl flex items-center justify-center space-x-2 transition-all active-scale shadow-md">
-                            <span>登記清單 📋</span>
-                        </button>
-                    </div>
-                `;
-                container.appendChild(card);
-            });
-        }
-
-        function openRegisterModal(eventId) {
-            if (!liff.isLoggedIn()) {
-                alert("請先使用 LINE 快速登入以開啟報名權限！");
-                openAuthModal();
-                return;
-            }
-            if (userRole === "guest") {
-                alert("🔒 您的帳號身分為【遊客】，無法自行報名。請聯繫正式會員代為報名！");
-                return;
-            }
-            
-            const isProfileComplete = userProfile && 
-                                      userProfile.name && 
-                                      userProfile.phone && 
-                                      userProfile.gender && 
-                                      userProfile.birthday && 
-                                      userProfile.idCard;
-
-            if (!isProfileComplete) {
-                alert("💡 您尚未填寫完整會員基本資料！\n系統將引導您至填寫頁面，完成後即可登記。");
-                openProfileModal();
-                return;
-            }
-
-            currentEvent = allEvents.find(e => e.id === eventId);
-            document.getElementById("regEventTitle").innerText = currentEvent.title;
-            document.getElementById("attendeesContainer").innerHTML = "";
-            
-            const submitBtn = document.getElementById("regSubmitBtn");
-            submitBtn.setAttribute("onclick", "submitMultiRegistration()");
-            
-            addAttendeeForm(
-                userProfile.name, 
-                userProfile.phone, 
-                true, 
-                userProfile.gender, 
-                gregToRoc(formatStandardDate(userProfile.birthday)), 
-                userProfile.idCard,
-                "本人"
-            );
-            document.getElementById("registerModal").classList.remove("hidden");
-        }
-
-        function openSearchAttendeeDialog() {
-            document.getElementById("globalAttendeeSearchInput").value = "";
-            document.getElementById("globalAttendeeSearchResults").innerHTML = `<p class="text-stone-500 text-center py-4">請輸入關鍵字進行搜尋</p>`;
-            document.getElementById("searchAttendeeModal").classList.remove("hidden");
-        }
-
-        function searchGlobalAttendees(keyword) {
-            const cleanKeyword = keyword.trim().toLowerCase();
-            const container = document.getElementById("globalAttendeeSearchResults");
-            container.innerHTML = "";
-
-            if (!cleanKeyword) {
-                container.innerHTML = `<p class="text-stone-500 text-center py-4">請輸入關鍵字進行搜尋</p>`;
-                return;
-            }
-
-            const matched = allRegisteredUsers.filter(u => u.name.toLowerCase().includes(cleanKeyword));
-
-            if (matched.length === 0) {
-                container.innerHTML = `<p class="text-stone-500 text-center py-4">找不到相符的團員</p>`;
-                return;
-            }
-
-            matched.forEach(u => {
-                const div = document.createElement("div");
-                div.className = "p-4 hover:bg-emerald-50 cursor-pointer flex justify-between items-center transition-all";
-                div.innerHTML = `
-                    <div>
-                        <p class="font-black text-stone-900 text-lg">👤 ${u.name}</p>
-                        <p class="text-sm text-stone-500">📞 ${u.phone || '無電話'} | 🎂 ${u.birthday ? gregToRoc(u.birthday) : '未填'}</p>
-                    </div>
-                    <span class="bg-emerald-700 text-white text-sm font-black px-4 py-2 rounded-xl shadow-sm">追加帶入</span>
-                `;
-                div.onclick = () => {
-                    addAttendeeForm(
-                        u.name, 
-                        u.phone || "", 
-                        false, 
-                        u.gender || "", 
-                        u.birthday ? gregToRoc(u.birthday) : "", 
-                        u.idCard || "",
-                        "朋友"
-                    );
-                    closeModal("searchAttendeeModal");
-                    alert(`🎉 已成功帶入【${u.name}】，請直接填寫其問題調查！`);
-                };
-                container.appendChild(div);
-            });
-        }
-
-        function openCreateUserModal() {
-            document.getElementById("newUserName").value = "";
-            document.getElementById("newUserPhone").value = "";
-            document.getElementById("newUserGender").value = "";
-            document.getElementById("newUserRelation").value = "家人";
-            document.getElementById("newUserBirthday").value = "";
-            document.getElementById("newUserIdCard").value = "";
-            document.getElementById("createUserModal").classList.remove("hidden");
-        }
-
-        async function handleAddNewUserToDatabase(event) {
-            event.preventDefault();
-            const name = document.getElementById("newUserName").value.trim();
-            const phone = document.getElementById("newUserPhone").value.trim();
-            const gender = document.getElementById("newUserGender").value;
-            const relation = document.getElementById("newUserRelation").value;
-            const birthdayStr = document.getElementById("newUserBirthday").value.trim();
-            const idCard = document.getElementById("newUserIdCard").value.trim().toUpperCase();
-
-            const gregBirth = rocToGreg(birthdayStr);
-            if (!gregBirth) {
-                alert("生日格式錯誤！請輸入正確的民國格式，例如：75/10/25");
-                return;
-            }
-
-            const idReg = /^[A-Z][12]\d{8}$/;
-            if (!idReg.test(idCard)) {
-                alert("身分證字號格式錯誤！");
-                return;
-            }
-
-            showLoading("正在儲存同行人至資料庫...");
-            try {
-                const response = await fetch(GAS_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify({
-                        action: "bindUser",
-                        lineId: "",
-                        name: name,
-                        phone: phone,
-                        gender: gender,
-                        birthday: gregBirth,
-                        idCard: idCard
-                    })
-                });
-                const result = await response.json();
-                if (result.status === "success") {
-                    allRegisteredUsers.push({
-                        name: name,
-                        phone: phone,
-                        gender: gender,
-                        birthday: gregBirth,
-                        hasIdCard: true,
-                        idCard: idCard
-                    });
-
-                    addAttendeeForm(name, phone, false, gender, birthdayStr, idCard, relation);
-                    closeModal("createUserModal");
-                    alert(`🎉 已成功將【${name}】儲存至資料庫並加入清單！`);
-                } else {
-                    alert("儲存失敗：" + result.message);
-                }
-            } catch (e) {
-                alert("連線失敗");
-            }
-            hideLoading();
-        }
-
-        function addAttendeeForm(name = "", phone = "", isSelf = false, gender = "", birthday = "", idCard = "", relation = "家人", initialAnswers = {}) {
-            const container = document.getElementById("attendeesContainer");
-            const div = document.createElement("div");
-            div.className = "p-5 bg-stone-50 rounded-2xl border-3 border-stone-300 space-y-4 attendee-row relative";
-            
-            let questionsHtml = "";
-            if (currentEvent && currentEvent.questions) {
-                currentEvent.questions.forEach(q => {
-                    if (["姓名", "電話", "性別", "生日", "身分證字號", "關係"].includes(q.title)) return; 
+                <!-- 主內容區 -->
+                <main class="max-w-md mx-auto px-4 py-4 space-y-5">
                     
-                    const reqMark = q.required ? '<span class="text-red-500">*</span>' : '';
-                    const reqAttr = q.required ? 'required' : '';
-                    const curVal = initialAnswers[q.title] || "";
-                    
-                    if (q.type === "select") {
-                        const opts = q.options ? q.options.split(',') : [];
-                        let optsHtml = opts.map(o => {
-                            const trimmed = o.trim();
-                            return `<option value="${trimmed}" ${trimmed === curVal ? 'selected' : ''}>${trimmed}</option>`;
-                        }).join('');
-                        questionsHtml += `
+                    <!-- 會員歡迎與快捷區 -->
+                    <div class="bg-white rounded-3xl p-6 shadow-md border-3 border-stone-300 space-y-5">
+                        <div class="flex justify-between items-start">
                             <div>
-                                <label class="block text-base font-black text-stone-800 mb-1">${q.title} ${reqMark}</label>
-                                <select data-qtitle="${q.title}" class="w-full border-3 border-stone-400 rounded-xl p-3.5 text-lg bg-white font-bold q-input" ${reqAttr}>
-                                    <option value="">請選擇</option>
-                                    ${optsHtml}
-                                </select>
+                                <p class="text-lg text-stone-600 font-black flex items-center">歡迎回來 <span class="ml-1 text-2xl">👋</span></p>
+                                <p class="text-3xl font-black text-stone-950 mt-1">
+                                    <span id="userName" class="border-b-4 border-amber-400 pb-1">訪客 (請先登入)</span>
+                                </p>
+                                <p id="userRoleText" class="text-base font-black text-stone-500 mt-2"></p>
                             </div>
-                        `;
-                    } else {
-                        questionsHtml += `
-                            <div>
-                                <label class="block text-base font-black text-stone-800 mb-1">${q.title} ${reqMark}</label>
-                                <input type="text" data-qtitle="${q.title}" value="${curVal}" class="w-full border-3 border-stone-400 rounded-xl p-3.5 text-lg bg-white font-bold q-input" placeholder="請輸入內容" ${reqAttr}>
-                            </div>
-                        `;
-                    }
-                });
-            }
+                            <button id="editProfileBtn" onclick="openProfileModal()" class="hidden bg-stone-100 hover:bg-stone-200 text-stone-800 font-black px-5 py-3 rounded-2xl border-3 border-stone-400 active-scale flex items-center space-x-1.5 shadow-sm">
+                                <span class="text-xl">✏️</span>
+                                <span class="text-lg">修改資料</span>
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 pt-1">
+                            <button id="profileQuickBtn" onclick="openProfileModal()" class="hidden w-full bg-stone-100 hover:bg-stone-200 text-stone-900 font-black py-4.5 rounded-2xl text-xl border-3 border-stone-400 active-scale transition-all flex items-center justify-center space-x-2 shadow-sm">
+                                <span class="text-2xl text-purple-800">👤</span>
+                                <span>會員資料</span>
+                            </button>
+                            <button id="myRegQuickBtn" onclick="openMyRegistrationsModal()" class="hidden w-full bg-amber-100 hover:bg-amber-200 text-amber-950 font-black py-4.5 rounded-2xl text-xl border-3 border-amber-400 active-scale transition-all flex items-center justify-center space-x-2 shadow-sm">
+                                <span class="text-2xl text-amber-700">📋</span>
+                                <span>我的登記</span>
+                            </button>
+                        </div>
+                    </div>
 
-            div.innerHTML = `
-                ${isSelf ? '' : `
-                <button type="button" onclick="this.parentElement.remove()" class="text-red-700 font-black text-sm absolute top-3 right-3 border-2 border-red-300 bg-white px-3 py-1 rounded-xl shadow-sm z-10">❌ 移除</button>
-                `}
-                
-                <p class="font-black text-emerald-950 text-lg mb-1">${isSelf ? '👤 本人 (主要聯絡人)' : `👥 同行人登記`}</p>
-                
-                <div>
-                    <label class="block text-sm font-black text-stone-700 mb-1">姓名 <span class="text-red-500">*</span></label>
-                    <input type="text" class="w-full border-3 border-stone-400 rounded-xl p-3.5 text-lg bg-stone-100 font-bold att-name" value="${name}" required readonly>
+                    <!-- 類別快速篩選區 -->
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center px-1">
+                            <h2 class="text-xl font-black text-stone-800 flex items-center">
+                                <span class="text-2xl mr-1.5">📁</span> 依類別快速篩選：
+                            </h2>
+                            <button id="clearFilterBtn" onclick="clearCategoryFilter()" class="hidden text-base bg-stone-800 text-white px-4 py-1.5 rounded-full font-black active-scale shadow-sm">
+                                顯示全部 🌟
+                            </button>
+                        </div>
+                        <div id="categoryBigButtonsContainer" class="grid grid-cols-1 gap-3">
+                            <div class="animate-pulse bg-stone-200 h-20 rounded-3xl"></div>
+                        </div>
+                    </div>
+
+                    <!-- 關鍵字搜尋區 -->
+                    <div class="bg-white rounded-3xl p-5 shadow-md border-3 border-stone-300 space-y-3">
+                        <label class="block text-base font-black text-stone-700">🔍 搜尋關鍵字 (活動名稱、地點)</label>
+                        <input type="text" id="keywordSearch" oninput="filterByKeyword(this.value)" class="w-full border-3 border-stone-400 rounded-2xl p-4 text-xl font-bold bg-white" placeholder="請輸入關鍵字搜尋...">
+                    </div>
+
+                    <!-- 活動/商品列表區 (預設直接在首頁呈現所有活動) -->
+                    <div id="eventListSection" class="space-y-4">
+                        <div class="bg-white rounded-3xl p-5 border-3 border-stone-300 shadow-sm">
+                            <h2 class="text-2xl font-black text-stone-950 flex items-center justify-center">
+                                <span class="text-3xl mr-2">📅</span> <span id="selectedCategoryTitle">所有活動列表</span>
+                            </h2>
+                        </div>
+                        <div id="eventListContainer" class="space-y-5"></div>
+                    </div>
+                </main>
+
+                <!-- Lightbox 全螢幕大圖輪播彈窗 -->
+                <div id="lightboxModal" class="fixed inset-0 bg-black/95 z-50 hidden flex flex-col justify-between p-4 select-none">
+                    <div class="flex justify-between items-center text-white z-10 py-2">
+                        <span id="lightboxIndicator" class="text-xl font-black bg-black/40 px-5 py-2 rounded-full">1 / 1</span>
+                        <button onclick="closeLightbox()" class="bg-white/10 hover:bg-white/20 active-scale text-white w-14 h-14 flex items-center justify-center rounded-full text-3xl font-black transition-all">✕</button>
+                    </div>
+                    <div class="relative flex-1 flex items-center justify-center">
+                        <button onclick="changeLightboxImage(-1)" class="absolute left-2 bg-black/50 hover:bg-black/70 active-scale text-white w-16 h-16 rounded-full flex items-center justify-center text-4xl font-black z-10 transition-all">◀</button>
+                        <img id="lightboxMainImage" class="max-h-[65vh] max-w-full object-contain rounded-xl shadow-2xl transition-all duration-300" src="" alt="大圖">
+                        <button onclick="changeLightboxImage(1)" class="absolute right-2 bg-black/50 hover:bg-black/70 active-scale text-white w-16 h-16 rounded-full flex items-center justify-center text-4xl font-black z-10 transition-all">▶</button>
+                    </div>
+                    <div class="py-4 border-t border-white/10">
+                        <div id="lightboxThumbnails" class="flex justify-center space-x-3 overflow-x-auto no-scrollbar py-2 px-4 max-w-md mx-auto"></div>
+                    </div>
                 </div>
 
-                <input type="hidden" class="att-phone" value="${phone}">
-                <input type="hidden" class="att-relation" value="${relation}">
-                <input type="hidden" class="att-gender" value="${gender}">
-                <input type="hidden" class="att-birthday" value="${birthday}">
-                <input type="hidden" class="att-idcard" value="${idCard}">
+                <!-- 登入/註冊整合彈窗 -->
+                <div id="authModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden">
+                        <div class="bg-gradient-to-r from-emerald-800 to-teal-700 text-white p-5 flex justify-between items-center border-b-4 border-emerald-900">
+                            <button onclick="closeModal('authModal')" class="bg-emerald-950 hover:bg-black text-white px-4 py-2 rounded-xl text-base font-black shadow-md">
+                                ⬅ 返回首頁
+                            </button>
+                            <h3 class="text-2xl font-black" id="authModalTitle">系統登入 / 註冊</h3>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 border-b-3 border-stone-200 bg-stone-50">
+                            <button onclick="switchAuthTab('login')" id="authTabBtn_login" class="py-4 text-lg font-black text-emerald-800 border-b-4 border-emerald-800 bg-white">帳號登入</button>
+                            <button onclick="switchAuthTab('register')" id="authTabBtn_register" class="py-4 text-lg font-black text-stone-500">新用戶註冊</button>
+                        </div>
 
-                ${questionsHtml}
-            `;
-            container.appendChild(div);
-        }
-
-        async function submitMultiRegistration() {
-            const btn = document.getElementById("regSubmitBtn");
-            if (btn.disabled) return;
-            btn.disabled = true;
-
-            const rows = document.querySelectorAll(".attendee-row");
-            const attendees = [];
-            let isValid = true;
-
-            for (let i = 0; i < rows.length; i++) {
-                const row = rows[i];
-                const nameInput = row.querySelector(".att-name");
-                const phoneInput = row.querySelector(".att-phone");
-                const relationInput = row.querySelector(".att-relation");
-                const genderInput = row.querySelector(".att-gender");
-                const birthdayInput = row.querySelector(".att-birthday");
-                const idCardInput = row.querySelector(".att-idcard");
-                
-                if (!nameInput.value.trim()) {
-                    isValid = false;
-                    nameInput.classList.add("border-red-500");
-                } else {
-                    nameInput.classList.remove("border-red-500");
-                }
-
-                let gregBirth = birthdayInput.value.trim() ? rocToGreg(birthdayInput.value.trim()) : "";
-
-                const answers = { 
-                    "姓名": nameInput.value.trim(),
-                    "電話": phoneInput.value.trim(),
-                    "關係": relationInput ? relationInput.value : "家人",
-                    "性別": genderInput.value,
-                    "生日": gregBirth,
-                    "身分證字號": idCardInput.value
-                };
-
-                row.querySelectorAll(".q-input").forEach(qInput => {
-                    const title = qInput.getAttribute("data-qtitle");
-                    const val = qInput.value ? qInput.value.trim() : "";
-                    if (qInput.hasAttribute("required") && !val) {
-                        isValid = false;
-                        qInput.classList.add("border-red-500");
-                    } else {
-                        qInput.classList.remove("border-red-500");
-                    }
-                    answers[title] = val;
-                });
-
-                attendees.push({
-                    name: nameInput.value.trim(),
-                    phone: phoneInput.value.trim(),
-                    relation: relationInput ? relationInput.value : "家人",
-                    gender: genderInput.value,
-                    birthday: gregBirth,
-                    idCard: idCardInput.value,
-                    answers: answers
-                });
-            }
-
-            if (!isValid) {
-                alert("請完整填寫所有必填調查項目！");
-                btn.disabled = false;
-                return;
-            }
-
-            showLoading("正在提交登記...");
-            try {
-                const payload = {
-                    action: "registerMulti",
-                    eventId: currentEvent.id,
-                    lineId: userLineId,
-                    leaderName: userProfile ? userProfile.name : userDisplayName,
-                    leaderPhone: userProfile ? userProfile.phone : "", 
-                    groupId: liff.getContext()?.groupId || "",
-                    attendees: attendees
-                };
-
-                const response = await fetch(GAS_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify(payload)
-                });
-                const result = await response.json();
-
-                if (result.status === "success") {
-                    closeModal("registerModal");
-                    
-                    try {
-                        await sendFlexMessage(
-                            currentEvent.id,
-                            currentEvent.time, 
-                            currentEvent.title, 
-                            result.remainingSpots, 
-                            result.myRegisteredAttendees, 
-                            attendees.length, 
-                            false
-                        );
-                    } catch (flexErr) {
-                        console.warn("Flex 發送略過", flexErr);
-                    }
-                    
-                    alert(`🎉 登記成功！\n錄取狀態：【${result.queueStatus}】`);
-                    await reloadEventsData();
-                } else {
-                    alert("登記失敗：" + result.message);
-                }
-            } catch (e) {
-                alert("連線失敗");
-            } finally {
-                btn.disabled = false;
-                hideLoading();
-            }
-        }
-
-        async function openParticipantsModal(eventId) {
-            currentEvent = allEvents.find(e => e.id === eventId);
-            document.getElementById("participantsModal").classList.remove("hidden");
-            const container = document.getElementById("participantsCardContainer");
-            container.innerHTML = `<p class="text-stone-600 text-center py-6 font-bold">載入接龍名單中...</p>`;
-
-            try {
-                const response = await fetch(`${GAS_URL}?action=getParticipants&eventId=${eventId}`);
-                const result = await response.json();
-                if (result.status === "success") {
-                    currentParticipants = result.participants;
-                    currentCardPage = 0;
-                    renderParticipantsCards();
-                }
-            } catch (e) {
-                container.innerHTML = `<p class="text-red-500 text-center py-6 font-bold">載入失敗</p>`;
-            }
-        }
-
-        function renderParticipantsCards() {
-            const container = document.getElementById("participantsCardContainer");
-            container.innerHTML = "";
-
-            if (currentParticipants.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center py-8">
-                        <p class="text-stone-600 text-lg font-black">目前尚無人登記，搶得頭香！🌸</p>
-                    </div>`;
-                document.getElementById("prevCardBtn").disabled = true;
-                document.getElementById("nextCardBtn").disabled = true;
-                document.getElementById("cardPageIndicator").innerText = "0 / 0";
-                return;
-            }
-
-            const totalPages = Math.ceil(currentParticipants.length / CARD_PAGE_SIZE);
-            const start = currentCardPage * CARD_PAGE_SIZE;
-            const end = Math.min(start + CARD_PAGE_SIZE, currentParticipants.length);
-            const pageList = currentParticipants.slice(start, end);
-
-            const card = document.createElement("div");
-            card.className = "w-full bg-emerald-50 rounded-2xl border-3 border-emerald-200 p-5 space-y-3";
-            
-            let listHtml = `<div class="grid grid-cols-2 gap-x-4 gap-y-3">`;
-            pageList.forEach((p, idx) => {
-                const globalIdx = start + idx + 1;
-                const isBackup = p.status === "候補";
-                const badge = isBackup 
-                    ? `<span class="bg-amber-200 text-amber-950 font-black text-sm px-2.5 py-0.5 rounded-full ml-1">候補</span>` 
-                    : `<span class="bg-emerald-200 text-emerald-950 font-black text-sm px-2.5 py-0.5 rounded-full ml-1">正取</span>`;
-                
-                const masked = maskName(p.name);
-                listHtml += `
-                    <div class="flex items-center justify-between border-b border-emerald-200 pb-2 text-lg">
-                        <span class="font-black text-stone-900">${globalIdx}. ${masked}</span>
-                        ${badge}
-                    </div>`;
-            });
-            listHtml += `</div>`;
-
-            card.innerHTML = `
-                <div class="flex justify-between items-center border-b-2 border-emerald-300 pb-3 mb-3">
-                    <span class="font-black text-emerald-950 text-xl">🌸 登記名單 (${start+1} ~ ${end} 號)</span>
-                    <span class="text-base bg-emerald-700 text-white px-4 py-1 rounded-xl font-black">共 ${currentParticipants.length} 人</span>
-                </div>
-                ${listHtml}
-            `;
-            container.appendChild(card);
-
-            document.getElementById("prevCardBtn").disabled = currentCardPage === 0;
-            document.getElementById("nextCardBtn").disabled = currentCardPage >= totalPages - 1;
-            document.getElementById("cardPageIndicator").innerText = `${currentCardPage + 1} / ${totalPages}`;
-        }
-
-        function changeCardPage(dir) {
-            const totalPages = Math.ceil(currentParticipants.length / CARD_PAGE_SIZE);
-            currentCardPage = Math.max(0, Math.min(totalPages - 1, currentCardPage + dir));
-            renderParticipantsCards();
-        }
-
-        async function openMyRegistrationsModal() {
-            document.getElementById("myRegistrationsModal").classList.remove("hidden");
-            const container = document.getElementById("myRegListContainer");
-            container.innerHTML = `<p class="text-stone-600 text-center py-8 font-black">載入中...</p>`;
-
-            try {
-                const response = await fetch(`${GAS_URL}?action=getMyRegistrations&lineId=${userLineId}`);
-                const result = await response.json();
-                if (result.status === "success") {
-                    container.innerHTML = "";
-                    const list = result.registrations;
-                    if (list.length === 0) {
-                        container.innerHTML = `<p class="text-stone-600 text-center py-8 font-black">您目前尚無登記紀錄 🌸</p>`;
-                        return;
-                    }
-
-                    list.forEach(reg => {
-                        const isStop = reg.eventStatus === "停止";
-                        const card = document.createElement("div");
-                        card.className = "bg-stone-50 p-5 rounded-2xl border-3 border-stone-300 space-y-3";
-                        card.innerHTML = `
-                            <div class="flex justify-between items-start">
-                                <span class="font-black text-stone-950 text-xl">${reg.eventTitle}</span>
-                                <span class="px-3 py-1 rounded-full text-sm font-black ${isStop ? 'bg-stone-200 text-stone-700 border border-stone-400' : 'bg-emerald-100 text-emerald-950 border border-emerald-300'}">${reg.eventStatus}</span>
+                        <div class="p-6 space-y-5">
+                            <div class="space-y-3">
+                                <p class="text-sm font-black text-stone-500 text-center">─ 推薦使用 LINE 一鍵登入 (享完整會員報名權限) ─</p>
+                                <button onclick="handleHeaderLogin()" class="w-full bg-[#06C755] hover:bg-[#05B34C] text-white font-black py-5 rounded-2xl text-xl flex items-center justify-center space-x-2 shadow-md active-scale transition-all">
+                                    <span class="text-3xl">💬</span>
+                                    <span>LINE 快速登入 / 綁定</span>
+                                </button>
                             </div>
-                            <p class="text-stone-700 text-lg font-bold">📅 時間：${formatStandardTime(reg.eventTime)}</p>
-                            <div class="flex justify-between items-center border-t-2 border-stone-200 pt-3 mt-2">
-                                <span class="font-black text-stone-900 text-lg">👥 數量：${reg.attendeeCount} 人</span>
-                                <div class="flex space-x-2">
-                                    <button onclick="viewRegistrationDetails('${reg.regId}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-950 border border-emerald-300 px-4 py-2.5 rounded-xl font-black text-base">
-                                        🔍 明細
-                                    </button>
-                                    <button onclick="openEditRegistration('${reg.eventId}', '${reg.regId}')" ${isStop ? 'disabled' : ''} class="bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 px-4 py-2.5 rounded-xl font-black text-base disabled:opacity-40">
-                                        ✏️ 修改
-                                    </button>
+
+                            <div class="relative flex py-2 items-center">
+                                <div class="flex-grow border-t-2 border-stone-300"></div>
+                                <span class="flex-shrink mx-4 text-stone-400 text-sm font-black">或使用一般帳號</span>
+                                <div class="flex-grow border-t-2 border-stone-300"></div>
+                            </div>
+
+                            <!-- 帳號登入表單 -->
+                            <form id="authLoginForm" onsubmit="handleNormalLogin(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-base font-black text-stone-800 mb-1">您的姓名 *</label>
+                                    <input type="text" id="authLoginName" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" placeholder="請輸入您的真實姓名" required>
+                                </div>
+                                <div>
+                                    <label class="block text-base font-black text-stone-800 mb-1">手機號碼 *</label>
+                                    <input type="tel" id="authLoginPhone" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" placeholder="請輸入註冊手機號碼" required>
+                                </div>
+                                <button type="submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-black py-5 rounded-2xl text-xl shadow-md">登入系統 ➔</button>
+                            </form>
+
+                            <!-- 註冊表單 -->
+                            <form id="authRegisterForm" onsubmit="handleNormalRegister(event)" class="space-y-4 hidden">
+                                <div id="registerNotice" class="bg-amber-50 p-4 rounded-2xl border-2 border-amber-200 text-sm text-amber-950 font-bold leading-relaxed">
+                                    💡 註冊說明：免 LINE 註冊之用戶身分為【遊客】，僅能瀏覽活動，無法自行報名。若需報名，可請正式會員代為報名。
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-base font-black text-stone-800 mb-1">真實姓名 *</label>
+                                        <input type="text" id="regName" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" placeholder="真實姓名" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-base font-black text-stone-800 mb-1">暱稱/稱呼</label>
+                                        <input type="text" id="regNickname" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" placeholder="例如：彤彤爸">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-base font-black text-stone-800 mb-1">手機號碼 *</label>
+                                        <input type="tel" id="regPhone" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" placeholder="聯絡電話" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-base font-black text-stone-800 mb-1">性別 *</label>
+                                        <select id="regGender" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold bg-white" required>
+                                            <option value="">請選擇</option>
+                                            <option value="男">男</option>
+                                            <option value="女">女</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 gap-3">
+                                    <div>
+                                        <label class="block text-base font-black text-stone-800 mb-1">生日 (民國格式) *</label>
+                                        <input type="text" id="regBirthday" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" placeholder="例如：75/10/25" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-base font-black text-stone-800 mb-1">身分證字號 (保險/核對用) *</label>
+                                        <input type="text" id="regIdCard" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold uppercase" placeholder="請輸入身分證字號" required>
+                                    </div>
+                                </div>
+                                <button type="submit" id="regSubmitBtnMain" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-black py-5 rounded-2xl text-xl shadow-md">註冊並綁定帳號 📝</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 會員資料彈窗 -->
+                <div id="profileModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden">
+                        <div class="bg-gradient-to-r from-emerald-800 to-teal-700 text-white p-5 flex justify-between items-center border-b-4 border-emerald-900">
+                            <h3 class="text-2xl font-black">👤 完善會員資料</h3>
+                            <button onclick="closeModal('profileModal')" class="text-white font-black text-3xl">✕</button>
+                        </div>
+                        <form onsubmit="saveProfile(event)" class="p-5 space-y-4">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-base font-black text-stone-800 mb-1">真實姓名 *</label>
+                                    <input type="text" id="profileName" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" required>
+                                </div>
+                                <div>
+                                    <label class="block text-base font-black text-stone-800 mb-1">暱稱/稱呼</label>
+                                    <input type="text" id="profileNickname" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" placeholder="例如：彤彤爸">
                                 </div>
                             </div>
-                        `;
-                        container.appendChild(card);
-                    });
-                }
-            } catch (e) {
-                container.innerHTML = `<p class="text-red-500 text-center py-8">載入失敗，請稍後重試</p>`;
-            }
-        }
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-base font-black text-stone-800 mb-1">電話 *</label>
+                                    <input type="tel" id="profilePhone" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" required>
+                                </div>
+                                <div>
+                                    <label class="block text-base font-black text-stone-800 mb-1">性別 *</label>
+                                    <select id="profileGender" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold bg-white" required>
+                                        <option value="">請選擇</option>
+                                        <option value="男">男</option>
+                                        <option value="女">女</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-base font-black text-stone-800 mb-1">生日 (民國格式) *</label>
+                                <input type="text" id="profileBirthday" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" placeholder="例如：75/10/25" required>
+                            </div>
+                            <div>
+                                <label class="block text-base font-black text-stone-800 mb-1">身分證字號 (保險/核對用) *</label>
+                                <input type="text" id="profileIdCard" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold uppercase" placeholder="請輸入身分證字號" required>
+                            </div>
+                            <div>
+                                <label class="block text-base font-black text-stone-800 mb-1">通訊地址</label>
+                                <input type="text" id="profileAddress" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold">
+                            </div>
+                            <button type="submit" id="saveProfileBtn" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-black py-5 rounded-2xl text-2xl shadow-md">儲存會員資料 💾</button>
+                        </form>
+                    </div>
+                </div>
 
-        async function viewRegistrationDetails(regId) {
-            showLoading("載入明細中...");
-            try {
-                const response = await fetch(`${GAS_URL}?action=getRegistrationDetails&regId=${regId}`);
-                const result = await response.json();
-                if (result.status === "success") {
-                    const container = document.getElementById("regDetailsContainer");
-                    container.innerHTML = "";
+                <!-- 登記報名彈窗 -->
+                <div id="registerModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+                    <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden my-8">
+                        <div class="bg-gradient-to-r from-emerald-800 to-teal-700 text-white p-5 flex justify-between items-center border-b-4 border-emerald-900">
+                            <button onclick="closeModal('registerModal')" class="bg-emerald-950 hover:bg-black text-white px-4 py-2 rounded-xl text-base font-black shadow-md">
+                                ⬅ 返回首頁
+                            </button>
+                            <h3 class="text-xl font-black truncate max-w-[200px]" id="regEventTitle">活動登記</h3>
+                        </div>
+                        
+                        <!-- 名單追加/新增操作區 -->
+                        <div class="p-4 bg-emerald-50 border-b-3 border-emerald-200 flex flex-col space-y-2.5">
+                            <button type="button" onclick="openSearchAttendeeDialog()" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-black py-4 rounded-xl text-lg shadow-md flex items-center justify-center space-x-2">
+                                <span>🔍 搜尋帶入已建檔名單</span>
+                            </button>
+                            <button type="button" onclick="openCreateUserModal()" class="w-full bg-white border-3 border-emerald-600 text-emerald-950 font-black py-3.5 rounded-xl text-lg shadow-md flex items-center justify-center space-x-2">
+                                <span>➕ 新增未建檔同行人</span>
+                            </button>
+                        </div>
+
+                        <div class="p-5 space-y-4 max-h-[50vh] overflow-y-auto">
+                            <div id="attendeesContainer" class="space-y-4"></div>
+                        </div>
+                        <div class="p-5 bg-stone-100 border-t-3 border-stone-300 flex space-x-3">
+                            <button onclick="closeModal('registerModal')" class="flex-1 bg-stone-200 text-stone-900 py-5 rounded-2xl text-xl font-black border-3 border-stone-400">取消</button>
+                            <button id="regSubmitBtn" onclick="submitMultiRegistration()" class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white py-5 rounded-2xl text-xl font-black shadow-md">確認送出 📝</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🔍 追加搜尋名單彈窗 -->
+                <div id="searchAttendeeModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden">
+                        <div class="bg-emerald-800 text-white p-4 flex justify-between items-center border-b-3 border-emerald-950">
+                            <span class="font-black text-lg">🔍 搜尋已註冊名單</span>
+                            <button onclick="closeModal('searchAttendeeModal')" class="text-white text-base font-black">✕ 關閉</button>
+                        </div>
+                        <div class="p-4 space-y-3">
+                            <input type="text" id="globalAttendeeSearchInput" oninput="searchGlobalAttendees(this.value)" class="w-full border-3 border-stone-400 rounded-xl p-4 text-lg font-bold" placeholder="輸入姓名搜尋...">
+                            <div id="globalAttendeeSearchResults" class="bg-stone-50 border-3 border-stone-200 rounded-xl max-h-60 overflow-y-auto text-base font-bold divide-y divide-stone-200">
+                                <p class="text-stone-500 text-center py-4">請輸入關鍵字進行搜尋</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ➕ 新增同行人基本資料並存入後台 Users 彈窗 -->
+                <div id="createUserModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden">
+                        <div class="bg-gradient-to-r from-emerald-800 to-teal-700 text-white p-5 flex justify-between items-center border-b-4 border-emerald-900">
+                            <h3 class="text-xl font-black">➕ 填寫同行人基本資料</h3>
+                            <button onclick="closeModal('createUserModal')" class="text-white font-black text-3xl">✕</button>
+                        </div>
+                        <form onsubmit="handleAddNewUserToDatabase(event)" class="p-5 space-y-4">
+                            <div class="bg-amber-50 p-3.5 rounded-xl border border-amber-200 text-sm text-amber-950 font-bold">
+                                💡 提示：填寫後將自動存入系統資料庫，下次即可直接搜尋帶入！
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-black text-stone-800 mb-1">真實姓名 *</label>
+                                    <input type="text" id="newUserName" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" required>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-black text-stone-800 mb-1">手機號碼 *</label>
+                                    <input type="tel" id="newUserPhone" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" placeholder="09xxxxxxxx" required>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-black text-stone-800 mb-1">性別 *</label>
+                                    <select id="newUserGender" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white" required>
+                                        <option value="">請選擇</option>
+                                        <option value="男">男</option>
+                                        <option value="女">女</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-black text-stone-800 mb-1">關係 *</label>
+                                    <select id="newUserRelation" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white" required>
+                                        <option value="家人">家人</option>
+                                        <option value="朋友">朋友</option>
+                                        <option value="新會員">新會員</option>
+                                        <option value="遊客">遊客</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-black text-stone-800 mb-1">生日 (民國格式) *</label>
+                                    <input type="text" id="newUserBirthday" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" placeholder="75/10/25" required>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-black text-stone-800 mb-1">身分證字號 *</label>
+                                    <input type="text" id="newUserIdCard" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold uppercase" placeholder="保險核對用" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-black py-4 rounded-2xl text-xl shadow-md mt-2">儲存並加入報名清單 ➔</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 登記接龍名單卡 -->
+                <div id="participantsModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden">
+                        <div class="bg-gradient-to-r from-emerald-800 to-teal-700 text-white p-5 flex justify-between items-center border-b-4 border-emerald-900">
+                            <button onclick="closeModal('participantsModal')" class="bg-emerald-950 hover:bg-black text-white px-4 py-2 rounded-xl text-base font-black shadow-md">
+                                ⬅ 返回首頁
+                            </button>
+                            <h3 class="text-2xl font-black">📋 登記名單</h3>
+                        </div>
+                        <div class="p-5 space-y-4">
+                            <div id="participantsCardContainer" class="max-h-[50vh] overflow-y-auto space-y-3"></div>
+                            <div class="flex justify-between items-center bg-stone-100 p-3 rounded-2xl border-3 border-stone-300">
+                                <button id="prevCardBtn" onclick="changeCardPage(-1)" class="bg-white text-stone-950 border-3 border-stone-400 font-black px-4 py-3 rounded-xl text-lg disabled:opacity-50 shadow-sm">◀ 上一頁</button>
+                                <span id="cardPageIndicator" class="text-lg font-black text-stone-800">1 / 1</span>
+                                <button id="nextCardBtn" onclick="changeCardPage(1)" class="bg-white text-stone-950 border-3 border-stone-400 font-black px-4 py-3 rounded-xl text-lg disabled:opacity-50 shadow-sm">下一頁 ▶</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 我的登記紀錄彈窗 -->
+                <div id="myRegistrationsModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden">
+                        <div class="bg-gradient-to-r from-emerald-800 to-teal-700 text-white p-5 flex justify-between items-center border-b-4 border-emerald-900">
+                            <button onclick="closeModal('myRegistrationsModal')" class="bg-emerald-950 hover:bg-black text-white px-4 py-2 rounded-xl text-base font-black shadow-md">
+                                ⬅ 返回首頁
+                            </button>
+                            <h3 class="text-2xl font-black">📋 我的登記紀錄</h3>
+                        </div>
+                        <div id="myRegListContainer" class="p-5 space-y-4 max-h-[60vh] overflow-y-auto"></div>
+                    </div>
+                </div>
+
+                <!-- 登記明細彈窗 -->
+                <div id="regDetailsModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden">
+                        <div class="bg-gradient-to-r from-emerald-800 to-teal-700 text-white p-5 flex justify-between items-center border-b-4 border-emerald-900">
+                            <button onclick="closeModal('regDetailsModal'); openMyRegistrationsModal();" class="bg-emerald-950 hover:bg-black text-white px-4 py-2 rounded-xl text-sm font-black shadow-md">
+                                ⬅ 返回
+                            </button>
+                            <h3 class="text-2xl font-black">🔍 登記明細</h3>
+                        </div>
+                        <div id="regDetailsContainer" class="p-5 space-y-4 max-h-[60vh] overflow-y-auto"></div>
+                    </div>
+                </div>
+
+                <!-- 管理端後台彈窗 -->
+                <div id="adminPanel" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden overflow-y-auto">
+                    <div class="min-h-screen py-6 px-4">
+                        <div class="bg-stone-100 rounded-3xl max-w-md mx-auto shadow-2xl border-4 border-stone-400 overflow-hidden">
+                            <div class="bg-stone-950 text-white p-5 flex justify-between items-center border-b-4 border-stone-800">
+                                <button onclick="exitAdminMode()" class="bg-stone-800 hover:bg-stone-700 text-white px-4 py-2.5 rounded-xl text-lg font-black shadow-md">
+                                    ⬅ 返回首頁
+                                </button>
+                                <h2 class="text-xl font-black">⚙️ 後台系統</h2>
+                            </div>
+
+                            <div class="grid grid-cols-4 border-b-3 border-stone-300 bg-white">
+                                <button onclick="switchAdminTab('event')" id="tabBtn_event" class="py-4 text-base font-black text-stone-500 border-b-4 border-emerald-800 bg-emerald-50/50">活動維護</button>
+                                <button onclick="switchAdminTab('reg')" id="tabBtn_reg" class="py-4 text-base font-black text-stone-500">名單管理</button>
+                                <button onclick="switchAdminTab('announce')" id="tabBtn_announce" class="py-4 text-base font-black text-stone-500">接龍公告</button>
+                                <button onclick="switchAdminTab('cat')" id="tabBtn_cat" class="py-4 text-base font-black text-stone-500">分類設定</button>
+                            </div>
+
+                            <div class="p-4 space-y-5">
+                                <!-- Tab 1: 活動維護 -->
+                                <div id="adminTab_event" class="space-y-4">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-lg font-black text-stone-700">活動維護</span>
+                                        <button onclick="switchToCreateMode()" class="bg-emerald-700 hover:bg-emerald-800 text-white font-black px-4 py-2.5 rounded-xl text-base shadow-md">➕ 新增活動</button>
+                                    </div>
+                                    <div class="bg-white p-4 rounded-2xl border-3 border-stone-300 space-y-2">
+                                        <label class="block text-base font-black text-stone-800">選擇現有活動編輯：</label>
+                                        <select id="adminEventSelect" onchange="loadEventToForm(this.value)" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white"></select>
+                                    </div>
+                                    <form id="eventForm" onsubmit="event.preventDefault(); saveEvent();" class="space-y-4 bg-white p-4 rounded-2xl border-3 border-stone-300">
+                                        <input type="hidden" id="adminEventId" value="">
+                                        <div>
+                                            <label class="block text-base font-black text-stone-800 mb-1">活動名稱 *</label>
+                                            <input type="text" id="adminTitle" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" required>
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label class="block text-base font-black text-stone-800 mb-1">分類 *</label>
+                                                <select id="adminCategory" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white" required></select>
+                                            </div>
+                                            <div>
+                                                <label class="block text-base font-black text-stone-800 mb-1">登記人數上限 *</label>
+                                                <input type="number" id="adminLimit" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" required>
+                                            </div>
+                                        </div>
+                                        <div class="grid grid-cols-1 gap-3">
+                                            <div>
+                                                <label class="block text-base font-black text-stone-800 mb-1">截止時間 *</label>
+                                                <input type="datetime-local" id="adminTime" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" required>
+                                            </div>
+                                            <div>
+                                                <label class="block text-base font-black text-stone-800 mb-1">活動地點 *</label>
+                                                <input type="text" id="adminLocation" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" required>
+                                            </div>
+                                        </div>
+                                        <div class="grid grid-cols-1 gap-3">
+                                            <div>
+                                                <label class="block text-base font-black text-stone-800 mb-1">狀態 *</label>
+                                                <select id="adminStatus" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white" required>
+                                                    <option value="啟動">開放登記 (啟動)</option>
+                                                    <option value="停止">停止登記 (停止)</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label class="block text-base font-black text-stone-800 mb-1">詳細說明</label>
+                                                <textarea id="adminDescription" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold h-28" placeholder="請輸入說明..."></textarea>
+                                            </div>
+                                        </div>
+                                        <!-- 雲端圖片上傳 -->
+                                        <div class="border-t-3 border-stone-200 pt-3 space-y-2">
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-base font-black text-stone-800">🖼️ 雲端活動圖片展示 (最多 5 張)：</span>
+                                                <button type="button" onclick="triggerImageUpload()" class="bg-emerald-50 text-emerald-950 border border-emerald-300 px-3 py-2 rounded-xl text-sm font-black">☁️ 上傳照片</button>
+                                                <input type="file" id="imageUploadInput" class="hidden" accept="image/*" onchange="uploadImageToDrive(this)">
+                                            </div>
+                                            <div id="adminImagesContainer" class="grid grid-cols-3 gap-2"></div>
+                                        </div>
+                                        <!-- 雲端附件上傳 -->
+                                        <div class="border-t-3 border-stone-200 pt-3 space-y-2">
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-base font-black text-stone-800">📎 雲端附件下載：</span>
+                                                <button type="button" onclick="triggerFileUpload()" class="bg-emerald-50 text-emerald-950 border border-emerald-300 px-3 py-2 rounded-xl text-sm font-black">☁️ 上傳附件</button>
+                                                <input type="file" id="fileUploadInput" class="hidden" onchange="uploadFileToDrive(this)">
+                                            </div>
+                                            <div id="adminFilesContainer" class="space-y-2"></div>
+                                        </div>
+                                        <!-- 調查問題 -->
+                                        <div class="border-t-3 border-stone-200 pt-3 space-y-2">
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-base font-black text-stone-800">📋 調查問題：</span>
+                                                <button type="button" onclick="addAdminQuestionField()" class="bg-emerald-50 text-emerald-950 border border-emerald-300 px-3 py-2 rounded-xl text-sm font-black">➕ 新增問題</button>
+                                            </div>
+                                            <div id="adminQuestionsContainer" class="space-y-3"></div>
+                                        </div>
+                                        <!-- 後台自訂備註欄 -->
+                                        <div class="border-t-3 border-stone-200 pt-3 space-y-2">
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-base font-black text-stone-800">⚙️ 後台自訂備註欄：</span>
+                                                <button type="button" onclick="addAdminNoteConfigField()" class="bg-emerald-50 text-emerald-950 border border-emerald-300 px-3 py-2 rounded-xl text-sm font-black">➕ 新增備註欄</button>
+                                            </div>
+                                            <div id="adminNotesConfigContainer" class="space-y-3"></div>
+                                        </div>
+                                        <div class="flex space-x-3 pt-3 border-t-3 border-stone-200">
+                                            <button type="submit" class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white font-black py-4 rounded-2xl text-xl shadow-md">💾 儲存活動</button>
+                                            <button type="button" id="adminDeleteEventBtn" onclick="deleteEvent()" class="hidden bg-red-600 hover:bg-red-700 text-white font-black px-6 py-4 rounded-2xl text-xl shadow-md">🗑️ 刪除</button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                <!-- Tab 2: 名單管理 -->
+                                <div id="adminTab_reg" class="hidden space-y-4">
+                                    <div class="bg-white p-5 rounded-2xl border-3 border-stone-300 space-y-3">
+                                        <label class="block text-base font-black text-stone-800">請選擇活動項目：</label>
+                                        <select id="regManageEventSelect" onchange="onRegManageEventSelect()" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white"></select>
+                                        <button id="exportReportBtn" onclick="exportToCSV()" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-black py-4.5 rounded-2xl text-lg flex items-center justify-center space-x-2 shadow-md hidden">
+                                            <span>📊 匯出 Excel / CSV 報表</span>
+                                        </button>
+                                    </div>
+                                    <div id="regManageListContainer" class="space-y-4">
+                                        <p class="text-stone-500 text-center text-lg py-10 font-bold">請先選擇活動項目以載入名單</p>
+                                    </div>
+                                </div>
+
+                                <!-- Tab 3: 接龍公告 -->
+                                <div id="adminTab_announce" class="hidden space-y-4">
+                                    <div class="bg-white p-5 rounded-2xl border-3 border-stone-300 space-y-3">
+                                        <label class="block text-base font-black text-stone-800">請選擇活動項目：</label>
+                                        <select id="announceEventSelect" onchange="onAnnouncementEventSelect()" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white"></select>
+                                    </div>
+                                    <div id="announcementPanel" class="hidden space-y-4">
+                                        <div class="bg-white p-5 rounded-2xl border-3 border-stone-300 space-y-4">
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-base font-black text-stone-800">1. 選擇統計欄位：</span>
+                                                <button onclick="showTempQuestionDialog()" class="bg-emerald-50 text-emerald-900 border border-emerald-300 px-3 py-2 rounded-xl text-sm font-black">⚡ 臨時統計</button>
+                                            </div>
+                                            <div id="chainItemsContainer" class="space-y-3"></div>
+                                            <button type="button" onclick="addChainItemField()" class="w-full bg-stone-100 text-stone-800 border-3 border-dashed border-stone-400 py-4 rounded-2xl text-base font-black">➕ 新增統計欄位</button>
+                                        </div>
+                                        <div class="bg-white p-5 rounded-2xl border-3 border-stone-300 space-y-2">
+                                            <span class="text-base font-black text-stone-800">2. 自訂備註說明 (選填)：</span>
+                                            <textarea id="announceCustomMsg" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold h-28" placeholder="例如：請大家於本週五前完成轉帳並回報！"></textarea>
+                                        </div>
+                                        <button onclick="shareCustomChainToGroup()" class="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-black py-5 rounded-2xl text-xl shadow-lg">
+                                            📢 發布卡牌式接龍公告 ➔
+                                        </button>
+                                        <div id="announceParticipantsList" class="space-y-3"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Tab 4: 分類設定 -->
+                                <div id="adminTab_cat" class="hidden space-y-4">
+                                    <div class="bg-white p-5 rounded-2xl border-3 border-stone-300 space-y-3">
+                                        <div class="flex space-x-2">
+                                            <input type="text" id="newCategoryInput" class="flex-1 border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" placeholder="輸入新分類名稱">
+                                            <button onclick="addNewCategory()" class="bg-emerald-700 text-white font-black px-5 rounded-xl text-lg shadow-md">新增</button>
+                                        </div>
+                                    </div>
+                                    <div id="adminCategoryListContainer" class="space-y-2.5"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ⚡ 臨時統計項目彈窗 -->
+                <div id="tempQuestionModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl w-full max-w-xs shadow-2xl border-4 border-stone-400 overflow-hidden">
+                        <div class="bg-stone-900 text-white p-4 flex justify-between items-center border-b-2 border-stone-950">
+                            <button onclick="closeTempQuestionDialog()" class="bg-stone-800 hover:bg-stone-700 text-white px-3 py-1.5 rounded-xl text-sm font-black">⬅ 返回</button>
+                            <h4 class="text-base font-black">⚡ 新增臨時統計</h4>
+                        </div>
+                        <div class="p-4 space-y-4">
+                            <div>
+                                <label class="block text-base font-black text-stone-800 mb-1">項目名稱</label>
+                                <input type="text" id="tempQTitle" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" placeholder="例如：車衣尺寸">
+                            </div>
+                            <div>
+                                <label class="block text-base font-black text-stone-800 mb-1">選項 (逗號隔開)</label>
+                                <input type="text" id="tempQOptions" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" placeholder="例如：S,M,L">
+                            </div>
+                            <button onclick="addTempQuestion()" class="w-full bg-emerald-700 text-white font-black py-4 rounded-xl text-xl shadow-md">確認新增</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 全域載入中遮罩 -->
+                <div id="loading" class="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-50 hidden flex flex-col items-center justify-center space-y-3">
+                    <div class="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center space-y-4 border-3 border-stone-300 min-w-[240px]">
+                        <div class="animate-spin rounded-full h-14 w-14 border-4 border-emerald-700 border-t-transparent"></div>
+                        <p id="loadingText" class="text-lg font-black text-stone-900">系統連線中...</p>
+                    </div>
+                </div>
+
+                <!-- 系統 JavaScript 核心邏輯 -->
+                <script>
+                    const LIFF_ID = "2009456572-ZBfM2edk"; 
+                    const GAS_URL = "https://script.google.com/macros/s/AKfycbyUBJ7GsJjnL_k45OS0-IGGnrP2WjjvK-6hDwm5b56zEDiyyPrEPfy6d1r7NK2xtidtrw/exec";
+
+                    let userLineId = "";
+                    let userDisplayName = "";
+                    let userProfile = null;
+                    let userRole = "guest"; // "guest" | "member" | "admin"
                     
-                    result.attendees.forEach((att, idx) => {
-                        let ansText = "";
-                        for (let key in att.answers) {
-                            if (!["姓名", "電話", "性別", "生日", "身分證字號", "關係"].includes(key)) {
-                                ansText += `<br>• ${key}：<span class="text-stone-950 font-black">${att.answers[key]}</span>`;
-                            }
+                    let allEvents = [];
+                    let allCategories = [];
+                    let currentEvent = null;
+                    let activeEventQuestions = [];
+                    let tempQuestions = []; 
+                    let currentParticipants = [];
+                    let allRegisteredUsers = []; 
+                    
+                    let currentFilterCategory = ""; // 預設為空，代表尚未篩選類別，顯示全部
+                    let currentSearchKeyword = "";
+                    
+                    let lightboxImages = [];
+                    let currentLightboxIndex = 0;
+
+                    let isAdmin = false;
+                    let isInChatContext = false;
+
+                    let currentCardPage = 0;
+                    const CARD_PAGE_SIZE = 20;
+
+                    // 溫馨高對比色系，適合帕金森病友辨識
+                    const CATEGORY_COLOR_PALETTES = [
+                        { bgLight: "bg-emerald-100", textDark: "text-emerald-950", border: "border-emerald-400", bgActive: "bg-emerald-700 text-white border-emerald-800", icon: "💚" },
+                        { bgLight: "bg-amber-100", textDark: "text-amber-950", border: "border-amber-400", bgActive: "bg-amber-600 text-white border-amber-800", icon: "🧡" },
+                        { bgLight: "bg-teal-100", textDark: "text-teal-950", border: "border-teal-400", bgActive: "bg-teal-700 text-white border-teal-800", icon: "💙" },
+                        { bgLight: "bg-orange-100", textDark: "text-orange-950", border: "border-orange-400", bgActive: "bg-orange-600 text-white border-orange-800", icon: "🌷" },
+                        { bgLight: "bg-stone-100", textDark: "text-stone-950", border: "border-stone-400", bgActive: "bg-stone-700 text-white border-stone-800", icon: "🌟" }
+                    ];
+
+                    function formatStandardTime(dateInput) {
+                        if (!dateInput) return "";
+                        const date = new Date(dateInput);
+                        if (isNaN(date.getTime())) return String(dateInput);
+                        const y = date.getFullYear();
+                        const m = String(date.getMonth() + 1).padStart(2, '0');
+                        const d = String(date.getDate()).padStart(2, '0');
+                        const hh = String(date.getHours()).padStart(2, '0');
+                        const mm = String(date.getMinutes()).padStart(2, '0');
+                        return `${y}-${m}-${d} ${hh}:${mm}`;
+                    }
+
+                    function formatStandardDate(dateInput) {
+                        if (!dateInput) return "";
+                        const date = new Date(dateInput);
+                        if (isNaN(date.getTime())) return String(dateInput);
+                        const y = date.getFullYear();
+                        const m = String(date.getMonth() + 1).padStart(2, '0');
+                        const d = String(date.getDate()).padStart(2, '0');
+                        return `${y}-${m}-${d}`;
+                    }
+
+                    function gregToRoc(gregStr) {
+                        if (!gregStr) return "";
+                        const parts = String(gregStr).split('-'); 
+                        if (parts.length !== 3) return gregStr;
+                        const rocYear = parseInt(parts[0], 10) - 1911;
+                        return `${rocYear}/${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}`;
+                    }
+
+                    function rocToGreg(rocStr) {
+                        if (!rocStr) return "";
+                        let clean = rocStr.trim().replace(/[.\-\s]/g, '/');
+                        if (/^\d{6,7}$/.test(clean)) {
+                            const len = clean.length;
+                            const y = clean.substring(0, len - 4);
+                            const m = clean.substring(len - 4, len - 2);
+                            const d = clean.substring(len - 2);
+                            clean = `${y}/${m}/${d}`;
                         }
-
-                        const div = document.createElement("div");
-                        div.className = "p-5 bg-stone-50 rounded-2xl border-3 border-stone-300 space-y-2.5";
-                        div.innerHTML = `
-                            <div class="flex justify-between items-center">
-                                <span class="font-black text-stone-950 text-xl">#${idx+1} ${att.name} (${att.relation || "同行人"})</span>
-                                <span class="px-3 py-1 rounded-full text-sm font-black ${att.queueStatus === '候補' ? 'bg-amber-200 text-amber-950 border border-amber-400' : 'bg-emerald-200 text-emerald-950 border border-emerald-400'}">${att.queueStatus}</span>
-                            </div>
-                            <p class="text-stone-700 text-lg font-bold">📞 電話：${att.phone || "無"}</p>
-                            <p class="text-stone-700 text-lg font-bold">👤 性別：${att.gender || "未填"} | 生日：${att.birthday ? gregToRoc(formatStandardDate(att.birthday)) : "未填"}</p>
-                            <p class="text-stone-700 text-lg font-bold">🪪 身分證：${att.idCard ? maskName(att.idCard) : "未填"}${ansText}</p>
-                        `;
-                        container.appendChild(div);
-                    });
-                    closeModal("myRegistrationsModal");
-                    document.getElementById("regDetailsModal").classList.remove("hidden");
-                }
-            } catch (e) {
-                alert("載入失敗");
-            }
-            hideLoading();
-        }
-
-        async function openEditRegistration(eventId, regId) {
-            currentEvent = allEvents.find(e => e.id === eventId);
-            document.getElementById("regEventTitle").innerText = currentEvent.title;
-            document.getElementById("attendeesContainer").innerHTML = "";
-
-            showLoading("載入登記資料中...");
-            try {
-                const response = await fetch(`${GAS_URL}?action=getRegistrationDetails&regId=${regId}`);
-                const result = await response.json();
-                if (result.status === "success") {
-                    closeModal("myRegistrationsModal");
-                    document.getElementById("registerModal").classList.remove("hidden");
-
-                    result.attendees.forEach((att, idx) => {
-                        addAttendeeForm(
-                            att.name, 
-                            att.phone, 
-                            idx === 0, 
-                            att.gender, 
-                            att.birthday ? gregToRoc(formatStandardDate(att.birthday)) : "", 
-                            att.idCard, 
-                            att.relation || "家人",
-                            att.answers || {}
-                        );
-                    });
-
-                    const submitBtn = document.getElementById("regSubmitBtn");
-                    submitBtn.setAttribute("onclick", `submitEditRegistration('${regId}')`);
-                }
-            } catch (e) {
-                alert("載入失敗");
-            }
-            hideLoading();
-        }
-
-        async function submitEditRegistration(regId) {
-            const btn = document.getElementById("regSubmitBtn");
-            if (btn.disabled) return;
-            btn.disabled = true;
-
-            const rows = document.querySelectorAll(".attendee-row");
-            const attendees = [];
-            let isValid = true;
-
-            for (let i = 0; i < rows.length; i++) {
-                const row = rows[i];
-                const nameInput = row.querySelector(".att-name");
-                const phoneInput = row.querySelector(".att-phone");
-                const relationInput = row.querySelector(".att-relation");
-                const genderInput = row.querySelector(".att-gender");
-                const birthdayInput = row.querySelector(".att-birthday");
-                const idCardInput = row.querySelector(".att-idcard");
-                
-                if (!nameInput.value.trim()) {
-                    isValid = false;
-                    nameInput.classList.add("border-red-500");
-                } else {
-                    nameInput.classList.remove("border-red-500");
-                }
-
-                let gregBirth = birthdayInput.value.trim() ? rocToGreg(birthdayInput.value.trim()) : "";
-
-                const answers = { 
-                    "姓名": nameInput.value.trim(),
-                    "電話": phoneInput.value.trim(),
-                    "關係": relationInput ? relationInput.value : "家人",
-                    "性別": genderInput.value,
-                    "生日": gregBirth,
-                    "身分證字號": idCardInput.value
-                };
-
-                row.querySelectorAll(".q-input").forEach(qInput => {
-                    const title = qInput.getAttribute("data-qtitle");
-                    const val = qInput.value ? qInput.value.trim() : "";
-                    if (qInput.hasAttribute("required") && !val) {
-                        isValid = false;
-                        qInput.classList.add("border-red-500");
-                    } else {
-                        qInput.classList.remove("border-red-500");
-                    }
-                    answers[title] = val;
-                });
-
-                attendees.push({
-                    name: nameInput.value.trim(),
-                    phone: phoneInput.value.trim(),
-                    relation: relationInput ? relationInput.value : "家人",
-                    gender: genderInput.value,
-                    birthday: gregBirth,
-                    idCard: idCardInput.value,
-                    answers: answers
-                });
-            }
-
-            if (!isValid) {
-                alert("請完整填寫所有必填調查項目！");
-                btn.disabled = false;
-                return;
-            }
-
-            showLoading("正在更新登記...");
-            try {
-                const payload = {
-                    action: "registerMulti",
-                    regId: regId, 
-                    eventId: currentEvent.id,
-                    lineId: userLineId,
-                    leaderName: userProfile ? userProfile.name : userDisplayName,
-                    leaderPhone: userProfile ? userProfile.phone : "", 
-                    groupId: liff.getContext()?.groupId || "",
-                    attendees: attendees
-                };
-
-                const response = await fetch(GAS_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "text/plain" },
-                    body: JSON.stringify(payload)
-                });
-                const result = await response.json();
-
-                if (result.status === "success") {
-                    closeModal("registerModal");
-                    
-                    try {
-                        await sendFlexMessage(
-                            currentEvent.id,
-                            currentEvent.time, 
-                            currentEvent.title, 
-                            result.remainingSpots, 
-                            result.myRegisteredAttendees, 
-                            attendees.length, 
-                            true
-                        );
-                    } catch (flexErr) {
-                        console.warn("Flex 發送略過", flexErr);
+                        const parts = clean.split('/');
+                        if (parts.length !== 3) return null;
+                        const rocYear = parseInt(parts[0], 10);
+                        const month = String(parseInt(parts[1], 10)).padStart(2, '0');
+                        const day = String(parseInt(parts[2], 10)).padStart(2, '0');
+                        if (isNaN(rocYear) || isNaN(parseInt(month, 10)) || isNaN(parseInt(day, 10))) return null;
+                        if (parseInt(month, 10) < 1 || parseInt(month, 10) > 12) return null;
+                        if (parseInt(day, 10) < 1 || parseInt(day, 10) > 31) return null;
+                        const gregYear = rocYear + 1911;
+                        return `${gregYear}-${month}-${day}`;
                     }
 
-                    alert(`✏️ 資料修改成功！\n錄取狀態：【${result.queueStatus}】`);
-                    document.getElementById("regSubmitBtn").setAttribute("onclick", "submitMultiRegistration()");
-                    await reloadEventsData();
-                } else {
-                    alert("修改失敗：" + result.message);
-                }
-            } catch (e) {
-                alert("連線失敗");
-            } finally {
-                btn.disabled = false;
-                hideLoading();
-            }
-        }
+                    function maskName(name) {
+                        if (!name) return "";
+                        if (name.length <= 2) return name.substring(0, 1) + "*";
+                        return name.substring(0, 1) + "*".repeat(name.length - 2) + name.substring(name.length - 1);
+                    }
 
-        function enterAdminMode() {
-            if (!isAdmin) return;
-            document.getElementById("adminPanel").classList.remove("hidden");
-            switchAdminTab('event');
-        }
+                    function sanitizeCSVCell(val) {
+                        if (val === null || val === undefined) return '""';
+                        const str = String(val).replace(/"/g, '""');
+                        return `"${str}"`;
+                    }
 
-        function exitAdminMode() {
-            document.getElementById("adminPanel").classList.add("hidden");
-        }
+                    function getCategoryStyle(catName, isActive = false) {
+                        let hash = 0;
+                        for (let i = 0; i < catName.length; i++) {
+                            hash = catName.charCodeAt(i) + ((hash << 5) - hash);
+                        }
+                        const index = Math.abs(hash) % CATEGORY_COLOR_PALETTES.length;
+                        const p = CATEGORY_COLOR_PALETTES[index];
+                        return {
+                            style: isActive ? `${p.bgActive} border-4 shadow-lg scale-102` : `${p.bgLight} ${p.textDark} ${p.border} border-3 hover:bg-stone-50`,
+                            icon: p.icon
+                        };
+                    }
 
-        function switchAdminTab(tabName) {
-            ['event', 'reg', 'announce', 'cat'].forEach(t => {
-                document.getElementById(`adminTab_${t}`).classList.add("hidden");
-                document.getElementById(`tabBtn_${t}`).className = "py-4 text-base font-black text-stone-500";
-            });
+                    // ==========================================
+                    // 🔑 會員註冊、登入與 LINE 綁定邏輯
+                    // ==========================================
 
-            document.getElementById(`adminTab_${tabName}`).classList.remove("hidden");
-            document.getElementById(`tabBtn_${tabName}`).className = "py-4 text-base font-black text-emerald-800 border-b-4 border-emerald-800 bg-emerald-50/50";
+                    async function initializeLiff() {
+                        showLoading("系統載入中...");
+                        try {
+                            await liff.init({ liffId: LIFF_ID });
+                            isInChatContext = liff.isInClient() && ["utou", "room", "group"].includes(liff.getContext()?.type);
+                            
+                            const localUser = localStorage.getItem("san_tie_user");
+                            
+                            if (liff.isLoggedIn()) {
+                                const profile = await liff.getProfile();
+                                userLineId = profile.userId;
+                                userDisplayName = profile.displayName;
+                                
+                                const response = await fetch(GAS_URL, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "text/plain" },
+                                    body: JSON.stringify({
+                                        action: "initApp",
+                                        lineId: userLineId,
+                                        name: userDisplayName
+                                    })
+                                });
+                                const result = await response.json();
 
-            if (tabName === 'cat') renderAdminCategoryList();
-            if (tabName === 'event') renderAdminEventSelects();
-        }
+                                if (result.status === "success") {
+                                    allCategories = result.categories || [];
+                                    allEvents = result.events || [];
+                                    allRegisteredUsers = result.allUsers || [];
+                                    
+                                    if (result.isBound) {
+                                        userProfile = result.user;
+                                        userRole = result.isAdmin ? "admin" : "member";
+                                        isAdmin = result.isAdmin;
+                                        setLoggedInUI(userProfile.name, profile.pictureUrl, userRole);
+                                    } else {
+                                        openAuthModal();
+                                        switchAuthTab('register');
+                                        document.getElementById("regNickname").value = userDisplayName;
+                                        document.getElementById("registerNotice").innerHTML = `
+                                            <span class="text-emerald-800 text-base">💬 LINE 快速綁定註冊：</span><br>
+                                            您已成功透過 LINE 連線！請在下方填寫您的真實基本資料，完成後即可升級為【正式會員】並享有完整報名與接龍權限。
+                                        `;
+                                        document.getElementById("regSubmitBtnMain").innerText = "確認綁定並註冊 ➔";
+                                    }
 
-        function renderAdminCategorySelect() {
-            const select = document.getElementById("adminCategory");
-            select.innerHTML = "";
-            allCategories.forEach(cat => {
-                select.innerHTML += `<option value="${cat}">${cat}</option>`;
-            });
-        }
+                                    renderCategoryBigButtons();
+                                    renderEventList();
+                                    if (isAdmin) {
+                                        renderAdminCategorySelect();
+                                        renderAdminEventSelects();
+                                    }
+                                }
+                            } else if (localUser) {
+                                const cached = JSON.parse(localUser);
+                                await handleSilentNormalLogin(cached.name, cached.phone);
+                            } else {
+                                setGuestUI();
+                                await loadPublicData();
+                            }
 
-        function renderAdminEventSelects() {
-            const select = document.getElementById("adminEventSelect");
-            select.innerHTML = '<option value="">-- [當前為：新增模式] 或選取以進行編輯 --</option>';
-            allEvents.forEach(e => {
-                select.innerHTML += `<option value="${e.id}">${e.title} (${formatStandardDate(e.time)})</option>`;
-            });
+                            const urlParams = new URLSearchParams(window.location.search);
+                            const actionParam = urlParams.get("action");
+                            const eventIdParam = urlParams.get("eventId");
+                            if (actionParam === "viewlist" && eventIdParam) {
+                                openParticipantsModal(eventIdParam);
+                            }
 
-            ["regManageEventSelect", "announceEventSelect"].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.innerHTML = '<option value="">-- 請選擇活動 --</option>';
-                    allEvents.forEach(e => {
-                        el.innerHTML += `<option value="${e.id}">${e.title} (${formatStandardDate(e.time)})</option>`;
-                    });
-                }
-            });
-        }
+                        } catch (e) {
+                            console.error("初始化失敗", e);
+                            alert("系統初始化失敗，請確認網路！");
+                        }
+                        hideLoading();
+                    }
 
-        function switchToCreateMode() {
-            document.getElementById("adminEventSelect").value = "";
-            document.getElementById("adminEventId").value = "";
-            document.getElementById("eventForm").reset();
-            
-            document.getElementById("adminImagesContainer").innerHTML = "";
-            document.getElementById("adminFilesContainer").innerHTML = "";
-            document.getElementById("adminQuestionsContainer").innerHTML = "";
-            document.getElementById("adminNotesConfigContainer").innerHTML = "";
-            
-            addAdminQuestionField("姓名", "text", "", true);
-            document.getElementById("adminDeleteEventBtn").classList.add("hidden");
-        }
+                    async function handleNormalLogin(event) {
+                        event.preventDefault();
+                        const name = document.getElementById("authLoginName").value.trim();
+                        const phone = document.getElementById("authLoginPhone").value.trim();
 
-        function loadEventToForm(eventId) {
-            if (!eventId) {
-                switchToCreateMode();
-                return;
-            }
-            const event = allEvents.find(e => e.id === eventId);
-            if (!event) return;
-
-            document.getElementById("adminEventId").value = event.id;
-            document.getElementById("adminTitle").value = event.title;
-            document.getElementById("adminCategory").value = event.category;
-            document.getElementById("adminLocation").value = event.location;
-            document.getElementById("adminLimit").value = event.limit;
-            document.getElementById("adminStatus").value = event.status;
-            document.getElementById("adminDescription").value = event.description || "";
-
-            if (event.time) {
-                document.getElementById("adminTime").value = formatStandardTime(event.time).replace(" ", "T");
-            }
-
-            const imagesContainer = document.getElementById("adminImagesContainer");
-            imagesContainer.innerHTML = "";
-            if (event.images && event.images.length > 0) {
-                event.images.forEach(imgUrl => addAdminImagePreview(imgUrl));
-            }
-
-            const filesContainer = document.getElementById("adminFilesContainer");
-            filesContainer.innerHTML = "";
-            if (event.files && event.files.length > 0) {
-                event.files.forEach(f => addAdminFileField(f.name, f.url));
-            }
-
-            const qContainer = document.getElementById("adminQuestionsContainer");
-            qContainer.innerHTML = "";
-            if (event.questions && event.questions.length > 0) {
-                event.questions.forEach(q => addAdminQuestionField(q.title, q.type, q.options, q.required));
-            } else {
-                addAdminQuestionField("姓名", "text", "", true);
-            }
-
-            const notesContainer = document.getElementById("adminNotesConfigContainer");
-            notesContainer.innerHTML = "";
-            if (event.adminNotesConfig && event.adminNotesConfig.length > 0) {
-                event.adminNotesConfig.forEach(n => addAdminNoteConfigField(n.title, n.type, n.options));
-            }
-
-            document.getElementById("adminDeleteEventBtn").classList.remove("hidden");
-        }
-
-        function addAdminFileField(name = "", url = "") {
-            const container = document.getElementById("adminFilesContainer");
-            const div = document.createElement("div");
-            div.className = "flex space-x-2 items-center admin-file-row";
-            div.innerHTML = `
-                <input type="text" placeholder="名稱" value="${name}" class="w-1/3 border-3 border-stone-300 rounded-xl p-3 text-base font-bold" required>
-                <input type="url" placeholder="雲端連結" value="${url}" class="flex-1 border-3 border-stone-300 rounded-xl p-3 text-base font-bold bg-stone-50" readonly required>
-                <button type="button" onclick="this.parentElement.remove()" class="text-red-600 font-black text-base border-3 border-red-200 bg-white px-4 py-3 rounded-xl">✕</button>
-            `;
-            container.appendChild(div);
-        }
-
-        function addAdminQuestionField(title = "", type = "text", options = "", required = false) {
-            const container = document.getElementById("adminQuestionsContainer");
-            const div = document.createElement("div");
-            div.className = "p-4 bg-stone-50 rounded-2xl border-3 border-stone-300 space-y-3 admin-q-row";
-            
-            const isCore = title === "姓名";
-            const reqChecked = required ? "checked" : "";
-            
-            div.innerHTML = `
-                ${isCore ? '' : '<button type="button" onclick="this.parentElement.remove()" class="text-red-600 font-black text-base float-right border-3 border-red-200 bg-white px-4 py-1.5 rounded-xl">✕</button>'}
+                        showLoading("正在驗證帳號...");
+                        try {
+                            const response = await fetch(GAS_URL, {
+                                method: "POST",
+                                headers: { "Content-Type": "text/plain" },
+                                body: JSON.stringify({
+                                    action: "verifyNormalUser",
+                                    name: name,
+                                    phone: phone
+                                })
+                            });
+                            const result = await response.json();
+                            if (result.status === "success" && result.user) {
+                                userProfile = result.user;
+                                userRole = "guest";
+                                localStorage.setItem("san_tie_user", JSON.stringify({ name, phone }));
+                                setLoggedInUI(userProfile.name, "", userRole);
+                                closeModal("authModal");
+                                alert(`🎉 登入成功！您的身分為【遊客】，可瀏覽活動。若需自行報名，請使用 LINE 快速登入綁定升級為正式會員！`);
+                                await reloadEventsData();
+                            } else {
+                                alert("❌ 登入失敗：找不到此姓名與電話組合，請確認或先註冊！");
+                            }
+                        } catch (e) {
+                            alert("連線失敗");
+                        }
+                        hideLoading();
+                    }
+                    </div>
                 <div class="flex flex-col space-y-2">
                     <input type="text" placeholder="問題名稱" value="${title}" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" required ${isCore ? 'readonly' : ''}>
                     <select onchange="toggleOptionField(this)" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white" ${isCore ? 'disabled' : ''}>
@@ -3122,3 +2562,9 @@
     </script>
 </body>
 </html>
+
+                    async function handleNormalRegister(event) {
+                        event.preventDefault();
+                        const name = document.getElementById("regName").value.trim();
+                        const nickname = document.getElementById("regNickname").value.trim();
+                        const phone = document.getElementById("regPhone").value.
