@@ -559,7 +559,7 @@
 
 <script>
 const LIFF_ID = "2009456572-ZBfM2edk";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwEJ1dKtJ41YvqwIEIWWqjCfWaIJ6wBBWGDmrp7nVWbISKDjrlZ6CgVfQ_1ZHIb06p7zA/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzuBy9p-Bgxrge-KLx9-w00e2MBJjKcX-t7rgiA-X_YQo2H3Xz9NkL4KFMLOhg9m52oxA/exec";
 
 let userLineId = "";
 let userDisplayName = "";
@@ -570,12 +570,10 @@ let isInChatContext = false;
 
 let allEvents = [];
 let allCategories = [];
-let allRegisteredUsers = [];
 
 let currentEvent = null;
 let currentAttendees = [];
 let currentParticipants = [];
-let activeEventQuestions = [];
 let currentFilterCategory = "";
 let currentSearchKeyword = "";
 let lightboxImages = [];
@@ -654,17 +652,76 @@ function gregToRoc(greg) {
 function rocToGreg(roc) {
   if (!roc) return "";
   let clean = String(roc).trim().replace(/[.\-\s]/g, "/");
+
   if (/^\d{6,7}$/.test(clean)) {
     const len = clean.length;
     clean = `${clean.substring(0, len - 4)}/${clean.substring(len - 4, len - 2)}/${clean.substring(len - 2)}`;
   }
+
   const p = clean.split("/");
   if (p.length !== 3) return null;
+
   const y = parseInt(p[0], 10);
   const m = parseInt(p[1], 10);
   const d = parseInt(p[2], 10);
-  if (isNaN(y) || isNaN(m) || isNaN(d) || m < 1 || m > 12 || d < 1 || d > 31) return null;
-  return `${y + 1911}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+  if (y < 1 || y > 200) return null;
+
+  const gy = y + 1911;
+  const date = new Date(gy, m - 1, d);
+
+  if (
+    date.getFullYear() !== gy ||
+    date.getMonth() !== m - 1 ||
+    date.getDate() !== d
+  ) {
+    return null;
+  }
+
+  return `${gy}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function normalizePhone(phone) {
+  return String(phone || "").trim().replace(/[^\d]/g, "").replace(/^886/, "0");
+}
+
+function isValidPhone(phone) {
+  const p = normalizePhone(phone);
+  return /^09\d{8}$/.test(p);
+}
+
+function isValidTaiwanId(id) {
+  id = String(id || "").trim().toUpperCase();
+  if (!/^[A-Z][12]\d{8}$/.test(id)) return false;
+
+  const letters = {
+    A:10,B:11,C:12,D:13,E:14,F:15,G:16,H:17,I:34,J:18,
+    K:19,L:20,M:21,N:22,O:35,P:23,Q:24,R:25,S:26,T:27,
+    U:28,V:29,W:32,X:30,Y:31,Z:33
+  };
+
+  const code = letters[id[0]];
+  if (!code) return false;
+
+  const n1 = Math.floor(code / 10);
+  const n2 = code % 10;
+  const nums = id.slice(1).split("").map(Number);
+
+  const sum =
+    n1 +
+    n2 * 9 +
+    nums[0] * 8 +
+    nums[1] * 7 +
+    nums[2] * 6 +
+    nums[3] * 5 +
+    nums[4] * 4 +
+    nums[5] * 3 +
+    nums[6] * 2 +
+    nums[7] * 1 +
+    nums[8];
+
+  return sum % 10 === 0;
 }
 
 function maskName(name) {
@@ -693,6 +750,7 @@ function getCategoryStyle(catName, active = false) {
 
 async function initializeLiff() {
   showLoading("系統載入中...");
+
   try {
     await liff.init({ liffId: LIFF_ID });
 
@@ -716,7 +774,6 @@ async function initializeLiff() {
 
       allCategories = result.categories || [];
       allEvents = result.events || [];
-      allRegisteredUsers = result.allUsers || [];
 
       if (result.isBound) {
         userProfile = result.user;
@@ -760,14 +817,12 @@ async function initializeLiff() {
 async function loadPublicData() {
   showLoading("載入活動資料...");
   try {
-    const [cats, evs, users] = await Promise.all([
+    const [cats, evs] = await Promise.all([
       apiGet({ action: "getCategories" }),
-      apiGet({ action: "getEvents" }),
-      apiGet({ action: "getUsersList" })
+      apiGet({ action: "getEvents" })
     ]);
     allCategories = cats.categories || [];
     allEvents = evs.events || [];
-    allRegisteredUsers = users.users || [];
     renderAll();
   } finally {
     hideLoading();
@@ -775,14 +830,12 @@ async function loadPublicData() {
 }
 
 async function reloadEventsData() {
-  const [cats, evs, users] = await Promise.all([
+  const [cats, evs] = await Promise.all([
     apiGet({ action: "getCategories" }),
-    apiGet({ action: "getEvents" }),
-    apiGet({ action: "getUsersList" })
+    apiGet({ action: "getEvents" })
   ]);
   allCategories = cats.categories || [];
   allEvents = evs.events || [];
-  allRegisteredUsers = users.users || [];
   renderAll();
 }
 
@@ -799,6 +852,7 @@ function renderAll() {
 function setGuestUI() {
   userRole = "guest";
   isAdmin = false;
+  userProfile = null;
   document.getElementById("userName").innerText = "訪客";
   document.getElementById("userRoleText").innerText = "目前為訪客，可瀏覽活動。";
   document.getElementById("loginHeaderBtn").classList.remove("hidden");
@@ -816,6 +870,7 @@ function setLoggedInUI(name, pic, role) {
   document.getElementById("userAvatar").src = pic || "https://placehold.co/100x100/047857/FFFFFF?text=USER";
 
   const badge = document.getElementById("userRoleBadge");
+
   if (role === "admin") {
     badge.innerText = "管";
     badge.className = "absolute -bottom-1 -right-1 text-xs px-2 py-0.5 rounded-full font-black text-white shadow-sm bg-red-600";
@@ -830,7 +885,7 @@ function setLoggedInUI(name, pic, role) {
     badge.innerText = "客";
     badge.className = "absolute -bottom-1 -right-1 text-xs px-2 py-0.5 rounded-full font-black text-white shadow-sm bg-stone-600";
     document.getElementById("adminBtn").classList.add("hidden");
-    document.getElementById("userRoleText").innerText = "身分：一般帳號遊客。";
+    document.getElementById("userRoleText").innerText = "身分：一般帳號遊客，僅可查看資料；如需自行報名，請使用 LINE 登入綁定。";
   }
 
   document.getElementById("editProfileBtn").classList.remove("hidden");
@@ -862,8 +917,12 @@ function switchAuthTab(tab) {
 }
 
 function handleHeaderLogin() {
-  if (!liff.isLoggedIn()) {
-    liff.login({ redirectUri: location.href.split("#")[0] });
+  try {
+    if (!liff.isLoggedIn()) {
+      liff.login({ redirectUri: location.href.split("#")[0] });
+    }
+  } catch (e) {
+    alert("LINE 登入初始化失敗，請重新整理後再試。");
   }
 }
 
@@ -876,8 +935,14 @@ function handleHeaderLogout() {
 
 async function handleNormalLogin(e) {
   e.preventDefault();
+
   const name = document.getElementById("authLoginName").value.trim();
-  const phone = document.getElementById("authLoginPhone").value.trim();
+  const phone = normalizePhone(document.getElementById("authLoginPhone").value.trim());
+
+  if (!isValidPhone(phone)) {
+    alert("手機格式錯誤，請輸入 09 開頭共 10 碼。");
+    return;
+  }
 
   showLoading("驗證帳號...");
   try {
@@ -888,7 +953,7 @@ async function handleNormalLogin(e) {
       localStorage.setItem("pdpa_user", JSON.stringify({ name, phone }));
       setLoggedInUI(userProfile.name, "", userRole);
       closeModal("authModal");
-      alert("登入成功！目前為遊客身分。");
+      alert("登入成功！目前為一般帳號遊客，如需自行報名請使用 LINE 綁定。");
       await reloadEventsData();
     } else {
       alert("登入失敗：" + (r.message || "查無資料"));
@@ -920,9 +985,22 @@ async function handleSilentNormalLogin(name, phone) {
 async function handleNormalRegister(e) {
   e.preventDefault();
 
+  const phone = normalizePhone(document.getElementById("regPhone").value.trim());
+  const idCard = document.getElementById("regIdCard").value.trim().toUpperCase();
   const birthday = rocToGreg(document.getElementById("regBirthday").value.trim());
+
+  if (!isValidPhone(phone)) {
+    alert("手機格式錯誤，請輸入 09 開頭共 10 碼。");
+    return;
+  }
+
   if (!birthday) {
     alert("生日格式錯誤，請輸入例如 75/10/25");
+    return;
+  }
+
+  if (!isValidTaiwanId(idCard)) {
+    alert("身分證字號格式錯誤。");
     return;
   }
 
@@ -931,10 +1009,10 @@ async function handleNormalRegister(e) {
     lineId: userLineId || "",
     name: document.getElementById("regName").value.trim(),
     nickname: document.getElementById("regNickname").value.trim(),
-    phone: document.getElementById("regPhone").value.trim(),
+    phone,
     gender: document.getElementById("regGender").value,
     birthday,
-    idCard: document.getElementById("regIdCard").value.trim().toUpperCase(),
+    idCard,
     address: ""
   };
 
@@ -942,27 +1020,19 @@ async function handleNormalRegister(e) {
   try {
     const r = await apiPost(payload);
     if (r.status === "success") {
-      userProfile = {
-        lineId: payload.lineId,
-        name: payload.name,
-        nickname: payload.nickname,
-        phone: payload.phone,
-        gender: payload.gender,
-        birthday: payload.birthday,
-        idCard: payload.idCard,
-        address: ""
-      };
+      userProfile = r.user;
 
       if (userLineId) {
-        userRole = "member";
+        userRole = r.isAdmin ? "admin" : "member";
+        isAdmin = !!r.isAdmin;
         localStorage.removeItem("pdpa_user");
-        setLoggedInUI(payload.name, "", "member");
-        alert("LINE 綁定註冊成功，已成為正式會員。");
+        setLoggedInUI(payload.name, "", userRole);
+        alert("LINE 綁定註冊成功。");
       } else {
         userRole = "guest";
         localStorage.setItem("pdpa_user", JSON.stringify({ name: payload.name, phone: payload.phone }));
         setLoggedInUI(payload.name, "", "guest");
-        alert("註冊成功，目前為遊客身分。");
+        alert("註冊成功，目前為一般帳號遊客。若需自行報名，請使用 LINE 登入綁定。");
       }
 
       closeModal("authModal");
@@ -1015,11 +1085,19 @@ function filterByKeyword(v) {
   renderEventList();
 }
 
+function isEventExpired(ev) {
+  if (!ev.time) return false;
+  const d = new Date(ev.time.replace(" ", "T"));
+  if (isNaN(d.getTime())) return false;
+  return new Date().getTime() > d.getTime();
+}
+
 function renderEventList() {
   const c = document.getElementById("eventListContainer");
   document.getElementById("selectedCategoryTitle").innerText = currentFilterCategory ? `${currentFilterCategory} 活動列表` : "所有活動列表";
 
   let list = [...allEvents];
+
   if (currentFilterCategory) list = list.filter(e => e.category === currentFilterCategory);
   if (currentSearchKeyword) {
     list = list.filter(e =>
@@ -1037,19 +1115,26 @@ function renderEventList() {
   }
 
   list.forEach(ev => {
-    const stopped = ev.status !== "啟動";
+    const stopped = ev.status !== "啟動" || isEventExpired(ev);
     const imgs = Array.isArray(ev.images) ? ev.images : [];
     const files = Array.isArray(ev.files) ? ev.files : [];
+    const gridClass = imgs.length === 1 ? "grid-cols-1" : imgs.length === 2 ? "grid-cols-2" : "grid-cols-3";
 
     const imgHtml = imgs.length ? `
-      <div class="grid grid-cols-${Math.min(imgs.length, 3)} gap-1 p-2 bg-stone-50">
+      <div class="grid ${gridClass} gap-1 p-2 bg-stone-50">
         ${imgs.slice(0, 3).map((url, i) => `<img src="${sanitizeHTML(url)}" onclick='openLightbox(${JSON.stringify(imgs)}, ${i})' class="w-full h-32 object-cover rounded-xl border-2 border-stone-200 cursor-pointer">`).join("")}
       </div>` : "";
 
     const filesHtml = files.length ? `
       <div class="space-y-2 pt-3">
-        ${files.map(f => `<a href="${sanitizeHTML(f.url)}" target="_blank" class="block bg-stone-100 border-2 border-stone-300 rounded-xl p-3 text-base font-black text-stone-800">📎 ${sanitizeHTML(f.name)}</a>`).join("")}
+        ${files.map(f => `<a href="${sanitizeHTML(f.url)}" target="_blank" rel="noopener" class="block bg-stone-100 border-2 border-stone-300 rounded-xl p-3 text-base font-black text-stone-800">📎 ${sanitizeHTML(f.name)}</a>`).join("")}
       </div>` : "";
+
+    const remainHtml = typeof ev.remainingSpots !== "undefined" ? `
+      <p>✅ 正取：${ev.approvedCount || 0} / ${ev.limit || 0}</p>
+      <p>🕒 候補：${ev.waitingCount || 0} 人</p>
+      <p>🎫 剩餘：${ev.remainingSpots || 0} 人</p>
+    ` : `<p>👥 上限：${ev.limit || 0} 人</p>`;
 
     const div = document.createElement("div");
     div.className = "bg-white rounded-3xl border-3 border-stone-300 shadow-md overflow-hidden";
@@ -1066,13 +1151,13 @@ function renderEventList() {
         <div class="text-lg font-bold text-stone-700 space-y-1">
           <p>📅 截止：${formatStandardTime(ev.time)}</p>
           <p>📍 地點：${sanitizeHTML(ev.location)}</p>
-          <p>👥 上限：${ev.limit || 0} 人</p>
+          ${remainHtml}
         </div>
         ${ev.description ? `<div class="bg-stone-50 border-2 border-stone-200 rounded-2xl p-4 text-base leading-relaxed font-bold text-stone-700 whitespace-pre-line">${sanitizeHTML(ev.description)}</div>` : ""}
         ${filesHtml}
         <div class="grid grid-cols-2 gap-3 pt-2">
-          <button onclick="openParticipantsModal('${ev.id}')" class="bg-stone-100 text-stone-900 border-3 border-stone-400 py-4 rounded-2xl font-black active-scale">📋 名單</button>
-          <button onclick="openRegisterModal('${ev.id}')" ${stopped ? "disabled" : ""} class="${stopped ? "bg-stone-300 text-stone-500 border-stone-400" : "bg-emerald-700 text-white border-emerald-900"} border-3 py-4 rounded-2xl font-black active-scale">📝 登記</button>
+          <button onclick='openParticipantsModal(${JSON.stringify(ev.id)})' class="bg-stone-100 text-stone-900 border-3 border-stone-400 py-4 rounded-2xl font-black active-scale">📋 名單</button>
+          <button onclick='openRegisterModal(${JSON.stringify(ev.id)})' ${stopped ? "disabled" : ""} class="${stopped ? "bg-stone-300 text-stone-500 border-stone-400" : "bg-emerald-700 text-white border-emerald-900"} border-3 py-4 rounded-2xl font-black active-scale">📝 登記</button>
         </div>
       </div>`;
     c.appendChild(div);
@@ -1110,6 +1195,7 @@ function openProfileModal() {
     openAuthModal();
     return;
   }
+
   document.getElementById("profileName").value = userProfile.name || "";
   document.getElementById("profileNickname").value = userProfile.nickname || "";
   document.getElementById("profilePhone").value = userProfile.phone || "";
@@ -1128,9 +1214,22 @@ async function saveProfile(e) {
     return;
   }
 
+  const phone = normalizePhone(document.getElementById("profilePhone").value.trim());
   const birthday = rocToGreg(document.getElementById("profileBirthday").value.trim());
+  const idCard = document.getElementById("profileIdCard").value.trim().toUpperCase();
+
+  if (!isValidPhone(phone)) {
+    alert("手機格式錯誤。");
+    return;
+  }
+
   if (!birthday) {
-    alert("生日格式錯誤");
+    alert("生日格式錯誤。");
+    return;
+  }
+
+  if (!isValidTaiwanId(idCard)) {
+    alert("身分證字號格式錯誤。");
     return;
   }
 
@@ -1139,10 +1238,10 @@ async function saveProfile(e) {
     lineId: userLineId,
     name: document.getElementById("profileName").value.trim(),
     nickname: document.getElementById("profileNickname").value.trim(),
-    phone: document.getElementById("profilePhone").value.trim(),
+    phone,
     gender: document.getElementById("profileGender").value,
     birthday,
-    idCard: document.getElementById("profileIdCard").value.trim().toUpperCase(),
+    idCard,
     address: document.getElementById("profileAddress").value.trim()
   };
 
@@ -1163,7 +1262,7 @@ async function saveProfile(e) {
 }
 
 function openRegisterModal(eventId) {
-  if (!userProfile || userRole === "guest") {
+  if (!userProfile || userRole === "guest" || !userLineId) {
     alert("請先使用 LINE 登入並完成會員綁定，才能自行報名。");
     openAuthModal();
     return;
@@ -1171,6 +1270,11 @@ function openRegisterModal(eventId) {
 
   currentEvent = allEvents.find(e => e.id === eventId);
   if (!currentEvent) return;
+
+  if (currentEvent.status !== "啟動" || isEventExpired(currentEvent)) {
+    alert("此活動已停止或超過報名截止時間。");
+    return;
+  }
 
   currentAttendees = [];
   addAttendeeFromUser({
@@ -1191,11 +1295,11 @@ function openRegisterModal(eventId) {
 function addAttendeeFromUser(u) {
   currentAttendees.push({
     name: u.name || "",
-    phone: u.phone || "",
+    phone: normalizePhone(u.phone || ""),
     relation: u.relation || "同行人",
     gender: u.gender || "",
     birthday: u.birthday || "",
-    idCard: u.idCard || "",
+    idCard: String(u.idCard || "").toUpperCase(),
     answers: u.answers || {}
   });
 }
@@ -1208,21 +1312,24 @@ function renderAttendees() {
   currentAttendees.forEach((a, idx) => {
     const qHtml = qs.filter(q => !["姓名", "電話", "性別", "生日", "身分證字號", "關係"].includes(q.title)).map(q => {
       const val = a.answers[q.title] || "";
+      const qKey = JSON.stringify(q.title);
+
       if (q.type === "select") {
         const opts = String(q.options || "").split(",").map(x => x.trim()).filter(Boolean);
         return `
           <div>
             <label class="block text-base font-black text-stone-800 mb-1">${sanitizeHTML(q.title)} ${q.required ? "*" : ""}</label>
-            <select onchange="currentAttendees[${idx}].answers['${sanitizeHTML(q.title)}']=this.value" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white" ${q.required ? "required" : ""}>
+            <select onchange='currentAttendees[${idx}].answers[${qKey}]=this.value' class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white" ${q.required ? "required" : ""}>
               <option value="">請選擇</option>
               ${opts.map(o => `<option value="${sanitizeHTML(o)}" ${o === val ? "selected" : ""}>${sanitizeHTML(o)}</option>`).join("")}
             </select>
           </div>`;
       }
+
       return `
         <div>
           <label class="block text-base font-black text-stone-800 mb-1">${sanitizeHTML(q.title)} ${q.required ? "*" : ""}</label>
-          <input type="text" value="${sanitizeHTML(val)}" oninput="currentAttendees[${idx}].answers['${sanitizeHTML(q.title)}']=this.value" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" ${q.required ? "required" : ""}>
+          <input type="text" value="${sanitizeHTML(val)}" oninput='currentAttendees[${idx}].answers[${qKey}]=this.value' class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold" ${q.required ? "required" : ""}>
         </div>`;
     }).join("");
 
@@ -1240,24 +1347,46 @@ function renderAttendees() {
 }
 
 function openSearchAttendeeDialog() {
+  if (!userLineId || userRole === "guest") {
+    alert("請先使用 LINE 登入並完成會員綁定。");
+    return;
+  }
+
   document.getElementById("globalAttendeeSearchInput").value = "";
-  document.getElementById("globalAttendeeSearchResults").innerHTML = `<p class="text-stone-500 text-center py-4">請輸入關鍵字</p>`;
+  document.getElementById("globalAttendeeSearchResults").innerHTML = `<p class="text-stone-500 text-center py-4">請輸入姓名、暱稱或電話搜尋</p>`;
   openModal("searchAttendeeModal");
 }
 
+let searchTimer = null;
+
 function searchGlobalAttendees(k) {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => searchGlobalAttendeesRemote(k), 350);
+}
+
+async function searchGlobalAttendeesRemote(k) {
   const c = document.getElementById("globalAttendeeSearchResults");
   k = String(k || "").trim();
-  if (!k) {
+
+  if (!k || k.length < 1) {
     c.innerHTML = `<p class="text-stone-500 text-center py-4">請輸入關鍵字</p>`;
     return;
   }
-  const found = allRegisteredUsers.filter(u =>
-    String(u.name || "").includes(k) ||
-    String(u.nickname || "").includes(k) ||
-    String(u.phone || "").includes(k)
-  ).slice(0, 30);
 
+  c.innerHTML = `<p class="text-stone-500 text-center py-4">搜尋中...</p>`;
+
+  const r = await apiGet({
+    action: "searchUsersForRegistration",
+    lineId: userLineId,
+    keyword: k
+  });
+
+  if (r.status !== "success") {
+    c.innerHTML = `<p class="text-red-500 text-center py-4">${sanitizeHTML(r.message)}</p>`;
+    return;
+  }
+
+  const found = r.users || [];
   window.__foundUsers = found;
 
   if (!found.length) {
@@ -1268,7 +1397,7 @@ function searchGlobalAttendees(k) {
   c.innerHTML = found.map((u, i) => `
     <button onclick="selectGlobalAttendee(${i})" class="w-full text-left p-4 hover:bg-emerald-50 font-black">
       👤 ${sanitizeHTML(u.name)} ${u.nickname ? `(${sanitizeHTML(u.nickname)})` : ""}<br>
-      <span class="text-sm text-stone-500">📞 ${sanitizeHTML(u.phone || "")}</span>
+      <span class="text-sm text-stone-500">📞 ${sanitizeHTML(u.phoneMasked || "")}</span>
     </button>
   `).join("");
 }
@@ -1291,6 +1420,7 @@ function selectGlobalAttendee(i) {
     idCard: u.idCard,
     answers: {}
   });
+
   renderAttendees();
   closeModal("searchAttendeeModal");
 }
@@ -1305,19 +1435,32 @@ function openCreateUserModal() {
 async function handleAddNewUserToDatabase(e) {
   e.preventDefault();
 
+  const phone = normalizePhone(document.getElementById("newUserPhone").value.trim());
   const birthday = rocToGreg(document.getElementById("newUserBirthday").value.trim());
+  const idCard = document.getElementById("newUserIdCard").value.trim().toUpperCase();
+
+  if (!isValidPhone(phone)) {
+    alert("手機格式錯誤。");
+    return;
+  }
+
   if (!birthday) {
-    alert("生日格式錯誤");
+    alert("生日格式錯誤。");
+    return;
+  }
+
+  if (!isValidTaiwanId(idCard)) {
+    alert("身分證字號格式錯誤。");
     return;
   }
 
   const u = {
     name: document.getElementById("newUserName").value.trim(),
-    phone: document.getElementById("newUserPhone").value.trim(),
+    phone,
     gender: document.getElementById("newUserGender").value,
     relation: document.getElementById("newUserRelation").value,
     birthday,
-    idCard: document.getElementById("newUserIdCard").value.trim().toUpperCase(),
+    idCard,
     answers: {}
   };
 
@@ -1336,7 +1479,6 @@ async function handleAddNewUserToDatabase(e) {
     });
 
     if (r.status === "success") {
-      allRegisteredUsers.push(u);
       addAttendeeFromUser(u);
       renderAttendees();
       closeModal("createUserModal");
@@ -1351,9 +1493,22 @@ async function handleAddNewUserToDatabase(e) {
 
 async function submitMultiRegistration() {
   if (!currentEvent) return;
+
+  if (!userLineId || userRole === "guest") {
+    alert("請使用 LINE 登入並完成會員綁定。");
+    return;
+  }
+
   if (!currentAttendees.length) {
     alert("請至少加入一位報名人");
     return;
+  }
+
+  for (const a of currentAttendees) {
+    if (!a.name || !isValidPhone(a.phone) || !a.gender || !a.birthday || !isValidTaiwanId(a.idCard)) {
+      alert(`報名人 ${a.name || ""} 資料不完整或格式錯誤。`);
+      return;
+    }
   }
 
   showLoading("送出報名...");
@@ -1445,7 +1600,7 @@ async function openMyRegistrationsModal() {
       <h4 class="text-xl font-black text-stone-950">${sanitizeHTML(x.eventTitle)}</h4>
       <p class="text-base font-bold text-stone-700">📅 ${formatStandardTime(x.eventTime)}</p>
       <p class="text-base font-bold text-stone-700">👥 ${x.attendeeCount} 人</p>
-      <button onclick="openRegistrationDetails('${x.regId}')" class="w-full bg-emerald-700 text-white rounded-xl py-3 font-black">查看明細</button>
+      <button onclick='openRegistrationDetails(${JSON.stringify(x.regId)})' class="w-full bg-emerald-700 text-white rounded-xl py-3 font-black">查看明細</button>
     </div>
   `).join("") : `<p class="text-stone-500 text-center py-8 font-black">目前沒有登記紀錄</p>`;
 }
@@ -1456,7 +1611,7 @@ async function openRegistrationDetails(regId) {
   c.innerHTML = `<p class="text-center text-stone-500 py-8 font-black">載入中...</p>`;
   openModal("regDetailsModal");
 
-  const r = await apiGet({ action: "getRegistrationDetails", regId });
+  const r = await apiGet({ action: "getRegistrationDetails", regId, lineId: userLineId });
   const list = r.attendees || [];
   c.innerHTML = list.map((a, i) => `
     <div class="bg-stone-50 border-3 border-stone-300 rounded-2xl p-4 space-y-2">
@@ -1513,7 +1668,7 @@ function renderAdminCategoryList() {
   c.innerHTML = allCategories.map(cat => `
     <div class="flex justify-between items-center bg-white p-4 rounded-2xl border-3 border-stone-300 shadow-sm">
       <span class="font-black text-stone-950 text-base">📁 ${sanitizeHTML(cat)}</span>
-      <button onclick="deleteCategory('${sanitizeHTML(cat)}')" class="bg-red-50 text-red-700 border-3 border-red-300 px-4 py-2 rounded-xl font-black text-sm">刪除</button>
+      <button onclick='deleteCategory(${JSON.stringify(cat)})' class="bg-red-50 text-red-700 border-3 border-red-300 px-4 py-2 rounded-xl font-black text-sm">刪除</button>
     </div>
   `).join("");
 }
@@ -1641,8 +1796,27 @@ function fileToBase64(file) {
 async function uploadImageToDrive(input) {
   const file = input.files[0];
   if (!file) return;
+
+  if (!isAdmin) {
+    alert("無管理員權限");
+    input.value = "";
+    return;
+  }
+
   if (document.querySelectorAll(".admin-image-row").length >= 5) {
     alert("最多 5 張圖片");
+    input.value = "";
+    return;
+  }
+
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    alert("只允許 JPG、PNG、WEBP 圖片。");
+    input.value = "";
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    alert("圖片大小不可超過 5MB。");
     input.value = "";
     return;
   }
@@ -1662,6 +1836,18 @@ async function uploadImageToDrive(input) {
 async function uploadFileToDrive(input) {
   const file = input.files[0];
   if (!file) return;
+
+  if (!isAdmin) {
+    alert("無管理員權限");
+    input.value = "";
+    return;
+  }
+
+  if (file.size > 8 * 1024 * 1024) {
+    alert("附件大小不可超過 8MB。");
+    input.value = "";
+    return;
+  }
 
   showLoading("上傳附件...");
   try {
@@ -1685,12 +1871,13 @@ async function saveEvent() {
   const status = document.getElementById("adminStatus").value;
   const description = document.getElementById("adminDescription").value.trim();
 
-  if (!title || !category || !time || !location || !limit) {
-    alert("請填寫必填欄位");
+  if (!title || !category || !time || !location || !limit || limit < 1) {
+    alert("請填寫正確的必填欄位");
     return;
   }
 
   const images = [...document.querySelectorAll(".admin-image-row input[type='hidden']")].map(x => x.value.trim()).filter(Boolean);
+
   const files = [...document.querySelectorAll(".admin-file-row")].map(row => {
     const i = row.querySelectorAll("input");
     return { name: i[0].value.trim(), url: i[1].value.trim() };
@@ -1737,7 +1924,7 @@ async function saveEvent() {
 
 async function deleteEvent() {
   const id = document.getElementById("adminEventId").value;
-  if (!id || !confirm("確定刪除此活動？")) return;
+  if (!id || !confirm("確定刪除此活動？若已有報名資料，系統會禁止刪除。")) return;
 
   showLoading("刪除活動...");
   try {
@@ -1775,7 +1962,7 @@ async function addNewCategory() {
 }
 
 async function deleteCategory(name) {
-  if (!confirm(`確定刪除分類「${name}」？`)) return;
+  if (!confirm(`確定刪除分類「${name}」？若已有活動使用，系統會禁止刪除。`)) return;
 
   showLoading("刪除分類...");
   try {
@@ -1807,6 +1994,7 @@ async function onRegManageEventSelect() {
   exportBtn.classList.add("hidden");
 
   const r = await apiGet({ action: "getAdminParticipants", eventId, lineId: userLineId });
+
   if (r.status !== "success") {
     c.innerHTML = `<p class="text-red-500 text-center text-lg py-10">${sanitizeHTML(r.message)}</p>`;
     return;
@@ -1817,6 +2005,7 @@ async function onRegManageEventSelect() {
   window.currentAdminNotesConfig = r.adminNotesConfig || [];
 
   const list = window.currentAdminParticipants;
+
   if (!list.length) {
     c.innerHTML = `<p class="text-stone-500 text-center text-lg py-10 font-bold">目前尚無登記</p>`;
     return;
@@ -1827,10 +2016,12 @@ async function onRegManageEventSelect() {
   c.innerHTML = list.map((p, idx) => {
     const notesHtml = (window.currentAdminNotesConfig || []).map(cfg => {
       const val = (p.adminNotes || {})[cfg.title] || "";
+
       if (cfg.type === "select") {
         const opts = String(cfg.options || "").split(",").map(o => o.trim()).filter(Boolean);
         return `<div><label class="block font-black text-emerald-950 mb-1">${sanitizeHTML(cfg.title)}</label><select data-title="${sanitizeHTML(cfg.title)}" class="note-input-field w-full border-3 border-stone-400 rounded-xl p-3 font-bold bg-white"><option value="">請選擇</option>${opts.map(o => `<option value="${sanitizeHTML(o)}" ${o === val ? "selected" : ""}>${sanitizeHTML(o)}</option>`).join("")}</select></div>`;
       }
+
       return `<div><label class="block font-black text-emerald-950 mb-1">${sanitizeHTML(cfg.title)}</label><input data-title="${sanitizeHTML(cfg.title)}" value="${sanitizeHTML(val)}" class="note-input-field w-full border-3 border-stone-400 rounded-xl p-3 font-bold bg-white"></div>`;
     }).join("");
 
@@ -1838,7 +2029,7 @@ async function onRegManageEventSelect() {
       <div class="p-5 bg-white rounded-3xl border-3 border-stone-300 text-lg space-y-3 shadow-sm">
         <div class="flex justify-between items-center border-b-2 pb-3">
           <span class="font-black text-stone-950 text-xl">#${idx + 1} ${sanitizeHTML(p.name)} (${sanitizeHTML(p.relation || "同行人")})</span>
-          <button onclick="adminDeleteRegistration('${sanitizeHTML(p.regId)}','${sanitizeHTML(eventId)}')" class="bg-red-50 text-red-700 border-3 border-red-300 px-4 py-2 rounded-xl font-black text-base">刪除</button>
+          <button onclick='adminDeleteRegistration(${JSON.stringify(p.regId)}, ${JSON.stringify(eventId)})' class="bg-red-50 text-red-700 border-3 border-red-300 px-4 py-2 rounded-xl font-black text-base">刪除整筆報名</button>
         </div>
         <p>📞 ${sanitizeHTML(p.phone || "")}</p>
         <p>👤 ${sanitizeHTML(p.gender || "")} ｜ ${p.birthday ? gregToRoc(formatStandardDate(p.birthday)) : ""}</p>
@@ -1847,7 +2038,7 @@ async function onRegManageEventSelect() {
         <div id="notesContainer_${sanitizeHTML(p.regId)}_${idx}" class="bg-emerald-50 p-4 rounded-2xl border-3 border-emerald-200 space-y-3">
           <p class="font-black text-emerald-950">✏️ 管理備註</p>
           ${notesHtml || `<p class="text-stone-500 font-bold">尚未設定備註欄位</p>`}
-          ${notesHtml ? `<button onclick="saveAdminDynamicNote('${sanitizeHTML(p.regId)}', ${idx})" class="w-full bg-emerald-700 text-white rounded-xl py-3 font-black">儲存註記</button>` : ""}
+          ${notesHtml ? `<button onclick='saveAdminDynamicNote(${JSON.stringify(p.regId)}, ${idx})' class="w-full bg-emerald-700 text-white rounded-xl py-3 font-black">儲存註記</button>` : ""}
         </div>
       </div>`;
   }).join("");
@@ -1858,11 +2049,19 @@ async function saveAdminDynamicNote(regId, idx) {
   const box = document.getElementById(`notesContainer_${regId}_${idx}`);
   const fields = box.querySelectorAll(".note-input-field");
   const adminNotes = {};
+
   fields.forEach(f => adminNotes[f.dataset.title] = f.value.trim());
 
   showLoading("儲存註記...");
   try {
-    const r = await apiPost({ action: "saveAdminNote", regId, name: p.name, adminNotes, lineId: userLineId });
+    const r = await apiPost({
+      action: "saveAdminNote",
+      regId,
+      name: p.name,
+      phone: p.phone,
+      adminNotes,
+      lineId: userLineId
+    });
     alert(r.status === "success" ? "已儲存" : "儲存失敗：" + r.message);
   } finally {
     hideLoading();
@@ -1870,7 +2069,7 @@ async function saveAdminDynamicNote(regId, idx) {
 }
 
 async function adminDeleteRegistration(regId, eventId) {
-  if (!confirm("確定刪除此筆登記？候補將自動遞補。")) return;
+  if (!confirm("確定刪除此整筆報名？同一筆報名內所有同行人都會被刪除，候補將自動遞補。")) return;
 
   showLoading("刪除登記...");
   try {
@@ -1878,6 +2077,7 @@ async function adminDeleteRegistration(regId, eventId) {
     if (r.status === "success") {
       alert("已刪除");
       await onRegManageEventSelect();
+      await reloadEventsData();
     } else {
       alert("刪除失敗：" + r.message);
     }
@@ -1932,6 +2132,7 @@ function exportToCSV() {
 async function onAnnouncementEventSelect() {
   const eventId = document.getElementById("announceEventSelect").value;
   const c = document.getElementById("announceParticipantsList");
+
   if (!eventId) {
     c.innerHTML = "";
     return;
@@ -1939,11 +2140,11 @@ async function onAnnouncementEventSelect() {
 
   currentEvent = allEvents.find(e => e.id === eventId);
   showLoading("載入公告名單...");
+
   try {
     const r = await apiGet({ action: "getAdminParticipants", eventId, lineId: userLineId });
     if (r.status === "success") {
       currentParticipants = r.participants || [];
-      activeEventQuestions = r.questions || [];
       c.innerHTML = currentParticipants.map((p, i) => `
         <div class="p-4 bg-white rounded-2xl border-3 border-stone-300">
           <span class="font-black">#${i + 1} ${sanitizeHTML(p.name)}</span>
@@ -2013,5 +2214,6 @@ async function sendFlexMessage(eventId, eventTime, title, remaining, attendees) 
 
 document.addEventListener("DOMContentLoaded", initializeLiff);
 </script>
+
 </body>
 </html>
