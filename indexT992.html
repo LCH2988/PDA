@@ -520,17 +520,43 @@
             </div>
           </div>
 
-          <!-- Announcement Tab -->
+          <!-- Announcement Tab (完全重構為附件卡牌統計樣式) -->
           <div id="adminTab_announce" class="hidden space-y-4">
-            <div class="bg-white p-5 rounded-2xl border-3 border-stone-300 space-y-3">
-              <label class="block text-base font-black text-stone-800">選擇活動</label>
-              <select id="announceEventSelect" onchange="onAnnouncementEventSelect()" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white"></select>
-              <textarea id="announceCustomMsg" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold h-28" placeholder="公告備註"></textarea>
-              <button onclick="shareCustomChainToGroup()" class="w-full bg-emerald-700 text-white font-black py-5 rounded-2xl text-xl shadow-lg">
-                📢 發布接龍公告
+            <div class="bg-white p-5 rounded-3xl border-3 border-stone-300 space-y-4">
+              <label class="block text-base font-black text-stone-800">請選擇活動項目：</label>
+              <select id="announceEventSelect" onchange="onAnnouncementEventSelect()" class="w-full border-3 border-stone-400 rounded-2xl p-4 text-lg font-bold bg-white"></select>
+            </div>
+
+            <!-- 1. 選擇統計欄位 -->
+            <div class="bg-white p-5 rounded-3xl border-3 border-stone-300 space-y-4">
+              <div class="flex justify-between items-center">
+                <label class="text-base font-black text-stone-800">1. 選擇統計欄位：</label>
+                <button onclick="addQuickAllStatsFields()" class="bg-amber-100 hover:bg-amber-200 border-2 border-amber-300 text-amber-950 font-black px-4 py-2 rounded-2xl text-sm flex items-center active-scale">
+                  ⚡ 臨時統計
+                </button>
+              </div>
+              
+              <!-- 動態統計欄位容器 -->
+              <div id="announceStatsFieldsContainer" class="space-y-3"></div>
+
+              <button onclick="addAnnounceStatsDropdown()" class="w-full border-2 border-dashed border-stone-400 text-stone-700 hover:bg-stone-50 font-black py-3 rounded-2xl text-base flex justify-center items-center active-scale">
+                ➕ 新增統計欄位
               </button>
             </div>
-            <div id="announceParticipantsList" class="space-y-3"></div>
+
+            <!-- 2. 自訂備註說明 -->
+            <div class="bg-white p-5 rounded-3xl border-3 border-stone-300 space-y-3">
+              <label class="block text-base font-black text-stone-800">2. 自訂備註說明 (選填)：</label>
+              <textarea id="announceCustomMsg" class="w-full border-3 border-stone-400 rounded-2xl p-4 text-lg font-bold h-28" placeholder="例如：請大家於本週五前完成轉帳並回報！"></textarea>
+            </div>
+
+            <!-- 發布按鈕 -->
+            <button onclick="shareCustomChainToGroup()" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-black py-5 rounded-2xl text-xl shadow-lg active-scale flex justify-center items-center">
+              📢 發布卡牌式接龍公告 ➔
+            </button>
+
+            <!-- 預覽名單卡牌 -->
+            <div id="announceParticipantsList" class="space-y-4"></div>
           </div>
 
           <!-- Category Tab -->
@@ -574,7 +600,7 @@ let allCategories = [];
 let currentEvent = null;
 let currentAttendees = [];
 let currentParticipants = [];
-let activeEventQuestions = []; // 同步 B 程式變數：用於儲存公告頁籤目前的活動問題
+let activeEventQuestions = []; // 用於儲存當前公告活動的報名問題清單
 let currentFilterCategory = "";
 let currentSearchKeyword = "";
 let lightboxImages = [];
@@ -2130,29 +2156,34 @@ function exportToCSV() {
   a.click();
 }
 
-// ==================== 以下為完全替換為 B 程式版本的公告接龍功能 ====================
+// ==================== 以下為完全重構的接龍公告與統計欄位功能 ====================
 
 async function onAnnouncementEventSelect() {
   const eventId = document.getElementById("announceEventSelect").value;
   const c = document.getElementById("announceParticipantsList");
+  const fieldsContainer = document.getElementById("announceStatsFieldsContainer");
+
   if (!eventId) {
     c.innerHTML = "";
+    fieldsContainer.innerHTML = "";
     return;
   }
 
   currentEvent = allEvents.find(e => e.id === eventId);
   showLoading("載入公告名單...");
+
   try {
     const r = await apiGet({ action: "getAdminParticipants", eventId, lineId: userLineId });
     if (r.status === "success") {
       currentParticipants = r.participants || [];
-      activeEventQuestions = r.questions || []; // 同步 B 程式：儲存活動問題
-      c.innerHTML = currentParticipants.map((p, i) => `
-        <div class="p-4 bg-white rounded-2xl border-3 border-stone-300">
-          <span class="font-black">#${i + 1} ${sanitizeHTML(p.name)}</span>
-          <span class="ml-2 text-sm px-2 py-1 rounded-full ${p.status === "候補" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}">${sanitizeHTML(p.status)}</span>
-        </div>
-      `).join("");
+      activeEventQuestions = (r.questions || []).filter(q => !["姓名", "電話", "性別", "生日", "身分證字號", "關係"].includes(q.title));
+      
+      // 預設清空並建立第一個統計下拉選單
+      fieldsContainer.innerHTML = "";
+      addAnnounceStatsDropdown();
+      
+      // 渲染卡牌式預覽名單
+      renderAnnounceCardPreview();
     } else {
       c.innerHTML = `<p class="text-red-500 text-center py-4">${sanitizeHTML(r.message)}</p>`;
     }
@@ -2161,6 +2192,89 @@ async function onAnnouncementEventSelect() {
   }
 }
 
+// 新增統計欄位下拉選單
+function addAnnounceStatsDropdown(selectedVal = "") {
+  const container = document.getElementById("announceStatsFieldsContainer");
+  const div = document.createElement("div");
+  div.className = "flex items-center space-x-2 announce-stats-row";
+  
+  let optionsHtml = `<option value="">請選擇統計欄位</option>`;
+  activeEventQuestions.forEach(q => {
+    optionsHtml += `<option value="${sanitizeHTML(q.title)}" ${q.title === selectedVal ? "selected" : ""}>${sanitizeHTML(q.title)}</option>`;
+  });
+
+  div.innerHTML = `
+    <select onchange="renderAnnounceCardPreview()" class="announce-stats-select flex-1 border-3 border-stone-400 rounded-2xl p-4 text-lg font-bold bg-white">
+      ${optionsHtml}
+    </select>
+    <button onclick="this.parentElement.remove(); renderAnnounceCardPreview();" class="bg-red-50 text-red-600 hover:bg-red-100 border-3 border-red-200 w-16 h-16 rounded-2xl text-2xl font-black flex justify-center items-center active-scale">
+      ✕
+    </button>
+  `;
+  container.appendChild(div);
+  renderAnnounceCardPreview();
+}
+
+// ⚡ 臨時統計：快速將此活動所有問題加入統計欄位
+function addQuickAllStatsFields() {
+  if (!activeEventQuestions.length) {
+    alert("此活動無自訂報名問題，無法進行統計。");
+    return;
+  }
+  const container = document.getElementById("announceStatsFieldsContainer");
+  container.innerHTML = "";
+  activeEventQuestions.forEach(q => {
+    addAnnounceStatsDropdown(q.title);
+  });
+}
+
+// 獲取當前所有已選擇的統計欄位名稱
+function getSelectedStatsTitles() {
+  const selects = document.querySelectorAll(".announce-stats-select");
+  const titles = [];
+  selects.forEach(sel => {
+    if (sel.value) titles.push(sel.value);
+  });
+  return titles;
+}
+
+// 渲染卡牌式預覽名單 (依據附件樣式)
+function renderAnnounceCardPreview() {
+  const c = document.getElementById("announceParticipantsList");
+  if (!currentParticipants.length) {
+    c.innerHTML = `<p class="text-stone-500 text-center py-8 font-black">目前尚無登記名單</p>`;
+    return;
+  }
+
+  const selectedTitles = getSelectedStatsTitles();
+
+  c.innerHTML = currentParticipants.map((p, i) => {
+    // 產生統計欄位清單
+    const statsListHtml = selectedTitles.map(title => {
+      const ans = (p.answers || {})[title] || "未填寫";
+      return `<li class="text-stone-800 text-base font-bold flex items-start">
+        <span class="mr-2 text-stone-500">•</span>
+        <span>${sanitizeHTML(title)}：${sanitizeHTML(ans)}</span>
+      </li>`;
+    }).join("");
+
+    return `
+      <div class="bg-white rounded-3xl p-5 border-3 border-stone-300 shadow-sm space-y-3">
+        <div class="flex justify-between items-center">
+          <h4 class="text-xl font-black text-stone-950">
+            #${i + 1} ${sanitizeHTML(p.name)} ${p.relation ? `(${sanitizeHTML(p.relation)})` : ""}
+          </h4>
+          <span class="px-3 py-1 rounded-full text-sm font-black ${p.status === "候補" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}">
+            ${sanitizeHTML(p.status)}
+          </span>
+        </div>
+        ${selectedTitles.length ? `<ul class="space-y-1.5 border-t border-stone-100 pt-3">${statsListHtml}</ul>` : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+// 發布卡牌式接龍公告 (整合統計欄位輸出)
 async function shareCustomChainToGroup() {
   if (!currentEvent) {
     alert("請先選擇活動");
@@ -2173,6 +2287,7 @@ async function shareCustomChainToGroup() {
   }
 
   const msg = document.getElementById("announceCustomMsg").value.trim();
+  const selectedTitles = getSelectedStatsTitles();
 
   let text = `📢【台灣帕金森病友權益促進會 活動接龍公告】\n`;
   text += `活動：${currentEvent.title}\n`;
@@ -2182,6 +2297,11 @@ async function shareCustomChainToGroup() {
 
   currentParticipants.forEach((p, i) => {
     text += `${i + 1}. ${p.name}${p.status === "候補" ? "（候補）" : ""}\n`;
+    // 附加統計欄位回答
+    selectedTitles.forEach(title => {
+      const ans = (p.answers || {})[title] || "無";
+      text += `   • ${title}：${ans}\n`;
+    });
   });
 
   text += `\n查看或登記：\nhttps://liff.line.me/${LIFF_ID}`;
