@@ -407,9 +407,29 @@
     <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden">
       <div class="bg-gradient-to-r from-emerald-800 to-teal-700 text-white p-5 flex justify-between items-center border-b-4 border-emerald-900">
         <button onclick="closeModal('regDetailsModal'); openMyRegistrationsModal();" class="bg-emerald-950 text-white px-4 py-2 rounded-xl text-sm font-black shadow-md">⬅ 返回</button>
-        <h3 class="text-2xl font-black">🔍 登記明細</h3>
+        <h3 class="text-2xl font-black">🔍 登記名細</h3>
       </div>
       <div id="regDetailsContainer" class="p-5 space-y-4 max-h-[60vh] overflow-y-auto"></div>
+    </div>
+  </div>
+
+  <!-- Custom Export Modal (自訂匯出項目燈箱) -->
+  <div id="customExportModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-[70] hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl border-4 border-stone-400 overflow-hidden">
+      <div class="bg-emerald-800 text-white p-5 flex justify-between items-center border-b-4 border-emerald-950">
+        <h3 class="text-xl font-black">⚙️ 自訂匯出項目</h3>
+        <button onclick="closeModal('customExportModal')" class="text-white font-black text-2xl">✕</button>
+      </div>
+      <div class="p-5 space-y-4 max-h-[50vh] overflow-y-auto">
+        <p class="text-base text-stone-600 font-bold">請勾選您想要匯出的欄位項目：</p>
+        <div id="customExportFieldsContainer" class="space-y-2 text-lg">
+          <!-- 動態產生欄位複選框 -->
+        </div>
+      </div>
+      <div class="p-5 bg-stone-100 border-t-3 border-stone-300 flex space-x-3">
+        <button onclick="closeModal('customExportModal')" class="flex-1 bg-stone-200 text-stone-900 py-4 rounded-xl font-black border-3 border-stone-400">取消</button>
+        <button onclick="executeCustomExport()" class="flex-1 bg-emerald-700 text-white py-4 rounded-xl font-black shadow-md">確認匯出</button>
+      </div>
     </div>
   </div>
 
@@ -525,15 +545,34 @@
             </form>
           </div>
 
-          <!-- Reg Tab -->
+          <!-- Reg Tab (名單管理，追加一鍵儲存與多元匯出) -->
           <div id="adminTab_reg" class="hidden space-y-4">
             <div class="bg-white p-5 rounded-2xl border-3 border-stone-300 space-y-3">
               <label class="block text-base font-black text-stone-800">選擇活動</label>
               <select id="regManageEventSelect" onchange="onRegManageEventSelect()" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white"></select>
-              <button id="exportReportBtn" onclick="exportToCSV()" class="w-full bg-emerald-700 text-white font-black py-4 rounded-2xl text-lg shadow-md hidden">
-                📊 匯出 CSV (含完整個資)
+              
+              <!-- 💾 一鍵儲存本頁所有修改 -->
+              <button id="saveAllRegChangesBtn" onclick="saveAllRegChanges()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4.5 rounded-2xl text-lg shadow-md hidden active-scale">
+                💾 一鍵儲存本頁所有修改
               </button>
+
+              <!-- 多元匯出功能按鈕群 -->
+              <div id="exportButtonsGroup" class="grid grid-cols-2 gap-2 hidden pt-2">
+                <button onclick="exportToCSV('full')" class="bg-emerald-700 hover:bg-emerald-800 text-white font-black py-3 rounded-xl text-base shadow-md active-scale">
+                  📊 1. 完整匯出
+                </button>
+                <button onclick="exportToCSV('stats')" class="bg-purple-700 hover:bg-purple-800 text-white font-black py-3 rounded-xl text-base shadow-md active-scale">
+                  📈 2. 調查統計
+                </button>
+                <button onclick="exportToCSV('insurance')" class="bg-amber-600 hover:bg-amber-700 text-white font-black py-3 rounded-xl text-base shadow-md active-scale">
+                  🛡️ 3. 保險名單
+                </button>
+                <button onclick="openCustomExportModal()" class="bg-stone-700 hover:bg-stone-800 text-white font-black py-3 rounded-xl text-base shadow-md active-scale">
+                  ⚙️ 4. 自訂項目
+                </button>
+              </div>
             </div>
+            
             <div id="regManageListContainer" class="space-y-4">
               <p class="text-stone-500 text-center text-lg py-10 font-bold">請先選擇活動</p>
             </div>
@@ -1188,7 +1227,6 @@ function renderEventList() {
       <p>🎫 剩餘：${ev.remainingSpots || 0} 人</p>
     ` : `<p>👥 上限：${ev.limit || 0} 人</p>`;
 
-    // 檢查當前使用者是否已報名此活動（截止前可維護）
     const hasReg = userProfile && Array.isArray(ev.registeredLineIds) && ev.registeredLineIds.includes(userLineId);
     let actionBtnHtml = "";
 
@@ -1344,11 +1382,9 @@ async function openRegisterModal(eventId) {
   showLoading("檢查登記紀錄...");
 
   try {
-    // 向 GAS 取得當前使用者在此活動的報名紀錄（截止前可維護）
     const r = await apiGet({ action: "getUserRegistrationForEvent", eventId, lineId: userLineId });
     
     if (r.status === "success" && Array.isArray(r.attendees) && r.attendees.length > 0) {
-      // 載入已報名名單以供修改
       r.attendees.forEach(a => {
         currentAttendees.push({
           name: a.name,
@@ -1362,7 +1398,6 @@ async function openRegisterModal(eventId) {
       });
       document.getElementById("submitRegBtn").innerText = "更新登記資料";
     } else {
-      // 全新報名，預設帶入本人
       addAttendeeFromUser({
         name: userProfile.name,
         phone: userProfile.phone,
@@ -1622,7 +1657,6 @@ async function submitMultiRegistration() {
       alert("報名完成！");
       await reloadEventsData();
       
-      // 依據回報設定發送 LINE 訊息
       if (reportType !== "none") {
         await sendFlexMessage(currentEvent.id, currentEvent.title, r.remainingSpots, r.myRegisteredAttendees || [], reportType);
       }
@@ -1660,7 +1694,6 @@ function renderParticipantsCardPage() {
   const start = currentCardPage * CARD_PAGE_SIZE;
   const list = currentParticipants.slice(start, start + CARD_PAGE_SIZE);
 
-  // 個資安全防護：前端名單不顯示電話、身分證、生日，僅顯示姓名去識別化與狀態
   c.innerHTML = list.length ? list.map((p, i) => `
     <div class="bg-stone-50 border-3 border-stone-300 rounded-2xl p-4 flex justify-between items-center">
       <span class="text-xl font-black">#${start + i + 1} ${sanitizeHTML(maskName(p.name))}</span>
@@ -1714,7 +1747,6 @@ async function openRegistrationDetails(regId) {
   const r = await apiGet({ action: "getRegistrationDetails", regId, lineId: userLineId });
   const list = r.attendees || [];
   
-  // 個資安全防護：前端明細不顯示身分證字號，生日與電話進行去識別化遮罩
   c.innerHTML = list.map((a, i) => `
     <div class="bg-stone-50 border-3 border-stone-300 rounded-2xl p-4 space-y-2">
       <h4 class="text-xl font-black">#${i + 1} ${sanitizeHTML(a.name)} (${sanitizeHTML(a.relation || "")})</h4>
@@ -2081,17 +2113,20 @@ async function deleteCategory(name) {
 async function onRegManageEventSelect() {
   const eventId = document.getElementById("regManageEventSelect").value;
   const c = document.getElementById("regManageListContainer");
-  const exportBtn = document.getElementById("exportReportBtn");
+  const saveAllBtn = document.getElementById("saveAllRegChangesBtn");
+  const exportGroup = document.getElementById("exportButtonsGroup");
 
   if (!eventId) {
     c.innerHTML = `<p class="text-stone-500 text-center text-lg py-10 font-bold">請先選擇活動</p>`;
-    exportBtn.classList.add("hidden");
+    saveAllBtn.classList.add("hidden");
+    exportGroup.classList.add("hidden");
     return;
   }
 
   currentEvent = allEvents.find(e => e.id === eventId);
   c.innerHTML = `<p class="text-stone-500 text-center text-lg py-10 font-bold">載入中...</p>`;
-  exportBtn.classList.add("hidden");
+  saveAllBtn.classList.add("hidden");
+  exportGroup.classList.add("hidden");
 
   const r = await apiGet({ action: "getAdminParticipants", eventId, lineId: userLineId });
 
@@ -2111,58 +2146,103 @@ async function onRegManageEventSelect() {
     return;
   }
 
-  exportBtn.classList.remove("hidden");
+  saveAllBtn.classList.remove("hidden");
+  exportGroup.classList.remove("hidden");
 
-  // 個資安全防護：後台預覽名單也不顯示身分證字號，電話與生日進行去識別化遮罩
   c.innerHTML = list.map((p, idx) => {
+    // 狀態選擇下拉選單
+    const statusSelectHtml = `
+      <div>
+        <label class="block font-black text-stone-800 mb-1">報名狀態</label>
+        <select data-idx="${idx}" class="status-select-field w-full border-3 border-stone-400 rounded-xl p-3 font-bold bg-white">
+          <option value="正取" ${p.status === "正取" ? "selected" : ""}>正取</option>
+          <option value="候補" ${p.status === "候補" ? "selected" : ""}>候補</option>
+        </select>
+      </div>
+    `;
+
+    // 動態管理備註欄位
     const notesHtml = (window.currentAdminNotesConfig || []).map(cfg => {
       const val = (p.adminNotes || {})[cfg.title] || "";
 
       if (cfg.type === "select") {
         const opts = String(cfg.options || "").split(",").map(o => o.trim()).filter(Boolean);
-        return `<div><label class="block font-black text-emerald-950 mb-1">${sanitizeHTML(cfg.title)}</label><select data-title="${sanitizeHTML(cfg.title)}" class="note-input-field w-full border-3 border-stone-400 rounded-xl p-3 font-bold bg-white"><option value="">請選擇</option>${opts.map(o => `<option value="${sanitizeHTML(o)}" ${o === val ? "selected" : ""}>${sanitizeHTML(o)}</option>`).join("")}</select></div>`;
+        return `<div><label class="block font-black text-emerald-950 mb-1">${sanitizeHTML(cfg.title)}</label><select data-title="${sanitizeHTML(cfg.title)}" data-idx="${idx}" class="note-input-field w-full border-3 border-stone-400 rounded-xl p-3 font-bold bg-white"><option value="">請選擇</option>${opts.map(o => `<option value="${sanitizeHTML(o)}" ${o === val ? "selected" : ""}>${sanitizeHTML(o)}</option>`).join("")}</select></div>`;
       }
 
-      return `<div><label class="block font-black text-emerald-950 mb-1">${sanitizeHTML(cfg.title)}</label><input data-title="${sanitizeHTML(cfg.title)}" value="${sanitizeHTML(val)}" class="note-input-field w-full border-3 border-stone-400 rounded-xl p-3 font-bold bg-white"></div>`;
+      return `<div><label class="block font-black text-emerald-950 mb-1">${sanitizeHTML(cfg.title)}</label><input data-title="${sanitizeHTML(cfg.title)}" data-idx="${idx}" value="${sanitizeHTML(val)}" class="note-input-field w-full border-3 border-stone-400 rounded-xl p-3 font-bold bg-white"></div>`;
     }).join("");
 
     return `
-      <div class="p-5 bg-white rounded-3xl border-3 border-stone-300 text-lg space-y-3 shadow-sm">
+      <div class="p-5 bg-white rounded-3xl border-3 border-stone-300 text-lg space-y-3 shadow-sm reg-manage-card" data-idx="${idx}">
         <div class="flex justify-between items-center border-b-2 pb-3">
           <span class="font-black text-stone-950 text-xl">#${idx + 1} ${sanitizeHTML(maskName(p.name))} (${sanitizeHTML(p.relation || "同行人")})</span>
-          <button onclick='adminDeleteRegistration(${JSON.stringify(p.regId)}, ${JSON.stringify(eventId)})' class="bg-red-50 text-red-700 border-3 border-red-300 px-4 py-2 rounded-xl font-black text-base">刪除整筆報名</button>
+          <button onclick='adminDeleteRegistration(${JSON.stringify(p.regId)}, ${JSON.stringify(eventId)})' class="bg-red-50 text-red-700 border-3 border-red-300 px-4 py-2 rounded-xl font-black text-base">刪除整筆</button>
         </div>
         <p>📞 ${sanitizeHTML(maskPhone(p.phone || ""))}</p>
         <p>👤 ${sanitizeHTML(p.gender || "")} ｜ 生日已加密防護</p>
-        <p>狀態：${sanitizeHTML(p.status)}</p>
-        <div id="notesContainer_${sanitizeHTML(p.regId)}_${idx}" class="bg-emerald-50 p-4 rounded-2xl border-3 border-emerald-200 space-y-3">
+        
+        <div class="grid grid-cols-1 gap-3 pt-2">
+          ${statusSelectHtml}
+        </div>
+
+        <div class="bg-emerald-50 p-4 rounded-2xl border-3 border-emerald-200 space-y-3 mt-2">
           <p class="font-black text-emerald-950">✏️ 管理備註</p>
           ${notesHtml || `<p class="text-stone-500 font-bold">尚未設定備註欄位</p>`}
-          ${notesHtml ? `<button onclick='saveAdminDynamicNote(${JSON.stringify(p.regId)}, ${idx})' class="w-full bg-emerald-700 text-white rounded-xl py-3 font-black">儲存註記</button>` : ""}
         </div>
       </div>`;
   }).join("");
 }
 
-async function saveAdminDynamicNote(regId, idx) {
-  const p = window.currentAdminParticipants[idx];
-  const box = document.getElementById(`notesContainer_${regId}_${idx}`);
-  const fields = box.querySelectorAll(".note-input-field");
-  const adminNotes = {};
+// 💾 一鍵儲存本頁所有修改 (打包傳送至 GAS)
+async function saveAllRegChanges() {
+  const cards = document.querySelectorAll(".reg-manage-card");
+  if (!cards.length) return;
 
-  fields.forEach(f => adminNotes[f.dataset.title] = f.value.trim());
+  const updates = [];
 
-  showLoading("儲存註記...");
-  try {
-    const r = await apiPost({
-      action: "saveAdminNote",
-      regId,
+  cards.forEach(card => {
+    const idx = parseInt(card.dataset.idx, 10);
+    const p = window.currentAdminParticipants[idx];
+    if (!p) return;
+
+    // 取得修改後的狀態
+    const statusSelect = card.querySelector(".status-select-field");
+    const newStatus = statusSelect ? statusSelect.value : p.status;
+
+    // 取得修改後的管理備註
+    const noteFields = card.querySelectorAll(".note-input-field");
+    const adminNotes = {};
+    noteFields.forEach(f => {
+      adminNotes[f.dataset.title] = f.value.trim();
+    });
+
+    updates.push({
+      regId: p.regId,
       name: p.name,
       phone: p.phone,
-      adminNotes,
+      status: newStatus,
+      adminNotes: adminNotes
+    });
+  });
+
+  showLoading("批次儲存修改中...");
+  try {
+    const r = await apiPost({
+      action: "saveAdminNotesBatch",
+      updates: updates,
       lineId: userLineId
     });
-    alert(r.status === "success" ? "已儲存" : "儲存失敗：" + r.message);
+
+    if (r.status === "success") {
+      alert("本頁所有修改已成功儲存！");
+      await onRegManageEventSelect();
+      await reloadEventsData();
+    } else {
+      alert("儲存失敗：" + r.message);
+    }
+  } catch (e) {
+    alert("連線失敗：" + e.message);
   } finally {
     hideLoading();
   }
@@ -2186,7 +2266,9 @@ async function adminDeleteRegistration(regId, eventId) {
   }
 }
 
-function exportToCSV() {
+// ==================== 專業多元匯出功能 ====================
+
+function exportToCSV(type) {
   const ps = window.currentAdminParticipants || [];
   const qs = window.currentAdminQuestions || [];
   const ns = window.currentAdminNotesConfig || [];
@@ -2196,37 +2278,211 @@ function exportToCSV() {
     return;
   }
 
-  // 個資安全防護：只有在後台匯出 CSV 時，才會帶入完整的身分證字號、生日、電話
-  const headers = ["編號", "登記ID", "姓名", "電話", "關係", "性別", "生日", "身分證字號", "狀態"];
+  const eventTitle = currentEvent ? currentEvent.title : "活動";
+  const dateStr = formatStandardDate(new Date());
+
+  if (type === "full") {
+    // 1. 活動完整匯出 (含所有個資、問題、備註)
+    const headers = ["編號", "登記ID", "姓名", "電話", "關係", "性別", "生日", "身分證字號", "狀態"];
+    const qTitles = qs.map(q => q.title).filter(t => !["姓名", "電話", "性別", "生日", "身分證字號", "關係"].includes(t));
+    const nTitles = ns.map(n => n.title);
+    headers.push(...qTitles, ...nTitles);
+
+    const rows = [headers.map(sanitizeCSVCell).join(",")];
+    ps.forEach((p, i) => {
+      const row = [
+        i + 1,
+        p.regId,
+        p.name,
+        "\t" + (p.phone || ""),
+        p.relation || "",
+        p.gender || "",
+        p.birthday ? formatStandardDate(p.birthday) : "",
+        p.idCard || "",
+        p.status || ""
+      ].map(sanitizeCSVCell);
+
+      qTitles.forEach(t => row.push(sanitizeCSVCell((p.answers || {})[t] || "")));
+      nTitles.forEach(t => row.push(sanitizeCSVCell((p.adminNotes || {})[t] || "")));
+      rows.push(row.join(","));
+    });
+
+    downloadCSVBlob(rows,`${eventTitle}_完整名單_${dateStr}.csv`);
+
+  } else if (type === "stats") {
+    // 2. 活動調查統計 (自動統計自訂問題的回答分布)
+    const qTitles = qs.map(q => q.title).filter(t => !["姓名", "電話", "性別", "生日", "身分證字號", "關係"].includes(t));
+    if (!qTitles.length) {
+      alert("此活動沒有自訂報名問題，無法進行調查統計。");
+      return;
+    }
+
+    const rows = [["調查問題", "回答選項", "小計人數", "百分比"].map(sanitizeCSVCell).join(",")];
+
+    qTitles.forEach(title => {
+      const statsMap = {};
+      let totalAnswered = 0;
+
+      ps.forEach(p => {
+        const ans = String((p.answers || {})[title] || "未填寫").trim();
+        statsMap[ans] = (statsMap[ans] || 0) + 1;
+        totalAnswered++;
+      });
+
+      Object.keys(statsMap).forEach(ans => {
+        const count = statsMap[ans];
+        const pct = totalAnswered > 0 ? ((count / totalAnswered) * 100).toFixed(1) + "%" : "0%";
+        rows.push([title, ans, count, pct].map(sanitizeCSVCell).join(","));
+      });
+      // 插入空行隔開不同問題
+      rows.push("");
+    });
+
+    downloadCSVBlob(rows, `${eventTitle}_調查統計分析_${dateStr}.csv`);
+
+  } else if (type === "insurance") {
+    // 3. 保險名單匯出 (僅篩選保險必填關鍵個資：真實姓名、身分證字號、生日、性別、電話、關係)
+    const headers = ["編號", "姓名", "身分證字號", "生日", "性別", "電話", "關係", "狀態"];
+    const rows = [headers.map(sanitizeCSVCell).join(",")];
+
+    ps.forEach((p, i) => {
+      const row = [
+        i + 1,
+        p.name,
+        p.idCard || "",
+        p.birthday ? formatStandardDate(p.birthday) : "",
+        p.gender || "",
+        "\t" + (p.phone || ""),
+        p.relation || "",
+        p.status || ""
+      ].map(sanitizeCSVCell);
+      rows.push(row.join(","));
+    });
+
+    downloadCSVBlob(rows, `${eventTitle}_保險專用名單_${dateStr}.csv`);
+  }
+}
+
+// 4. 自訂匯出項目 (彈出燈箱勾選)
+function openCustomExportModal() {
+  const ps = window.currentAdminParticipants || [];
+  const qs = window.currentAdminQuestions || [];
+  const ns = window.currentAdminNotesConfig || [];
+
+  if (!ps.length) {
+    alert("沒有資料可匯出");
+    return;
+  }
+
+  const container = document.getElementById("customExportFieldsContainer");
+  container.innerHTML = "";
+
+  // 基礎欄位定義
+  const baseFields = [
+    { key: "name", label: "姓名" },
+    { key: "phone", label: "電話" },
+    { key: "relation", label: "關係" },
+    { key: "gender", label: "性別" },
+    { key: "birthday", label: "生日" },
+    { key: "idCard", label: "身分證字號" },
+    { key: "status", label: "報名狀態" }
+  ];
+
+  let html = `<p class="font-black text-stone-800 border-b pb-1 mb-2">📌 基本個資欄位</p>`;
+  baseFields.forEach(f => {
+    html += `
+      <label class="flex items-center space-x-3 py-2 cursor-pointer active-scale">
+        <input type="checkbox" value="${f.key}" data-type="base" checked class="w-7 h-7 text-emerald-600 rounded">
+        <span class="font-bold text-stone-900">${f.label}</span>
+      </label>
+    `;
+  });
+
+  // 自訂問題欄位
   const qTitles = qs.map(q => q.title).filter(t => !["姓名", "電話", "性別", "生日", "身分證字號", "關係"].includes(t));
+  if (qTitles.length) {
+    html += `<p class="font-black text-emerald-800 border-b pb-1 mt-4 mb-2">📋 報名自訂問題</p>`;
+    qTitles.forEach(t => {
+      html += `
+        <label class="flex items-center space-x-3 py-2 cursor-pointer active-scale">
+          <input type="checkbox" value="${sanitizeHTML(t)}" data-type="question" checked class="w-7 h-7 text-emerald-600 rounded">
+          <span class="font-bold text-stone-900">${sanitizeHTML(t)}</span>
+        </label>
+      `;
+    });
+  }
+
+  // 管理備註欄位
   const nTitles = ns.map(n => n.title);
-  headers.push(...qTitles, ...nTitles);
+  if (nTitles.length) {
+    html += `<p class="font-black text-blue-800 border-b pb-1 mt-4 mb-2">✏️ 後台管理備註</p>`;
+    nTitles.forEach(t => {
+      html += `
+        <label class="flex items-center space-x-3 py-2 cursor-pointer active-scale">
+          <input type="checkbox" value="${sanitizeHTML(t)}" data-type="note" checked class="w-7 h-7 text-emerald-600 rounded">
+          <span class="font-bold text-stone-900">${sanitizeHTML(t)}</span>
+        </label>
+      `;
+    });
+  }
+
+  container.innerHTML = html;
+  openModal("customExportModal");
+}
+
+// 執行自訂項目匯出
+function executeCustomExport() {
+  const ps = window.currentAdminParticipants || [];
+  const checkboxes = document.querySelectorAll("#customExportFieldsContainer input[type='checkbox']:checked");
+  
+  if (!checkboxes.length) {
+    alert("請至少勾選一個匯出欄位");
+    return;
+  }
+
+  const headers = ["編號"];
+  const colConfigs = [];
+
+  checkboxes.forEach(cb => {
+    headers.push(cb.value);
+    colConfigs.push({
+      val: cb.value,
+      type: cb.dataset.type
+    });
+  });
 
   const rows = [headers.map(sanitizeCSVCell).join(",")];
 
   ps.forEach((p, i) => {
-    const row = [
-      i + 1,
-      p.regId,
-      p.name,
-      "\t" + (p.phone || ""),
-      p.relation || "",
-      p.gender || "",
-      p.birthday ? formatStandardDate(p.birthday) : "",
-      p.idCard || "",
-      p.status || ""
-    ].map(sanitizeCSVCell);
+    const row = [i + 1];
 
-    qTitles.forEach(t => row.push(sanitizeCSVCell((p.answers || {})[t] || "")));
-    nTitles.forEach(t => row.push(sanitizeCSVCell((p.adminNotes || {})[t] || "")));
+    colConfigs.forEach(col => {
+      if (col.type === "base") {
+        let v = p[col.val] || "";
+        if (col.val === "birthday" && v) v = formatStandardDate(v);
+        if (col.val === "phone") v = "\t" + v; // 防止 Excel 科學記號
+        row.push(v);
+      } else if (col.type === "question") {
+        row.push((p.answers || {})[col.val] || "");
+      } else if (col.type === "note") {
+        row.push((p.adminNotes || {})[col.val] || "");
+      }
+    });
 
-    rows.push(row.join(","));
+    rows.push(row.map(sanitizeCSVCell).join(","));
   });
 
+  const eventTitle = currentEvent ? currentEvent.title : "活動";
+  const dateStr = formatStandardDate(new Date());
+  downloadCSVBlob(rows, `${eventTitle}_自訂匯出_${dateStr}.csv`);
+  closeModal("customExportModal");
+}
+
+function downloadCSVBlob(rows, filename) {
   const blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `${currentEvent ? currentEvent.title : "活動"}_登記報表_${formatStandardDate(new Date())}.csv`;
+  a.download = filename;
   a.click();
 }
 
@@ -2316,7 +2572,6 @@ function renderAnnounceCardPreview() {
 
   const selectedTitles = getSelectedStatsTitles();
 
-  // 個資安全防護：公告預覽名單不顯示電話、身分證、生日，僅顯示姓名與統計問題
   c.innerHTML = currentParticipants.map((p, i) => {
     const statsListHtml = selectedTitles.map(title => {
       const ans = (p.answers || {})[title] || "未填寫";
@@ -2342,7 +2597,6 @@ function renderAnnounceCardPreview() {
   }).join("");
 }
 
-// 發布卡牌式接龍公告 (整合統計欄位輸出)
 async function shareCustomChainToGroup() {
   if (!currentEvent) {
     alert("請先選擇活動");
@@ -2364,7 +2618,6 @@ async function shareCustomChainToGroup() {
   text += `────────────────\n`;
 
   currentParticipants.forEach((p, i) => {
-    // 個資安全防護：接龍公告只顯示去識別化姓名與統計問題
     text += `${i + 1}. ${maskName(p.name)}${p.status === "候補" ? "（候補）" : ""}\n`;
     selectedTitles.forEach(title => {
       const ans = (p.answers || {})[title] || "無";
@@ -2390,11 +2643,7 @@ async function shareCustomChainToGroup() {
   }
 }
 
-// ==================================================================================
-
-// 報名登記成功後回報功能 (可選擇：自動回報、指定回報、不回報)
 async function sendFlexMessage(eventId, title, remaining, attendees, reportType) {
-  // 個資安全防護：回報卡片僅顯示去識別化姓名與狀態
   const text = `✅ 活動登記成功\n活動：${title}\n名單：${attendees.map(a => `${maskName(a.name)}(${a.status})`).join("、")}\n剩餘名額：${remaining}\n查看名單：https://liff.line.me/${LIFF_ID}?action=viewlist&eventId=${eventId}`;
 
   try {
@@ -2402,7 +2651,6 @@ async function sendFlexMessage(eventId, title, remaining, attendees, reportType)
       if (isInChatContext) {
         await liff.sendMessages([{ type: "text", text }]);
       } else {
-        // 若不在聊天視窗中，自動回報將嘗試使用 shareTargetPicker
         if (liff.isApiAvailable("shareTargetPicker")) {
           await liff.shareTargetPicker([{ type: "text", text }]);
         }
