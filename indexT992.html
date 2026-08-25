@@ -277,13 +277,32 @@
         </button>
       </div>
 
-      <div class="p-5 space-y-4 max-h-[50vh] overflow-y-auto">
+      <div class="p-5 space-y-4 max-h-[40vh] overflow-y-auto">
         <div id="attendeesContainer" class="space-y-4"></div>
+      </div>
+
+      <!-- LINE 回報設定 -->
+      <div class="p-5 bg-amber-50 border-t-3 border-amber-200 space-y-3">
+        <label class="block text-base font-black text-amber-950">📢 登記成功後 LINE 回報設定：</label>
+        <div class="grid grid-cols-3 gap-2">
+          <label class="flex flex-col items-center justify-center p-3 bg-white border-3 border-stone-300 rounded-xl cursor-pointer active-scale">
+            <input type="radio" name="reportType" value="auto" checked class="w-6 h-6 text-emerald-600">
+            <span class="text-sm mt-1">自動回報</span>
+          </label>
+          <label class="flex flex-col items-center justify-center p-3 bg-white border-3 border-stone-300 rounded-xl cursor-pointer active-scale">
+            <input type="radio" name="reportType" value="select" class="w-6 h-6 text-emerald-600">
+            <span class="text-sm mt-1">指定回報</span>
+          </label>
+          <label class="flex flex-col items-center justify-center p-3 bg-white border-3 border-stone-300 rounded-xl cursor-pointer active-scale">
+            <input type="radio" name="reportType" value="none" class="w-6 h-6 text-emerald-600">
+            <span class="text-sm mt-1">不回報</span>
+          </label>
+        </div>
       </div>
 
       <div class="p-5 bg-stone-100 border-t-3 border-stone-300 flex space-x-3">
         <button onclick="closeModal('registerModal')" class="flex-1 bg-stone-200 text-stone-900 py-5 rounded-2xl text-xl font-black border-3 border-stone-400">取消</button>
-        <button onclick="submitMultiRegistration()" class="flex-1 bg-emerald-700 text-white py-5 rounded-2xl text-xl font-black shadow-md">送出</button>
+        <button id="submitRegBtn" onclick="submitMultiRegistration()" class="flex-1 bg-emerald-700 text-white py-5 rounded-2xl text-xl font-black shadow-md">送出</button>
       </div>
     </div>
   </div>
@@ -512,7 +531,7 @@
               <label class="block text-base font-black text-stone-800">選擇活動</label>
               <select id="regManageEventSelect" onchange="onRegManageEventSelect()" class="w-full border-3 border-stone-400 rounded-xl p-3 text-lg font-bold bg-white"></select>
               <button id="exportReportBtn" onclick="exportToCSV()" class="w-full bg-emerald-700 text-white font-black py-4 rounded-2xl text-lg shadow-md hidden">
-                📊 匯出 CSV
+                📊 匯出 CSV (含完整個資)
               </button>
             </div>
             <div id="regManageListContainer" class="space-y-4">
@@ -520,7 +539,7 @@
             </div>
           </div>
 
-          <!-- Announcement Tab (完全重構為附件卡牌統計樣式) -->
+          <!-- Announcement Tab -->
           <div id="adminTab_announce" class="hidden space-y-4">
             <div class="bg-white p-5 rounded-3xl border-3 border-stone-300 space-y-4">
               <label class="block text-base font-black text-stone-800">請選擇活動項目：</label>
@@ -600,7 +619,7 @@ let allCategories = [];
 let currentEvent = null;
 let currentAttendees = [];
 let currentParticipants = [];
-let activeEventQuestions = []; // 用於儲存當前公告活動的報名問題清單
+let activeEventQuestions = []; 
 let currentFilterCategory = "";
 let currentSearchKeyword = "";
 let lightboxImages = [];
@@ -756,6 +775,12 @@ function maskName(name) {
   if (name.length <= 1) return name;
   if (name.length === 2) return name[0] + "*";
   return name[0] + "*".repeat(name.length - 2) + name[name.length - 1];
+}
+
+function maskPhone(phone) {
+  phone = normalizePhone(phone);
+  if (phone.length < 10) return phone;
+  return phone.slice(0, 4) + "***" + phone.slice(7);
 }
 
 function sanitizeCSVCell(v) {
@@ -1163,6 +1188,18 @@ function renderEventList() {
       <p>🎫 剩餘：${ev.remainingSpots || 0} 人</p>
     ` : `<p>👥 上限：${ev.limit || 0} 人</p>`;
 
+    // 檢查當前使用者是否已報名此活動（截止前可維護）
+    const hasReg = userProfile && Array.isArray(ev.registeredLineIds) && ev.registeredLineIds.includes(userLineId);
+    let actionBtnHtml = "";
+
+    if (stopped) {
+      actionBtnHtml = `<button disabled class="bg-stone-300 text-stone-500 border-stone-400 border-3 py-4 rounded-2xl font-black active-scale">已截止</button>`;
+    } else if (hasReg) {
+      actionBtnHtml = `<button onclick='openRegisterModal(${JSON.stringify(ev.id)})' class="bg-amber-500 text-white border-amber-700 border-3 py-4 rounded-2xl font-black active-scale">✏️ 修改登記</button>`;
+    } else {
+      actionBtnHtml = `<button onclick='openRegisterModal(${JSON.stringify(ev.id)})' class="bg-emerald-700 text-white border-emerald-900 border-3 py-4 rounded-2xl font-black active-scale">📝 登記</button>`;
+    }
+
     const div = document.createElement("div");
     div.className = "bg-white rounded-3xl border-3 border-stone-300 shadow-md overflow-hidden";
     div.innerHTML = `
@@ -1184,7 +1221,7 @@ function renderEventList() {
         ${filesHtml}
         <div class="grid grid-cols-2 gap-3 pt-2">
           <button onclick='openParticipantsModal(${JSON.stringify(ev.id)})' class="bg-stone-100 text-stone-900 border-3 border-stone-400 py-4 rounded-2xl font-black active-scale">📋 名單</button>
-          <button onclick='openRegisterModal(${JSON.stringify(ev.id)})' ${stopped ? "disabled" : ""} class="${stopped ? "bg-stone-300 text-stone-500 border-stone-400" : "bg-emerald-700 text-white border-emerald-900"} border-3 py-4 rounded-2xl font-black active-scale">📝 登記</button>
+          ${actionBtnHtml}
         </div>
       </div>`;
     c.appendChild(div);
@@ -1288,7 +1325,7 @@ async function saveProfile(e) {
   }
 }
 
-function openRegisterModal(eventId) {
+async function openRegisterModal(eventId) {
   if (!userProfile || userRole === "guest" || !userLineId) {
     alert("請先使用 LINE 登入並完成會員綁定，才能自行報名。");
     openAuthModal();
@@ -1304,19 +1341,48 @@ function openRegisterModal(eventId) {
   }
 
   currentAttendees = [];
-  addAttendeeFromUser({
-    name: userProfile.name,
-    phone: userProfile.phone,
-    relation: "本人",
-    gender: userProfile.gender,
-    birthday: userProfile.birthday,
-    idCard: userProfile.idCard,
-    answers: {}
-  });
+  showLoading("檢查登記紀錄...");
 
-  document.getElementById("regEventTitle").innerText = currentEvent.title;
-  renderAttendees();
-  openModal("registerModal");
+  try {
+    // 向 GAS 取得當前使用者在此活動的報名紀錄（截止前可維護）
+    const r = await apiGet({ action: "getUserRegistrationForEvent", eventId, lineId: userLineId });
+    
+    if (r.status === "success" && Array.isArray(r.attendees) && r.attendees.length > 0) {
+      // 載入已報名名單以供修改
+      r.attendees.forEach(a => {
+        currentAttendees.push({
+          name: a.name,
+          phone: a.phone,
+          relation: a.relation,
+          gender: a.gender,
+          birthday: a.birthday,
+          idCard: a.idCard,
+          answers: a.answers || {}
+        });
+      });
+      document.getElementById("submitRegBtn").innerText = "更新登記資料";
+    } else {
+      // 全新報名，預設帶入本人
+      addAttendeeFromUser({
+        name: userProfile.name,
+        phone: userProfile.phone,
+        relation: "本人",
+        gender: userProfile.gender,
+        birthday: userProfile.birthday,
+        idCard: userProfile.idCard,
+        answers: {}
+      });
+      document.getElementById("submitRegBtn").innerText = "送出報名";
+    }
+
+    document.getElementById("regEventTitle").innerText = currentEvent.title;
+    renderAttendees();
+    openModal("registerModal");
+  } catch (e) {
+    alert("載入報名資料失敗：" + e.message);
+  } finally {
+    hideLoading();
+  }
 }
 
 function addAttendeeFromUser(u) {
@@ -1367,7 +1433,7 @@ function renderAttendees() {
         <h4 class="text-xl font-black text-stone-950">#${idx + 1} ${sanitizeHTML(a.name)} (${sanitizeHTML(a.relation)})</h4>
         ${idx === 0 ? "" : `<button onclick="currentAttendees.splice(${idx},1); renderAttendees();" class="bg-red-50 text-red-700 border-3 border-red-300 px-3 py-1 rounded-xl font-black">刪除</button>`}
       </div>
-      <p class="text-base font-bold text-stone-700">📞 ${sanitizeHTML(a.phone)} ｜ ${sanitizeHTML(a.gender)} ｜ ${a.birthday ? gregToRoc(formatStandardDate(a.birthday)) : ""}</p>
+      <p class="text-base font-bold text-stone-700">📞 ${sanitizeHTML(maskPhone(a.phone))} ｜ ${sanitizeHTML(a.gender)} ｜ ${a.birthday ? gregToRoc(formatStandardDate(a.birthday)) : ""}</p>
       ${qHtml}`;
     c.appendChild(div);
   });
@@ -1538,6 +1604,8 @@ async function submitMultiRegistration() {
     }
   }
 
+  const reportType = document.querySelector('input[name="reportType"]:checked').value;
+
   showLoading("送出報名...");
   try {
     const r = await apiPost({
@@ -1551,9 +1619,13 @@ async function submitMultiRegistration() {
 
     if (r.status === "success") {
       closeModal("registerModal");
-      alert("報名成功");
+      alert("報名完成！");
       await reloadEventsData();
-      await sendFlexMessage(currentEvent.id, currentEvent.time, currentEvent.title, r.remainingSpots, r.myRegisteredAttendees || []);
+      
+      // 依據回報設定發送 LINE 訊息
+      if (reportType !== "none") {
+        await sendFlexMessage(currentEvent.id, currentEvent.title, r.remainingSpots, r.myRegisteredAttendees || [], reportType);
+      }
     } else {
       alert("報名失敗：" + r.message);
     }
@@ -1588,6 +1660,7 @@ function renderParticipantsCardPage() {
   const start = currentCardPage * CARD_PAGE_SIZE;
   const list = currentParticipants.slice(start, start + CARD_PAGE_SIZE);
 
+  // 個資安全防護：前端名單不顯示電話、身分證、生日，僅顯示姓名去識別化與狀態
   c.innerHTML = list.length ? list.map((p, i) => `
     <div class="bg-stone-50 border-3 border-stone-300 rounded-2xl p-4 flex justify-between items-center">
       <span class="text-xl font-black">#${start + i + 1} ${sanitizeHTML(maskName(p.name))}</span>
@@ -1640,11 +1713,13 @@ async function openRegistrationDetails(regId) {
 
   const r = await apiGet({ action: "getRegistrationDetails", regId, lineId: userLineId });
   const list = r.attendees || [];
+  
+  // 個資安全防護：前端明細不顯示身分證字號，生日與電話進行去識別化遮罩
   c.innerHTML = list.map((a, i) => `
     <div class="bg-stone-50 border-3 border-stone-300 rounded-2xl p-4 space-y-2">
       <h4 class="text-xl font-black">#${i + 1} ${sanitizeHTML(a.name)} (${sanitizeHTML(a.relation || "")})</h4>
-      <p>📞 ${sanitizeHTML(a.phone)}</p>
-      <p>👤 ${sanitizeHTML(a.gender)} ｜ ${a.birthday ? gregToRoc(formatStandardDate(a.birthday)) : ""}</p>
+      <p>📞 ${sanitizeHTML(maskPhone(a.phone))}</p>
+      <p>👤 ${sanitizeHTML(a.gender)} ｜ 生日已加密防護</p>
       <p>狀態：${sanitizeHTML(a.queueStatus)}</p>
     </div>
   `).join("");
@@ -1825,7 +1900,6 @@ async function uploadImageToDrive(input) {
   if (!file) return;
 
   if (!isAdmin) {
-    alert("無管理員權限");
     input.value = "";
     return;
   }
@@ -1865,7 +1939,6 @@ async function uploadFileToDrive(input) {
   if (!file) return;
 
   if (!isAdmin) {
-    alert("無管理員權限");
     input.value = "";
     return;
   }
@@ -2040,6 +2113,7 @@ async function onRegManageEventSelect() {
 
   exportBtn.classList.remove("hidden");
 
+  // 個資安全防護：後台預覽名單也不顯示身分證字號，電話與生日進行去識別化遮罩
   c.innerHTML = list.map((p, idx) => {
     const notesHtml = (window.currentAdminNotesConfig || []).map(cfg => {
       const val = (p.adminNotes || {})[cfg.title] || "";
@@ -2055,12 +2129,11 @@ async function onRegManageEventSelect() {
     return `
       <div class="p-5 bg-white rounded-3xl border-3 border-stone-300 text-lg space-y-3 shadow-sm">
         <div class="flex justify-between items-center border-b-2 pb-3">
-          <span class="font-black text-stone-950 text-xl">#${idx + 1} ${sanitizeHTML(p.name)} (${sanitizeHTML(p.relation || "同行人")})</span>
+          <span class="font-black text-stone-950 text-xl">#${idx + 1} ${sanitizeHTML(maskName(p.name))} (${sanitizeHTML(p.relation || "同行人")})</span>
           <button onclick='adminDeleteRegistration(${JSON.stringify(p.regId)}, ${JSON.stringify(eventId)})' class="bg-red-50 text-red-700 border-3 border-red-300 px-4 py-2 rounded-xl font-black text-base">刪除整筆報名</button>
         </div>
-        <p>📞 ${sanitizeHTML(p.phone || "")}</p>
-        <p>👤 ${sanitizeHTML(p.gender || "")} ｜ ${p.birthday ? gregToRoc(formatStandardDate(p.birthday)) : ""}</p>
-        <p>🪪 ${sanitizeHTML(p.idCard || "")}</p>
+        <p>📞 ${sanitizeHTML(maskPhone(p.phone || ""))}</p>
+        <p>👤 ${sanitizeHTML(p.gender || "")} ｜ 生日已加密防護</p>
         <p>狀態：${sanitizeHTML(p.status)}</p>
         <div id="notesContainer_${sanitizeHTML(p.regId)}_${idx}" class="bg-emerald-50 p-4 rounded-2xl border-3 border-emerald-200 space-y-3">
           <p class="font-black text-emerald-950">✏️ 管理備註</p>
@@ -2123,6 +2196,7 @@ function exportToCSV() {
     return;
   }
 
+  // 個資安全防護：只有在後台匯出 CSV 時，才會帶入完整的身分證字號、生日、電話
   const headers = ["編號", "登記ID", "姓名", "電話", "關係", "性別", "生日", "身分證字號", "狀態"];
   const qTitles = qs.map(q => q.title).filter(t => !["姓名", "電話", "性別", "生日", "身分證字號", "關係"].includes(t));
   const nTitles = ns.map(n => n.title);
@@ -2156,7 +2230,7 @@ function exportToCSV() {
   a.click();
 }
 
-// ==================== 以下為完全重構的接龍公告與統計欄位功能 ====================
+// ==================== 以下為公告接龍與統計欄位功能 ====================
 
 async function onAnnouncementEventSelect() {
   const eventId = document.getElementById("announceEventSelect").value;
@@ -2178,11 +2252,9 @@ async function onAnnouncementEventSelect() {
       currentParticipants = r.participants || [];
       activeEventQuestions = (r.questions || []).filter(q => !["姓名", "電話", "性別", "生日", "身分證字號", "關係"].includes(q.title));
       
-      // 預設清空並建立第一個統計下拉選單
       fieldsContainer.innerHTML = "";
       addAnnounceStatsDropdown();
       
-      // 渲染卡牌式預覽名單
       renderAnnounceCardPreview();
     } else {
       c.innerHTML = `<p class="text-red-500 text-center py-4">${sanitizeHTML(r.message)}</p>`;
@@ -2192,7 +2264,6 @@ async function onAnnouncementEventSelect() {
   }
 }
 
-// 新增統計欄位下拉選單
 function addAnnounceStatsDropdown(selectedVal = "") {
   const container = document.getElementById("announceStatsFieldsContainer");
   const div = document.createElement("div");
@@ -2215,7 +2286,6 @@ function addAnnounceStatsDropdown(selectedVal = "") {
   renderAnnounceCardPreview();
 }
 
-// ⚡ 臨時統計：快速將此活動所有問題加入統計欄位
 function addQuickAllStatsFields() {
   if (!activeEventQuestions.length) {
     alert("此活動無自訂報名問題，無法進行統計。");
@@ -2228,7 +2298,6 @@ function addQuickAllStatsFields() {
   });
 }
 
-// 獲取當前所有已選擇的統計欄位名稱
 function getSelectedStatsTitles() {
   const selects = document.querySelectorAll(".announce-stats-select");
   const titles = [];
@@ -2238,7 +2307,6 @@ function getSelectedStatsTitles() {
   return titles;
 }
 
-// 渲染卡牌式預覽名單 (依據附件樣式)
 function renderAnnounceCardPreview() {
   const c = document.getElementById("announceParticipantsList");
   if (!currentParticipants.length) {
@@ -2248,8 +2316,8 @@ function renderAnnounceCardPreview() {
 
   const selectedTitles = getSelectedStatsTitles();
 
+  // 個資安全防護：公告預覽名單不顯示電話、身分證、生日，僅顯示姓名與統計問題
   c.innerHTML = currentParticipants.map((p, i) => {
-    // 產生統計欄位清單
     const statsListHtml = selectedTitles.map(title => {
       const ans = (p.answers || {})[title] || "未填寫";
       return `<li class="text-stone-800 text-base font-bold flex items-start">
@@ -2262,7 +2330,7 @@ function renderAnnounceCardPreview() {
       <div class="bg-white rounded-3xl p-5 border-3 border-stone-300 shadow-sm space-y-3">
         <div class="flex justify-between items-center">
           <h4 class="text-xl font-black text-stone-950">
-            #${i + 1} ${sanitizeHTML(p.name)} ${p.relation ? `(${sanitizeHTML(p.relation)})` : ""}
+            #${i + 1} ${sanitizeHTML(maskName(p.name))} ${p.relation ? `(${sanitizeHTML(p.relation)})` : ""}
           </h4>
           <span class="px-3 py-1 rounded-full text-sm font-black ${p.status === "候補" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}">
             ${sanitizeHTML(p.status)}
@@ -2296,8 +2364,8 @@ async function shareCustomChainToGroup() {
   text += `────────────────\n`;
 
   currentParticipants.forEach((p, i) => {
-    text += `${i + 1}. ${p.name}${p.status === "候補" ? "（候補）" : ""}\n`;
-    // 附加統計欄位回答
+    // 個資安全防護：接龍公告只顯示去識別化姓名與統計問題
+    text += `${i + 1}. ${maskName(p.name)}${p.status === "候補" ? "（候補）" : ""}\n`;
     selectedTitles.forEach(title => {
       const ans = (p.answers || {})[title] || "無";
       text += `   • ${title}：${ans}\n`;
@@ -2324,16 +2392,31 @@ async function shareCustomChainToGroup() {
 
 // ==================================================================================
 
-async function sendFlexMessage(eventId, eventTime, title, remaining, attendees) {
-  const text = `✅ 活動登記成功\n活動：${title}\n名單：${attendees.map(a => `${a.name}(${a.status})`).join("、")}\n剩餘名額：${remaining}\n查看名單：https://liff.line.me/${LIFF_ID}?action=viewlist&eventId=${eventId}`;
+// 報名登記成功後回報功能 (可選擇：自動回報、指定回報、不回報)
+async function sendFlexMessage(eventId, title, remaining, attendees, reportType) {
+  // 個資安全防護：回報卡片僅顯示去識別化姓名與狀態
+  const text = `✅ 活動登記成功\n活動：${title}\n名單：${attendees.map(a => `${maskName(a.name)}(${a.status})`).join("、")}\n剩餘名額：${remaining}\n查看名單：https://liff.line.me/${LIFF_ID}?action=viewlist&eventId=${eventId}`;
 
   try {
-    if (isInChatContext) {
-      await liff.sendMessages([{ type: "text", text }]);
-    } else if (liff.isApiAvailable("shareTargetPicker")) {
-      await liff.shareTargetPicker([{ type: "text", text }]);
+    if (reportType === "auto") {
+      if (isInChatContext) {
+        await liff.sendMessages([{ type: "text", text }]);
+      } else {
+        // 若不在聊天視窗中，自動回報將嘗試使用 shareTargetPicker
+        if (liff.isApiAvailable("shareTargetPicker")) {
+          await liff.shareTargetPicker([{ type: "text", text }]);
+        }
+      }
+    } else if (reportType === "select") {
+      if (liff.isApiAvailable("shareTargetPicker")) {
+        await liff.shareTargetPicker([{ type: "text", text }]);
+      } else {
+        alert("當前環境不支援指定分享，已改為文字提示。");
+      }
     }
-  } catch {}
+  } catch (e) {
+    console.error("傳送回報訊息失敗：", e);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", initializeLiff);
