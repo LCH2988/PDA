@@ -1310,7 +1310,7 @@
 
     <script>
 const LIFF_ID = "2007905012-dQfXClGM";
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzOod5R-X1PlGi73XmHwOkt_Ytj724ICnTJEDwOdeijV2wDoV8ltnuEDNFdNqYVG4x9/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwrQ01wsI3Ahf25toBXtBbtjkNTxmHQMa2AmJrgRQCEr7LdlDPKIiiy4H3t6dKYbMN3/exec";
 
 let userLineId = "";
 let userDisplayName = "";
@@ -2881,6 +2881,13 @@ async function submitMultiRegistration() {
   const selectedReport = document.querySelector('input[name="reportType"]:checked');
   const reportType = selectedReport ? selectedReport.value : "auto";
 
+  const eventSnapshot = {
+    id: currentEvent.id,
+    title: currentEvent.title,
+    time: currentEvent.time,
+    remainingSpots: currentEvent.remainingSpots
+  };
+
   showLoading("送出報名...");
 
   try {
@@ -2894,32 +2901,58 @@ async function submitMultiRegistration() {
       attendees: currentAttendees
     });
 
-    if (r.status === "success") {
-      closeModal("registerModal");
+    if (r.status !== "success") {
+      alert("報名失敗：" + r.message);
+      return;
+    }
 
-      const successText = currentRegId ? "登記資料已更新！" : "活動登記成功！";
-      alert(successText);
+    closeModal("registerModal");
 
-      await reloadEventsData();
+    /**
+     * 關鍵修正：
+     * 先執行 LINE 回報，再 reloadEventsData。
+     * 避免 reloadEventsData 失敗導致回報完全不執行。
+     */
+    if (reportType !== "none") {
+      hideLoading();
 
-      if (reportType !== "none") {
+      try {
         await sendFlexMessage(
-          currentEvent.id,
-          currentEvent.title,
+          eventSnapshot.id,
+          eventSnapshot.title,
           r.remainingSpots,
           r.myRegisteredAttendees || [],
           reportType
         );
+      } catch (shareErr) {
+        console.error("登記完成後回報失敗：", shareErr);
+        alert("登記成功，但 LINE 回報失敗：" + shareErr.message);
       }
 
-    } else {
-      alert("報名失敗：" + r.message);
+      showLoading("更新活動資料...");
     }
+
+    /**
+     * reloadEventsData 即使失敗，也不影響報名成功。
+     */
+    try {
+      await reloadEventsData();
+    } catch (reloadErr) {
+      console.error("報名後重新載入活動資料失敗：", reloadErr);
+    }
+
+    const successText = currentRegId ? "登記資料已更新！" : "活動登記成功！";
+    alert(successText);
+
+  } catch (e) {
+    console.error(e);
+    alert("報名失敗：" + e.message);
 
   } finally {
     hideLoading();
   }
 }
+
 
 /*******************************************************
  * Public Participants
@@ -4733,6 +4766,16 @@ function buildRegistrationReportFlex({
 }
 
 async function sendFlexMessage(eventId, title, remaining, attendees, reportType) {
+  console.log("準備執行 LINE 回報", {
+    eventId,
+    title,
+    remaining,
+    attendees,
+    reportType,
+    isInClient: liff.isInClient ? liff.isInClient() : false,
+    isInChatContext
+  });
+
   let allParticipants = [];
 
   try {
@@ -4775,56 +4818,70 @@ async function sendFlexMessage(eventId, title, remaining, attendees, reportType)
       eventId
     })}`;
 
-  try {
-    if (reportType === "auto") {
-      if (isInChatContext) {
-        await liff.sendMessages([flexMessage]);
-        return;
-      }
+  /**
+   * 不回報直接返回。
+   */
+  if (reportType === "none") {
+    return;
+  }
 
-      if (liff.isApiAvailable("shareTargetPicker")) {
-        await liff.shareTargetPicker([flexMessage]);
-        return;
-      }
+  /**
+   * 指定回報：
+   * 一律優先使用 shareTargetPicker。
+   */
+  if (reportType === "select") {
+    if (
+      liff.isApiAvailable &&
+      liff.isApiAvailable("shareTargetPicker")
+    ) {
+      const result = await liff.shareTargetPicker([flexMessage]);
 
-      alert(fallbackText);
+      console.log("shareTargetPicker result:", result);
+
       return;
     }
 
-    if (reportType === "select") {
-      if (liff.isApiAvailable("shareTargetPicker")) {
-        await liff.shareTargetPicker([flexMessage]);
+    alert("目前環境不支援指定回報，請在 LINE App 內開啟。");
+    alert(fallbackText);
+    return;
+  }
+
+  /**
+   * 自動回報：
+   * 1. 如果在聊天室 LIFF，優先 sendMessages
+   * 2. 如果不是聊天室，改用 shareTargetPicker
+   * 3. 都不支援就顯示文字
+   */
+  if (reportType === "auto") {
+    try {
+      if (
+        isInChatContext &&
+        liff.sendMessages
+      ) {
+        await liff.sendMessages([flexMessage]);
+        console.log("已用 sendMessages 自動回報");
         return;
       }
-
-      alert("當前環境不支援指定分享，已改為文字提示。");
-      alert(fallbackText);
+    } catch (sendErr) {
+      console.warn("sendMessages 失敗，改用 shareTargetPicker", sendErr);
     }
 
-  } catch (e) {
-    console.error("傳送 Flex 回報訊息失敗：", e);
+    if (
+      liff.isApiAvailable &&
+      liff.isApiAvailable("shareTargetPicker")
+    ) {
+      const result = await liff.shareTargetPicker([flexMessage]);
 
-    try {
-      const textMsg = {
-        type: "text",
-        text: fallbackText
-      };
+      console.log("shareTargetPicker result:", result);
 
-      if (isInChatContext) {
-        await liff.sendMessages([textMsg]);
-
-      } else if (liff.isApiAvailable("shareTargetPicker")) {
-        await liff.shareTargetPicker([textMsg]);
-
-      } else {
-        alert(fallbackText);
-      }
-
-    } catch (err) {
-      console.error("備援文字訊息也傳送失敗：", err);
+      return;
     }
+
+    alert("目前環境不支援 LINE 回報，以下為文字內容：");
+    alert(fallbackText);
   }
 }
+
 
 async function shareCustomChainToGroup() {
   if (!currentEvent) {
