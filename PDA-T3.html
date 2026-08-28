@@ -235,7 +235,6 @@
           </p>
         </div>
 
-        <!-- 右上角簡化：登入 / 登出 單一按鈕 -->
         <button
           id="authHeaderBtn"
           onclick="handleHeaderAuthButton()"
@@ -380,7 +379,7 @@
         onclick="bottomNavSystem()"
         class="elder-btn bg-stone-800 text-white active-scale border-stone-600"
       >
-        登記
+        登入
       </button>
     </div>
   </nav>
@@ -469,7 +468,7 @@
 
         <button
           type="button"
-          onclick="handleHeaderLogin()"
+          onclick="handleLineLoginFromAuthModal()"
           class="w-full elder-btn bg-green-700 text-white shadow-md active-scale border-green-950"
         >
           使用 LINE 登入 / 綁定
@@ -479,14 +478,14 @@
       <!-- Register Form -->
       <form
         id="authRegisterForm"
-        onsubmit="handleNormalRegister(event)"
+        onsubmit="handleRegister(event)"
         class="hidden p-5 space-y-4"
       >
         <div
           id="registerNotice"
           class="bg-orange-50 border-4 border-orange-300 rounded-3xl p-4 elder-text text-orange-950 leading-relaxed"
         >
-          請填寫基本資料建立會員資料。若使用 LINE 登入後註冊，系統會自動綁定 LINE 帳號。
+          請先使用 LINE 登入，再填寫基本資料建立會員資料。系統會自動綁定 LINE 帳號。
         </div>
 
         <div>
@@ -580,7 +579,7 @@
           type="submit"
           class="w-full elder-btn bg-orange-600 text-white shadow-md active-scale border-orange-950"
         >
-          建立會員資料
+          建立會員資料並綁定 LINE
         </button>
       </form>
     </div>
@@ -606,7 +605,7 @@
       </div>
 
       <form
-        onsubmit="saveProfile(event)"
+        onsubmit="handleSaveProfile(event)"
         class="p-5 space-y-4"
       >
         <div>
@@ -1856,14 +1855,12 @@
     </div>
   </div>
 
-    <script>
-    /*******************************************************
+  <script>
+        /*******************************************************
      * Global Config
      *******************************************************/
     const LIFF_ID = "2007905012-dQfXClGM";
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbwRje2YzOoL0RI2XI1Vgch8uFfoQ5yBdYPviE2FyEcTtuZpNWoP9244KoH8W5jNJ1OC/exec";
-
-    const DEFAULT_AVATAR = "https://placehold.co/100x100/ea580c/FFFFFF?text=USER";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwOARuHaDCVJ-aiIUyY1kd09Kw6TYbDzvznGi05tRVxt1FuCSZ5sY7fbb4yJJFTK6R0/exec";
 
     let allEvents = [];
     let allCategories = [];
@@ -1896,6 +1893,8 @@
 
     let latestSearchUsers = [];
     let adminAccounts = [];
+    let searchUserTimer = null;
+    let toastTimer = null;
 
     /*******************************************************
      * Boot
@@ -1942,6 +1941,8 @@
         } else {
           userRole = "guest";
           userProfile = null;
+          userLineId = "";
+          userPictureUrl = "";
           updateUserUI();
           await loadPublicData();
         }
@@ -1950,11 +1951,13 @@
 
       } catch (e) {
         console.error(e);
-        alert("初始化失敗：" + e.message);
+        alert("初始化失敗：" + (e.message || e));
 
         try {
           userRole = "guest";
           userProfile = null;
+          userLineId = "";
+          userPictureUrl = "";
           updateUserUI();
           await loadPublicData();
         } catch (loadErr) {
@@ -2201,7 +2204,7 @@
     }
 
     /*******************************************************
-     * User Init / Auth
+     * User Init / Auth 修正版
      *******************************************************/
     async function initAppWithBackend(lineProfile) {
       const r = await apiPost({
@@ -2213,20 +2216,45 @@
         clearCache: false
       });
 
+      userLineId = lineProfile.userId || "";
+      userPictureUrl = lineProfile.pictureUrl || "";
       userRole = r.role || "user";
       userProfile = r.user || null;
 
-      if (userProfile && userProfile.phone) {
-        userProfile.phone = normalizePhone(userProfile.phone);
-      }
-
-      if (userProfile && userProfile.idCard) {
-        userProfile.idCard = String(userProfile.idCard).toUpperCase();
-      }
+      normalizeUserProfile();
 
       updateUserUI();
 
       await loadPublicData();
+
+      if (!userProfile) {
+        setTimeout(() => {
+          switchAuthTab("register");
+          openModal("authModal");
+
+          if (userRole === "super" || userRole === "admin") {
+            alert("你已被設定為管理員，請先完成會員資料後即可使用後台。");
+          } else {
+            alert("請先完成會員資料，之後即可報名活動。");
+          }
+        }, 300);
+      }
+    }
+
+    function normalizeUserProfile() {
+      if (!userProfile) return;
+
+      if (userProfile.phone) {
+        userProfile.phone = normalizePhone(userProfile.phone);
+      }
+
+      if (userProfile.idCard) {
+        userProfile.idCard = String(userProfile.idCard).toUpperCase();
+      }
+
+      if (userProfile.birthday) {
+        userProfile.birthday = normalizeBirthdayInput(userProfile.birthday);
+      }
     }
 
     function handleHeaderAuthButton() {
@@ -2235,12 +2263,45 @@
         return;
       }
 
-      handleHeaderLogin();
+      switchAuthTab("login");
+      openModal("authModal");
     }
 
-    function handleHeaderLogin() {
+    function handleLineLoginFromAuthModal() {
       if (!liffReady) {
         alert("LIFF 尚未初始化完成，請稍候再試。");
+        return;
+      }
+
+      if (!liff || !liff.isLoggedIn) {
+        alert("LIFF 尚未正確載入，請重新整理頁面後再試。");
+        return;
+      }
+
+      if (!liff.isLoggedIn()) {
+        liff.login({
+          redirectUri: window.location.href
+        });
+        return;
+      }
+
+      if (!userProfile) {
+        switchAuthTab("register");
+        return;
+      }
+
+      closeModal("authModal");
+      openProfileModal();
+    }
+
+    async function handleHeaderLogin() {
+      if (!liffReady) {
+        alert("LIFF 尚未初始化完成，請稍候再試。");
+        return;
+      }
+
+      if (!liff || !liff.isLoggedIn) {
+        alert("LIFF 尚未正確載入，請重新整理頁面後再試。");
         return;
       }
 
@@ -2264,11 +2325,16 @@
       if (!confirm("確定要登出嗎？")) return;
 
       try {
-        if (liffReady && liff.isLoggedIn()) {
+        if (
+          liffReady &&
+          liff &&
+          liff.isLoggedIn &&
+          liff.isLoggedIn()
+        ) {
           liff.logout();
         }
       } catch (e) {
-        console.warn(e);
+        console.warn("LIFF logout failed:", e);
       }
 
       userLineId = "";
@@ -2277,7 +2343,12 @@
       userPictureUrl = "";
 
       updateUserUI();
-      await loadPublicData(true);
+
+      try {
+        await loadPublicData(true);
+      } catch (e) {
+        console.warn("登出後重新載入資料失敗：", e);
+      }
 
       alert("已登出");
     }
@@ -2298,7 +2369,9 @@
             "bg-stone-950 text-white px-5 py-3 rounded-2xl font-black text-xl shadow-md active-scale border-4 border-white";
         }
 
-        if (userName) userName.textContent = userProfile.name || "會員";
+        if (userName) {
+          userName.textContent = userProfile.name || "會員";
+        }
 
         if (userRoleText) {
           if (userRole === "super") {
@@ -2330,7 +2403,9 @@
             "bg-white text-orange-800 px-5 py-3 rounded-2xl font-black text-xl shadow-md active-scale border-4 border-orange-950";
         }
 
-        if (userName) userName.textContent = "訪客";
+        if (userName) {
+          userName.textContent = "訪客";
+        }
 
         if (userRoleText) {
           userRoleText.textContent = "目前為訪客，可瀏覽活動。若要報名請使用 LINE 登入並完成會員資料。";
@@ -2350,19 +2425,25 @@
       const loginBtn = document.getElementById("authTabBtn_login");
       const regBtn = document.getElementById("authTabBtn_register");
 
+      if (!loginForm || !registerForm || !loginBtn || !regBtn) return;
+
       if (tab === "login") {
         loginForm.classList.remove("hidden");
         registerForm.classList.add("hidden");
 
-        loginBtn.className = "py-4 text-xl font-black text-orange-700 border-b-4 border-orange-700 bg-white";
-        regBtn.className = "py-4 text-xl font-black text-stone-600";
+        loginBtn.className =
+          "py-4 text-xl font-black text-orange-700 border-b-4 border-orange-700 bg-white";
+        regBtn.className =
+          "py-4 text-xl font-black text-stone-600";
 
       } else {
         loginForm.classList.add("hidden");
         registerForm.classList.remove("hidden");
 
-        regBtn.className = "py-4 text-xl font-black text-orange-700 border-b-4 border-orange-700 bg-white";
-        loginBtn.className = "py-4 text-xl font-black text-stone-600";
+        regBtn.className =
+          "py-4 text-xl font-black text-orange-700 border-b-4 border-orange-700 bg-white";
+        loginBtn.className =
+          "py-4 text-xl font-black text-stone-600";
       }
     }
 
@@ -2390,16 +2471,15 @@
 
         userProfile = r.user;
         userLineId = "";
+        userPictureUrl = "";
         userRole = r.role || "user";
 
-        if (userProfile && userProfile.phone) {
-          userProfile.phone = normalizePhone(userProfile.phone);
-        }
+        normalizeUserProfile();
 
         updateUserUI();
         closeModal("authModal");
 
-        alert("登入成功");
+        alert("登入成功。\n提醒：一般登入可查看資料，但報名活動需使用 LINE 登入 / 綁定。");
 
       } catch (err) {
         alert("登入失敗：" + err.message);
@@ -2409,45 +2489,158 @@
       }
     }
 
-    async function handleNormalRegister(e) {
+    function collectProfileFormData(prefix) {
+      if (prefix === "auth") {
+        return {
+          name: document.getElementById("regName").value.trim(),
+          nickname: document.getElementById("regNickname").value.trim(),
+          phone: normalizePhone(document.getElementById("regPhone").value),
+          gender: document.getElementById("regGender").value,
+          birthday: normalizeBirthdayInput(document.getElementById("regBirthday").value),
+          idCard: document.getElementById("regIdCard").value.trim().toUpperCase(),
+          address: ""
+        };
+      }
+
+      if (prefix === "profile") {
+        return {
+          name: document.getElementById("profileName").value.trim(),
+          nickname: document.getElementById("profileNickname").value.trim(),
+          phone: normalizePhone(document.getElementById("profilePhone").value),
+          gender: document.getElementById("profileGender").value,
+          birthday: normalizeBirthdayInput(document.getElementById("profileBirthday").value),
+          idCard: document.getElementById("profileIdCard").value.trim().toUpperCase(),
+          address: document.getElementById("profileAddress").value.trim()
+        };
+      }
+
+      return {};
+    }
+
+    async function handleRegister(e) {
       e.preventDefault();
 
-      const data = {
-        action: "bindUser",
-        lineId: userLineId || "",
-        name: document.getElementById("regName").value.trim(),
-        nickname: document.getElementById("regNickname").value.trim(),
-        phone: normalizePhone(document.getElementById("regPhone").value),
-        gender: document.getElementById("regGender").value,
-        birthday: normalizeBirthdayInput(document.getElementById("regBirthday").value),
-        idCard: document.getElementById("regIdCard").value.trim().toUpperCase(),
-        address: ""
-      };
-
-      if (!data.name || !isValidPhone(data.phone) || !data.gender || !data.birthday || !isValidTaiwanId(data.idCard)) {
-        alert("請確認必填資料完整，手機與身分證格式正確。");
+      if (!liffReady) {
+        alert("LIFF 尚未初始化完成，請稍候再試。");
         return;
       }
 
-      showLoading("建立會員資料...");
+      if (!liff || !liff.isLoggedIn) {
+        alert("LIFF 尚未正確載入，請重新整理頁面後再試。");
+        return;
+      }
+
+      if (!liff.isLoggedIn()) {
+        alert("請先使用 LINE 登入後再註冊 / 綁定。");
+        liff.login({
+          redirectUri: window.location.href
+        });
+        return;
+      }
+
+      let profile;
 
       try {
-        const r = await apiPost(data);
+        profile = await liff.getProfile();
+      } catch (err) {
+        alert("無法取得 LINE 個人資料，請重新登入。");
+        return;
+      }
 
+      const data = collectProfileFormData("auth");
+
+      data.lineId = profile.userId || "";
+      data.nickname = data.nickname || profile.displayName || "";
+
+      if (
+        !data.name ||
+        !isValidPhone(data.phone) ||
+        !data.gender ||
+        !data.birthday ||
+        !isValidTaiwanId(data.idCard)
+      ) {
+        alert("請完整填寫姓名、手機、性別、生日、身分證字號，且格式需正確。");
+        return;
+      }
+
+      showLoading("註冊 / 綁定中...");
+
+      try {
+        const r = await apiPost({
+          action: "bindUser",
+          ...data
+        }, {
+          clearCache: true
+        });
+
+        userLineId = profile.userId || "";
+        userPictureUrl = profile.pictureUrl || "";
         userProfile = r.user;
         userRole = r.role || "user";
 
-        if (userProfile && userProfile.phone) {
-          userProfile.phone = normalizePhone(userProfile.phone);
-        }
+        normalizeUserProfile();
 
-        updateUserUI();
         closeModal("authModal");
+        updateUserUI();
+        await loadPublicData(true);
 
-        alert("會員資料已建立");
+        alert("註冊 / 綁定完成");
 
       } catch (err) {
-        alert("建立失敗：" + err.message);
+        alert("註冊失敗：" + err.message);
+
+      } finally {
+        hideLoading();
+      }
+    }
+
+    async function handleSaveProfile(e) {
+      e.preventDefault();
+
+      if (!userLineId) {
+        alert("請先使用 LINE 登入 / 綁定後，才能儲存會員資料。");
+        return;
+      }
+
+      const data = collectProfileFormData("profile");
+
+      data.lineId = userLineId;
+      data.memberNo = userProfile ? userProfile.memberNo || "" : "";
+
+      if (
+        !data.name ||
+        !isValidPhone(data.phone) ||
+        !data.gender ||
+        !data.birthday ||
+        !isValidTaiwanId(data.idCard)
+      ) {
+        alert("請完整填寫姓名、手機、性別、生日、身分證字號，且格式需正確。");
+        return;
+      }
+
+      showLoading("儲存會員資料...");
+
+      try {
+        const r = await apiPost({
+          action: "saveProfile",
+          ...data
+        }, {
+          clearCache: true
+        });
+
+        userProfile = r.user;
+        userRole = r.role || userRole || "user";
+
+        normalizeUserProfile();
+
+        closeModal("profileModal");
+        updateUserUI();
+        await loadPublicData(true);
+
+        alert("會員資料已更新");
+
+      } catch (err) {
+        alert("儲存失敗：" + err.message);
 
       } finally {
         hideLoading();
@@ -2468,7 +2661,7 @@
 
     function openProfileModal() {
       if (!userProfile) {
-        switchAuthTab("register");
+        switchAuthTab("login");
         openModal("authModal");
         return;
       }
@@ -2478,59 +2671,11 @@
       document.getElementById("profileNickname").value = userProfile.nickname || "";
       document.getElementById("profilePhone").value = normalizePhone(userProfile.phone || "");
       document.getElementById("profileGender").value = userProfile.gender || "";
-      document.getElementById("profileBirthday").value = userProfile.birthday || "";
+      document.getElementById("profileBirthday").value = normalizeBirthdayInput(userProfile.birthday || "");
       document.getElementById("profileIdCard").value = String(userProfile.idCard || "").toUpperCase();
       document.getElementById("profileAddress").value = userProfile.address || "";
 
       openModal("profileModal");
-    }
-
-    async function saveProfile(e) {
-      e.preventDefault();
-
-      if (!userProfile) return;
-
-      const data = {
-        action: "saveProfile",
-        lineId: userLineId || userProfile.lineId || "",
-        memberNo: userProfile.memberNo || "",
-        name: document.getElementById("profileName").value.trim(),
-        nickname: document.getElementById("profileNickname").value.trim(),
-        phone: normalizePhone(document.getElementById("profilePhone").value),
-        gender: document.getElementById("profileGender").value,
-        birthday: normalizeBirthdayInput(document.getElementById("profileBirthday").value),
-        idCard: document.getElementById("profileIdCard").value.trim().toUpperCase(),
-        address: document.getElementById("profileAddress").value.trim()
-      };
-
-      if (!data.name || !isValidPhone(data.phone) || !data.gender || !data.birthday || !isValidTaiwanId(data.idCard)) {
-        alert("請確認必填資料完整，手機與身分證格式正確。");
-        return;
-      }
-
-      showLoading("儲存會員資料...");
-
-      try {
-        const r = await apiPost(data);
-
-        userProfile = r.user;
-        userRole = r.role || userRole;
-
-        if (userProfile && userProfile.phone) {
-          userProfile.phone = normalizePhone(userProfile.phone);
-        }
-
-        updateUserUI();
-        closeModal("profileModal");
-
-        alert("會員資料已更新");
-
-      } catch (err) {
-        alert("儲存失敗：" + err.message);
-
-      } finally {
-        hideLoading();
-      }
     }
 
     /*******************************************************
@@ -2731,8 +2876,6 @@
       if (overlay) overlay.classList.add("hidden");
     }
 
-    let toastTimer = null;
-
     function showToast(text = "完成") {
       const box = document.getElementById("toastBox");
       const content = document.getElementById("toastText");
@@ -2801,7 +2944,8 @@
 
     function bottomNavProfile() {
       if (!userProfile) {
-        handleHeaderLogin();
+        switchAuthTab("login");
+        openModal("authModal");
         return;
       }
 
@@ -2819,7 +2963,8 @@
         return;
       }
 
-      handleHeaderLogin();
+      switchAuthTab("login");
+      openModal("authModal");
     }
 
     function updateBottomNavVisibility() {
@@ -3050,7 +3195,8 @@
 
       if (!userLineId || userRole === "guest") {
         alert("請先使用 LINE 登入並完成會員資料，才能報名。");
-        handleHeaderLogin();
+        switchAuthTab("login");
+        openModal("authModal");
         return;
       }
 
@@ -3301,8 +3447,6 @@
       openModal("searchAttendeeModal");
     }
 
-    let searchUserTimer = null;
-
     function searchGlobalAttendees(keyword) {
       keyword = String(keyword || "").trim();
 
@@ -3469,6 +3613,8 @@
 
       if (!userLineId || userRole === "guest") {
         alert("請使用 LINE 登入並完成會員綁定。");
+        switchAuthTab("login");
+        openModal("authModal");
         return;
       }
 
@@ -3610,7 +3756,7 @@
       }
     }
 
-    /*******************************************************
+        /*******************************************************
      * LINE Flex：個資防護版
      *******************************************************/
     async function sendFlexMessageOptimized({
@@ -3790,9 +3936,7 @@
 
     function limitLineText(v, max = 80) {
       const text = safeLineText(v, "");
-
       if (text.length <= max) return text;
-
       return text.slice(0, max - 1) + "…";
     }
 
@@ -3833,7 +3977,7 @@
           buildSafeNameListBubble({
             eventTitle: title,
             pageIndex,
-            totalPages: pages.length,
+            totalPages: pages.length || 1,
             people: pagePeople
           })
         );
@@ -4282,6 +4426,8 @@
     async function openMyRegistrationsModal() {
       if (!userLineId && !userProfile) {
         alert("請先登入");
+        switchAuthTab("login");
+        openModal("authModal");
         return;
       }
 
@@ -4371,7 +4517,6 @@
     function renderRegistrationDetails(data) {
       const box = document.getElementById("regDetailsContainer");
       const actionBox = document.getElementById("regDetailsActionContainer");
-      const btn = document.getElementById("modifyRegFromDetailsBtn");
 
       const event = data.event || {};
       const attendees = data.attendees || [];
@@ -4488,13 +4633,8 @@
         btn.classList.add("bg-orange-600");
       }
 
-      if (tab === "admins") {
-        loadAdminAccounts();
-      }
-
-      if (tab === "stats") {
-        loadStatsDashboard();
-      }
+      if (tab === "admins") loadAdminAccounts();
+      if (tab === "stats") loadStatsDashboard();
     }
 
     function renderAdminEventList() {
@@ -4538,8 +4678,10 @@
       const box = document.getElementById("adminCategoryListContainer");
       if (!box) return;
 
+      let html = "";
+
       if (!isSuperAdmin()) {
-        box.innerHTML = `
+        html += `
           <div class="bg-red-50 border-4 border-red-300 rounded-3xl p-5 elder-text text-red-800">
             權限不足：僅系統管理員可新增或刪除活動分類。
           </div>
@@ -4547,11 +4689,12 @@
       }
 
       if (!allCategories.length) {
-        box.innerHTML += `<p class="text-center text-stone-600 font-black py-4 text-xl">目前沒有分類</p>`;
+        html += `<p class="text-center text-stone-600 font-black py-4 text-xl">目前沒有分類</p>`;
+        box.innerHTML = html;
         return;
       }
 
-      box.innerHTML += allCategories.map(cat => `
+      html += allCategories.map(cat => `
         <div class="flex justify-between items-center bg-white border-4 border-stone-500 rounded-3xl p-4 gap-3">
           <span class="elder-subtitle">${escapeHtml(cat)}</span>
           <button
@@ -4563,6 +4706,8 @@
           </button>
         </div>
       `).join("");
+
+      box.innerHTML = html;
     }
 
     function refreshAdminEventSelect() {
@@ -4583,9 +4728,16 @@
       const panel = document.getElementById("eventEditorPanel");
       const title = document.getElementById("eventEditorTitle");
 
-      panel.classList.remove("hidden");
+      if (!panel || !title) return;
 
       const categories = getAdminVisibleCategories();
+
+      if (!categories.length) {
+        alert("目前沒有可管理的分類，請先由系統管理員設定權限。");
+        return;
+      }
+
+      panel.classList.remove("hidden");
 
       document.getElementById("editEventCategory").innerHTML = categories.map(c => `
         <option value="${escapeHtml(c)}">${escapeHtml(c)}</option>
@@ -4637,7 +4789,8 @@
     }
 
     function closeEventEditor() {
-      document.getElementById("eventEditorPanel").classList.add("hidden");
+      const el = document.getElementById("eventEditorPanel");
+      if (el) el.classList.add("hidden");
     }
 
     function toDatetimeLocalValue(v) {
@@ -4645,25 +4798,20 @@
 
       const s = String(v);
 
-      if (s.includes("T")) {
-        return s.slice(0, 16);
-      }
-
-      if (s.includes(" ")) {
-        return s.replace(" ", "T").slice(0, 16);
-      }
+      if (s.includes("T")) return s.slice(0, 16);
+      if (s.includes(" ")) return s.replace(" ", "T").slice(0, 16);
 
       return s;
     }
 
     function addImageField(value = "") {
       const box = document.getElementById("eventImagesContainer");
-      box.insertAdjacentHTML("beforeend", buildUrlFieldHtml(value, "image"));
+      if (box) box.insertAdjacentHTML("beforeend", buildUrlFieldHtml(value, "image"));
     }
 
     function addFileField(value = "") {
       const box = document.getElementById("eventFilesContainer");
-      box.insertAdjacentHTML("beforeend", buildUrlFieldHtml(value, "file"));
+      if (box) box.insertAdjacentHTML("beforeend", buildUrlFieldHtml(value, "file"));
     }
 
     function buildUrlFieldHtml(value = "", type = "image") {
@@ -4687,6 +4835,8 @@
 
     function renderUrlFields(containerId, items, type) {
       const box = document.getElementById(containerId);
+      if (!box) return;
+
       box.innerHTML = "";
 
       items.forEach(item => {
@@ -4696,7 +4846,7 @@
 
     function addQuestionField(q = {}) {
       const box = document.getElementById("eventQuestionsContainer");
-      box.insertAdjacentHTML("beforeend", buildQuestionFieldHtml(q));
+      if (box) box.insertAdjacentHTML("beforeend", buildQuestionFieldHtml(q));
     }
 
     function buildQuestionFieldHtml(q = {}) {
@@ -4738,14 +4888,15 @@
 
     function renderQuestionFields(items) {
       const box = document.getElementById("eventQuestionsContainer");
-      box.innerHTML = "";
+      if (!box) return;
 
+      box.innerHTML = "";
       items.forEach(q => addQuestionField(q));
     }
 
     function addAdminNoteConfigField(q = {}) {
       const box = document.getElementById("adminNotesConfigContainer");
-      box.insertAdjacentHTML("beforeend", buildAdminNoteConfigHtml(q));
+      if (box) box.insertAdjacentHTML("beforeend", buildAdminNoteConfigHtml(q));
     }
 
     function buildAdminNoteConfigHtml(q = {}) {
@@ -4781,8 +4932,9 @@
 
     function renderAdminNoteConfigFields(items) {
       const box = document.getElementById("adminNotesConfigContainer");
-      box.innerHTML = "";
+      if (!box) return;
 
+      box.innerHTML = "";
       items.forEach(q => addAdminNoteConfigField(q));
     }
 
@@ -5757,4 +5909,4 @@
     }
   </script>
 </body>
-</html>  
+</html>
