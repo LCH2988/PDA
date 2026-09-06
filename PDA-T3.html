@@ -766,7 +766,7 @@
    * 全域變數與設定
    *******************************************************/
   const LIFF_ID = "2009456572-VIoH1oY0";
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbyZyKsKP10iky1L5V5ts_eASTCNXuqOFPjUA3fqPnq4aky-V3cTG4ljDs8WY4g2bKRQ/exec";
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbxgJATk_c2EhmbUq9xq9nuThMfsGPtgvC8viWJX-U76o8S8qkSf9bO2WdoRdJ0vn8FA/exec";
 
   let allEvents = [];
   let allCategories = [];
@@ -1007,6 +1007,7 @@
       }, 300);
     }
   }
+
 
   function normalizeUserProfile() {
     if (!userProfile) return;
@@ -2110,7 +2111,367 @@
   }
 
   /*******************************************************
-   * 自訂匯出 CSV
+   * LINE 公告與自訂欄位統計
+   *******************************************************/
+  function renderAnnounceStatsFields() {
+    const box = document.getElementById("announceStatsFieldsContainer");
+    if (!box) return;
+    const ev = allEvents.find(e => e.id === currentParticipantsEventId) || {};
+    const qs = ev.questions || [];
+    const fields = qs.filter(q => !isSystemQuestionTitle(q.title));
+    if (!fields.length) { box.innerHTML = `<p class="text-sm text-stone-600">無可統計自訂欄位</p>`; return; }
+    box.innerHTML = fields.map(q => `
+      <label class="flex items-center gap-2 text-base font-bold"><input type="checkbox" class="announce-stat-field w-5 h-5" value="${escapeHtml(q.title)}"><span>${escapeHtml(q.title)}</span></label>
+    `).join("");
+  }
+
+  async function shareCustomChainToGroup() {
+    if (!currentParticipantsEventId) { alert("請先選擇活動"); return; }
+    const ev = allEvents.find(e => e.id === currentParticipantsEventId);
+    if (!ev) return;
+
+    const customMsg = document.getElementById("announceCustomMsg").value.trim();
+    const pageSize = Number(document.getElementById("announcePageSize").value || 20);
+    const selectedStats = Array.from(document.querySelectorAll(".announce-stat-field:checked")).map(el => el.value);
+
+    let page1Text = `📣 【活動公告與數據統計】\n`;
+    page1Text += `🚴 活動：${ev.title}\n`;
+    page1Text += `🕒 時間：${formatDisplayDateTime(ev.time)}\n`;
+    page1Text += `📍 地點：${ev.location || "-"}\n`;
+    page1Text += `👥 登記總人數：${currentParticipants.length} 人\n`;
+    if (customMsg) page1Text += `\n📝 備註事項：\n${customMsg}\n`;
+
+    if (selectedStats.length) {
+      page1Text += `\n📊 報名項目統計：\n`;
+      selectedStats.forEach(title => {
+        const stats = {};
+        currentParticipants.forEach(p => {
+          const ans = String((p.answers || {})[title] || "未填寫").trim();
+          stats[ans] = (stats[ans] || 0) + 1;
+        });
+        const statLine = Object.keys(stats).map(k => `${k}: ${stats[k]}人`).join("、");
+        page1Text += `• ${title} ➔ ${statLine}\n`;
+      });
+    }
+    page1Text += `\n🔗 我要登記/查看：${getLiffUrl({ action: "viewlist", eventId: ev.id })}`;
+
+    // 第二頁開始：詳細報名清單 (分頁)
+    const pages = chunkArray(currentParticipants, pageSize);
+    const textPages = [page1Text];
+
+    pages.forEach((pageList, pageIdx) => {
+      const textList = pageList.map((p, idx) => `${pageIdx * pageSize + idx + 1}. ${p.memberNo || "-"}｜${p.name} (${p.status})`).join("\n");
+      const pageText = `📋 【詳細報名清單 - 第 ${pageIdx + 1} / ${pages.length} 頁】\n活動：${ev.title}\n\n${textList}\n\n🔗 完整名單：${getLiffUrl({ action: "viewlist", eventId: ev.id })}`;
+      textPages.push(pageText);
+    });
+
+    showLoading("準備發送 LINE 公告...");
+    try {
+      hideLoading();
+      if (liff.isApiAvailable("shareTargetPicker")) {
+        for (const text of textPages) {
+          await liff.shareTargetPicker([{ type: "text", text }]);
+        }
+        alert("公告已成功發送至群組！");
+      } else {
+        alert("目前環境不支援 LINE 分享，已自動複製第一頁統計資料：\n\n" + page1Text);
+        navigator.clipboard.writeText(page1Text);
+      }
+    } catch (e) {
+      hideLoading();
+      alert("公告分享失敗或已取消。");
+    }
+  }
+
+  /*******************************************************
+   * 管理員權限管理 (修正遺漏的分類渲染函式)
+   *******************************************************/
+  async function loadAdminAccounts() {
+    if (!isSuperAdmin()) return;
+    showLoading("載入管理員...");
+    try {
+      const r = await apiGet({ action: "getAdmins", lineId: userLineId }, { cache: false });
+      adminAccounts = r.admins || [];
+      filterAdminSelect("");
+    } catch (e) { alert("載入管理員失敗：" + e.message); } finally { hideLoading(); }
+  }
+
+  function filterAdminSelect(keyword) {
+    const select = document.getElementById("adminSelect");
+    const filtered = adminAccounts.filter(a => (a.name || "").toLowerCase().includes(keyword.toLowerCase()) || (a.lineId || "").toLowerCase().includes(keyword.toLowerCase()));
+    select.innerHTML = `<option value="">-- 請選擇管理員 (${filtered.length}) --</option>` + filtered.map(a => `<option value="${escapeHtml(a.lineId)}">${escapeHtml(a.name)} (${a.role === "super" ? "系統管理員" : "一般管理員"})</option>`).join("");
+  }
+
+  function loadAdminDetails(lineId) {
+    const form = document.getElementById("adminPermissionForm");
+    if (!lineId) { form.classList.add("hidden"); return; }
+    const a = adminAccounts.find(x => x.lineId === lineId);
+    if (!a) return;
+
+    document.getElementById("newAdminLineId").value = a.lineId;
+    document.getElementById("newAdminName").value = a.name || "";
+    document.getElementById("newAdminRole").value = a.role || "admin";
+
+    const allowed = a.allowedCategories || [];
+    document.querySelectorAll(".new-admin-category").forEach(cb => {
+      cb.checked = allowed.includes(cb.value);
+    });
+
+    form.classList.remove("hidden");
+  }
+
+  async function addAdminAccount(e) {
+    e.preventDefault();
+    if (!isSuperAdmin()) return;
+    const allowedCategories = Array.from(document.querySelectorAll(".new-admin-category:checked")).map(el => el.value);
+    const data = {
+      action: "saveAdmin",
+      lineId: userLineId,
+      admin: {
+        lineId: document.getElementById("newAdminLineId").value.trim(),
+        name: document.getElementById("newAdminName").value.trim(),
+        role: document.getElementById("newAdminRole").value,
+        allowedCategories
+      }
+    };
+    showLoading("儲存權限...");
+    try {
+      await apiPost(data);
+      alert("管理員權限設定成功");
+      document.getElementById("adminPermissionForm").classList.add("hidden");
+      document.getElementById("adminSearchInput").value = "";
+      await loadAdminAccounts();
+    } catch (e) { alert("設定失敗：" + e.message); } finally { hideLoading(); }
+  }
+
+  async function deleteSelectedAdmin() {
+    const lineId = document.getElementById("newAdminLineId").value;
+    if (!lineId) return;
+    if (lineId === userLineId) { alert("不可刪除自己"); return; }
+    if (!confirm("確定要刪除此管理員的權限嗎？")) return;
+    showLoading("刪除管理員...");
+    try {
+      await apiPost({
+        action: "deleteAdmin",
+        lineId: userLineId,
+        adminLineId: lineId
+      });
+      alert("已刪除該管理員權限");
+      document.getElementById("adminPermissionForm").classList.add("hidden");
+      document.getElementById("adminSearchInput").value = "";
+      await loadAdminAccounts();
+    } catch (e) { alert("刪除失敗：" + e.message); } finally { hideLoading(); }
+  }
+
+  /**
+   * 【關鍵修復】補回先前報錯 ReferenceError 的函式
+   */
+  function renderNewAdminCategoryOptions() {
+    const box = document.getElementById("newAdminCategoryBox");
+    if (!box) return;
+    const categories = allCategories.length ? allCategories : ["跑步", "游泳", "自行車", "登山", "團練", "其他"];
+    box.innerHTML = categories.map(cat => `
+      <label class="flex items-center gap-3 bg-white border-4 border-stone-400 rounded-2xl p-4 text-xl font-black">
+        <input type="checkbox" class="new-admin-category w-7 h-7" value="${escapeHtml(cat)}">
+        <span>${escapeHtml(cat)}</span>
+      </label>
+    `).join("");
+  }
+
+  /*******************************************************
+   * 後台統計分析
+   *******************************************************/
+  async function loadStatsDashboard() {
+    if (!isAdminLike()) { alert("權限不足"); return; }
+    showLoading("計算統計...");
+    try {
+      const r = await apiGet({ action: "getStatsDashboard", lineId: userLineId }, { cache: false });
+      renderStatsDashboard(r.stats || {});
+    } catch (e) { alert("載入統計失敗：" + e.message); } finally { hideLoading(); }
+  }
+
+  function renderStatsDashboard(stats) {
+    const box = document.getElementById("statsDashboardContainer");
+    if (!box) return;
+    const categoryStats = stats.categoryStats || [];
+    const ageStats = stats.ageStats || [];
+
+    const maxCategoryParticipants = Math.max(...categoryStats.map(x => x.participants), 1);
+    const maxAgeCount = Math.max(...ageStats.map(x => x.count), 1);
+
+    box.innerHTML = `
+      <div class="bg-orange-50 border-4 border-orange-300 rounded-3xl p-4">
+        <h4 class="elder-title text-orange-950">總覽</h4>
+        <p class="elder-text mt-2">活動總數：${Number(stats.totalEvents || 0)}</p>
+        <p class="elder-text mt-2">報名總人次：${Number(stats.totalParticipants || 0)}</p>
+      </div>
+      <div class="bg-white border-4 border-stone-500 rounded-3xl p-4">
+        <h4 class="elder-title mb-3">各分類活動與人次</h4>
+        ${categoryStats.length ? categoryStats.map(item => buildStatBar(item.category, item.participants, maxCategoryParticipants, `活動 ${item.events} 場｜人次 ${item.participants}`)).join("") : `<p class="elder-text text-stone-600">尚無分類統計</p>`}
+      </div>
+      <div class="bg-white border-4 border-stone-500 rounded-3xl p-4">
+        <h4 class="elder-title mb-3">年齡分布</h4>
+        ${ageStats.length ? ageStats.map(item => buildStatBar(item.label, item.count, maxAgeCount, `${item.count} 人`)).join("") : `<p class="elder-text text-stone-600">尚無年齡統計</p>`}
+      </div>
+    `;
+  }
+
+  function buildStatBar(label, value, max, note) {
+    const percent = max > 0 ? Math.round(Number(value || 0) / max * 100) : 0;
+    return `
+      <div class="mb-4">
+        <div class="flex justify-between text-lg font-black mb-1 gap-2">
+          <span>${escapeHtml(label)}</span>
+          <span>${escapeHtml(note)}</span>
+        </div>
+        <div class="stat-bar-bg"><div class="stat-bar-fill" style="width:${percent}%"></div></div>
+      </div>
+    `;
+  }
+
+  /*******************************************************
+   * 前台公開名單與個人登記清單
+   *******************************************************/
+  async function openParticipantsModal(eventId) {
+    const ev = allEvents.find(e => e.id === eventId);
+    if (!ev) { alert("找不到活動"); return; }
+    currentParticipantsEventId = eventId;
+    currentCardPage = 1;
+    showLoading("載入登記名單...");
+    try {
+      const r = await apiGet({ action: "getParticipants", eventId }, { cache: false });
+      currentParticipants = r.participants || [];
+      renderParticipantCards();
+      openModal("participantsModal");
+    } catch (e) { alert("載入名單失敗：" + e.message); } finally { hideLoading(); }
+  }
+
+  function renderParticipantCards() {
+    const box = document.getElementById("participantsCardContainer");
+    const indicator = document.getElementById("cardPageIndicator");
+    const prevBtn = document.getElementById("prevCardBtn");
+    const nextBtn = document.getElementById("nextCardBtn");
+    if (!box) return;
+
+    const pages = chunkArray(currentParticipants, PARTICIPANTS_PER_PAGE);
+    const totalPages = Math.max(1, pages.length);
+    if (currentCardPage < 1) currentCardPage = 1;
+    if (currentCardPage > totalPages) currentCardPage = totalPages;
+    const page = pages[currentCardPage - 1] || [];
+
+    if (!page.length) {
+      box.innerHTML = `<div class="bg-stone-50 border-4 border-stone-500 rounded-3xl p-6 text-center elder-text text-stone-700">目前尚無登記名單</div>`;
+    } else {
+      box.innerHTML = page.map((p, idx) => {
+        const no = (currentCardPage - 1) * PARTICIPANTS_PER_PAGE + idx + 1;
+        const statusColor = p.status === "正取" ? "bg-green-100 text-green-900 border-green-600" : p.status === "候補" ? "bg-orange-100 text-orange-900 border-orange-500" : "bg-stone-100 text-stone-800 border-stone-500";
+        return `
+          <div class="bg-white border-4 border-stone-500 rounded-3xl p-4 shadow-sm">
+            <div class="flex justify-between items-start gap-3">
+              <div class="min-w-0">
+                <p class="elder-subtitle text-stone-950">${no}. ${escapeHtml(p.memberNo || "-")}｜${escapeHtml(p.name || "")}</p>
+                <p class="elder-small text-stone-600 mt-1">公開名單不顯示電話、生日、身分證等個資</p>
+              </div>
+              <span class="shrink-0 border-4 rounded-2xl px-3 py-1 text-base font-black ${statusColor}">${escapeHtml(p.status || "-")}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+    indicator.textContent = `${currentCardPage} / ${totalPages}`;
+    prevBtn.disabled = currentCardPage <= 1;
+    nextBtn.disabled = currentCardPage >= totalPages;
+  }
+
+  function changeCardPage(delta) { currentCardPage += delta; renderParticipantCards(); }
+
+  async function openMyRegistrationsModal() {
+    if (!userLineId && !userProfile) { alert("請先登入"); switchAuthTab("login"); openModal("authModal"); return; }
+    showLoading("載入我的登記...");
+    try {
+      const r = await apiGet({ action: "getMyRegistrations", lineId: userLineId || "", memberNo: userProfile ? userProfile.memberNo || "" : "" }, { cache: false });
+      renderMyRegistrations(r.registrations || []);
+      openModal("myRegistrationsModal");
+    } catch (e) { alert("載入失敗：" + e.message); } finally { hideLoading(); }
+  }
+
+  function renderMyRegistrations(list) {
+    const box = document.getElementById("myRegListContainer");
+    if (!list.length) {
+      box.innerHTML = `<div class="bg-stone-50 border-4 border-stone-500 rounded-3xl p-6 text-center elder-text text-stone-700">目前沒有登記紀錄</div>`;
+      return;
+    }
+    box.innerHTML = list.map(item => `
+      <button onclick="openRegistrationDetails('${jsString(item.regId)}')" class="w-full bg-white border-4 border-stone-600 rounded-3xl p-4 text-left shadow-sm active-scale">
+        <p class="elder-subtitle text-stone-950">${escapeHtml(item.eventTitle || "活動")}</p>
+        <p class="elder-small text-stone-600 mt-1">登記編號：${escapeHtml(item.regId || "-")}｜人數：${Number(item.count || 0)} 人</p>
+        <p class="elder-small mt-2 ${item.beforeDeadline === false ? "text-red-700" : "text-green-700"}">${item.beforeDeadline === false ? "已截止，無法修改" : "截止前可修改"}</p>
+      </button>
+    `).join("");
+  }
+
+  async function openRegistrationDetails(regId) {
+    showLoading("載入明細...");
+    try {
+      const r = await apiGet({ action: "getRegistrationDetails", regId, lineId: userLineId || "", memberNo: userProfile ? userProfile.memberNo || "" : "" }, { cache: false });
+      renderRegistrationDetails(r);
+      closeModal("myRegistrationsModal");
+      openModal("regDetailsModal");
+    } catch (e) { alert("載入明細失敗：" + e.message); } finally { hideLoading(); }
+  }
+
+  function renderRegistrationDetails(data) {
+    const box = document.getElementById("regDetailsContainer");
+    const actionBox = document.getElementById("regDetailsActionContainer");
+    const event = data.event || {};
+    const attendees = data.attendees || [];
+
+    box.innerHTML = `
+      <div class="bg-orange-50 border-4 border-orange-300 rounded-3xl p-4">
+        <p class="elder-title text-orange-950">${escapeHtml(event.title || "")}</p>
+        <p class="elder-text text-stone-700 mt-2">${escapeHtml(formatDisplayDateTime(event.time || ""))}</p>
+      </div>
+      ${attendees.map((a, idx) => `
+        <div class="bg-white border-4 border-stone-500 rounded-3xl p-4 shadow-sm">
+          <p class="elder-subtitle text-stone-950">${idx + 1}. ${escapeHtml(a.memberNo || "-")}｜${escapeHtml(a.name || "")}</p>
+          <p class="elder-text text-stone-700 mt-1">狀態：${escapeHtml(a.status || "-")}｜關係：${escapeHtml(a.relation || "-")}</p>
+        </div>
+      `).join("")}
+    `;
+
+    if (data.canEdit) {
+      actionBox.classList.remove("hidden");
+      actionBox.innerHTML = `<button id="modifyRegFromDetailsBtn" class="w-full elder-btn bg-orange-600 text-white shadow-md active-scale border-orange-950">✏️ 修改登記資料</button>`;
+      document.getElementById("modifyRegFromDetailsBtn").onclick = function() { prepareModifyRegistration(data); };
+    } else {
+      actionBox.classList.remove("hidden");
+      actionBox.innerHTML = `<div class="bg-stone-200 border-4 border-stone-500 rounded-3xl p-4 text-center elder-text text-stone-800">已超過報名截止時間，前台無法修改。</div>`;
+    }
+  }
+
+  function prepareModifyRegistration(data) {
+    const event = data.event || {};
+    const attendees = data.attendees || [];
+    currentEvent = allEvents.find(e => e.id === event.id) || event;
+    currentRegId = data.regId || "";
+    currentAttendees = attendees.map(a => ({
+      memberNo: a.memberNo || "",
+      name: a.name || "",
+      phone: normalizePhone(a.phone || ""),
+      relation: a.relation || "",
+      gender: a.gender || "",
+      birthday: a.birthday || "",
+      idCard: String(a.idCard || "").toUpperCase(),
+      answers: a.answers || {}
+    }));
+    document.getElementById("regEventTitle").textContent = currentEvent.title || "修改登記";
+    renderAttendees();
+    closeModal("regDetailsModal");
+    openModal("registerModal");
+  }
+
+  /*******************************************************
+   * 自訂匯出 CSV 執行函式
    *******************************************************/
   function openCustomExportModal() {
     if (!currentParticipantsEventId) { alert("請先選擇活動"); return; }
@@ -2121,86 +2482,104 @@
 
     const baseFields = ["個人編號", "姓名", "手機", "性別", "生日", "身分證字號", "關係", "狀態", "報名時間"];
     let html = `<div class="font-bold text-stone-800 mb-2">基本資料</div>`;
-    html += baseFields.map(f => `<label class="flex items-center gap-2 mb-1"><input type="checkbox" class="export-col-cb w-5 h-5" value="base_${f}" checked> ${f}</label>`).join("");
+    html += baseFields.map(f => `<label class="flex items-center gap-2 mb-1"><input type="checkbox" class="export-col-cb w-5 h-5" value="base_${f}" checked> <span>${f}</span></label>`).join("");
 
     if (qs.length) {
       html += `<div class="font-bold text-stone-800 mt-3 mb-2">活動問題欄位</div>`;
-      html += qs.map(q => `<label class="flex items-center gap-2 mb-1"><input type="checkbox" class="export-col-cb w-5 h-5" value="q_${q.title}" checked> ${q.title}</label>`).join("");
+      html += qs.map(q => `<label class="flex items-center gap-2 mb-1"><input type="checkbox" class="export-col-cb w-5 h-5" value="q_${escapeHtml(q.title)}" checked> <span>${escapeHtml(q.title)}</span></label>`).join("");
     }
     if (ns.length) {
       html += `<div class="font-bold text-stone-800 mt-3 mb-2">管理備註欄位</div>`;
-      html += ns.map(n => `<label class="flex items-center gap-2 mb-1"><input type="checkbox" class="export-col-cb w-5 h-5" value="n_${n.title}" checked> ${n.title}</label>`).join("");
+      html += ns.map(n => `<label class="flex items-center gap-2 mb-1"><input type="checkbox" class="export-col-cb w-5 h-5" value="n_${escapeHtml(n.title)}" checked> <span>${escapeHtml(n.title)}</span></label>`).join("");
     }
 
     container.innerHTML = html;
     openModal("customExportModal");
   }
 
-      function executeCustomExport() {
-      const selected = Array.from(document.querySelectorAll(".export-col-cb:checked")).map(cb => cb.value);
-      if (!selected.length) {
-        alert("請至少選擇一個匯出欄位");
-        return;
-      }
-
-      if (!currentParticipants || !currentParticipants.length) {
-        alert("目前沒有報名名單可供匯出");
-        return;
-      }
-
-      const ev = allEvents.find(e => e.id === currentParticipantsEventId) || {};
-      
-      // 1. 產生 CSV 標題列 (去除 prefix: base_, q_, n_)
-      const headers = selected.map(k => k.replace(/^(base_|q_|n_)/, ""));
-      const rows = [headers];
-
-      // 2. 逐筆提取勾選的欄位資料
-      currentParticipants.forEach(p => {
-        const row = selected.map(k => {
-          let val = "";
-          if (k.startsWith("base_")) {
-            const field = k.replace("base_", "");
-            if (field === "個人編號") val = p.memberNo || "";
-            else if (field === "姓名") val = p.name || "";
-            else if (field === "手機") val = p.phone || "";
-            else if (field === "性別") val = p.gender || "";
-            else if (field === "生日") val = p.birthday || "";
-            else if (field === "身分證字號") val = p.idCard || "";
-            else if (field === "關係") val = p.relation || "";
-            else if (field === "狀態") val = p.status || "";
-            else if (field === "報名時間") val = p.registeredAt || "";
-          } else if (k.startsWith("q_")) {
-            const qTitle = k.replace("q_", "");
-            val = (p.answers || {})[qTitle] || "";
-          } else if (k.startsWith("n_")) {
-            const nTitle = k.replace("n_", "");
-            val = (p.adminNotes || {})[nTitle] || "";
-          }
-          // 跳脫 CSV 雙引號避免格式跑版
-          return `"${String(val).replace(/"/g, '""')}"`;
-        });
-        rows.push(row);
-      });
-
-      // 3. 加上 \uFEFF (UTF-8 BOM)，避免 Excel 開啟繁體中文時產生亂碼
-      const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\r\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-
-      // 檔案名稱自動帶入活動名稱與今日日期
-      const safeTitle = (ev.title || "報名名單").replace(/[\\/:*?"<>|]/g, "_");
-      link.setAttribute("download", `${safeTitle}_名單匯出_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      closeModal("customExportModal");
-      showToast("名單匯出完成");
+  function executeCustomExport() {
+    const selected = Array.from(document.querySelectorAll(".export-col-cb:checked")).map(cb => cb.value);
+    if (!selected.length) {
+      alert("請至少選擇一個匯出欄位");
+      return;
     }
 
+    if (!currentParticipants || !currentParticipants.length) {
+      alert("目前沒有報名名單可供匯出");
+      return;
+    }
+
+    const ev = allEvents.find(e => e.id === currentParticipantsEventId) || {};
+    const headers = selected.map(k => k.replace(/^(base_|q_|n_)/, ""));
+    const rows = [headers];
+
+    currentParticipants.forEach(p => {
+      const row = selected.map(k => {
+        let val = "";
+        if (k.startsWith("base_")) {
+          const field = k.replace("base_", "");
+          if (field === "個人編號") val = p.memberNo || "";
+          else if (field === "姓名") val = p.name || "";
+          else if (field === "手機") val = p.phone || "";
+          else if (field === "性別") val = p.gender || "";
+          else if (field === "生日") val = p.birthday || "";
+          else if (field === "身分證字號") val = p.idCard || "";
+          else if (field === "關係") val = p.relation || "";
+          else if (field === "狀態") val = p.status || "";
+          else if (field === "報名時間") val = p.registeredAt || "";
+        } else if (k.startsWith("q_")) {
+          const qTitle = k.replace("q_", "");
+          val = (p.answers || {})[qTitle] || "";
+        } else if (k.startsWith("n_")) {
+          const nTitle = k.replace("n_", "");
+          val = (p.adminNotes || {})[nTitle] || "";
+        }
+        return `"${String(val).replace(/"/g, '""')}"`;
+      });
+      rows.push(row);
+    });
+
+    const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    const safeTitle = (ev.title || "報名名單").replace(/[\\/:*?"<>|]/g, "_");
+    link.setAttribute("download", `${safeTitle}_名單匯出_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    closeModal("customExportModal");
+    showToast("名單匯出完成");
+  }
+
+  /*******************************************************
+   * 系統工具
+   *******************************************************/
+  async function runDiagnostic() {
+    const out = document.getElementById("diagnosticOutput");
+    out.classList.remove("hidden");
+    out.textContent = "診斷中...";
+    try {
+      const r = await apiPost({ action: "diagnostic", lineId: userLineId }, { clearCache: false });
+      out.textContent = JSON.stringify(r, null, 2);
+    } catch (e) { out.textContent = "診斷失敗：" + e.message; }
+  }
+
+  async function testLineTextShare() {
+    if (!liff.isApiAvailable("shareTargetPicker")) {
+      alert("目前環境不支援 shareTargetPicker 分享功能");
+      return;
+    }
+    try {
+      await liff.shareTargetPicker([
+        { type: "text", text: "三鐵飛翔好：LINE 系統文字分享測試成功！" }
+      ]);
+    } catch (e) {
+      console.log("使用者已取消分享");
+    }
+  }
 </script>
 </body>
 </html>
