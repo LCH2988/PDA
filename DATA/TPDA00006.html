@@ -8,16 +8,24 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- LIFF SDK -->
   <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* 隱藏橫向滾動條但保持滑動體驗 */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
 </head>
-<body class="bg-gradient-to-br from-pink-50 via-rose-50 to-purple-50 min-h-screen text-slate-800 font-sans pb-12">
+<body class="bg-gradient-to-br from-pink-50 via-rose-50 to-purple-50 min-h-screen text-slate-800 font-sans pb-16">
 
   <!-- 全局頂部導覽列 -->
-  <header class="bg-white/80 backdrop-blur border-b border-rose-100 sticky top-0 z-40 px-4 py-3 flex items-center justify-between">
+  <header class="bg-white/85 backdrop-blur border-b border-rose-100 sticky top-0 z-40 px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-2">
       <span class="text-2xl">👯‍♀️</span>
-      <h1 class="font-bold text-rose-600 text-lg tracking-wide">閨蜜大挑戰</h1>
+      <h1 class="font-bold text-rose-600 text-base sm:text-lg tracking-wide">閨蜜大挑戰</h1>
     </div>
     <div id="userInfo" class="flex items-center gap-2">
       <img id="myAvatar" class="w-8 h-8 rounded-full border border-rose-200 hidden" src="" />
@@ -33,33 +41,62 @@
       <p class="text-slate-500 font-medium">連線中，準備好測驗默契了嗎...</p>
     </div>
 
-    <!-- ================= 模式 1: 出題者模式 ================= -->
-    <div id="creatorMode" class="hidden space-y-6">
-      <!-- 說明橫幅 -->
-      <div class="bg-white rounded-2xl p-6 shadow-sm border border-rose-100 text-center">
-        <h2 class="text-xl font-bold text-slate-800">製作你的專屬考卷 💌</h2>
-        <p class="text-sm text-slate-500 mt-2">
-          從 500 道題目中自選 <span class="text-rose-500 font-bold">30 題</span> 並填寫你的真實答案。<br/>完成後分享連結給好友，看看誰才是真閨蜜！
-        </p>
-        <div class="mt-4 inline-flex items-center gap-2 px-4 py-1.5 bg-rose-50 text-rose-600 rounded-full text-xs font-semibold">
-          <span>已挑選並完成：</span>
-          <span id="selectedCount" class="text-sm font-bold text-rose-700">0</span> / 30 題
+    <!-- ================= 模式 1: 出題者模式 (先分類、再選題) ================= -->
+    <div id="creatorMode" class="hidden space-y-5">
+      
+      <!-- 說明與選題總進度區 -->
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-rose-100">
+        <div class="flex justify-between items-start">
+          <div>
+            <h2 class="text-lg font-bold text-slate-800">自選 30 道默契考題 💌</h2>
+            <p class="text-xs text-slate-500 mt-1">先點擊分類標籤，挑選題目並標記你的真實答案！</p>
+          </div>
+          <div class="text-right">
+            <span class="text-2xl font-black text-rose-600" id="selectedCount">0</span>
+            <span class="text-xs text-slate-400 font-bold">/30</span>
+          </div>
+        </div>
+
+        <!-- 進度條 -->
+        <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-3">
+          <div id="progressBar" class="bg-rose-500 h-full w-0 transition-all duration-300"></div>
         </div>
       </div>
 
-      <!-- 題庫篩選與列表 -->
-      <div class="space-y-4">
-        <div class="flex gap-2">
-          <input type="text" id="searchInput" placeholder="搜尋題目關鍵字..." class="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400" />
-        </div>
-
-        <div id="questionList" class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-          <!-- 動態注入題目卡片 -->
+      <!-- 類別橫向滑動選單 (分類標籤列) -->
+      <div class="sticky top-14 z-30 bg-gradient-to-br from-pink-50 via-rose-50 to-purple-50 pt-1 pb-2">
+        <div id="categoryTabs" class="flex gap-2 overflow-x-auto no-scrollbar py-1">
+          <!-- 動態生成分類按鈕 -->
         </div>
       </div>
 
-      <!-- 產生連結按鈕 -->
-      <div class="sticky bottom-4 z-20">
+      <!-- 搜尋與快速切換 -->
+      <div class="flex items-center gap-2">
+        <div class="relative flex-1">
+          <input 
+            type="text" 
+            id="searchInput" 
+            placeholder="搜尋目前類別題目..." 
+            class="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 pl-9" 
+          />
+          <span class="absolute left-3 top-2.5 text-slate-400 text-sm">🔍</span>
+        </div>
+        <button 
+          id="viewSelectedToggle" 
+          onclick="toggleOnlySelected()"
+          class="px-3 py-2 bg-white border border-rose-200 text-rose-600 rounded-xl text-xs font-semibold whitespace-nowrap shadow-sm hover:bg-rose-50 transition"
+        >
+          只看已選 (<span id="onlySelectedCount">0</span>)
+        </button>
+      </div>
+
+      <!-- 題目清單容器 -->
+      <div id="questionList" class="space-y-4">
+        <!-- 動態載入該類別題目卡片 -->
+      </div>
+
+      <!-- 底部固定按鈕 -->
+      <div class="sticky bottom-4 z-30">
         <button id="createQuizBtn" disabled class="w-full py-3.5 bg-slate-300 text-white font-bold rounded-xl shadow-lg transition duration-200">
           請先選滿 30 題 (0/30)
         </button>
@@ -71,12 +108,11 @@
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-rose-100 text-center">
         <img id="hostAvatar" class="w-16 h-16 rounded-full mx-auto border-2 border-rose-400 mb-2" src="" />
         <h2 class="text-lg font-bold text-slate-800">正在挑戰 <span id="hostName" class="text-rose-600"></span> 的考卷</h2>
-        <p class="text-xs text-slate-500 mt-1">共 30 題，猜猜對方的真實選擇！</p>
+        <p class="text-xs text-slate-500 mt-1">共 30 題，猜對方的真實選擇！</p>
       </div>
 
-      <!-- 挑戰題目容器 -->
-      <div id="challengeQuestions" class="space-y-6">
-        <!-- 動態注入 30 道挑戰題 -->
+      <div id="challengeQuestions" class="space-y-5">
+        <!-- 挑戰題目 -->
       </div>
 
       <button id="submitAnswerBtn" class="w-full py-3.5 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl shadow-md transition">
@@ -90,38 +126,37 @@
         <div class="text-5xl">🏆</div>
         <h2 class="text-2xl font-black text-slate-800">默契度得分</h2>
         <div class="text-6xl font-black text-rose-500" id="finalScore">0</div>
-        <p class="text-sm font-medium text-slate-600" id="scoreComment">評語分析中...</p>
+        <p class="text-sm font-medium text-slate-600" id="scoreComment">分析中...</p>
       </div>
 
-      <!-- 排行榜清單 -->
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-rose-100">
         <h3 class="font-bold text-slate-800 text-base mb-4 flex items-center gap-2">
           <span>🎖️ 閨蜜排行榜 TOP 20</span>
         </h3>
-        <div id="leaderboardList" class="divide-y divide-slate-100 text-sm">
-          <!-- 動態排行榜 -->
-        </div>
+        <div id="leaderboardList" class="divide-y divide-slate-100 text-sm"></div>
       </div>
 
       <button onclick="window.location.href = window.location.pathname" class="w-full py-3 bg-slate-800 text-white font-semibold rounded-xl">
-        我也要自己出題考朋友 🚀
+        我也要出題考考別人 🚀
       </button>
     </div>
 
   </main>
 
   <script>
-    // ================= 配置設定 =================
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzwOTJbilrwBCMh3TWnWsunenL8JoO8UCC0WeuBAHfBcAIplLGrBguCYihJXgJidvL5/exec"; // 貼上你的 GAS Web App 部署網址
-    const LIFF_ID = "2009456572-EflpADae";                         // 貼上你的 LIFF ID
+    // ================= 請設定你的 GAS 與 LIFF ID =================
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzwOTJbilrwBCMh3TWnWsunenL8JoO8UCC0WeuBAHfBcAIplLGrBguCYihJXgJidvL5/exec";
+    const LIFF_ID = "2009456572-M5AJNSHB";
 
     let currentUser = { id: "guest_" + Math.random().toString(36).substring(7), name: "神秘挑戰者", avatar: "https://via.placeholder.com/100" };
     let allQuestions = [];
-    let selectedQuestions = {}; // { questionId: { ...question, correctAnswer: 0 } }
+    let categories = [];
+    let currentCategory = "全部";
+    let showOnlySelected = false;
+    let selectedQuestions = {}; // { qId: { ...question, correctAnswer: 0 } }
     let targetQuiz = null;
     let challengerAnswers = {};
 
-    // 取得網址 query 參數
     const urlParams = new URLSearchParams(window.location.search);
     const currentQuizId = urlParams.get("quizId");
 
@@ -137,16 +172,14 @@
           }
         }
       } catch (e) {
-        console.warn("LIFF 初始化跳過，進入訪客模式", e);
+        console.warn("LIFF 跳過，以訪客身份開啟", e);
       }
 
-      // 更新頂部使用者介面
       document.getElementById("myName").textContent = currentUser.name;
       document.getElementById("myAvatar").src = currentUser.avatar;
       document.getElementById("myAvatar").classList.remove("hidden");
       document.getElementById("loader").classList.add("hidden");
 
-      // 判斷當前流程：作答模式 vs 出題模式
       if (currentQuizId) {
         startChallengerMode(currentQuizId);
       } else {
@@ -154,39 +187,130 @@
       }
     }
 
-    // ---------------- 出題者模式 ----------------
+    // ================= 出題者模式 =================
     async function startCreatorMode() {
       document.getElementById("creatorMode").classList.remove("hidden");
       try {
         const res = await fetch(`${GAS_API_URL}?action=getAllQuestions`).then(r => r.json());
         if (res.status === "success") {
           allQuestions = res.questions;
-          renderQuestionList(allQuestions);
+          // 提煉出所有不重複的分類
+          const cats = Array.from(new Set(allQuestions.map(q => q.category)));
+          categories = ["全部", ...cats];
+          renderCategoryTabs();
+          renderQuestionList();
         }
       } catch (e) {
-        alert("無法取得題庫，請確認 GAS API 網址設定正確。");
+        alert("題庫獲取失敗，請確認 GAS API 網址與部署權限是否正確。");
       }
+
+      // 搜尋監聽
+      document.getElementById("searchInput").addEventListener("input", () => {
+        renderQuestionList();
+      });
     }
 
-    function renderQuestionList(list) {
-      const container = document.getElementById("questionList");
+    // 渲染分類按鈕
+    function renderCategoryTabs() {
+      const container = document.getElementById("categoryTabs");
       container.innerHTML = "";
-      list.forEach(q => {
+
+      categories.forEach(cat => {
+        const btn = document.createElement("button");
+        const isSelected = (currentCategory === cat && !showOnlySelected);
+        
+        // 計算該分類已被勾選了幾題
+        let catSelectedCount = 0;
+        if (cat === "全部") {
+          catSelectedCount = Object.keys(selectedQuestions).length;
+        } else {
+          catSelectedCount = Object.values(selectedQuestions).filter(q => q.category === cat).length;
+        }
+
+        btn.className = `px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 border ${
+          isSelected 
+            ? 'bg-rose-500 text-white border-rose-500 shadow-sm' 
+            : 'bg-white text-slate-600 border-slate-200 hover:bg-rose-50'
+        }`;
+
+        btn.innerHTML = `
+          <span>${cat}</span>
+          ${catSelectedCount > 0 ? `<span class="px-1.5 py-0.2 text-[10px] rounded-full ${isSelected ? 'bg-white text-rose-600' : 'bg-rose-100 text-rose-600 font-bold'}">${catSelectedCount}</span>` : ''}
+        `;
+
+        btn.onclick = () => {
+          currentCategory = cat;
+          showOnlySelected = false;
+          updateTabStyles();
+          renderQuestionList();
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    function updateTabStyles() {
+      renderCategoryTabs();
+    }
+
+    function toggleOnlySelected() {
+      showOnlySelected = !showOnlySelected;
+      const toggleBtn = document.getElementById("viewSelectedToggle");
+      if (showOnlySelected) {
+        toggleBtn.className = "px-3 py-2 bg-rose-500 border border-rose-500 text-white rounded-xl text-xs font-semibold whitespace-nowrap shadow-sm transition";
+      } else {
+        toggleBtn.className = "px-3 py-2 bg-white border border-rose-200 text-rose-600 rounded-xl text-xs font-semibold whitespace-nowrap shadow-sm hover:bg-rose-50 transition";
+      }
+      renderQuestionList();
+    }
+
+    // 渲染題目清單 (受「目前類別」、「搜尋文字」、「只看已選」篩選)
+    function renderQuestionList() {
+      const container = document.getElementById("questionList");
+      const searchText = document.getElementById("searchInput").value.trim().toLowerCase();
+      container.innerHTML = "";
+
+      let filtered = allQuestions;
+
+      if (showOnlySelected) {
+        const selectedIds = Object.keys(selectedQuestions);
+        filtered = filtered.filter(q => selectedIds.includes(q.id));
+      } else if (currentCategory !== "全部") {
+        filtered = filtered.filter(q => q.category === currentCategory);
+      }
+
+      if (searchText) {
+        filtered = filtered.filter(q => q.text.toLowerCase().includes(searchText));
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="p-8 text-center text-xs text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">此分類暫無相符題目</div>`;
+        return;
+      }
+
+      filtered.forEach(q => {
         const isSelected = !!selectedQuestions[q.id];
         const div = document.createElement("div");
-        div.className = `p-4 rounded-xl border transition-all ${isSelected ? 'bg-rose-50/50 border-rose-300' : 'bg-white border-slate-200'}`;
+        div.className = `p-4 rounded-2xl border transition-all ${
+          isSelected 
+            ? 'bg-rose-50/70 border-rose-300 shadow-sm' 
+            : 'bg-white border-slate-200 hover:border-rose-200'
+        }`;
+
         div.innerHTML = `
-          <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="flex items-center justify-between gap-2 mb-2">
             <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">${q.category}</span>
-            <span class="text-xs text-slate-400 font-mono">${q.id}</span>
+            <div class="flex items-center gap-1.5">
+              ${isSelected ? `<span class="text-[11px] font-bold text-rose-500 bg-rose-100 px-2 py-0.5 rounded-full">已選入</span>` : ''}
+              <span class="text-xs text-slate-400 font-mono">${q.id}</span>
+            </div>
           </div>
           <p class="font-bold text-slate-800 text-sm mb-3">${q.text}</p>
           <div class="grid grid-cols-2 gap-2 text-xs">
             ${q.options.map((opt, idx) => `
               <button type="button" onclick="selectAnswer('${q.id}', ${idx})" 
-                class="p-2.5 rounded-lg border text-left transition 
+                class="p-2.5 rounded-xl border text-left transition 
                 ${selectedQuestions[q.id]?.correctAnswer === idx 
-                  ? 'bg-rose-500 text-white border-rose-500 font-bold' 
+                  ? 'bg-rose-500 text-white border-rose-500 font-bold shadow-sm' 
                   : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}">
                 ${['A','B','C','D'][idx]}. ${opt}
               </button>
@@ -200,38 +324,51 @@
     window.selectAnswer = function(qId, optionIdx) {
       const question = allQuestions.find(item => item.id === qId);
       if (selectedQuestions[qId]) {
-        selectedQuestions[qId].correctAnswer = optionIdx;
+        if (selectedQuestions[qId].correctAnswer === optionIdx) {
+          // 再次點擊相同選項視為「取消選擇該題」
+          delete selectedQuestions[qId];
+        } else {
+          selectedQuestions[qId].correctAnswer = optionIdx;
+        }
       } else {
         if (Object.keys(selectedQuestions).length >= 30) {
-          alert("你已經選滿 30 題囉！若要換題目請先點擊其他題取消。");
+          alert("已經選滿 30 題囉！若要換題，請點擊已選題目取消勾選。");
           return;
         }
         selectedQuestions[qId] = { ...question, correctAnswer: optionIdx };
       }
-      updateCreatorUI();
+      updateCreatorProgress();
     };
 
-    function updateCreatorUI() {
+    function updateCreatorProgress() {
       const count = Object.keys(selectedQuestions).length;
       document.getElementById("selectedCount").textContent = count;
-      const btn = document.getElementById("createQuizBtn");
+      document.getElementById("onlySelectedCount").textContent = count;
+      
+      // 進度條寬度
+      const percentage = Math.min((count / 30) * 100, 100);
+      document.getElementById("progressBar").style.width = `${percentage}%`;
 
+      const btn = document.getElementById("createQuizBtn");
       if (count === 30) {
         btn.disabled = false;
         btn.className = "w-full py-3.5 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl shadow-lg transition duration-200";
-        btn.textContent = "完成 30 題！產生專屬考卷連結 🎁";
+        btn.textContent = "已集滿 30 題！產生考卷連結 🎁";
       } else {
         btn.disabled = true;
         btn.className = "w-full py-3.5 bg-slate-300 text-white font-bold rounded-xl shadow-lg transition duration-200";
         btn.textContent = `請先選滿 30 題 (${count}/30)`;
       }
-      renderQuestionList(allQuestions);
+
+      renderCategoryTabs();
+      renderQuestionList();
     }
 
+    // 出題送出
     document.getElementById("createQuizBtn").addEventListener("click", async () => {
       const btn = document.getElementById("createQuizBtn");
       btn.disabled = true;
-      btn.textContent = "考卷建立中...";
+      btn.textContent = "建立專屬考卷中...";
 
       const payload = {
         action: "createQuiz",
@@ -249,16 +386,15 @@
 
       if (res.status === "success") {
         const shareUrl = `${window.location.origin}${window.location.pathname}?quizId=${res.quizId}`;
-        // 若在 LINE 環境內可呼叫 shareTargetPicker 或發送訊息
         if (liff.isApiAvailable('shareTargetPicker')) {
           liff.shareTargetPicker([
             {
               type: "text",
-              text: `🔥 我製作了「閨蜜默契大挑戰」！\n來看看你到底有多了解我，快點連結來挑戰吧：\n${shareUrl}`
+              text: `🔥 我出好了「閨蜜默契大挑戰」！\n來看看你有多懂我，快點連結測驗：\n${shareUrl}`
             }
           ]).catch(err => console.log(err));
         } else {
-          prompt("請複製你的專屬閨蜜考卷連結分享給好友：", shareUrl);
+          prompt("你的專屬閨蜜大挑戰考卷已生成，請複製連結分享給好友：", shareUrl);
         }
       } else {
         alert("建立失敗：" + res.message);
@@ -266,12 +402,12 @@
       }
     });
 
-    // ---------------- 好友挑戰模式 ----------------
+    // ================= 好友作答模式 =================
     async function startChallengerMode(quizId) {
       document.getElementById("challengerMode").classList.remove("hidden");
       const res = await fetch(`${GAS_API_URL}?action=getQuiz&quizId=${quizId}`).then(r => r.json());
       if (res.status !== "success") {
-        alert("考卷不存在或已被移除");
+        alert("題卷不存在");
         return;
       }
 
@@ -279,7 +415,6 @@
       document.getElementById("hostName").textContent = targetQuiz.userName;
       document.getElementById("hostAvatar").src = targetQuiz.userAvatar || "https://via.placeholder.com/100";
 
-      // 渲染 30 題給挑戰者作答
       const container = document.getElementById("challengeQuestions");
       container.innerHTML = "";
       targetQuiz.questions.forEach((q, index) => {
@@ -306,13 +441,13 @@
 
     document.getElementById("submitAnswerBtn").addEventListener("click", async () => {
       if (Object.keys(challengerAnswers).length < targetQuiz.questions.length) {
-        alert(`還有題目沒寫完喔！（已完成 ${Object.keys(challengerAnswers).length} / ${targetQuiz.questions.length} 題）`);
+        alert(`還有題目尚未作答！（目前進度 ${Object.keys(challengerAnswers).length} / ${targetQuiz.questions.length} 題）`);
         return;
       }
 
       const btn = document.getElementById("submitAnswerBtn");
       btn.disabled = true;
-      btn.textContent = "成績計算中...";
+      btn.textContent = "結算成績中...";
 
       const payload = {
         action: "submitAnswers",
@@ -336,19 +471,18 @@
       }
     });
 
-    // ---------------- 結果與排行榜 ----------------
+    // ================= 結果與榜單 =================
     async function showResult(score) {
       document.getElementById("challengerMode").classList.add("hidden");
       document.getElementById("resultMode").classList.remove("hidden");
       document.getElementById("finalScore").textContent = score;
 
-      let comment = "塑料姐妹花，感情有待加強！🤣";
-      if (score >= 90) comment = "真・靈魂伴侶！你比本人還了解對方！🔥";
-      else if (score >= 70) comment = "超級好閨蜜，默契滿分！💖";
-      else if (score >= 50) comment = "一般好友，有些小秘密還沒聊開喔！😜";
+      let comment = "塑料姐妹花，感情需要再加溫！🤣";
+      if (score >= 90) comment = "神級閨蜜！你根本是住在對方心裡吧！🔥";
+      else if (score >= 70) comment = "超級好姐妹，默契指數極高！💖";
+      else if (score >= 50) comment = "普通好友，要多約出來吃宵夜八卦囉！😜";
       document.getElementById("scoreComment").textContent = comment;
 
-      // 重新抓取排行榜更新名次
       const res = await fetch(`${GAS_API_URL}?action=getQuiz&quizId=${currentQuizId}`).then(r => r.json());
       if (res.status === "success") {
         const lbContainer = document.getElementById("leaderboardList");
@@ -359,7 +493,7 @@
           row.innerHTML = `
             <div class="flex items-center gap-3">
               <span class="w-6 font-bold text-center ${idx < 3 ? 'text-rose-500 font-black' : 'text-slate-400'}">${idx + 1}</span>
-              <img class="w-9 h-9 rounded-full border border-slate-200" src="${item.avatar || 'https://via.placeholder.com/80'}" />
+              <img class="w-8 h-8 rounded-full border border-slate-200" src="${item.avatar || 'https://via.placeholder.com/80'}" />
               <span class="font-medium text-slate-700">${item.name}</span>
             </div>
             <span class="font-bold text-rose-600">${item.score} 分</span>
