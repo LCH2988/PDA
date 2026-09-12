@@ -179,15 +179,6 @@
       font-size: 30px;
     }
 
-    .toolbar {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-    }
-
     button,
     .btn {
       border: 0;
@@ -460,12 +451,8 @@
      ****************************************************/
     const LIFF_ID = "2009456572-588gzru4";
 
-    /*
-      重要：
-      這裡請使用你 Apps Script 最新部署的 /exec URL。
-      修改 GAS 後一定要「新增版本」並重新部署。
-    */
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzzIXxNrzLdyVzX0TLDqdByhvLwKmg30MtjhUBHxM7EXpMI03ze2z0yLhqcoSY5Nrds/exec";
+    // 請確認這是你 GAS 最新部署的 /exec URL
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycby-4jkKYzd7p6hd0KZ4ygNh3b1yy12_2darscme0oAddxAV3MrlmEd9-8diikGWG-A4/exec";
 
     const SYSTEM_NAME = "台灣帕金森病友權益促進會管理系統";
     const MAX_FILE_SIZE = 8 * 1024 * 1024;
@@ -474,6 +461,7 @@
     let idToken = null;
     let currentUser = null;
     let currentPage = "dashboard";
+    let isReloginRunning = false;
 
     const pageTitles = {
       dashboard: "管理總覽",
@@ -485,6 +473,9 @@
       users: "使用者管理"
     };
 
+    /****************************************************
+     * LIFF 初始化與登入
+     ****************************************************/
     async function main() {
       showLoading(true);
 
@@ -504,7 +495,8 @@
         idToken = liff.getIDToken();
 
         if (!idToken) {
-          throw new Error("無法取得 LINE ID Token，請確認 LIFF scope 是否包含 openid。");
+          forceRelogin("無法取得 LINE ID Token，請重新登入。");
+          return;
         }
 
         lineProfile = await liff.getProfile();
@@ -521,60 +513,105 @@
 
         document.getElementById("app").classList.remove("hidden");
       } catch (err) {
-        alert("初始化失敗：" + getErrorMessage(err));
         console.error(err);
+
+        const msg = getErrorMessage(err);
+
+        if (isTokenExpiredMessage(msg)) {
+          forceRelogin("LINE 登入狀態已過期，請重新登入。");
+          return;
+        }
+
+        alert("初始化失敗：" + msg);
       } finally {
         showLoading(false);
       }
     }
 
     function loginWithLine() {
-      liff.login();
+      liff.login({
+        redirectUri: getCleanCurrentUrl()
+      });
     }
 
     function logout() {
-      if (typeof liff !== "undefined" && liff.isLoggedIn()) {
-        liff.logout();
+      try {
+        if (typeof liff !== "undefined" && liff.isLoggedIn()) {
+          liff.logout();
+        }
+      } catch (e) {
+        console.warn("logout failed", e);
       }
-      location.reload();
+
+      location.href = getCleanCurrentUrl() + "?t=" + Date.now();
     }
 
-    function showUnregistered() {
-      document.getElementById("loginBlock").classList.remove("hidden");
-      document.getElementById("loginBlock").innerHTML = `
-        <div class="login-card">
-          <h2>尚未啟用帳號</h2>
-          <p>您的 LINE 帳號尚未被加入系統使用者。</p>
-          <div class="notice" style="text-align:left;">
-            <p><strong>請提供以下 LINE User ID 給系統管理員：</strong></p>
-            <p style="word-break:break-all;">${safe(lineProfile && lineProfile.userId)}</p>
-            <p>LINE 名稱：${safe(lineProfile && lineProfile.displayName)}</p>
-          </div>
-          <button class="btn-secondary" onclick="logout()">登出</button>
-          <button class="btn-primary" onclick="registerFirstAdminPrompt()">建立第一位管理員</button>
-        </div>
-      `;
+    function forceRelogin(message) {
+      if (isReloginRunning) return;
+      isReloginRunning = true;
+
+      try {
+        if (typeof liff !== "undefined" && liff.isLoggedIn()) {
+          liff.logout();
+        }
+      } catch (e) {
+        console.warn("LIFF logout failed", e);
+      }
+
+      alert(message || "LINE 登入狀態已過期，請重新登入。");
+
+      liff.login({
+        redirectUri: getCleanCurrentUrl() + "?t=" + Date.now()
+      });
     }
 
-    function registerFirstAdminPrompt() {
-      const email = prompt("若這是全新系統，可建立第一位系統管理員。請輸入 Email：");
-      if (!email) return;
-
-      const setupKey = prompt("請輸入初始化金鑰：");
-      if (!setupKey) return;
-
-      callGas("apiRegisterFirstAdminByToken", idToken, email, setupKey)
-        .then(() => {
-          alert("第一位管理員已建立，請重新整理");
-          location.reload();
-        })
-        .catch(handleError);
+    function getCleanCurrentUrl() {
+      return window.location.origin + window.location.pathname;
     }
 
+    function isTokenExpiredMessage(msg) {
+      msg = String(msg || "");
+      return (
+        msg.includes("IdToken expired") ||
+        msg.includes("id token expired") ||
+        msg.includes("invalid_request") ||
+        msg.includes("LINE 身分驗證失敗") ||
+        msg.includes("登入狀態已過期")
+      );
+    }
+
+    function getFreshIdToken() {
+      if (typeof liff === "undefined" || !liff.isLoggedIn()) {
+        forceRelogin("LINE 尚未登入，請重新登入。");
+        throw new Error("LINE 尚未登入");
+      }
+
+      const token = liff.getIDToken();
+
+      if (!token) {
+        forceRelogin("無法取得 LINE ID Token，請重新登入。");
+        throw new Error("無法取得 LINE ID Token");
+      }
+
+      idToken = token;
+      return token;
+    }
+
+    /****************************************************
+     * GAS API 呼叫
+     ****************************************************/
     async function callGas(functionName, ...args) {
       showLoading(true);
 
       try {
+        if (typeof liff !== "undefined" && liff.isLoggedIn() && args.length > 0) {
+          const freshToken = liff.getIDToken();
+          if (freshToken) {
+            args[0] = freshToken;
+            idToken = freshToken;
+          }
+        }
+
         const response = await fetch(WEB_APP_URL, {
           method: "POST",
           redirect: "follow",
@@ -601,7 +638,14 @@
         }
 
         if (!result.ok) {
-          throw new Error(result.message || "後端執行失敗");
+          const msg = result.message || "後端執行失敗";
+
+          if (isTokenExpiredMessage(msg)) {
+            forceRelogin("LINE 登入狀態已過期，請重新登入。");
+            throw new Error("LINE 登入狀態已過期，請重新登入。");
+          }
+
+          throw new Error(msg);
         }
 
         return result.data;
@@ -612,7 +656,15 @@
 
     function handleError(err) {
       console.error(err);
-      alert(getErrorMessage(err));
+
+      const msg = getErrorMessage(err);
+
+      if (isTokenExpiredMessage(msg)) {
+        forceRelogin("LINE 登入狀態已過期，請重新登入。");
+        return;
+      }
+
+      alert(msg);
     }
 
     function getErrorMessage(err) {
@@ -627,8 +679,43 @@
       }
     }
 
+    /****************************************************
+     * 使用者與版面
+     ****************************************************/
     async function loadCurrentUser() {
-      currentUser = await callGas("apiGetCurrentUserByToken", idToken);
+      currentUser = await callGas("apiGetCurrentUserByToken", getFreshIdToken());
+    }
+
+    function showUnregistered() {
+      document.getElementById("loginBlock").classList.remove("hidden");
+      document.getElementById("loginBlock").innerHTML = `
+        <div class="login-card">
+          <h2>尚未啟用帳號</h2>
+          <p>您的 LINE 帳號尚未被加入系統使用者。</p>
+          <div class="notice" style="text-align:left;">
+            <p><strong>請提供以下 LINE User ID 給系統管理員：</strong></p>
+            <p style="word-break:break-all;">${safe(lineProfile && lineProfile.userId)}</p>
+            <p>LINE 名稱：${safe(lineProfile && lineProfile.displayName)}</p>
+          </div>
+          <button class="btn-secondary" onclick="logout()">登出</button>
+          <button class="btn-primary" onclick="registerFirstAdminPrompt()">建立第一位管理員</button>
+        </div>
+      `;
+    }
+
+    function registerFirstAdminPrompt() {
+      const email = prompt("若這是全新系統，可建立第一位系統管理員。請輸入 Email：");
+      if (!email) return;
+
+      const setupKey = prompt("請輸入初始化金鑰：");
+      if (!setupKey) return;
+
+      callGas("apiRegisterFirstAdminByToken", getFreshIdToken(), email, setupKey)
+        .then(() => {
+          alert("第一位管理員已建立，請重新整理");
+          location.reload();
+        })
+        .catch(handleError);
     }
 
     function setupLayout() {
@@ -690,13 +777,16 @@
       if (!confirm("是否初始化系統分頁與 Drive 文件庫？")) return;
 
       try {
-        const res = await callGas("apiInitSystemByToken", idToken);
+        const res = await callGas("apiInitSystemByToken", getFreshIdToken());
         alert(res.message || "初始化完成");
       } catch (err) {
         handleError(err);
       }
     }
 
+    /****************************************************
+     * 共用工具
+     ****************************************************/
     function money(v) {
       const n = Number(v || 0);
       if (!isFinite(n)) return "NT$ 0";
@@ -784,9 +874,25 @@
       return new Date().toISOString().slice(0, 10);
     }
 
+    function val(id) {
+      const el = document.getElementById(id);
+      return el ? String(el.value || "").trim() : "";
+    }
+
+    function formatDateClient(v) {
+      if (!v) return "";
+      if (typeof v === "string") {
+        return v.slice(0, 10);
+      }
+      return v;
+    }
+
+    /****************************************************
+     * Dashboard
+     ****************************************************/
     async function loadDashboard() {
       try {
-        const data = await callGas("apiGetDashboardByToken", idToken);
+        const data = await callGas("apiGetDashboardByToken", getFreshIdToken());
 
         document.getElementById("dashboard").innerHTML = `
           <div class="grid grid-4">
@@ -815,9 +921,12 @@
       `;
     }
 
+    /****************************************************
+     * Members
+     ****************************************************/
     async function loadMembers() {
       try {
-        const rows = await callGas("apiListMembersByToken", idToken);
+        const rows = await callGas("apiListMembersByToken", getFreshIdToken());
 
         document.getElementById("members").innerHTML = `
           ${currentUser.permissions.canEditMembers ? memberForm() : ""}
@@ -876,7 +985,7 @@
       };
 
       try {
-        const res = await callGas("apiCreateMemberByToken", idToken, payload);
+        const res = await callGas("apiCreateMemberByToken", getFreshIdToken(), payload);
         alert(res.message);
         loadMembers();
       } catch (err) {
@@ -884,9 +993,12 @@
       }
     }
 
+    /****************************************************
+     * Donations
+     ****************************************************/
     async function loadDonations() {
       try {
-        const rows = await callGas("apiListDonationsByToken", idToken);
+        const rows = await callGas("apiListDonationsByToken", getFreshIdToken());
 
         document.getElementById("donations").innerHTML = `
           ${currentUser.permissions.canEditDonations ? donationForm() : ""}
@@ -950,7 +1062,7 @@
       };
 
       try {
-        const res = await callGas("apiCreateDonationByToken", idToken, payload);
+        const res = await callGas("apiCreateDonationByToken", getFreshIdToken(), payload);
         alert(res.message);
         loadDonations();
       } catch (err) {
@@ -958,9 +1070,12 @@
       }
     }
 
+    /****************************************************
+     * Expenses
+     ****************************************************/
     async function loadExpenses() {
       try {
-        const rows = await callGas("apiListExpensesByToken", idToken);
+        const rows = await callGas("apiListExpensesByToken", getFreshIdToken());
 
         document.getElementById("expenses").innerHTML = `
           ${currentUser.permissions.canEditExpenses ? expenseForm() : ""}
@@ -1025,7 +1140,7 @@
       };
 
       try {
-        const res = await callGas("apiCreateExpenseByToken", idToken, payload);
+        const res = await callGas("apiCreateExpenseByToken", getFreshIdToken(), payload);
         alert(res.message);
         loadExpenses();
       } catch (err) {
@@ -1033,9 +1148,12 @@
       }
     }
 
+    /****************************************************
+     * Services
+     ****************************************************/
     async function loadServices() {
       try {
-        const rows = await callGas("apiListServicesByToken", idToken);
+        const rows = await callGas("apiListServicesByToken", getFreshIdToken());
 
         document.getElementById("services").innerHTML = `
           ${currentUser.permissions.canEditServices ? serviceForm() : ""}
@@ -1097,7 +1215,7 @@
       };
 
       try {
-        const res = await callGas("apiCreateServiceByToken", idToken, payload);
+        const res = await callGas("apiCreateServiceByToken", getFreshIdToken(), payload);
         alert(res.message);
         loadServices();
       } catch (err) {
@@ -1105,6 +1223,9 @@
       }
     }
 
+    /****************************************************
+     * Files
+     ****************************************************/
     function renderFileUpload() {
       document.getElementById("files").innerHTML = `
         <div class="card">
@@ -1169,7 +1290,7 @@
       };
 
       try {
-        const res = await callGas("apiUploadFileByToken", idToken, payload);
+        const res = await callGas("apiUploadFileByToken", getFreshIdToken(), payload);
         alert("上傳完成：" + res.url);
       } catch (err) {
         handleError(err);
@@ -1191,9 +1312,12 @@
       });
     }
 
+    /****************************************************
+     * Users
+     ****************************************************/
     async function loadUsers() {
       try {
-        const rows = await callGas("apiListUsersByToken", idToken);
+        const rows = await callGas("apiListUsersByToken", getFreshIdToken());
 
         document.getElementById("users").innerHTML = `
           ${userForm()}
@@ -1254,25 +1378,12 @@
       };
 
       try {
-        const res = await callGas("apiCreateUserByToken", idToken, payload);
+        const res = await callGas("apiCreateUserByToken", getFreshIdToken(), payload);
         alert(res.message);
         loadUsers();
       } catch (err) {
         handleError(err);
       }
-    }
-
-    function val(id) {
-      const el = document.getElementById(id);
-      return el ? String(el.value || "").trim() : "";
-    }
-
-    function formatDateClient(v) {
-      if (!v) return "";
-      if (typeof v === "string") {
-        return v.slice(0, 10);
-      }
-      return v;
     }
 
     main();
