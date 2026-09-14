@@ -929,7 +929,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // 部署設定
 // =======================================================
 // 請替換為你的 Google Apps Script Web App URL
-const API_BASE='https://script.google.com/macros/s/AKfycbyKiQXcztiVz6xQqBFGWpsCf6z7D-9ZrMmrR28fwtyo_H1M2Be2p0dvlrRXYG3P9Cct/exec';
+const API_BASE='https://script.google.com/macros/s/AKfycbwmUOniXSX43HqHz4HXHLBDFXetSEiHmYQ-itatxhiXebyX6Lpu6m1zpINjqfJxL6tH/exec';
 
 const LIFF_ID='2009456572-588gzru4';
 const ORG_NAME='社團法人台灣帕金森病友權益促進會';
@@ -1029,47 +1029,67 @@ const ROUTES={
   forumCreatePost:renderForumCreatePost
 };
 
+function isAdminPage(page) {
+  return (
+    page === 'adminHome' ||
+    page.startsWith('member') ||
+    page.startsWith('finance') ||
+    page.startsWith('expense') ||
+    page.startsWith('receipt') ||
+    page.startsWith('voucher') ||
+    page.startsWith('budget') ||
+    page.startsWith('project') ||
+    page.startsWith('subject') ||
+    page.startsWith('account') ||
+    page.startsWith('staff') ||
+    page.startsWith('system') ||
+    page.startsWith('announce') ||
+    page === 'reportCenter'
+  );
+}
+
+function updateNavActive(page) {
+  document.querySelectorAll('.nitem').forEach(el => el.classList.remove('active'));
+
+  if(page === 'home') {
+    $('navHome')?.classList.add('active');
+  } else if(isAdminPage(page)) {
+    $('navAdmin')?.classList.remove('hide');
+    $('navAdmin')?.classList.add('active');
+  }
+}
+
+
 function go(page,params={},push=true){
   if(push&&APP.page&&APP.page!==page){
     APP.history.push({page:APP.page,params:APP._params||{}});
   }
+
   APP.page=page;
   APP._params=params||{};
 
-  document.querySelectorAll('.nitem').forEach(el=>el.classList.remove('active'));
-
-  if(page==='home'){
-    $('navHome').classList.add('active');
-  }else if(
-    page==='adminHome'||page.startsWith('member')||page.startsWith('finance')||
-    page.startsWith('expense')||page.startsWith('receipt')||page.startsWith('voucher')||
-    page.startsWith('budget')||page.startsWith('project')||page.startsWith('subject')||
-    page.startsWith('account')||page.startsWith('staff')||page.startsWith('system')||
-    page.startsWith('announce')||page==='reportCenter'
-  ){
-    $('navAdmin')?.classList.remove('hide');
-    $('navAdmin')?.classList.add('active');
-  }
-
+  updateNavActive(page);
   showBack(APP.history.length>0);
+
   const fn=ROUTES[page];
   if(fn)fn(params||{});
 }
 
+
 function goBack(){
   if(!APP.history.length)return;
+
   const prev=APP.history.pop();
   APP.page=prev.page;
   APP._params=prev.params||{};
 
-  document.querySelectorAll('.nitem').forEach(el=>el.classList.remove('active'));
-  if(prev.page==='home'){
-    $('navHome').classList.add('active');
-  }
+  updateNavActive(prev.page);
   showBack(APP.history.length>0);
+
   const fn=ROUTES[prev.page];
   if(fn)fn(prev.params||{});
 }
+
 
 // =======================================================
 // 字級與防手震模式
@@ -1124,7 +1144,6 @@ async function getFileData(fileInputId){
     reader.readAsDataURL(file);
   });
 }
-
 const ACTION_ALIAS = {
   'auth.login': 'auth.loginByPhone',
   'auth.lineLogin': 'auth.loginByLine',
@@ -1134,6 +1153,8 @@ const ACTION_ALIAS = {
 };
 
 async function api(action, data = {}) {
+  action = ACTION_ALIAS[action] || action;
+
   const payload = {
     action,
     data: {
@@ -1164,6 +1185,7 @@ async function api(action, data = {}) {
     throw new Error('API 回傳不是 JSON：' + text.substring(0, 120));
   }
 }
+
 
 
 
@@ -2527,7 +2549,7 @@ function renderEditProfile() {
 async function saveProfile() {
   const payload = {
     memberId: APP.user?.memberId || '',
-    nickname: $('editName')?.value.trim() || '',
+    name: $('editName')?.value.trim() || '',
     phone: $('editPhone')?.value.trim() || '',
     diagnosisYear: $('editDiagnosisYear')?.value.trim() || '',
     hospital: $('editHospital')?.value.trim() || '',
@@ -2552,6 +2574,7 @@ async function saveProfile() {
     go('memberCenter');
   });
 }
+
 
 
 // =======================================================
@@ -4290,6 +4313,10 @@ async function doLogin() {
 // 登入 / 註冊 - 修復補丁
 // =======================================================
 
+// =======================================================
+// 登入 / 註冊
+// =======================================================
+
 function openLogin() {
   openModal(`
     <div class="modal-title">🔑 登入</div>
@@ -4310,6 +4337,7 @@ function openLogin() {
 
     <button class="btn btn-primary" onclick="doLogin()">登入</button>
     <button class="btn btn-line" onclick="doLineLogin()">💚 LINE 登入</button>
+    <button class="btn btn-outline" onclick="openRegister()">✏️ 申請加入會員</button>
     <button class="btn btn-ghost" onclick="closeModal()">取消</button>
   `);
 }
@@ -4341,24 +4369,46 @@ async function doLogin() {
     return;
   }
 
-  await runApi('auth.loginByPhone', { name, phone }, (res) => {
+  await runApi('auth.loginByPhone', { name, phone }, async (res) => {
     const user = res.member || res.user;
 
     if(user) {
       APP.user = user;
       localStorage.setItem('parkUser', JSON.stringify(APP.user));
       updateLoginButton();
+
+      // 如果目前在 LIFF 裡，且會員尚未綁定 LINE，登入後自動嘗試綁定
+      if(APP.liffProfile?.userId && !APP.user.lineId) {
+        try {
+          const bindRes = await api('auth.completeLineProfile', {
+            lineId: APP.liffProfile.userId,
+            lineName: APP.liffProfile.displayName || '',
+            name,
+            phone
+          });
+
+          if(bindRes.success && bindRes.member) {
+            APP.user = bindRes.member;
+            localStorage.setItem('parkUser', JSON.stringify(APP.user));
+            updateLoginButton();
+            toast('登入成功，並已完成 LINE 綁定！', 's');
+          } else {
+            toast('登入成功！', 's');
+          }
+        } catch(e) {
+          toast('登入成功，但 LINE 綁定失敗', 'w');
+        }
+      } else {
+        toast('登入成功！', 's');
+      }
+
       closeModal();
-      toast('登入成功！', 's');
-      go('home');
+      go('home', {}, false);
     } else {
       toast(res.message || '登入失敗，沒有取得會員資料', 'e');
     }
   });
 }
-
-
-
 
 function openRegister() {
   openModal(`
@@ -4379,6 +4429,16 @@ function openRegister() {
     </div>
 
     <div class="fg">
+      <label class="flabel">身分證字號 / 統一編號</label>
+      <input type="text" id="regIdentityId" class="fc" placeholder="選填，開立收據時可使用">
+    </div>
+
+    <div class="fg">
+      <label class="flabel">地址</label>
+      <input type="text" id="regAddress" class="fc" placeholder="選填">
+    </div>
+
+    <div class="fg">
       <label class="flabel">確診年份</label>
       <input type="text" id="regDiagnosisYear" class="fc" placeholder="例如：2018">
     </div>
@@ -4393,10 +4453,61 @@ function openRegister() {
       <input type="text" id="regDoctor" class="fc" placeholder="例如：陳醫師">
     </div>
 
+    <div class="fg">
+      <label class="flabel">目前服用藥物</label>
+      <input type="text" id="regMedication" class="fc" placeholder="選填">
+    </div>
+
+    <div class="fg">
+      <label class="flabel">手術病史</label>
+      <input type="text" id="regSurgery" class="fc" placeholder="例如：DBS，無則可留空">
+    </div>
+
+    <div class="fg">
+      <label class="flabel" style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="regHealthConsent" style="width:24px;height:24px;">
+        我同意提供健康紀錄作為自我管理與服務參考
+      </label>
+    </div>
+
     <button class="btn btn-primary" onclick="doRegister()">送出申請</button>
     <button class="btn btn-ghost" onclick="closeModal()">取消</button>
   `);
 }
+
+async function doRegister() {
+  const name = $('regName')?.value.trim() || '';
+  const phone = $('regPhone')?.value.trim() || '';
+
+  if(!name) {
+    toast('請輸入姓名', 'w');
+    return;
+  }
+
+  if(!phone) {
+    toast('請輸入電話', 'w');
+    return;
+  }
+
+  const payload = {
+    name,
+    phone,
+    identityId: $('regIdentityId')?.value.trim() || '',
+    address: $('regAddress')?.value.trim() || '',
+    diagnosisYear: $('regDiagnosisYear')?.value.trim() || '',
+    hospital: $('regHospital')?.value.trim() || '',
+    doctor: $('regDoctor')?.value.trim() || '',
+    medication: $('regMedication')?.value.trim() || '',
+    surgery: $('regSurgery')?.value.trim() || '',
+    healthConsent: $('regHealthConsent')?.checked ? 'Y' : 'N'
+  };
+
+  await runApi('auth.registerByPhone', payload, (res) => {
+    toast(res.message || '申請已送出，等待審核！', 's');
+    closeModal();
+  });
+}
+
 
 
 async function doLogin() {
