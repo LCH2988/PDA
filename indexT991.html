@@ -929,7 +929,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // 部署設定
 // =======================================================
 // 請替換為你的 Google Apps Script Web App URL
-const API_BASE='https://script.google.com/macros/s/AKfycbyjy_jZ4xYSbLY6rrGrYrQpwZRW2TfnMgow-Q9vDsEMwIGPIIppnhoXgDr_gKYuY1dM/exec';
+const API_BASE='https://script.google.com/macros/s/AKfycbzLNQPJge_OfAocAu4scahmTSbqTxiPJtnE1HNq2_MWdcNTneSWHfo5yHz36bkM8JRZ/exec';
 
 const LIFF_ID='2009456572-588gzru4';
 const ORG_NAME='社團法人台灣帕金森病友權益促進會';
@@ -1004,7 +1004,7 @@ const ROUTES={
   home:renderHome,
   healthCenter:renderHealthCenter,
   memberCenter:renderMemberCenter,
-  editProfile:renderMemberCenter,
+  editProfile:renderEditProfile,
   myPayments:renderMyPayments,
   myDonations:renderMyDonations,
   adminHome:renderAdminHome,
@@ -1125,9 +1125,19 @@ async function getFileData(fileInputId){
   });
 }
 
+const ACTION_ALIAS = {
+  'auth.login': 'auth.loginByPhone',
+  'auth.lineLogin': 'auth.loginByLine',
+  'member.register': 'auth.registerByPhone',
+  'member.list': 'member.listAll',
+  'member.detail': 'member.getDetail'
+};
+
 async function api(action, data = {}) {
+  const realAction = ACTION_ALIAS[action] || action;
+
   const payload = {
-    action,
+    action: realAction,
     data: {
       ...data,
       operatorLineId: APP.user?.lineId || APP.liffProfile?.userId || '',
@@ -1149,6 +1159,7 @@ async function api(action, data = {}) {
   if (!res.ok) throw new Error('API 錯誤 ' + res.status);
   return JSON.parse(await res.text());
 }
+
 
 async function runApi(action,data={},onSuccess){
   showLoad();
@@ -1284,17 +1295,24 @@ function renderLoggedOutHome(){
 
 async function loadHomeAnnouncements(){
   try{
-    const res=await api('announcement.list',{target:'全部'});
-    const area=$('homeAnnList');
-    if(!area)return;
-    if(!res.success||!res.items||!res.items.length){
-      area.innerHTML=`<div class="empty">目前沒有公告</div>`;
+    const res = await api('announcement.list', { target:'全部' });
+    const area = $('homeAnnList');
+    if(!area) return;
+
+    if(!res.success) {
+      area.innerHTML = `<div class="empty">公告載入失敗：${esc(res.message || '')}</div>`;
       return;
     }
-    area.innerHTML=res.items.slice(0,3).map(r=>`
+
+    if(!res.items || !res.items.length){
+      area.innerHTML = `<div class="empty">目前沒有公告</div>`;
+      return;
+    }
+
+    area.innerHTML = res.items.slice(0,3).map(r => `
       <div style="padding:12px;border-bottom:1px solid var(--border);">
         <div style="font-weight:900;font-size:var(--fs-base);">
-          ${String(r.pinned)==='Y'?'📌 ':''}${esc(r.title)}
+          ${String(r.pinned)==='Y' ? '📌 ' : ''}${esc(r.title)}
         </div>
         <div style="font-size:var(--fs-xs);color:var(--muted);margin-top:4px;">
           ${esc(fmtDate(r.date))} ｜ ${esc(r.category)}
@@ -1304,8 +1322,14 @@ async function loadHomeAnnouncements(){
         </div>
       </div>
     `).join('');
-  }catch(e){}
+  } catch(e) {
+    const area = $('homeAnnList');
+    if(area) {
+      area.innerHTML = `<div class="empty">公告連線失敗：${esc(e.message)}</div>`;
+    }
+  }
 }
+
 
 function renderLoggedInHome(){
   const u=APP.user||{};
@@ -1991,18 +2015,20 @@ async function saveHealthRecord() {
   const payload = {
     mood: selectedMood,
     state: currentHealthState,
-    meds: $('healthMeds').value.trim(),
+    meds: $('healthMeds')?.value.trim() || '',
     exerciseMins: exerciseMinutes,
-    exercises: $('healthExercises').value.trim(),
-    symptoms: $('healthSymptoms').value.trim(),
-    doctorQuestion: $('healthDoctorQuestion').value.trim()
+    exercises: $('healthExercises')?.value.trim() || '',
+    symptoms: $('healthSymptoms')?.value.trim() || '',
+    doctorQuestion: $('healthDoctorQuestion')?.value.trim() || '',
+    name: APP.user?.name || ''
   };
 
-  await runApi('health.save', payload, (res) => {
+  await runApi('health.save', payload, () => {
     toast('健康紀錄已儲存！', 's');
     loadHealthStats();
   });
 }
+
 
 async function loadHealthStats() {
   try {
@@ -2494,25 +2520,33 @@ function renderEditProfile() {
 
 async function saveProfile() {
   const payload = {
-    name: $('editName').value.trim(),
-    phone: $('editPhone').value.trim(),
-    diagnosisYear: $('editDiagnosisYear').value.trim(),
-    hospital: $('editHospital').value.trim(),
-    doctor: $('editDoctor').value.trim(),
-    medication: $('editMedication').value.trim(),
-    surgery: $('editSurgery').value.trim()
+    memberId: APP.user?.memberId || '',
+    nickname: $('editName')?.value.trim() || '',
+    phone: $('editPhone')?.value.trim() || '',
+    diagnosisYear: $('editDiagnosisYear')?.value.trim() || '',
+    hospital: $('editHospital')?.value.trim() || '',
+    doctor: $('editDoctor')?.value.trim() || '',
+    medication: $('editMedication')?.value.trim() || '',
+    surgery: $('editSurgery')?.value.trim() || ''
   };
 
-  await runApi('member.updateProfile', payload, (res) => {
+  await runApi('member.updateProfile', payload, async () => {
     toast('資料已更新！', 's');
-    // 更新本地使用者資料
-    if(res.user) {
-      APP.user = res.user;
+
+    const detail = await api('member.getDetail', {
+      memberId: APP.user?.memberId || ''
+    });
+
+    if(detail.success && detail.member) {
+      APP.user = detail.member;
       localStorage.setItem('parkUser', JSON.stringify(APP.user));
+      updateLoginButton();
     }
+
     go('memberCenter');
   });
 }
+
 
 // =======================================================
 // 會費模組
@@ -2601,25 +2635,42 @@ async function loadMyPayments() {
 }
 
 async function submitPayment() {
-  const year = $('payYear').value;
-  const amount = Number($('payAmount').value);
-  const method = $('payMethod').value;
-  const date = $('payDate').value;
-  const note = $('payNote').value.trim();
+  const year = $('payYear')?.value || '';
+  const amount = Number($('payAmount')?.value || 0);
+  const method = $('payMethod')?.value || '';
+  const date = $('payDate')?.value || '';
+  const note = $('payNote')?.value.trim() || '';
 
-  if(!amount || amount <= 0) { toast('請填寫正確金額', 'w'); return; }
-  if(!date) { toast('請填寫匯款日期', 'w'); return; }
+  if(!amount || amount <= 0) {
+    toast('請填寫正確金額', 'w');
+    return;
+  }
+
+  if(!date) {
+    toast('請填寫匯款日期', 'w');
+    return;
+  }
 
   const fileData = await getFileData('payFile');
 
-  const payload = { year, amount, method, date, note };
+  const payload = {
+    year,
+    amount,
+    method,
+    date,
+    note,
+    name: APP.user?.name || '',
+    phone: APP.user?.phone || ''
+  };
+
   if(fileData) payload.file = fileData;
 
-  await runApi('payment.apply', payload, (res) => {
+  await runApi('payment.apply', payload, () => {
     toast('會費申報成功！', 's');
     loadMyPayments();
   });
 }
+
 
 // =======================================================
 // 捐款模組
@@ -2717,27 +2768,49 @@ async function loadMyDonations() {
 }
 
 async function submitDonation() {
-  const amount = Number($('donAmount').value);
-  const identityId = $('donIdentityId').value.trim();
-  const purpose = $('donPurpose').value;
-  const method = $('donMethod').value;
-  const date = $('donDate').value;
-  const note = $('donNote').value.trim();
+  const amount = Number($('donAmount')?.value || 0);
+  const identityId = $('donIdentityId')?.value.trim() || '';
+  const purpose = $('donPurpose')?.value || '';
+  const method = $('donMethod')?.value || '';
+  const date = $('donDate')?.value || '';
+  const note = $('donNote')?.value.trim() || '';
 
-  if(!amount || amount <= 0) { toast('請填寫正確金額', 'w'); return; }
-  if(!identityId) { toast('請填寫身分證字號或統一編號', 'w'); return; }
-  if(!date) { toast('請填寫匯款日期', 'w'); return; }
+  if(!amount || amount <= 0) {
+    toast('請填寫正確金額', 'w');
+    return;
+  }
+
+  if(!identityId) {
+    toast('請填寫身分證字號或統一編號', 'w');
+    return;
+  }
+
+  if(!date) {
+    toast('請填寫匯款日期', 'w');
+    return;
+  }
 
   const fileData = await getFileData('donFile');
 
-  const payload = { amount, identityId, purpose, method, date, note };
+  const payload = {
+    amount,
+    identityId,
+    purpose,
+    method,
+    date,
+    note,
+    name: APP.user?.name || '',
+    phone: APP.user?.phone || ''
+  };
+
   if(fileData) payload.file = fileData;
 
-  await runApi('donation.apply', payload, (res) => {
+  await runApi('donation.apply', payload, () => {
     toast('捐款申報成功，感謝您的愛心！', 's');
     loadMyDonations();
   });
 }
+
 
 // =======================================================
 // 後台管理
@@ -2888,27 +2961,60 @@ function renderMemberManage() {
 
 async function loadMemberList() {
   const keyword = $('memberSearch')?.value?.trim() || '';
+
   try {
-    const res = await api('member.list', { keyword });
+    const res = await api('member.listAll', {});
     const area = $('memberList');
     if(!area) return;
-    if(!res.success || !res.items || !res.items.length) {
+
+    if(!res.success) {
+      area.innerHTML = `<div class="empty">${esc(res.message || '載入會員失敗')}</div>`;
+      return;
+    }
+
+    let items = res.items || [];
+
+    if(keyword) {
+      const q = keyword.toLowerCase();
+      items = items.filter(m =>
+        String(m.name || '').toLowerCase().includes(q) ||
+        String(m.memberId || '').toLowerCase().includes(q) ||
+        String(m.phone || '').includes(q) ||
+        String(m.type || '').toLowerCase().includes(q) ||
+        String(m.status || '').toLowerCase().includes(q)
+      );
+    }
+
+    if(!items.length) {
       area.innerHTML = `<div class="empty">沒有符合的會員</div>`;
       return;
     }
-    area.innerHTML = `<div class="list">` + res.items.map(m => `
+
+    area.innerHTML = `<div class="list">` + items.map(m => `
       <div class="item" onclick="go('memberDetail',{memberId:'${jsStr(m.memberId)}'})" style="cursor:pointer;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <div>
-            <div style="font-weight:900;">${esc(m.name)} <span style="font-size:var(--fs-xs);color:var(--muted);">(${esc(m.memberId)})</span></div>
-            <div style="font-size:var(--fs-xs);color:var(--muted);">${esc(m.phone)} ｜ ${esc(m.type)}</div>
+            <div style="font-weight:900;">
+              ${esc(m.name)}
+              <span style="font-size:var(--fs-xs);color:var(--muted);">(${esc(m.memberId)})</span>
+            </div>
+            <div style="font-size:var(--fs-xs);color:var(--muted);">
+              ${esc(m.phone)} ｜ ${esc(m.type)}
+            </div>
           </div>
-          <span class="badge ${m.status==='有效會員'?'bs':'bd'}">${esc(m.status)}</span>
+          <span class="badge ${m.status==='有效會員'?'bs':m.status==='待審核'?'bw':'bd'}">${esc(m.status)}</span>
         </div>
       </div>
     `).join('') + `</div>`;
-  } catch(e) {}
+
+  } catch(e) {
+    const area = $('memberList');
+    if(area) {
+      area.innerHTML = `<div class="empty">會員列表載入失敗：${esc(e.message)}</div>`;
+    }
+  }
 }
+
 
 function renderMemberDetail(params) {
   if(!requireAdmin())return;
@@ -2926,22 +3032,26 @@ function renderMemberDetail(params) {
 
 async function loadMemberDetail(memberId) {
   try {
-    const res = await api('member.detail', { memberId });
+    const res = await api('member.getDetail', { memberId });
     const area = $('memberDetailContent');
     if(!area) return;
+
     if(!res.success) {
-      area.innerHTML = `<div class="empty">${esc(res.message)}</div>`;
+      area.innerHTML = `<div class="empty">${esc(res.message || '找不到會員資料')}</div>`;
       return;
     }
+
     const m = res.member;
+
     area.innerHTML = `
       <div class="item-meta" style="font-size:16px;">
         姓名：<strong>${esc(m.name)}</strong><br>
         會員編號：<strong>${esc(m.memberId)}</strong><br>
         電話：<strong>${esc(m.phone)}</strong><br>
         類別：<strong>${esc(m.type)}</strong><br>
-        狀態：<span class="badge ${m.status==='有效會員'?'bs':'bd'}">${esc(m.status)}</span><br>
-        到期日：<strong>${esc(m.expiryDate)}</strong><br>
+        狀態：<span class="badge ${m.status==='有效會員'?'bs':m.status==='待審核'?'bw':'bd'}">${esc(m.status)}</span><br>
+        入會日期：<strong>${esc(m.joinDate || '')}</strong><br>
+        到期日：<strong>${esc(m.expiryDate || '')}</strong><br>
         確診年份：<strong>${esc(m.diagnosisYear || '未填寫')}</strong><br>
         就診醫院：<strong>${esc(m.hospital || '未填寫')}</strong><br>
         主治醫師：<strong>${esc(m.doctor || '未填寫')}</strong><br>
@@ -2949,36 +3059,61 @@ async function loadMemberDetail(memberId) {
         累計會費：<strong>${fmtMoney(m.totalFee)}</strong><br>
         累計捐款：<strong>${fmtMoney(m.totalDonation)}</strong>
       </div>
+
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
         <button class="btn btn-success btn-sm" onclick="approveMember('${jsStr(m.memberId)}')">✅ 核准會籍</button>
         <button class="btn btn-warn btn-sm" onclick="renewMember('${jsStr(m.memberId)}')">🔄 續會一年</button>
         <button class="btn btn-danger btn-sm" onclick="suspendMember('${jsStr(m.memberId)}')">⛔ 停權</button>
       </div>
     `;
-  } catch(e) {}
+  } catch(e) {
+    const area = $('memberDetailContent');
+    if(area) {
+      area.innerHTML = `<div class="empty">會員資料載入失敗：${esc(e.message)}</div>`;
+    }
+  }
 }
 
+
 function approveMember(memberId) {
-  runApi('member.approve', { memberId }, () => {
+  const expiryDate = `${new Date().getFullYear()}-12-31`;
+
+  runApi('member.adminUpdate', {
+    memberId,
+    status: '有效會員',
+    expiryDate
+  }, () => {
     toast('會員已核准', 's');
     loadMemberDetail(memberId);
   });
 }
 
 function renewMember(memberId) {
-  runApi('member.renew', { memberId }, () => {
-    toast('已續會一年', 's');
+  const nextYear = new Date().getFullYear() + 1;
+  const expiryDate = `${nextYear}-12-31`;
+
+  runApi('member.adminUpdate', {
+    memberId,
+    status: '有效會員',
+    expiryDate
+  }, () => {
+    toast('已續會至 ' + expiryDate, 's');
     loadMemberDetail(memberId);
   });
 }
 
 function suspendMember(memberId) {
   if(!confirm('確定要停權此會員嗎？')) return;
-  runApi('member.suspend', { memberId }, () => {
+
+  runApi('member.adminUpdate', {
+    memberId,
+    status: '已停用'
+  }, () => {
     toast('會員已停權', 's');
     loadMemberDetail(memberId);
   });
 }
+
 
 // =======================================================
 // 會費/捐款審核
@@ -4104,19 +4239,27 @@ async function saveSettings() {
 function openLogin() {
   openModal(`
     <div class="modal-title">🔑 登入</div>
+
+    <div class="notice info">
+      請輸入您入會登記時填寫的<strong>姓名</strong>與<strong>手機號碼</strong>。
+    </div>
+
+    <div class="fg">
+      <label class="flabel">姓名</label>
+      <input type="text" id="loginName" class="fc" placeholder="例如：王小明" autocomplete="name">
+    </div>
+
     <div class="fg">
       <label class="flabel">電話號碼</label>
-      <input type="tel" id="loginPhone" class="fc" placeholder="例如：0912345678">
+      <input type="tel" id="loginPhone" class="fc" placeholder="例如：0912345678" autocomplete="tel">
     </div>
-    <div class="fg">
-      <label class="flabel">密碼</label>
-      <input type="password" id="loginPassword" class="fc" placeholder="輸入密碼">
-    </div>
+
     <button class="btn btn-primary" onclick="doLogin()">登入</button>
     <button class="btn btn-line" onclick="doLineLogin()">💚 LINE 登入</button>
     <button class="btn btn-ghost" onclick="closeModal()">取消</button>
   `);
 }
+
 
 function openPhoneLogin() {
   openLogin();
@@ -4125,34 +4268,41 @@ function openPhoneLogin() {
 function openRegister() {
   openModal(`
     <div class="modal-title">✏️ 申請加入會員</div>
+
+    <div class="notice info">
+      送出後會由秘書處審核。審核通過後即可使用姓名與手機登入。
+    </div>
+
     <div class="fg">
       <label class="flabel">姓名<span class="req">*</span></label>
-      <input type="text" id="regName" class="fc">
+      <input type="text" id="regName" class="fc" placeholder="請輸入真實姓名" autocomplete="name">
     </div>
+
     <div class="fg">
       <label class="flabel">電話<span class="req">*</span></label>
-      <input type="tel" id="regPhone" class="fc" placeholder="例如：0912345678">
+      <input type="tel" id="regPhone" class="fc" placeholder="例如：0912345678" autocomplete="tel">
     </div>
-    <div class="fg">
-      <label class="flabel">密碼<span class="req">*</span></label>
-      <input type="password" id="regPassword" class="fc" placeholder="設定登入密碼">
-    </div>
+
     <div class="fg">
       <label class="flabel">確診年份</label>
       <input type="text" id="regDiagnosisYear" class="fc" placeholder="例如：2018">
     </div>
+
     <div class="fg">
       <label class="flabel">就診醫院</label>
-      <input type="text" id="regHospital" class="fc">
+      <input type="text" id="regHospital" class="fc" placeholder="例如：台大醫院">
     </div>
+
     <div class="fg">
       <label class="flabel">主治醫師</label>
-      <input type="text" id="regDoctor" class="fc">
+      <input type="text" id="regDoctor" class="fc" placeholder="例如：陳醫師">
     </div>
+
     <button class="btn btn-primary" onclick="doRegister()">送出申請</button>
     <button class="btn btn-ghost" onclick="closeModal()">取消</button>
   `);
 }
+
 
 async function doLogin() {
   const phone = $('loginPhone').value.trim();
@@ -4174,28 +4324,33 @@ async function doLogin() {
 }
 
 async function doRegister() {
-  const name = $('regName').value.trim();
-  const phone = $('regPhone').value.trim();
-  const password = $('regPassword').value;
+  const name = $('regName')?.value.trim() || '';
+  const phone = $('regPhone')?.value.trim() || '';
 
-  if(!name) { toast('請輸入姓名', 'w'); return; }
-  if(!phone) { toast('請輸入電話', 'w'); return; }
-  if(!password) { toast('請設定密碼', 'w'); return; }
+  if(!name) {
+    toast('請輸入姓名', 'w');
+    return;
+  }
+
+  if(!phone) {
+    toast('請輸入電話', 'w');
+    return;
+  }
 
   const payload = {
     name,
     phone,
-    password,
-    diagnosisYear: $('regDiagnosisYear').value.trim(),
-    hospital: $('regHospital').value.trim(),
-    doctor: $('regDoctor').value.trim()
+    diagnosisYear: $('regDiagnosisYear')?.value.trim() || '',
+    hospital: $('regHospital')?.value.trim() || '',
+    doctor: $('regDoctor')?.value.trim() || ''
   };
 
-  await runApi('member.register', payload, (res) => {
-    toast('申請已送出，等待審核！', 's');
+  await runApi('auth.registerByPhone', payload, (res) => {
+    toast(res.message || '申請已送出，等待審核！', 's');
     closeModal();
   });
 }
+
 
 // =======================================================
 // LINE 登入
@@ -4217,17 +4372,29 @@ async function initLiff() {
 
 async function tryAutoLoginWithLiff() {
   if(!APP.liffProfile) return;
+
   try {
-    const res = await api('auth.lineLogin', { lineId: APP.liffProfile.userId });
-    if(res.success && res.user) {
-      APP.user = res.user;
+    const res = await api('auth.loginByLine', {
+      lineId: APP.liffProfile.userId
+    });
+
+    if(res.success && res.member) {
+      APP.user = res.member;
       localStorage.setItem('parkUser', JSON.stringify(APP.user));
       updateLoginButton();
       toast('LINE 登入成功！', 's');
       go('home');
+    } else if(res.success && res.isFirstLogin) {
+      toast('首次 LINE 登入，請先使用姓名與電話登入後聯繫秘書處綁定 LINE', 'w');
+      openLogin();
+    } else {
+      toast(res.message || 'LINE 登入失敗', 'e');
     }
-  } catch(e) {}
+  } catch(e) {
+    toast('LINE 登入連線失敗：' + e.message, 'e');
+  }
 }
+
 
 function doLineLogin() {
   if(APP.liffReady && liff.isLoggedIn()) {
