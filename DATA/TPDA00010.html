@@ -1,0 +1,1163 @@
+/************************************************************
+ * 台灣帕金森病友權益促進會
+ * 正式版後端系統
+ *
+ * 檔案：01_Config_Tables.gs
+ * 用途：系統設定、資料表定義、初始化及預設資料
+ ************************************************************/
+
+"use strict";
+
+
+// ==========================================================
+// 1. 系統基本設定
+// ==========================================================
+
+var APP_CONFIG = {
+  TIMEZONE: "Asia/Taipei",
+
+  SESSION_HOURS: 12,
+  LINE_BIND_TOKEN_MINUTES: 10,
+
+  MAX_TEXT_LENGTH: 10000,
+  MAX_NOTE_LENGTH: 2000,
+  MAX_TITLE_LENGTH: 150,
+
+  MAX_IMAGE_BYTES: 3 * 1024 * 1024,
+  MAX_DOCUMENT_BYTES: 5 * 1024 * 1024,
+
+  MAX_FINANCE_AMOUNT: 10000000,
+
+  PRIVATE_UPLOAD_FOLDER: "Parkinson_Private_Uploads",
+  FORUM_IMAGE_FOLDER: "Parkinson_Forum_Images"
+};
+
+
+/**
+ * 具有系統後台權限的會員類型。
+ *
+ * 第二階段可再改為細分權限表，例如：
+ * FINANCE_READ、FINANCE_APPROVE、HEALTH_READ 等。
+ */
+var ADMIN_TYPES = [
+  "管理員",
+  "理事長",
+  "理監事",
+  "理事",
+  "監事",
+  "會計",
+  "出納",
+  "總幹事",
+  "行政秘書長"
+];
+
+
+/**
+ * 財務操作角色。
+ * 此清單用於限制核准收入、撥款及作廢收據等高風險功能。
+ */
+var FINANCE_ADMIN_TYPES = [
+  "管理員",
+  "理事長",
+  "會計",
+  "出納",
+  "總幹事",
+  "行政秘書長"
+];
+
+
+/**
+ * 健康資料照護角色。
+ * 即使是這些角色，正式讀取健康資料時仍須檢查會員授權。
+ */
+var HEALTH_ACCESS_TYPES = [
+  "管理員",
+  "理事長",
+  "總幹事",
+  "行政秘書長"
+];
+
+
+// ==========================================================
+// 2. Script Properties 設定
+// ==========================================================
+
+/**
+ * 第一次部署前執行一次。
+ *
+ * 請先將 spreadsheetId 改成你的正式試算表 ID。
+ * LINE_CHANNEL_ID 是 LINE Login Channel ID，不是 LIFF ID。
+ *
+ * Gemini API Key 不要寫在程式碼或 Google Sheet。
+ * 請在執行完成後到：
+ * Apps Script → 專案設定 → 指令碼屬性
+ * 新增 GEMINI_API_KEY。
+ */
+function setupScriptProperties() {
+  var spreadsheetId = "1AkCXAHoEskAVPGLeFjhnlvmVgV1L2o24mDJo-8BFpV8";
+
+  var properties = PropertiesService.getScriptProperties();
+
+  properties.setProperties({
+    SPREADSHEET_ID: spreadsheetId,
+
+    // LINE Login Channel ID，請換成正式值。
+    LINE_CHANNEL_ID: "",
+
+    // 正式 LIFF ID。
+    LIFF_ID: "2009456572-588gzru4",
+
+    // 每年常年會費。
+    ANNUAL_FEE_AMOUNT: "1500"
+  }, false);
+
+  return {
+    success: true,
+    message: "Script Properties 基本設定完成"
+  };
+}
+
+
+/**
+ * 取得必要的 Script Property。
+ */
+function getRequiredScriptProperty(key) {
+  var value = PropertiesService
+    .getScriptProperties()
+    .getProperty(key);
+
+  if (!value) {
+    throw new Error(
+      "缺少系統設定：" + key +
+      "。請先執行 setupScriptProperties()。"
+    );
+  }
+
+  return String(value);
+}
+
+
+/**
+ * 取得非必要的 Script Property。
+ */
+function getOptionalScriptProperty(key, defaultValue) {
+  var value = PropertiesService
+    .getScriptProperties()
+    .getProperty(key);
+
+  if (value === null || value === undefined || value === "") {
+    return defaultValue;
+  }
+
+  return String(value);
+}
+
+
+/**
+ * 取得正式 Spreadsheet ID。
+ */
+function getSpreadsheetId() {
+  return getRequiredScriptProperty("SPREADSHEET_ID");
+}
+
+
+/**
+ * 取得 LINE Login Channel ID。
+ */
+function getLineChannelId() {
+  return getRequiredScriptProperty("LINE_CHANNEL_ID");
+}
+
+
+/**
+ * 取得 LIFF ID。
+ */
+function getLiffId() {
+  return getRequiredScriptProperty("LIFF_ID");
+}
+
+
+/**
+ * 取得常年會費。
+ */
+function getAnnualFeeAmount() {
+  var amount = Number(
+    getOptionalScriptProperty(
+      "ANNUAL_FEE_AMOUNT",
+      "1500"
+    )
+  );
+
+  if (!isFinite(amount) || amount <= 0) {
+    return 1500;
+  }
+
+  return amount;
+}
+
+
+/**
+ * 取得 Gemini API Key。
+ *
+ * 金鑰只存在 Script Properties，
+ * 絕對不回傳到前端。
+ */
+function getGeminiApiKey() {
+  return getOptionalScriptProperty(
+    "GEMINI_API_KEY",
+    ""
+  );
+}
+
+
+/**
+ * 更新 Gemini API Key。
+ */
+function setGeminiApiKey(apiKey) {
+  var value = String(apiKey || "").trim();
+
+  if (!value) {
+    throw new Error("Gemini API Key 不可為空");
+  }
+
+  PropertiesService
+    .getScriptProperties()
+    .setProperty("GEMINI_API_KEY", value);
+
+  return true;
+}
+
+
+// ==========================================================
+// 3. 資料表結構
+// ==========================================================
+
+var TABLES = {
+  MEMBERS: {
+    name: "會員名冊",
+    fields: {
+      memberId: "會員編號",
+      name: "姓名",
+      nickname: "暱稱",
+      type: "會員類型",
+
+      identityId: "身分證字號",
+      mobile: "手機",
+      phone: "電話",
+      address: "地址",
+
+      joinDate: "入會日期",
+      expiryDate: "會籍到期日",
+      status: "狀態",
+
+      lineId: "LINE ID",
+      lineName: "LINE 名稱",
+
+      diagnosisYear: "確診年份",
+      hospital: "就診醫院",
+      doctor: "主治醫師",
+      medication: "目前藥物",
+      surgery: "手術/重大病史",
+      healthConsent: "健康資料授權",
+
+      totalFee: "累計會費",
+      totalDonation: "累計捐款",
+
+      createdAt: "建立時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  SESSIONS: {
+    name: "登入工作階段",
+    fields: {
+      sessionId: "Session 編號",
+      tokenHash: "Token Hash",
+      memberId: "會員編號",
+
+      createdAt: "建立時間",
+      expiresAt: "到期時間",
+      revokedAt: "撤銷時間",
+
+      lastUsedAt: "最後使用時間",
+      userAgent: "裝置資訊"
+    }
+  },
+
+
+  LINE_BINDINGS: {
+    name: "LINE綁定憑證",
+    fields: {
+      tokenHash: "Token Hash",
+      lineId: "LINE ID",
+      lineName: "LINE 名稱",
+
+      createdAt: "建立時間",
+      expiresAt: "到期時間",
+      usedAt: "使用時間"
+    }
+  },
+
+
+  PAYMENTS: {
+    name: "會費申報",
+    fields: {
+      id: "申報編號",
+      memberId: "會員編號",
+      name: "姓名",
+      phone: "電話",
+
+      year: "繳費年度",
+      amount: "金額",
+      method: "付款方式",
+      date: "付款日期",
+      note: "備註/後五碼",
+
+      proofFileId: "憑證檔案ID",
+
+      status: "狀態",
+      receiptNo: "收據編號",
+      rejectReason: "退回原因",
+
+      approvedBy: "審核人員",
+      approvedAt: "審核時間",
+      createdAt: "申報時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  DONATIONS: {
+    name: "捐款申報",
+    fields: {
+      id: "申報編號",
+      memberId: "會員編號",
+      name: "姓名",
+      phone: "電話",
+
+      identityId: "身分證字號/統編",
+      amount: "金額",
+      purpose: "指定用途",
+      method: "付款方式",
+      date: "付款日期",
+      note: "備註/後五碼",
+
+      proofFileId: "憑證檔案ID",
+
+      status: "狀態",
+      receiptNo: "收據編號",
+      rejectReason: "退回原因",
+
+      approvedBy: "審核人員",
+      approvedAt: "審核時間",
+      createdAt: "申報時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  RECEIPTS: {
+    name: "收據明細",
+    fields: {
+      receiptNo: "收據編號",
+
+      sourceType: "來源類型",
+      sourceId: "來源單號",
+
+      memberId: "會員編號",
+      name: "姓名",
+      identityId: "身分證字號",
+
+      amount: "實收金額",
+      type: "款項類別",
+      item: "項目說明",
+      date: "開立日期",
+      account: "收款帳戶",
+
+      incomeSubjectCode: "收入科目代碼",
+      incomeSubjectName: "收入科目名稱",
+
+      voucherNo: "原始傳票編號",
+
+      status: "收據狀態",
+      voidReason: "作廢原因",
+      voidedBy: "作廢人員",
+      voidedAt: "作廢時間",
+      voidVoucherNo: "沖銷傳票編號",
+
+      createdAt: "建立時間"
+    }
+  },
+
+
+  VOUCHERS: {
+    name: "會計傳票",
+    fields: {
+      voucherLineId: "傳票分錄ID",
+      voucherNo: "傳票編號",
+
+      date: "日期",
+      type: "傳票類型",
+
+      subjectCode: "科目代碼",
+      subjectName: "科目名稱",
+
+      debit: "借方金額",
+      credit: "貸方金額",
+
+      summary: "摘要",
+      account: "資金帳戶",
+      projectName: "專案名稱",
+
+      sourceType: "來源類型",
+      sourceId: "來源單號",
+
+      creatorId: "建立者編號",
+      creator: "建立者",
+      createdAt: "建立時間"
+    }
+  },
+
+
+  EXPENSES: {
+    name: "支出核銷",
+    fields: {
+      id: "支出編號",
+
+      date: "支出日期",
+      subjectCode: "科目代碼",
+      subjectName: "科目名稱",
+
+      amount: "金額",
+      account: "付款帳戶",
+      projectName: "專案名稱",
+
+      payee: "受款人",
+      description: "用途說明",
+
+      proofFileId: "憑證檔案ID",
+
+      status: "狀態",
+      rejectReason: "退回原因",
+
+      applicantId: "申請人編號",
+      applicant: "申請人",
+
+      approvedById: "核准人編號",
+      approvedBy: "核准人",
+      approvedAt: "核准時間",
+
+      paidById: "撥款人編號",
+      paidBy: "撥款人",
+      paidAt: "撥款時間",
+
+      voucherNo: "傳票編號",
+
+      createdAt: "建立時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  BUDGETS: {
+    name: "年度預算",
+    fields: {
+      year: "年度",
+      subjectCode: "科目代碼",
+      subjectName: "科目名稱",
+
+      amount: "預算金額",
+      executed: "已執行金額",
+
+      createdAt: "建立時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  PROJECTS: {
+    name: "專案管理",
+    fields: {
+      projectId: "專案編號",
+      name: "專案名稱",
+      manager: "負責人",
+
+      startDate: "開始日期",
+      endDate: "結束日期",
+
+      income: "收入",
+      expense: "支出",
+      status: "狀態",
+
+      createdAt: "建立時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  SUBJECTS: {
+    name: "會計科目",
+    fields: {
+      code: "科目代碼",
+      name: "科目名稱",
+      type: "科目類型",
+
+      enabled: "是否啟用",
+      createdAt: "建立時間"
+    }
+  },
+
+
+  ACCOUNTS: {
+    name: "資金帳戶",
+    fields: {
+      accountId: "帳戶編號",
+      name: "帳戶名稱",
+      type: "帳戶類型",
+
+      bank: "銀行/機構",
+      accountNo: "帳號",
+
+      balance: "餘額",
+      enabled: "是否啟用",
+
+      createdAt: "建立時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  HEALTH_LOGS: {
+    name: "健康日誌",
+    fields: {
+      id: "日誌編號",
+      memberId: "會員編號",
+      name: "姓名",
+
+      date: "日期",
+      mood: "心情",
+      state: "藥效狀態",
+
+      meds: "服藥紀錄",
+      exerciseMins: "運動分鐘",
+      exercises: "運動類型",
+      symptoms: "不適症狀",
+
+      doctorQuestion: "回診備忘",
+
+      tapScore: "敲擊分數",
+      vocalScore: "發聲分數",
+
+      createdAt: "建立時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  FORUM_POSTS: {
+    name: "論壇文章",
+    fields: {
+      postId: "文章編號",
+
+      category: "分類",
+      title: "標題",
+      content: "內容",
+
+      author: "作者",
+      authorId: "作者會員編號",
+      authorRole: "作者角色",
+
+      imagesJson: "圖片JSON",
+      linksJson: "連結JSON",
+
+      isPinned: "是否置頂",
+      likesJson: "按讚JSON",
+
+      status: "文章狀態",
+
+      createdAt: "建立時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  FORUM_REPLIES: {
+    name: "論壇留言",
+    fields: {
+      replyId: "留言編號",
+      postId: "文章編號",
+
+      author: "作者",
+      authorId: "作者會員編號",
+
+      content: "內容",
+      status: "留言狀態",
+
+      createdAt: "建立時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  ANNOUNCEMENTS: {
+    name: "公告管理",
+    fields: {
+      id: "公告編號",
+
+      title: "標題",
+      content: "內容",
+
+      date: "日期",
+      category: "分類",
+      target: "對象",
+
+      pinned: "是否置頂",
+      status: "狀態",
+
+      creatorId: "建立者編號",
+      creator: "建立者",
+
+      createdAt: "建立時間",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  SETTINGS: {
+    name: "系統設定",
+    fields: {
+      key: "設定鍵",
+      value: "設定值",
+      description: "說明",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  SEQUENCES: {
+    name: "流水號管理",
+    fields: {
+      key: "流水號鍵",
+      year: "年度",
+      currentValue: "目前數值",
+      updatedAt: "更新時間"
+    }
+  },
+
+
+  AUDIT_LOGS: {
+    name: "系統稽核紀錄",
+    fields: {
+      id: "紀錄編號",
+
+      memberId: "操作者編號",
+      memberName: "操作者姓名",
+
+      action: "操作",
+      targetType: "對象類型",
+      targetId: "對象編號",
+
+      success: "是否成功",
+      detail: "操作說明",
+
+      createdAt: "操作時間"
+    }
+  },
+
+
+  SYSTEM_ERRORS: {
+    name: "系統錯誤紀錄",
+    fields: {
+      id: "錯誤編號",
+      action: "API Action",
+      memberId: "操作者編號",
+
+      message: "錯誤訊息",
+      stack: "錯誤堆疊",
+
+      createdAt: "發生時間"
+    }
+  }
+};
+
+
+// ==========================================================
+// 4. 系統初始化
+// ==========================================================
+
+/**
+ * 第一次建立系統或資料表結構更新後執行。
+ *
+ * 執行內容：
+ * 1. 建立所有工作表
+ * 2. 補齊缺少的欄位
+ * 3. 設定標題列樣式
+ * 4. 建立預設科目、帳戶及設定
+ */
+function initSystem() {
+  var spreadsheetId = getSpreadsheetId();
+  var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+
+  Object.keys(TABLES).forEach(function(tableKey) {
+    initializeTable_(spreadsheet, tableKey);
+  });
+
+  seedDefaultSubjects_();
+  seedDefaultAccounts_();
+  seedDefaultSettings_();
+
+  SpreadsheetApp.flush();
+
+  return {
+    success: true,
+    message: "系統資料表初始化完成",
+    spreadsheetId: spreadsheetId,
+    initializedAt: systemNowDateTime_()
+  };
+}
+
+
+/**
+ * 建立或更新單一資料表。
+ */
+function initializeTable_(spreadsheet, tableKey) {
+  var table = TABLES[tableKey];
+
+  if (!table) {
+    throw new Error("未知資料表：" + tableKey);
+  }
+
+  var sheet = spreadsheet.getSheetByName(table.name);
+  var expectedHeaders = Object.keys(table.fields).map(function(fieldKey) {
+    return table.fields[fieldKey];
+  });
+
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(table.name);
+
+    if (expectedHeaders.length > 0) {
+      sheet
+        .getRange(1, 1, 1, expectedHeaders.length)
+        .setValues([expectedHeaders]);
+    }
+  } else {
+    var lastColumn = Math.max(sheet.getLastColumn(), 1);
+    var existingHeaders = sheet
+      .getRange(1, 1, 1, lastColumn)
+      .getDisplayValues()[0]
+      .map(function(value) {
+        return String(value || "").trim();
+      });
+
+    expectedHeaders.forEach(function(header) {
+      if (existingHeaders.indexOf(header) === -1) {
+        var newColumn = Math.max(sheet.getLastColumn(), 0) + 1;
+        sheet.getRange(1, newColumn).setValue(header);
+        existingHeaders.push(header);
+      }
+    });
+  }
+
+  formatTableHeader_(sheet);
+}
+
+
+/**
+ * 統一設定工作表標題列。
+ */
+function formatTableHeader_(sheet) {
+  var lastColumn = Math.max(sheet.getLastColumn(), 1);
+
+  sheet
+    .getRange(1, 1, 1, lastColumn)
+    .setFontWeight("bold")
+    .setFontColor("#0f172a")
+    .setBackground("#dbeafe")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle")
+    .setWrap(true);
+
+  sheet.setFrozenRows(1);
+  sheet.setRowHeight(1, 36);
+
+  try {
+    sheet.autoResizeColumns(1, lastColumn);
+  } catch (e) {
+    console.warn(
+      "工作表自動調整欄寬失敗：" +
+      sheet.getName() +
+      " / " +
+      e.message
+    );
+  }
+}
+
+
+// ==========================================================
+// 5. 預設會計科目
+// ==========================================================
+
+function seedDefaultSubjects_() {
+  var sheet = getSeedSheet_("SUBJECTS");
+
+  if (sheet.getLastRow() > 1) {
+    return;
+  }
+
+  var createdAt = systemNowDateTime_();
+
+  var rows = [
+    ["1111", "庫存現金", "資產類", "Y", createdAt],
+    ["1113", "銀行存款", "資產類", "Y", createdAt],
+
+    ["2111", "應付帳款", "負債類", "Y", createdAt],
+    ["3111", "累積餘絀", "淨值類", "Y", createdAt],
+
+    ["4112", "常年會費收入", "收入類", "Y", createdAt],
+    ["4121", "愛心捐款收入", "收入類", "Y", createdAt],
+    ["4131", "政府補助收入", "收入類", "Y", createdAt],
+    ["4141", "活動收入", "收入類", "Y", createdAt],
+    ["4199", "其他收入", "收入類", "Y", createdAt],
+
+    ["5111", "病友關懷支出", "支出類", "Y", createdAt],
+    ["5121", "復健課程支出", "支出類", "Y", createdAt],
+    ["5131", "活動支出", "支出類", "Y", createdAt],
+    ["5141", "辦公行政支出", "支出類", "Y", createdAt],
+    ["5151", "交通差旅支出", "支出類", "Y", createdAt],
+    ["5199", "其他支出", "支出類", "Y", createdAt]
+  ];
+
+  sheet
+    .getRange(2, 1, rows.length, rows[0].length)
+    .setValues(rows);
+}
+
+
+// ==========================================================
+// 6. 預設資金帳戶
+// ==========================================================
+
+function seedDefaultAccounts_() {
+  var sheet = getSeedSheet_("ACCOUNTS");
+
+  if (sheet.getLastRow() > 1) {
+    return;
+  }
+
+  var createdAt = systemNowDateTime_();
+
+  var rows = [
+    [
+      "ACC-BANK-001",
+      "第一銀行專戶",
+      "銀行存款",
+      "第一銀行",
+      "",
+      0,
+      "Y",
+      createdAt,
+      createdAt
+    ],
+    [
+      "ACC-CASH-001",
+      "庫存現金",
+      "庫存現金",
+      "",
+      "",
+      0,
+      "Y",
+      createdAt,
+      createdAt
+    ]
+  ];
+
+  sheet
+    .getRange(2, 1, rows.length, rows[0].length)
+    .setValues(rows);
+}
+
+
+// ==========================================================
+// 7. 預設一般設定
+// ==========================================================
+
+function seedDefaultSettings_() {
+  var sheet = getSeedSheet_("SETTINGS");
+
+  if (sheet.getLastRow() > 1) {
+    return;
+  }
+
+  var updatedAt = systemNowDateTime_();
+
+  var rows = [
+    [
+      "org_name",
+      "社團法人台灣帕金森病友權益促進會",
+      "組織全銜",
+      updatedAt
+    ],
+    [
+      "tax_id",
+      "",
+      "統一編號",
+      updatedAt
+    ],
+    [
+      "seal_file_id",
+      "",
+      "電子印信的私人 Google Drive 檔案 ID",
+      updatedAt
+    ],
+    [
+      "annual_fee_description",
+      "常年會費",
+      "會費收據項目名稱",
+      updatedAt
+    ],
+    [
+      "health_ai_enabled",
+      "N",
+      "是否啟用健康文字 AI 整理",
+      updatedAt
+    ],
+    [
+      "health_ai_consent_text",
+      "健康口述內容可能傳送至外部 AI 服務進行文字整理。AI 結果僅供紀錄及醫病溝通參考，不構成診斷或用藥建議。",
+      "健康 AI 使用者同意文字",
+      updatedAt
+    ],
+    [
+      "forum_enabled",
+      "Y",
+      "是否啟用論壇",
+      updatedAt
+    ],
+    [
+      "registration_enabled",
+      "Y",
+      "是否開放新會員申請",
+      updatedAt
+    ]
+  ];
+
+  sheet
+    .getRange(2, 1, rows.length, rows[0].length)
+    .setValues(rows);
+}
+
+
+// ==========================================================
+// 8. 初始化共用函式
+// ==========================================================
+
+function getSeedSheet_(tableKey) {
+  var table = TABLES[tableKey];
+
+  if (!table) {
+    throw new Error("未知資料表：" + tableKey);
+  }
+
+  var spreadsheet = SpreadsheetApp.openById(
+    getSpreadsheetId()
+  );
+
+  var sheet = spreadsheet.getSheetByName(table.name);
+
+  if (!sheet) {
+    throw new Error(
+      "找不到工作表：" +
+      table.name +
+      "，請先執行 initSystem()"
+    );
+  }
+
+  return sheet;
+}
+
+
+function systemNowDateTime_() {
+  return Utilities.formatDate(
+    new Date(),
+    APP_CONFIG.TIMEZONE,
+    "yyyy-MM-dd HH:mm:ss"
+  );
+}
+
+
+// ==========================================================
+// 9. 系統結構檢查
+// ==========================================================
+
+/**
+ * 部署前執行此函式檢查資料表。
+ */
+function checkSystemStructure() {
+  var result = {
+    success: true,
+    checkedAt: systemNowDateTime_(),
+    tables: [],
+    warnings: []
+  };
+
+  try {
+    var spreadsheet = SpreadsheetApp.openById(
+      getSpreadsheetId()
+    );
+
+    Object.keys(TABLES).forEach(function(tableKey) {
+      var table = TABLES[tableKey];
+      var sheet = spreadsheet.getSheetByName(table.name);
+
+      if (!sheet) {
+        result.success = false;
+
+        result.tables.push({
+          key: tableKey,
+          name: table.name,
+          exists: false,
+          rows: 0,
+          missingHeaders: Object.keys(table.fields).map(function(key) {
+            return table.fields[key];
+          })
+        });
+
+        return;
+      }
+
+      var lastColumn = Math.max(sheet.getLastColumn(), 1);
+      var headers = sheet
+        .getRange(1, 1, 1, lastColumn)
+        .getDisplayValues()[0]
+        .map(function(value) {
+          return String(value || "").trim();
+        });
+
+      var missingHeaders = [];
+
+      Object.keys(table.fields).forEach(function(fieldKey) {
+        var header = table.fields[fieldKey];
+
+        if (headers.indexOf(header) === -1) {
+          missingHeaders.push(header);
+        }
+      });
+
+      if (missingHeaders.length > 0) {
+        result.success = false;
+
+        result.warnings.push(
+          table.name +
+          " 缺少欄位：" +
+          missingHeaders.join("、")
+        );
+      }
+
+      result.tables.push({
+        key: tableKey,
+        name: table.name,
+        exists: true,
+        rows: Math.max(sheet.getLastRow() - 1, 0),
+        missingHeaders: missingHeaders
+      });
+    });
+  } catch (error) {
+    result.success = false;
+    result.error = error.message || String(error);
+  }
+
+  return result;
+}
+
+
+// ==========================================================
+// 10. 清除過期 Session 的維護函式
+// ==========================================================
+
+/**
+ * 此函式會在後續 ORM 建立後才能執行。
+ *
+ * 建議設定每日觸發器執行一次。
+ */
+function cleanupExpiredSecurityRecords() {
+  if (typeof ORM === "undefined") {
+    throw new Error(
+      "ORM 尚未載入，請先加入第 2 部分程式"
+    );
+  }
+
+  var nowTimestamp = Date.now();
+  var deletedSessions = 0;
+  var deletedBindings = 0;
+
+  var sessions = ORM.readAll("SESSIONS")
+    .filter(function(session) {
+      var expired =
+        Number(session.expiresAt || 0) < nowTimestamp;
+
+      var oldRevoked =
+        session.revokedAt &&
+        parseSystemDateTime_(session.revokedAt) <
+          nowTimestamp - 7 * 24 * 60 * 60 * 1000;
+
+      return expired || oldRevoked;
+    })
+    .sort(function(a, b) {
+      return b._rowIdx - a._rowIdx;
+    });
+
+  sessions.forEach(function(session) {
+    ORM.deleteByRowIdx(
+      "SESSIONS",
+      session._rowIdx
+    );
+
+    deletedSessions++;
+  });
+
+  var bindings = ORM.readAll("LINE_BINDINGS")
+    .filter(function(binding) {
+      return (
+        Number(binding.expiresAt || 0) < nowTimestamp ||
+        Boolean(binding.usedAt)
+      );
+    })
+    .sort(function(a, b) {
+      return b._rowIdx - a._rowIdx;
+    });
+
+  bindings.forEach(function(binding) {
+    ORM.deleteByRowIdx(
+      "LINE_BINDINGS",
+      binding._rowIdx
+    );
+
+    deletedBindings++;
+  });
+
+  return {
+    success: true,
+    deletedSessions: deletedSessions,
+    deletedBindings: deletedBindings
+  };
+}
+
+
+function parseSystemDateTime_(value) {
+  if (!value) {
+    return 0;
+  }
+
+  if (
+    Object.prototype.toString.call(value) === "[object Date]" &&
+    !isNaN(value.getTime())
+  ) {
+    return value.getTime();
+  }
+
+  var normalized = String(value).replace(" ", "T");
+  var timestamp = new Date(normalized).getTime();
+
+  return isNaN(timestamp) ? 0 : timestamp;
+}
