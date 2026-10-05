@@ -79,6 +79,9 @@ html[data-contrast="1"] #app-header { background:#000; border-bottom:3px solid #
   position:fixed; left:0; right:0; bottom:0; z-index:500; display:grid; grid-template-columns:repeat(4,1fr); gap:0;
   background:var(--surface); border-top:3px solid var(--line); padding-bottom:var(--safe-b); box-shadow:0 -4px 16px rgba(15,23,42,.12);
 }
+/* 未登入時隱藏底部導覽，避免點了又被導回登入頁 */
+body.guest #bottom-nav { display:none; }
+body.guest #app-footer { padding-bottom:24px; }
 #bottom-nav a {
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
   min-height:var(--nav-h); padding:6px 2px; text-decoration:none; color:var(--text);
@@ -170,11 +173,23 @@ input:focus, select:focus, textarea:focus { border-color:var(--focus); }
 .check { display:flex; gap:14px; align-items:flex-start; padding:12px; border:3px solid var(--line); border-radius:var(--radius); margin-bottom:var(--gap); }
 .check input { width:36px; height:36px; flex:0 0 36px; margin:2px 0 0; accent-color:var(--primary); }
 .check label { font-weight:600; }
+.field.invalid .check { border-color:var(--danger); }
 .file-pick { border:3px dashed var(--line); border-radius:var(--radius); padding:16px; text-align:center; }
 .file-pick img { max-height:200px; margin-top:10px; }
 .tabs { display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:10px; margin-bottom:var(--gap); }
 .tabs .btn { min-height:64px; font-size:.9rem; padding:.2em .4em; }
 .tabs .btn[aria-pressed="true"] { background:var(--primary); color:var(--on-primary); }
+
+/* ---- 新增：登入／註冊步驟指示 ---- */
+.steps { list-style:none; margin:0 0 var(--gap); padding:0; display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:8px; }
+.steps li { text-align:center; font-size:.72rem; font-weight:700; color:var(--muted); padding:8px 4px; border-top:6px solid var(--line-soft); }
+.steps li.done { color:var(--ok); border-top-color:var(--ok); }
+.steps li.now { color:var(--primary); border-top-color:var(--primary); font-weight:900; }
+.steps li .n { display:block; font-size:1rem; }
+.status-page { text-align:center; padding:12px 0; }
+.status-page .ic { font-size:3.5rem; display:block; margin-bottom:8px; }
+.lock-timer { font-size:1.3rem; font-weight:900; }
+
 #toast-region { position:fixed; left:12px; right:12px; top:12px; z-index:900; display:grid; gap:12px; pointer-events:none; max-width:736px; margin:0 auto; }
 .toast { pointer-events:auto; display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; border:3px solid; border-radius:var(--radius); padding:14px 16px; font-weight:700; box-shadow:var(--shadow); background:var(--surface); }
 .toast.ok { color:var(--ok); border-color:var(--ok); }
@@ -208,7 +223,7 @@ html[data-size="xl"] .kv { grid-template-columns:1fr; }
 </style>
 </head>
 
-<body>
+<body class="guest">
 <a class="skip-link" href="#main">跳到主要內容</a>
 
 <header id="app-header" role="banner">
@@ -247,32 +262,38 @@ html[data-size="xl"] .kv { grid-template-columns:1fr; }
 
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 
-<script>
+<!-- ====== 第 2 段從這裡接續：<script> 開始 ====== -->
+  <script>
 'use strict';
 /* ==================================================================
  * 設定
  * ================================================================== */
 const CONFIG = Object.freeze({
-  API_BASE: 'https://script.google.com/macros/s/AKfycbwIQ92gnt-MPb2bQ6bsTkKe00VQJFeoV1UK3If3PgVfg64BOiKyOnvfEGV_6f6nHRdK/exec',
+  API_BASE: 'https://script.google.com/macros/s/AKfycbz7BRtf9v2iUZxnrAIOjlTzSwQEVHsq80MNB_3dypmSOLG8y3edmQnmjjYWsGIAatZM/exec',
   LIFF_ID: '2009456572-588gzru4',
   API_TIMEOUT_MS: 45000,
   SESSION_TOKEN_KEY: 'parkSessionToken',
   SESSION_USER_KEY: 'parkSessionUser',
   PREF_SIZE_KEY: 'tprda.size',
   PREF_CONTRAST_KEY: 'tprda.contrast',
-  DRAFT_PREFIX: 'tprda.draft.'
+  DRAFT_PREFIX: 'tprda.draft.',
+  PRIVACY_VERSION: '2026-10',            // 隱私權政策版本，後端會一併記錄
+  CONTACT_PHONE: '',                     // 協會電話（可填，會顯示在停用頁）
+  CONTACT_EMAIL: ''                      // 協會信箱（可填）
 });
 
-/* 與後端 B3 對齊 */
+/* 與後端對齊 */
 const API_CONTRACT = Object.freeze({
-  login:  'auth.loginByLineToken',   // data: { idToken, ua }
-  bind:   'auth.bindLine',           // data: { bindToken, name, phone, idLast4, ua }
-  me:     'auth.me',                 // 回傳 { user }
-  logout: 'auth.logout',
-  publicActions: ['announcement.listPublic', 'auth.loginByLineToken', 'auth.bindLine', 'public.config', 'system.ping']
+  login:       'auth.loginByLineToken',  // data: { idToken, ua }
+  bind:        'auth.bindLine',          // data: { bindToken, name, phone, idLast4, ua }
+  register:    'auth.register',          // data: { bindToken, name, phone, idLast4, email, memberType, privacyAccepted, privacyVersion, ua }
+  checkStatus: 'auth.checkStatus',       // data: { bindToken? }  回傳 { state }
+  me:          'auth.me',                // 回傳 { user }
+  logout:      'auth.logout',
+  publicActions: ['announcement.listPublic', 'auth.loginByLineToken', 'auth.bindLine', 'auth.register',
+                  'auth.checkStatus', 'public.config', 'system.ping']
 });
 
-/* 與後端 B4～B5 對齊 */
 const ACT = Object.freeze({
   annList:        'announcement.list',
   annPublic:      'announcement.listPublic',
@@ -288,6 +309,8 @@ const ACT = Object.freeze({
   adminMembers:   'admin.memberList',
   adminSetStatus: 'admin.memberSetStatus',
   adminUnbind:    'admin.memberUnbindLine',
+  adminApprove:   'admin.memberApprove',   // 新增：核准註冊申請
+  adminRejectReg: 'admin.memberReject',    // 新增：退回註冊申請
   payMy:          'payment.myList',
   paySubmit:      'payment.submit',
   payAdminList:   'payment.adminList',
@@ -304,7 +327,15 @@ const ACT = Object.freeze({
   finOptions:     'finance.options'
 });
 
-const SESSION_FAIL_CODES = ['AUTH', 'UNAUTHORIZED', 'SESSION_EXPIRED'];
+/* 這些錯誤碼代表「登入狀態已失效」，前端要清掉 session */
+const SESSION_FAIL_CODES = ['AUTH', 'UNAUTHORIZED', 'SESSION_EXPIRED', 'SESSION_REVOKED', 'MEMBER_DISABLED'];
+
+/* 論壇分類（移到前面，避免宣告順序混亂） */
+const FORUM_CATS = ['交流', '提問', '經驗分享', '運動復健', '飲食生活', '照顧者園地', '其他'];
+
+/* 判斷是否為「讀取類」動作：讀取可重試，其餘視為寫入，會自動帶 requestId */
+const READ_ACTION_RE = /(\.|^)(list|listPublic|listLogs|get|getProfile|me|myList|adminList|memberList|options|preview|dashboard|clinicSummary|checkStatus|config|ping)$/;
+const isReadAction = (a) => READ_ACTION_RE.test(String(a || ''));
 
 function normList(r) {
   if (Array.isArray(r)) return { items: r, page: 1, hasMore: false };
@@ -325,12 +356,23 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
   del(k) { try { localStorage.removeItem(k); } catch (e) {} }
 };
-/** 暫存綁定憑證：只放 sessionStorage，關閉分頁即消失 */
+/** 暫存資料：只放 sessionStorage，關閉分頁即消失 */
 const temp = {
   get(k) { try { return sessionStorage.getItem(k) || ''; } catch (e) { return ''; } },
   set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} },
   del(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
 };
+
+/** 產生唯一請求編號（冪等用） */
+function newRequestId() {
+  try {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    const a = new Uint8Array(16); crypto.getRandomValues(a);
+    return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+}
 
 /* ---------- 全域狀態 ---------- */
 const State = { token: store.get(CONFIG.SESSION_TOKEN_KEY) || '', user: null, cleanups: [], lastRouteToken: 0 };
@@ -340,9 +382,12 @@ function runCleanups() {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   const sp = $('#btn-speak'); if (sp) sp.textContent = '🔊 朗讀';
 }
-/* 權限旗標一律以後端回傳為準 */
+/* 權限旗標一律以後端回傳為準（前端只用來決定要不要顯示按鈕） */
 const isAdmin = () => !!(State.user && State.user.isAdmin);
 const isFinance = () => !!(State.user && State.user.isFinanceAdmin);
+
+/** 未登入時隱藏底部導覽 */
+function setGuest(guest) { document.body.classList.toggle('guest', !!guest); }
 
 /* ---------- 載入中遮罩 ---------- */
 let loadingCount = 0;
@@ -372,1162 +417,1514 @@ function toast(message, type) {
   if (type === 'error') b.focus();
 }
 
-/* ---------- 對話框
+/* ---------- 對話框（開啟時背景 inert，支援疊加） ---------- */
+const modalStack = [];
+const BG_SEL = ['#app-header', '#main', '#app-footer', '#bottom-nav'];
+function setBgInert(on) { BG_SEL.forEach((s) => { const el = $(s); if (el) el.inert = on; }); }
 
-
-  /* ---------- 對話框（開啟時背景 inert，支援疊加） ---------- */
-  const modalStack = [];
-  const BG_SEL = ['#app-header', '#main', '#app-footer', '#bottom-nav'];
-  function setBgInert(on) { BG_SEL.forEach((s) => { const el = $(s); if (el) el.inert = on; }); }
-
-  function openModal(html, opts) {
-    opts = opts || {};
-    const prev = document.activeElement;
-    const back = document.createElement('div'); back.className = 'modal-back';
-    const m = document.createElement('div'); m.className = 'modal';
-    m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); m.setAttribute('aria-label', opts.label || '對話框');
-    m.innerHTML = html; back.appendChild(m);
-    if (modalStack.length) modalStack[modalStack.length - 1].inert = true; else setBgInert(true);
-    modalStack.push(back);
-    $('#modal-root').appendChild(back);
-    let closed = false;
-    const focusables = () => $$('button,a[href],input,select,textarea,[tabindex]:not([tabindex="-1"])', m)
-      .filter((x) => !x.disabled && x.offsetParent !== null);
-    function close(result) {
-      if (closed) return; closed = true;
-      document.removeEventListener('keydown', onKey, true);
-      back.remove();
-      modalStack.splice(modalStack.indexOf(back), 1);
-      if (modalStack.length) modalStack[modalStack.length - 1].inert = false; else setBgInert(false);
-      if (prev && prev.focus) prev.focus();
-      if (opts.onClose) opts.onClose(result);
-    }
-    function onKey(e) {
-      if (modalStack[modalStack.length - 1] !== back) return;
-      if (e.key === 'Escape' && opts.dismissable !== false) { e.preventDefault(); close(null); }
-      if (e.key === 'Tab') {
-        const f = focusables(); if (!f.length) return;
-        const first = f[0], last = f[f.length - 1];
-        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-      }
-    }
-    document.addEventListener('keydown', onKey, true);
-    const f = focusables(); if (f.length) f[0].focus();
-    return { el: m, close: close };
+function openModal(html, opts) {
+  opts = opts || {};
+  const prev = document.activeElement;
+  const back = document.createElement('div'); back.className = 'modal-back';
+  const m = document.createElement('div'); m.className = 'modal';
+  m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); m.setAttribute('aria-label', opts.label || '對話框');
+  m.innerHTML = html; back.appendChild(m);
+  if (modalStack.length) modalStack[modalStack.length - 1].inert = true; else setBgInert(true);
+  modalStack.push(back);
+  $('#modal-root').appendChild(back);
+  let closed = false;
+  const focusables = () => $$('button,a[href],input,select,textarea,[tabindex]:not([tabindex="-1"])', m)
+    .filter((x) => !x.disabled && x.offsetParent !== null);
+  function close(result) {
+    if (closed) return; closed = true;
+    document.removeEventListener('keydown', onKey, true);
+    back.remove();
+    modalStack.splice(modalStack.indexOf(back), 1);
+    if (modalStack.length) modalStack[modalStack.length - 1].inert = false; else setBgInert(false);
+    if (prev && prev.focus) { try { prev.focus(); } catch (e) {} }
+    if (opts.onClose) opts.onClose(result);
   }
+  function onKey(e) {
+    if (modalStack[modalStack.length - 1] !== back) return;
+    if (e.key === 'Escape' && opts.dismissable !== false) { e.preventDefault(); close(null); }
+    if (e.key === 'Tab') {
+      const f = focusables(); if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  }
+  document.addEventListener('keydown', onKey, true);
+  const f = focusables(); if (f.length) f[0].focus();
+  return { el: m, close: close };
+}
 
-  function confirmBox(title, text, okLabel) {
-    return new Promise((resolve) => {
-      const dlg = openModal(
-        '<h2>' + esc(title) + '</h2><p>' + esc(text) + '</p>' +
-        '<div class="btn-row"><button type="button" class="btn" data-r="0">取消</button>' +
-        '<button type="button" class="btn primary" data-r="1">' + esc(okLabel || '確定') + '</button></div>',
-        { label: title, onClose: (r) => resolve(r === true) });
-      $$('button[data-r]', dlg.el).forEach((b) => { b.onclick = () => dlg.close(b.dataset.r === '1'); });
+function confirmBox(title, text, okLabel) {
+  return new Promise((resolve) => {
+    const dlg = openModal(
+      '<h2>' + esc(title) + '</h2><p>' + esc(text) + '</p>' +
+      '<div class="btn-row"><button type="button" class="btn" data-r="0">取消</button>' +
+      '<button type="button" class="btn primary" data-r="1">' + esc(okLabel || '確定') + '</button></div>',
+      { label: title, onClose: (r) => resolve(r === true) });
+    $$('button[data-r]', dlg.el).forEach((b) => { b.onclick = () => dlg.close(b.dataset.r === '1'); });
+  });
+}
+
+function confirmDanger(title, text, okLabel) {
+  return new Promise((resolve) => {
+    const dlg = openModal(
+      '<h2>⚠️ ' + esc(title) + '</h2><div class="banner danger">' + esc(text) + '</div>' +
+      '<div class="check"><input type="checkbox" id="cd-ok"><label for="cd-ok">我了解，這個動作無法復原</label></div>' +
+      '<div class="btn-row"><button type="button" class="btn" data-r="0">先不要</button>' +
+      '<button type="button" class="btn danger primary" data-r="1" disabled>' + esc(okLabel || '確定執行') + '</button></div>',
+      { label: title, onClose: (r) => resolve(r === true) });
+    const ok = $('button[data-r="1"]', dlg.el);
+    $('#cd-ok', dlg.el).onchange = (e) => { ok.disabled = !e.target.checked; };
+    $('button[data-r="0"]', dlg.el).onclick = () => dlg.close(false);
+    ok.onclick = () => dlg.close(true);
+  });
+}
+
+/* ---------- API ---------- */
+class ApiError extends Error {
+  constructor(code, message, extra) {
+    super(message); this.code = code;
+    this.extra = extra || {};          // 例如 attemptsLeft、retryAfterSec
+  }
+}
+
+async function rawPost(action, data, token, requestId) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), CONFIG.API_TIMEOUT_MS);
+  try {
+    const payload = { action: action, sessionToken: token || '', data: data || {} };
+    if (requestId) payload.requestId = requestId;
+    const res = await fetch(CONFIG.API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: ctrl.signal, redirect: 'follow'
     });
-  }
+    if (!res.ok) throw new ApiError('HTTP', '伺服器暫時無法回應（' + res.status + '）');
+    try { return await res.json(); }
+    catch (e) { throw new ApiError('BAD_RESPONSE', '伺服器回應格式不正確'); }
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    if (e.name === 'AbortError') throw new ApiError('TIMEOUT', '連線逾時，請檢查網路後再試一次');
+    throw new ApiError('NETWORK', '無法連線，請檢查網路');
+  } finally { clearTimeout(timer); }
+}
 
-  function confirmDanger(title, text, okLabel) {
-    return new Promise((resolve) => {
-      const dlg = openModal(
-        '<h2>⚠️ ' + esc(title) + '</h2><div class="banner danger">' + esc(text) + '</div>' +
-        '<div class="check"><input type="checkbox" id="cd-ok"><label for="cd-ok">我了解，這個動作無法復原</label></div>' +
-        '<div class="btn-row"><button type="button" class="btn" data-r="0">先不要</button>' +
-        '<button type="button" class="btn danger primary" data-r="1" disabled>' + esc(okLabel || '確定執行') + '</button></div>',
-        { label: title, onClose: (r) => resolve(r === true) });
-      const ok = $('button[data-r="1"]', dlg.el);
-      $('#cd-ok', dlg.el).onchange = (e) => { ok.disabled = !e.target.checked; };
-      $('button[data-r="0"]', dlg.el).onclick = () => dlg.close(false);
-      ok.onclick = () => dlg.close(true);
-    });
+/**
+ * opts.loading / opts.loadingMsg  顯示遮罩
+ * opts.retry       失敗自動重試一次（僅限讀取類；寫入會被忽略）
+ * opts.silent      錯誤不彈提示，也不強制跳登入頁
+ * opts.requestId   寫入類可指定固定編號（同一張表單重按送出時沿用，後端會去重）
+ *
+ * 寫入類動作會自動帶 requestId。後端看到相同編號，會回傳第一次的結果，
+ * 不會重複入帳、重複發文或重複申報。
+ */
+async function api(action, data, opts) {
+  opts = opts || {};
+  const isRead = isReadAction(action);
+  const needAuth = API_CONTRACT.publicActions.indexOf(action) === -1;
+  if (needAuth && !State.token) {
+    if (!opts.silent) go('#/login');
+    throw new ApiError('NO_SESSION', '請先登入');
   }
-
-  /* ---------- API ---------- */
-  class ApiError extends Error {
-    constructor(code, message) { super(message); this.code = code; }
-  }
-
-  async function rawPost(action, data, token) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), CONFIG.API_TIMEOUT_MS);
-    try {
-      const res = await fetch(CONFIG.API_BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: action, sessionToken: token || '', data: data || {} }),
-        signal: ctrl.signal, redirect: 'follow'
-      });
-      if (!res.ok) throw new ApiError('HTTP', '伺服器暫時無法回應（' + res.status + '）');
-      try { return await res.json(); }
-      catch (e) { throw new ApiError('BAD_RESPONSE', '伺服器回應格式不正確'); }
-    } catch (e) {
-      if (e instanceof ApiError) throw e;
-      if (e.name === 'AbortError') throw new ApiError('TIMEOUT', '連線逾時，請檢查網路後再試一次');
-      throw new ApiError('NETWORK', '無法連線，請檢查網路');
-    } finally { clearTimeout(timer); }
-  }
-
-  /**
-   * opts.loading / opts.loadingMsg 顯示遮罩
-   * opts.retry   失敗自動重試一次（只給讀取類；寫入絕不重試）
-   * opts.silent  錯誤不彈提示，也不強制跳登入頁
-   */
-  async function api(action, data, opts) {
-    opts = opts || {};
-    const needAuth = API_CONTRACT.publicActions.indexOf(action) === -1;
-    if (needAuth && !State.token) {
-      if (!opts.silent) go('#/login');
-      throw new ApiError('NO_SESSION', '請先登入');
-    }
-    if (opts.loading) showLoading(opts.loadingMsg);
-    try {
-      let json;
-      try { json = await rawPost(action, data, State.token); }
-      catch (e) {
-        if (opts.retry && (e.code === 'NETWORK' || e.code === 'TIMEOUT' || e.code === 'HTTP')) {
-          await wait(1200);
-          json = await rawPost(action, data, State.token);
-        } else throw e;
-      }
-      if (!json || json.success !== true) {
-        const code = (json && json.code) || 'UNKNOWN';
-        const msg = (json && json.message) || '發生未知錯誤';
-        if (needAuth && SESSION_FAIL_CODES.indexOf(code) !== -1) {
-          clearSession();
-          if (!opts.silent) { toast('登入已逾時，請重新登入', 'error'); go('#/login'); }
-        }
-        throw new ApiError(code, msg);
-      }
-      return json.data;
-    } catch (e) {
-      const quiet = ['NO_SESSION'].indexOf(e.code) !== -1 || (needAuth && SESSION_FAIL_CODES.indexOf(e.code) !== -1);
-      if (!opts.silent && !quiet) toast(e.message || '發生錯誤', 'error');
-      throw e;
-    } finally { if (opts.loading) hideLoading(); }
-  }
-
-  /* ---------- 閱讀輔助 ---------- */
-  const SIZE_STEPS = [['normal', '標準'], ['large', '大'], ['xl', '特大']];
-  function applySize(v) {
-    document.documentElement.setAttribute('data-size', v);
-    const found = SIZE_STEPS.find((s) => s[0] === v) || SIZE_STEPS[0];
-    $('#size-label').textContent = found[1];
-  }
-  function applyContrast(on) {
-    document.documentElement.setAttribute('data-contrast', on ? '1' : '0');
-    $('#contrast-label').textContent = on ? '開' : '關';
-    $('#btn-contrast').setAttribute('aria-pressed', on ? 'true' : 'false');
-  }
-  function initAccessibility() {
-    applySize(document.documentElement.getAttribute('data-size') || 'normal');
-    applyContrast(document.documentElement.getAttribute('data-contrast') === '1');
-    $('#btn-size').onclick = () => {
-      const cur = document.documentElement.getAttribute('data-size');
-      const i = SIZE_STEPS.findIndex((s) => s[0] === cur);
-      const next = SIZE_STEPS[(i + 1) % SIZE_STEPS.length][0];
-      applySize(next); store.set(CONFIG.PREF_SIZE_KEY, next);
-    };
-    $('#btn-contrast').onclick = () => {
-      const on = document.documentElement.getAttribute('data-contrast') !== '1';
-      applyContrast(on); store.set(CONFIG.PREF_CONTRAST_KEY, on ? '1' : '0');
-    };
-    const speakBtn = $('#btn-speak');
-    if (!('speechSynthesis' in window)) { speakBtn.hidden = true; return; }
-    speakBtn.onclick = () => {
-      if (speechSynthesis.speaking) { speechSynthesis.cancel(); speakBtn.textContent = '🔊 朗讀'; return; }
-      const text = $('#main').innerText.replace(/\s+/g, ' ').trim().slice(0, 3000);
-      if (!text) return;
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'zh-TW'; u.rate = 0.85;
-      u.onend = u.onerror = () => { speakBtn.textContent = '🔊 朗讀'; };
-      speakBtn.textContent = '⏹ 停止朗讀';
-      speechSynthesis.speak(u);
-    };
-  }
-
-  /* ---------- 檔案與圖片壓縮 ---------- */
-  function readAsDataURL(file) {
-    return new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result); r.onerror = () => rej(new Error('讀取檔案失敗'));
-      r.readAsDataURL(file);
-    });
-  }
-  /** 回傳 { dataUrl, name, mime, size }；PDF 不壓縮但限制 3MB */
-  async function prepareFile(file, maxBytes) {
-    maxBytes = maxBytes || 1000000;
-    if (!file) throw new Error('請選擇檔案');
-    if (file.type === 'application/pdf') {
-      if (file.size > 3000000) throw new Error('PDF 檔案請小於 3MB');
-      return { dataUrl: await readAsDataURL(file), name: file.name, mime: file.type, size: file.size };
-    }
-    if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type)) throw new Error('只能上傳照片或 PDF');
-    const src = await readAsDataURL(file);
-    const img = await new Promise((res, rej) => {
-      const i = new Image(); i.onload = () => res(i);
-      i.onerror = () => rej(new Error('無法讀取這張照片（若是 HEIC 請改用相機的「最相容」格式）'));
-      i.src = src;
-    });
-    let w = img.naturalWidth, h = img.naturalHeight;
-    const MAX_SIDE = 1600;
-    if (Math.max(w, h) > MAX_SIDE) { const k = MAX_SIDE / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
-    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
-    let q = 0.85, out = cv.toDataURL('image/jpeg', q);
-    while (out.length * 0.75 > maxBytes && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
-    while (out.length * 0.75 > maxBytes && cv.width > 600) {
-      cv.width = Math.round(cv.width * 0.8); cv.height = Math.round(cv.height * 0.8);
-      const c2 = cv.getContext('2d'); c2.fillStyle = '#fff'; c2.fillRect(0, 0, cv.width, cv.height);
-      c2.drawImage(img, 0, 0, cv.width, cv.height); out = cv.toDataURL('image/jpeg', 0.7);
-    }
-    return { dataUrl: out, name: file.name.replace(/\.\w+$/, '') + '.jpg', mime: 'image/jpeg', size: Math.round(out.length * 0.75) };
-  }
-  /** 後端 FileModule 需要 { name, mime, base64 } */
-  function toUpload(f) {
-    return { name: f.name, mime: f.mime, base64: String(f.dataUrl).split(',')[1] || '' };
-  }
-
-  /* ---------- 表單輔助 ---------- */
-  function formData(form) {
-    const o = {};
-    new FormData(form).forEach((v, k) => { if (typeof v === 'string') o[k] = v.trim(); });
-    return o;
-  }
-  function markInvalid(form, name, message) {
-    const f = form.elements[name]; if (!f) return;
-    const box = (f.closest ? f.closest('.field') : null) || (f[0] && f[0].closest('.field')); if (!box) return;
-    box.classList.add('invalid');
-    let e = $('.err', box);
-    if (!e) { e = document.createElement('div'); e.className = 'err'; e.setAttribute('role', 'alert'); box.appendChild(e); }
-    e.textContent = message;
-    if (f.focus) f.focus();
-  }
-  function clearInvalid(form) {
-    $$('.field.invalid', form).forEach((b) => b.classList.remove('invalid'));
-    $$('.field .err', form).forEach((e) => e.remove());
-  }
-  function once(btn, fn) {
-    return async function () {
-      if (btn.disabled) return;
-      btn.disabled = true;
-      try { return await fn.apply(this, arguments); } finally { btn.disabled = false; }
-    };
-  }
-
-  /* ---------- 草稿（排除指定欄位；登出時全部清除） ---------- */
-  function bindDraft(form, key, exclude) {
-    exclude = exclude || [];
-    const k = CONFIG.DRAFT_PREFIX + key;
-    try {
-      const saved = JSON.parse(store.get(k) || 'null');
-      if (saved) Object.keys(saved).forEach((n) => {
-        if (exclude.indexOf(n) !== -1) return;
-        const el = form.elements[n];
-        if (!el || el.type === 'file') return;
-        if (el.length !== undefined && el.type === undefined) {
-          Array.from(el).forEach((r) => { r.checked = (r.value === saved[n]); });
-        } else el.value = saved[n];
-      });
-    } catch (e) {}
-    form.addEventListener('input', () => {
-      const d = {};
-      new FormData(form).forEach((v, n) => { if (typeof v === 'string' && exclude.indexOf(n) === -1) d[n] = v; });
-      store.set(k, JSON.stringify(d));
-    });
-    return { clear: () => store.del(k) };
-  }
-  function clearAllDrafts() {
-    try {
-      Object.keys(localStorage).filter((k) => k.indexOf(CONFIG.DRAFT_PREFIX) === 0)
-        .forEach((k) => localStorage.removeItem(k));
-    } catch (e) {}
-  }
-
-  /* ---------- 工作階段 ---------- */
-  function saveSession(token, user) {
-    State.token = token; State.user = user;
-    store.set(CONFIG.SESSION_TOKEN_KEY, token);
-    store.set(CONFIG.SESSION_USER_KEY, JSON.stringify({
-      name: user.name, memberType: user.memberType, isAdmin: !!user.isAdmin, isFinanceAdmin: !!user.isFinanceAdmin
-    }));
-  }
-  function clearSession() {
-    State.token = ''; State.user = null;
-    store.del(CONFIG.SESSION_TOKEN_KEY); store.del(CONFIG.SESSION_USER_KEY);
-    temp.del('bindToken');
-    clearAllDrafts();
-  }
-  async function logout() {
-    if (!(await confirmBox('登出', '確定要登出嗎？下次需要重新用 LINE 登入。', '登出'))) return;
-    try { await api(API_CONTRACT.logout, {}, { silent: true, loading: true }); } catch (e) {}
-    clearSession();
-    go('#/login');
-  }
-
-  /* ---------- LINE LIFF 登入與綁定 ---------- */
-  let liffReady = false;
-  async function initLiff() {
-    if (liffReady) return true;
-    if (typeof liff === 'undefined') return false;
-    try { await liff.init({ liffId: CONFIG.LIFF_ID }); liffReady = true; return true; }
-    catch (e) { return false; }
-  }
-  /** 回傳 ID Token；尚未登入 LINE 時會導向登入並回傳 null */
-  async function lineIdToken() {
-    if (!(await initLiff())) throw new ApiError('LIFF', '無法啟動 LINE，請在 LINE 內開啟本頁');
-    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href.split('#')[0] }); return null; }
-    const t = liff.getIDToken();
-    if (!t) throw new ApiError('LIFF', '取不到 LINE 身分，請確認 LIFF 已開啟 openid 權限');
-    return t;
-  }
-
-  /** 回傳 'ok' | 'bind' | 'login' | 'redirect' */
-  async function autoLogin() {
-    if (State.token) {
-      try {
-        const r = await api(API_CONTRACT.me, {}, { silent: true, retry: true });
-        State.user = r.user || r; return 'ok';
-      } catch (e) {
-        if (SESSION_FAIL_CODES.indexOf(e.code) !== -1) clearSession();
-        else if (State.user) return 'ok';   // 只是網路問題：保留登入
-      }
-    }
-    let t = null;
-    try { t = await lineIdToken(); } catch (e) { toast(e.message, 'error'); return 'login'; }
-    if (!t) return 'redirect';
-    try {
-      const r = await api(API_CONTRACT.login, { idToken: t, ua: navigator.userAgent.slice(0, 100) }, { silent: true, loading: true });
-      if (r && r.needBind) { temp.set('bindToken', r.bindToken || ''); return 'bind'; }
-      if (!r || !r.sessionToken || !r.user) { toast('登入回應格式不正確', 'error'); return 'login'; }
-      saveSession(r.sessionToken, r.user);
-      return 'ok';
-    } catch (e) {
-      toast(e.message, 'error');
-      return 'login';
-    }
-  }
-
-  function renderLogin() {
-    setMain('<h1>歡迎使用</h1><div class="card"><p>請用 LINE 登入。第一次使用時，需要核對您的會員資料。</p>' +
-      '<button type="button" class="btn primary block" id="do-login">用 LINE 登入</button></div>' +
-      '<div class="card"><h2>還沒有成為會員？</h2><a class="btn block" href="#/announcements">先看看公開公告</a></div>', '登入');
-    const b = $('#do-login');
-    b.onclick = once(b, async () => {
-      const r = await autoLogin();
-      if (r === 'ok') go('#/home'); else if (r === 'bind') go('#/bind');
-    });
-  }
-
-  async function renderBind() {
-    if (!temp.get('bindToken')) {
-      const r = await autoLogin();
-      if (r === 'redirect') return;
-      if (r === 'ok') return go('#/home');
-      if (r !== 'bind') return go('#/login');
-    }
-    setMain('<h1>第一次使用：核對會員資料</h1>' +
-      '<div class="banner info">請填寫您在協會登記的資料，核對成功後會與這個 LINE 帳號綁定。資料只用來確認身分，不會保存在手機上。</div>' +
-      '<form id="bind-form" class="card" novalidate autocomplete="off">' +
-      '<div class="field"><label for="b-name">姓名 <span class="req">*</span></label><input id="b-name" name="name" type="text" autocomplete="off"></div>' +
-      '<div class="field"><label for="b-phone">手機號碼 <span class="req">*</span></label><input id="b-phone" name="phone" type="tel" inputmode="numeric" maxlength="12" placeholder="例如 0912345678" autocomplete="off"></div>' +
-      '<div class="field"><label for="b-id">身分證字號後四碼 <span class="req">*</span></label><input id="b-id" name="idLast4" type="text" maxlength="4" placeholder="例如 5678" autocomplete="off">' +
-      '<div class="hint">只需要後四碼，不需要完整字號。</div></div>' +
-      '<div class="btn-row"><button type="submit" class="btn primary">送出核對</button></div></form>', '綁定會員');
-    const form = $('#bind-form');   // 個資不存草稿
-    form.onsubmit = async (e) => {
-      e.preventDefault(); clearInvalid(form);
-      const d = formData(form);
-      d.phone = (d.phone || '').replace(/[\s-]/g, '');
-      if (!d.name) return markInvalid(form, 'name', '請填寫姓名');
-      if (!/^09\d{8}$/.test(d.phone)) return markInvalid(form, 'phone', '手機需為 10 碼，並以 09 開頭');
-      if (!/^[A-Za-z0-9]{4}$/.test(d.idLast4 || '')) return markInvalid(form, 'idLast4', '請填 4 碼');
-      const submit = $('button[type=submit]', form); submit.disabled = true;
-      try {
-        const r = await api(API_CONTRACT.bind, {
-          bindToken: temp.get('bindToken'), name: d.name, phone: d.phone, idLast4: d.idLast4,
-          ua: navigator.userAgent.slice(0, 100)
-        }, { loading: true, silent: true });
-        if (!r || !r.sessionToken || !r.user) { toast('綁定回應格式不正確', 'error'); return; }
-        temp.del('bindToken');
-        saveSession(r.sessionToken, r.user);
-        toast('綁定成功，歡迎 ' + r.user.name, 'ok'); go('#/home');
-      } catch (err) {
-        toast(err.message, 'error');
-        if (err.code === 'BIND_EXPIRED') { temp.del('bindToken'); go('#/login'); }
-      } finally { submit.disabled = false; }
-    };
-  }
-
-  /* ---------- 路由 ---------- */
-  const Routes = { table: {} };
-  Routes.add = function (path, def) { Routes.table[path] = def; };
-  function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
-
-  function setMain(html, title) {
-    $('#main').innerHTML = html;
-    document.title = (title ? title + '｜' : '') + '台灣帕金森病友權益促進會';
-    const h = $('#main h1'); if (h) h.setAttribute('tabindex', '-1');
-    window.scrollTo(0, 0);
-    (h || $('#main')).focus({ preventScroll: true });
-  }
-  function setNav(name) {
-    $$('#bottom-nav a').forEach((a) => {
-      if (a.dataset.nav === name) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-    });
-  }
-  function parseHash() {
-    const raw = (location.hash || '#/home').slice(1);
-    const i = raw.indexOf('?');
-    const p = i === -1 ? raw : raw.slice(0, i);
-    const q = i === -1 ? '' : raw.slice(i + 1);
-    const params = {}; new URLSearchParams(q).forEach((v, k) => { params[k] = v; });
-    return { path: p || '/home', params: params };
-  }
-  function allowed(level) {
-    if (!level || level === 'public') return true;
-    if (!State.user) return false;
-    if (level === 'member') return true;
-    if (level === 'admin') return isAdmin();
-    if (level === 'finance') return isFinance();
-    return false;
-  }
-
-  async function route() {
-    runCleanups();
-    const myToken = ++State.lastRouteToken;
-    const parsed = parseHash(), path = parsed.path, params = parsed.params;
-
-    if (path === '/login') { if (State.user) return go('#/home'); setNav(''); return renderLogin(); }
-    if (path === '/bind')  { setNav(''); return renderBind(); }
-
-    const def = Routes.table[path];
-    if (!def) {
-      setNav('home');
-      return setMain('<div class="empty"><span class="ic" aria-hidden="true">🔍</span><h1>找不到這個頁面</h1>' +
-        '<a class="btn primary" href="#/home">回首頁</a></div>', '找不到頁面');
-    }
-    if (def.auth !== 'public' && !State.user) {
-      const r = await autoLogin();
-      if (myToken !== State.lastRouteToken) return;
-      if (r === 'redirect') return;
-      if (r === 'bind') return go('#/bind');
-      if (r !== 'ok') return go('#/login');
-    }
-    if (!allowed(def.auth)) {
-      setNav('');
-      return setMain('<h1>沒有權限</h1><div class="banner danger">您沒有權限使用這個功能。</div><a class="btn primary" href="#/home">回首頁</a>', '沒有權限');
-    }
-    setNav(def.nav || '');
-    try { await def.render(params, { myToken: myToken, stale: () => myToken !== State.lastRouteToken }); }
+  const requestId = isRead ? '' : (opts.requestId || newRequestId());
+  if (opts.loading) showLoading(opts.loadingMsg);
+  try {
+    let json;
+    try { json = await rawPost(action, data, State.token, requestId); }
     catch (e) {
-      if (myToken !== State.lastRouteToken) return;
-      setMain('<h1>載入失敗</h1><div class="banner danger">頁面載入失敗：' + esc(e.message || '未知錯誤') + '</div>' +
-        '<button type="button" class="btn primary" id="retry">重新載入</button>', '載入失敗');
-      $('#retry').onclick = () => route();
+      const transient = e.code === 'NETWORK' || e.code === 'TIMEOUT' || e.code === 'HTTP';
+      if (opts.retry && isRead && transient) {
+        await wait(1200);
+        json = await rawPost(action, data, State.token, requestId);
+      } else {
+        if (!isRead && e.code === 'TIMEOUT') {
+          e.message = '連線逾時，資料可能已送出。請先到「申報紀錄」或列表確認，再決定是否重送。';
+        }
+        throw e;
+      }
+    }
+    if (!json || json.success !== true) {
+      const code = (json && json.code) || 'UNKNOWN';
+      const msg = (json && json.message) || '發生未知錯誤';
+      if (needAuth && SESSION_FAIL_CODES.indexOf(code) !== -1) {
+        clearSession();
+        if (!opts.silent) {
+          if (code === 'MEMBER_DISABLED') go('#/status?s=disabled');
+          else { toast('登入已逾時，請重新登入', 'error'); go('#/login'); }
+        }
+      }
+      throw new ApiError(code, msg, json && json.extra);
+    }
+    return json.data;
+  } catch (e) {
+    const quiet = ['NO_SESSION'].indexOf(e.code) !== -1 || (needAuth && SESSION_FAIL_CODES.indexOf(e.code) !== -1);
+    if (!opts.silent && !quiet) toast(e.message || '發生錯誤', 'error');
+    throw e;
+  } finally { if (opts.loading) hideLoading(); }
+}
+
+/* ---------- 閱讀輔助 ---------- */
+const SIZE_STEPS = [['normal', '標準'], ['large', '大'], ['xl', '特大']];
+function applySize(v) {
+  document.documentElement.setAttribute('data-size', v);
+  const found = SIZE_STEPS.find((s) => s[0] === v) || SIZE_STEPS[0];
+  $('#size-label').textContent = found[1];
+}
+function applyContrast(on) {
+  document.documentElement.setAttribute('data-contrast', on ? '1' : '0');
+  $('#contrast-label').textContent = on ? '開' : '關';
+  $('#btn-contrast').setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+function initAccessibility() {
+  applySize(document.documentElement.getAttribute('data-size') || 'normal');
+  applyContrast(document.documentElement.getAttribute('data-contrast') === '1');
+  $('#btn-size').onclick = () => {
+    const cur = document.documentElement.getAttribute('data-size');
+    const i = SIZE_STEPS.findIndex((s) => s[0] === cur);
+    const next = SIZE_STEPS[(i + 1) % SIZE_STEPS.length][0];
+    applySize(next); store.set(CONFIG.PREF_SIZE_KEY, next);
+  };
+  $('#btn-contrast').onclick = () => {
+    const on = document.documentElement.getAttribute('data-contrast') !== '1';
+    applyContrast(on); store.set(CONFIG.PREF_CONTRAST_KEY, on ? '1' : '0');
+  };
+  const speakBtn = $('#btn-speak');
+  if (!('speechSynthesis' in window)) { speakBtn.hidden = true; return; }
+  speakBtn.onclick = () => {
+    if (speechSynthesis.speaking) { speechSynthesis.cancel(); speakBtn.textContent = '🔊 朗讀'; return; }
+    const text = $('#main').innerText.replace(/\s+/g, ' ').trim().slice(0, 3000);
+    if (!text) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-TW'; u.rate = 0.85;
+    u.onend = u.onerror = () => { speakBtn.textContent = '🔊 朗讀'; };
+    speakBtn.textContent = '⏹ 停止朗讀';
+    speechSynthesis.speak(u);
+  };
+}
+
+/* ---------- 檔案與圖片壓縮 ---------- */
+function readAsDataURL(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result); r.onerror = () => rej(new Error('讀取檔案失敗'));
+    r.readAsDataURL(file);
+  });
+}
+/** 回傳 { dataUrl, name, mime, size }；PDF 不壓縮但限制 3MB */
+async function prepareFile(file, maxBytes) {
+  maxBytes = maxBytes || 1000000;
+  if (!file) throw new Error('請選擇檔案');
+  if (file.type === 'application/pdf') {
+    if (file.size > 3000000) throw new Error('PDF 檔案請小於 3MB');
+    return { dataUrl: await readAsDataURL(file), name: file.name, mime: file.type, size: file.size };
+  }
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type)) throw new Error('只能上傳照片或 PDF');
+  const src = await readAsDataURL(file);
+  const img = await new Promise((res, rej) => {
+    const i = new Image(); i.onload = () => res(i);
+    i.onerror = () => rej(new Error('無法讀取這張照片（若是 HEIC 請改用相機的「最相容」格式）'));
+    i.src = src;
+  });
+  let w = img.naturalWidth, h = img.naturalHeight;
+  const MAX_SIDE = 1600;
+  if (Math.max(w, h) > MAX_SIDE) { const k = MAX_SIDE / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+  let q = 0.85, out = cv.toDataURL('image/jpeg', q);
+  while (out.length * 0.75 > maxBytes && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+  while (out.length * 0.75 > maxBytes && cv.width > 600) {
+    cv.width = Math.round(cv.width * 0.8); cv.height = Math.round(cv.height * 0.8);
+    const c2 = cv.getContext('2d'); c2.fillStyle = '#fff'; c2.fillRect(0, 0, cv.width, cv.height);
+    c2.drawImage(img, 0, 0, cv.width, cv.height); out = cv.toDataURL('image/jpeg', 0.7);
+  }
+  return { dataUrl: out, name: file.name.replace(/\.\w+$/, '') + '.jpg', mime: 'image/jpeg', size: Math.round(out.length * 0.75) };
+}
+/** 後端 FileModule 需要 { name, mime, base64 } */
+function toUpload(f) {
+  return { name: f.name, mime: f.mime, base64: String(f.dataUrl).split(',')[1] || '' };
+}
+
+/* ---------- 表單輔助 ---------- */
+function formData(form) {
+  const o = {};
+  new FormData(form).forEach((v, k) => { if (typeof v === 'string') o[k] = v.trim(); });
+  return o;
+}
+function markInvalid(form, name, message) {
+  const f = form.elements[name]; if (!f) return;
+  const first = (f.nodeType === 1) ? f : (f[0] || null);
+  const box = first && first.closest ? first.closest('.field') : null;
+  if (!box) return;
+  box.classList.add('invalid');
+  let e = $('.err', box);
+  if (!e) { e = document.createElement('div'); e.className = 'err'; e.setAttribute('role', 'alert'); box.appendChild(e); }
+  e.textContent = message;
+  if (first && first.focus) first.focus();
+}
+function clearInvalid(form) {
+  $$('.field.invalid', form).forEach((b) => b.classList.remove('invalid'));
+  $$('.field .err', form).forEach((e) => e.remove());
+}
+function once(btn, fn) {
+  return async function () {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try { return await fn.apply(this, arguments); } finally { btn.disabled = false; }
+  };
+}
+/** 單選群組（RadioNodeList）統一轉成陣列，避免各瀏覽器行為不同 */
+function radios(form, name) {
+  const g = form.elements[name];
+  if (!g) return [];
+  return g.nodeType === 1 ? [g] : Array.from(g);
+}
+
+/* ---------- 草稿（排除指定欄位；登出時全部清除） ---------- */
+function bindDraft(form, key, exclude) {
+  exclude = exclude || [];
+  const k = CONFIG.DRAFT_PREFIX + key;
+  try {
+    const saved = JSON.parse(store.get(k) || 'null');
+    if (saved) Object.keys(saved).forEach((n) => {
+      if (exclude.indexOf(n) !== -1) return;
+      const g = form.elements[n];
+      if (!g) return;
+      const list = radios(form, n);
+      if (list.length && list[0].type === 'radio') {
+        list.forEach((r) => { r.checked = (r.value === saved[n]); });
+      } else if (g.type !== 'file') {
+        g.value = saved[n];
+      }
+    });
+  } catch (e) {}
+  form.addEventListener('input', () => {
+    const d = {};
+    new FormData(form).forEach((v, n) => { if (typeof v === 'string' && exclude.indexOf(n) === -1) d[n] = v; });
+    store.set(k, JSON.stringify(d));
+  });
+  return { clear: () => store.del(k) };
+}
+function clearAllDrafts() {
+  try {
+    Object.keys(localStorage).filter((k) => k.indexOf(CONFIG.DRAFT_PREFIX) === 0)
+      .forEach((k) => localStorage.removeItem(k));
+  } catch (e) {}
+}
+
+/* ====== 第 3 段從這裡接續（工作階段、LIFF、登入、註冊、路由）====== */
+/* ==================================================================
+ * 工作階段
+ * ================================================================== */
+function saveSession(token, user) {
+  State.token = token; State.user = user;
+  store.set(CONFIG.SESSION_TOKEN_KEY, token);
+  store.set(CONFIG.SESSION_USER_KEY, JSON.stringify({
+    name: user.name, memberType: user.memberType, isAdmin: !!user.isAdmin, isFinanceAdmin: !!user.isFinanceAdmin
+  }));
+  setGuest(false);
+}
+function clearSession() {
+  State.token = ''; State.user = null;
+  store.del(CONFIG.SESSION_TOKEN_KEY); store.del(CONFIG.SESSION_USER_KEY);
+  temp.del('bindToken');
+  clearAllDrafts();
+  setGuest(true);
+}
+async function logout() {
+  if (!(await confirmBox('登出', '確定要登出嗎？下次需要重新用 LINE 登入。', '登出'))) return;
+  try { await api(API_CONTRACT.logout, {}, { silent: true, loading: true }); } catch (e) {}
+  clearSession();
+  go('#/login');
+}
+
+/* ---------- 登入後要回到哪一頁 ---------- */
+const RETURN_KEY = 'tprda.returnTo';
+function saveReturnTo(h) {
+  if (!h || !/^#\//.test(h) || /^#\/(login|bind|status)/.test(h)) return;
+  store.set(RETURN_KEY, JSON.stringify({ h: h, t: Date.now() }));
+}
+function peekReturnTo() {
+  try {
+    const o = JSON.parse(store.get(RETURN_KEY) || 'null');
+    if (o && Date.now() - o.t < 600000 && /^#\//.test(o.h)) return o.h;   // 10 分鐘內有效
+  } catch (e) {}
+  return '';
+}
+function takeReturnTo() { const h = peekReturnTo(); store.del(RETURN_KEY); return h; }
+function afterLogin() { go(takeReturnTo() || '#/home'); }
+
+/* ==================================================================
+ * LINE LIFF
+ * ================================================================== */
+let liffReady = false;
+async function initLiff() {
+  if (liffReady) return true;
+  if (typeof liff === 'undefined') return false;
+  try { await liff.init({ liffId: CONFIG.LIFF_ID }); liffReady = true; return true; }
+  catch (e) { return false; }
+}
+
+/** 防止 LIFF 轉址無限迴圈：5 分鐘內最多自動轉址 2 次 */
+const LIFF_LOOP_KEY = 'tprda.liffRedirect';
+function liffRedirectAllowed() {
+  let o = null;
+  try { o = JSON.parse(store.get(LIFF_LOOP_KEY) || 'null'); } catch (e) {}
+  const now = Date.now();
+  if (!o || now - o.t > 300000) o = { n: 0, t: now };
+  if (o.n >= 2) return false;
+  o.n++; store.set(LIFF_LOOP_KEY, JSON.stringify(o));
+  return true;
+}
+const resetLiffLoop = () => store.del(LIFF_LOOP_KEY);
+
+function liffRelogin() {
+  if (!liffRedirectAllowed()) {
+    throw new ApiError('LIFF_LOOP', 'LINE 登入一直沒有成功，請關閉後從 LINE 重新開啟本頁。');
+  }
+  saveReturnTo(location.hash);
+  liff.login({ redirectUri: location.href.split('#')[0] });
+  return null;
+}
+
+/** 回傳 ID Token；需要登入 LINE 時會轉址並回傳 null */
+async function lineIdToken() {
+  if (!(await initLiff())) throw new ApiError('LIFF', '無法啟動 LINE，請在 LINE 內開啟本頁');
+  if (!liff.isLoggedIn()) return liffRelogin();
+  // ID Token 約 1 小時過期，快過期就重新登入
+  try {
+    const dec = liff.getDecodedIDToken && liff.getDecodedIDToken();
+    if (dec && dec.exp && dec.exp * 1000 < Date.now() + 30000) { liff.logout(); return liffRelogin(); }
+  } catch (e) {}
+  const t = liff.getIDToken();
+  if (!t) throw new ApiError('LIFF', '取不到 LINE 身分，請確認 LIFF 已開啟 openid 權限');
+  resetLiffLoop();
+  return t;
+}
+
+/* ==================================================================
+ * 自動登入
+ * 回傳：'ok' | 'bind' | 'pending' | 'disabled' | 'locked' | 'login' | 'redirect'
+ * ================================================================== */
+let loginInflight = null;
+const LoginInfo = { message: '', retryAfterSec: 0 };   // 給登入頁顯示
+
+function autoLogin() {
+  if (loginInflight) return loginInflight;
+  loginInflight = autoLoginInner().finally(() => { loginInflight = null; });
+  return loginInflight;
+}
+
+async function autoLoginInner() {
+  LoginInfo.message = ''; LoginInfo.retryAfterSec = 0;
+
+  // 1. 已有 session：先驗證
+  if (State.token) {
+    try {
+      const r = await api(API_CONTRACT.me, {}, { silent: true, retry: true });
+      State.user = r.user || r; setGuest(false); return 'ok';
+    } catch (e) {
+      if (e.code === 'MEMBER_DISABLED') return 'disabled';
+      if (SESSION_FAIL_CODES.indexOf(e.code) !== -1) clearSession();
+      else if (State.user) { setGuest(false); return 'ok'; }   // 只是網路問題：保留登入
     }
   }
 
-  /* ==================================================================
-   * 共用與頁面
-   * ================================================================== */
-  const PAY_METHODS = ['匯款轉帳', '現金', '支票', 'ATM轉帳', '其他'];
-  const ST = { pending: '待審核', active: '啟用', disabled: '停用' };
+  // 2. 取得 LINE ID Token
+  let t = null;
+  try { t = await lineIdToken(); }
+  catch (e) { LoginInfo.message = e.message; return 'login'; }
+  if (!t) return 'redirect';
 
-  function todayLocal() {
-    const d = new Date(), p = (n) => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  // 3. 交給後端判斷身分
+  try {
+    const r = await api(API_CONTRACT.login, { idToken: t, ua: navigator.userAgent.slice(0, 100) },
+      { silent: true, loading: true, loadingMsg: '正在確認您的 LINE 身分…' });
+    if (r && r.needBind) { temp.set('bindToken', r.bindToken || ''); return 'bind'; }
+    if (r && r.state === 'pending') return 'pending';
+    if (r && r.state === 'disabled') return 'disabled';
+    if (r && r.state === 'locked') { LoginInfo.retryAfterSec = Number(r.retryAfterSec) || 0; return 'locked'; }
+    if (!r || !r.sessionToken || !r.user) { LoginInfo.message = '登入回應格式不正確'; return 'login'; }
+    saveSession(r.sessionToken, r.user);
+    return 'ok';
+  } catch (e) {
+    if (e.code === 'LOCKED') { LoginInfo.retryAfterSec = Number(e.extra && e.extra.retryAfterSec) || 0; return 'locked'; }
+    if (e.code === 'MEMBER_DISABLED') return 'disabled';
+    LoginInfo.message = e.message;
+    return 'login';
   }
-  /** 以本地時區計算到期日剩餘天數（到期日當天 23:59 前都算有效） */
-  function daysLeft(dateStr) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr || ''));
-    if (!m) return NaN;
-    const end = new Date(+m[1], +m[2] - 1, +m[3], 23, 59, 59);
-    return Math.ceil((end - new Date()) / 86400000);
+}
+
+/** 依登入結果導向對應頁面；回傳 true 表示已處理 */
+function goByLoginState(r) {
+  if (r === 'ok') { afterLogin(); return true; }
+  if (r === 'bind') { go('#/bind'); return true; }
+  if (r === 'pending') { go('#/status?s=pending'); return true; }
+  if (r === 'disabled') { go('#/status?s=disabled'); return true; }
+  if (r === 'locked') { go('#/status?s=locked'); return true; }
+  if (r === 'redirect') return true;
+  return false;
+}
+
+/* ---------- 共用：資料整理與倒數 ---------- */
+function normPhone(v) {
+  let p = String(v || '').replace(/[\s\-()]/g, '');
+  if (p.indexOf('+886') === 0) p = '0' + p.slice(4);
+  else if (p.indexOf('886') === 0 && p.length === 12) p = '0' + p.slice(3);
+  return p;
+}
+function fmtSec(s) {
+  s = Math.max(0, Math.ceil(s));
+  return s >= 60 ? Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒' : s + ' 秒';
+}
+/** 倒數計時，離開頁面自動停止；回傳停止函式 */
+function startLockTimer(box, sec, onDone) {
+  let left = Math.ceil(sec);
+  const paint = () => {
+    box.innerHTML = '<div class="banner danger" role="alert">嘗試次數過多，暫時鎖定。請等待 <span class="lock-timer">' +
+      fmtSec(left) + '</span> 後再試。</div>';
+  };
+  paint();
+  const id = setInterval(() => {
+    left--;
+    if (left <= 0) { clearInterval(id); box.innerHTML = ''; if (onDone) onDone(); } else paint();
+  }, 1000);
+  const stop = () => clearInterval(id);
+  onLeave(stop);
+  return stop;
+}
+function stepsHtml(now) {
+  const names = ['LINE 登入', '核對或申請', '完成'];
+  return '<ol class="steps" aria-label="步驟">' + names.map((n, i) =>
+    '<li class="' + (i + 1 < now ? 'done' : i + 1 === now ? 'now' : '') + '"' + (i + 1 === now ? ' aria-current="step"' : '') +
+    '><span class="n">' + (i + 1 < now ? '✔' : (i + 1)) + '</span>' + n + '</li>').join('') + '</ol>';
+}
+
+/* ==================================================================
+ * 路由骨架
+ * ================================================================== */
+const Routes = { table: {} };
+Routes.add = function (path, def) { Routes.table[path] = def; };
+function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
+
+function setMain(html, title) {
+  $('#main').innerHTML = html;
+  document.title = (title ? title + '｜' : '') + '台灣帕金森病友權益促進會';
+  const h = $('#main h1'); if (h) h.setAttribute('tabindex', '-1');
+  window.scrollTo(0, 0);
+  (h || $('#main')).focus({ preventScroll: true });
+}
+function setNav(name) {
+  $$('#bottom-nav a').forEach((a) => {
+    if (a.dataset.nav === name) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+}
+function parseHash() {
+  const raw = (location.hash || '#/home').slice(1);
+  const i = raw.indexOf('?');
+  const p = i === -1 ? raw : raw.slice(0, i);
+  const q = i === -1 ? '' : raw.slice(i + 1);
+  const params = {}; new URLSearchParams(q).forEach((v, k) => { params[k] = v; });
+  return { path: p || '/home', params: params };
+}
+function allowed(level) {
+  if (!level || level === 'public') return true;
+  if (!State.user) return false;
+  if (level === 'member') return true;
+  if (level === 'admin') return isAdmin();
+  if (level === 'finance') return isFinance();
+  return false;
+}
+
+async function route() {
+  runCleanups();
+  const myToken = ++State.lastRouteToken;
+  const parsed = parseHash(), path = parsed.path, params = parsed.params;
+  setGuest(!State.user);
+
+  if (path === '/login')  { if (State.user) return go('#/home'); setNav(''); return renderLogin(); }
+  if (path === '/bind')   { if (State.user) return go('#/home'); setNav(''); return renderBind(params); }
+  if (path === '/status') { setNav(''); return renderStatus(params); }
+
+  const def = Routes.table[path];
+  if (!def) {
+    setNav('home');
+    return setMain('<div class="empty"><span class="ic" aria-hidden="true">🔍</span><h1>找不到這個頁面</h1>' +
+      '<a class="btn primary" href="#/home">回首頁</a></div>', '找不到頁面');
   }
-  function statusBadge(s) {
-    s = String(s || '');
-    let cls = 'info', icon = '•';
-    if (/確認|有效|已發布|正常|啟用|已撥款/.test(s)) { cls = 'ok'; icon = '✔'; }
-    else if (/待/.test(s)) { cls = 'warn'; icon = '⏳'; }
-    else if (/退回|作廢|停用|失敗/.test(s)) { cls = 'danger'; icon = '✖'; }
-    return '<span class="badge ' + cls + '">' + icon + ' ' + esc(s) + '</span>';
+  if (def.auth !== 'public' && !State.user) {
+    saveReturnTo(location.hash);
+    const r = await autoLogin();
+    if (myToken !== State.lastRouteToken) return;
+    if (r === 'ok') { store.del(RETURN_KEY); }
+    else if (goByLoginState(r)) return;
+    else return go('#/login');
   }
-  function pagerHtml(r) {
-    if (!r || (r.page <= 1 && !r.hasMore)) return '';
-    return '<div class="pager">' +
-      '<button type="button" class="btn" data-pg="' + (r.page - 1) + '"' + (r.page <= 1 ? ' disabled' : '') + '>← 上一頁</button>' +
-      '<span>第 ' + r.page + ' 頁</span>' +
-      '<button type="button" class="btn" data-pg="' + (r.page + 1) + '"' + (!r.hasMore ? ' disabled' : '') + '>下一頁 →</button></div>';
+  setGuest(!State.user);
+  if (!allowed(def.auth)) {
+    setNav('');
+    return setMain('<h1>沒有權限</h1><div class="banner danger">您沒有權限使用這個功能。</div><a class="btn primary" href="#/home">回首頁</a>', '沒有權限');
   }
-  function bindFilePick(root, inputSel, previewSel) {
-    let prepared = null;
-    const input = $(inputSel, root), prev = $(previewSel, root);
-    input.onchange = async () => {
-      prepared = null; prev.innerHTML = '';
-      const f = input.files && input.files[0]; if (!f) return;
+  setNav(def.nav || '');
+  try { await def.render(params, { myToken: myToken, stale: () => myToken !== State.lastRouteToken }); }
+  catch (e) {
+    if (myToken !== State.lastRouteToken) return;
+    setMain('<h1>載入失敗</h1><div class="banner danger">頁面載入失敗：' + esc(e.message || '未知錯誤') + '</div>' +
+      '<button type="button" class="btn primary" id="retry">重新載入</button>', '載入失敗');
+    $('#retry').onclick = () => route();
+  }
+}
+
+/* ==================================================================
+ * 登入頁
+ * ================================================================== */
+function renderLogin() {
+  const inLine = typeof liff !== 'undefined' && (function () { try { return liff.isInClient(); } catch (e) { return false; } })();
+  setMain('<h1>歡迎使用</h1>' + stepsHtml(1) +
+    (LoginInfo.message ? '<div class="banner danger" role="alert">' + esc(LoginInfo.message) + '</div>' : '') +
+    '<div class="card"><p>請用 LINE 登入。</p>' +
+    '<ul><li>已是會員：登入後直接進入。</li><li>第一次使用：登入後會請您核對資料，或申請加入會員。</li></ul>' +
+    '<button type="button" class="btn primary block" id="do-login">用 LINE 登入</button>' +
+    (inLine ? '' : '<p class="hint muted" style="margin-top:12px">建議在 LINE 內開啟本頁，登入最順利。</p>') + '</div>' +
+    '<div class="card"><h2>還沒有成為會員？</h2><p>登入後選「我要加入會員」即可線上申請。</p>' +
+    '<a class="btn block" href="#/announcements">先看看公開公告</a></div>', '登入');
+  const b = $('#do-login');
+  b.onclick = once(b, async () => {
+    const r = await autoLogin();
+    if (!goByLoginState(r)) renderLogin();   // 失敗：重畫並顯示錯誤
+  });
+}
+
+/* ==================================================================
+ * 第一次使用：選擇 → 核對（現有會員）／申請（新會員）
+ * ================================================================== */
+const MEMBER_TYPES = [['病友', '本人是病友'], ['家屬', '家屬／照顧者'], ['贊助', '一般民眾／贊助']];
+
+async function ensureBindToken() {
+  if (temp.get('bindToken')) return 'bind';
+  const r = await autoLogin();
+  return r;
+}
+
+async function renderBind(params) {
+  const r0 = await ensureBindToken();
+  if (r0 !== 'bind') {
+    if (goByLoginState(r0)) return;
+    return go('#/login');
+  }
+  const mode = params.m === 'existing' || params.m === 'new' ? params.m : '';
+  if (!mode) return renderBindChoice();
+  if (mode === 'existing') return renderBindExisting();
+  return renderRegister();
+}
+
+function renderBindChoice() {
+  setMain('<h1>第一次使用</h1>' + stepsHtml(2) +
+    '<p>請選擇您的情況：</p>' +
+    '<div class="tile-grid">' +
+    '<a class="tile" href="#/bind?m=existing"><span class="ic" aria-hidden="true">🪪</span>我已是會員<span class="sub">核對資料並綁定</span></a>' +
+    '<a class="tile" href="#/bind?m=new"><span class="ic" aria-hidden="true">✍️</span>我要加入會員<span class="sub">線上申請，等待審核</span></a></div>' +
+    '<div class="btn-row"><a class="btn" href="#/login">← 回登入頁</a></div>', '第一次使用');
+}
+
+/* ---- 現有會員：核對綁定 ---- */
+function renderBindExisting() {
+  setMain('<h1>核對會員資料</h1>' + stepsHtml(2) +
+    '<div class="banner info">請填寫您在協會登記的資料，核對成功後會與這個 LINE 帳號綁定。資料只用來確認身分，不會保存在手機上。</div>' +
+    '<div id="lock-box"></div>' +
+    '<form id="bind-form" class="card" novalidate autocomplete="off">' +
+    '<div class="field"><label for="b-name">姓名 <span class="req">*</span></label><input id="b-name" name="name" type="text" maxlength="20" autocomplete="off"></div>' +
+    '<div class="field"><label for="b-phone">手機號碼 <span class="req">*</span></label><input id="b-phone" name="phone" type="tel" inputmode="numeric" maxlength="16" placeholder="例如 0912345678" autocomplete="off"></div>' +
+    '<div class="field"><label for="b-id">身分證字號後四碼 <span class="req">*</span></label><input id="b-id" name="idLast4" type="text" maxlength="4" placeholder="例如 5678" autocomplete="off">' +
+    '<div class="hint">只需要後四碼，不需要完整字號。</div></div>' +
+    '<div class="btn-row"><a class="btn" href="#/bind">← 返回</a><button type="submit" class="btn primary">送出核對</button></div></form>' +
+    '<p class="muted">找不到自己的資料？可能還不是會員，請改選<a href="#/bind?m=new">「我要加入會員」</a>。</p>', '核對會員資料');
+
+  const form = $('#bind-form'), submit = $('button[type=submit]', form);
+  const lockBox = $('#lock-box');
+  const lockFor = (sec) => {
+    submit.disabled = true;
+    startLockTimer(lockBox, sec, () => { submit.disabled = false; });
+  };
+
+  form.onsubmit = async (e) => {
+    e.preventDefault(); clearInvalid(form);
+    const d = formData(form);
+    d.phone = normPhone(d.phone);
+    d.idLast4 = (d.idLast4 || '').toUpperCase();
+    if (!d.name) return markInvalid(form, 'name', '請填寫姓名');
+    if (!/^09\d{8}$/.test(d.phone)) return markInvalid(form, 'phone', '手機需為 10 碼，並以 09 開頭');
+    if (!/^[A-Z0-9]{4}$/.test(d.idLast4)) return markInvalid(form, 'idLast4', '請填 4 碼（數字或英文）');
+    submit.disabled = true;
+    let locked = false;
+    try {
+      const r = await api(API_CONTRACT.bind, {
+        bindToken: temp.get('bindToken'), name: d.name, phone: d.phone, idLast4: d.idLast4,
+        ua: navigator.userAgent.slice(0, 100)
+      }, { loading: true, silent: true });
+      if (r && r.state === 'pending') { temp.del('bindToken'); return go('#/status?s=pending'); }
+      if (!r || !r.sessionToken || !r.user) { toast('綁定回應格式不正確', 'error'); return; }
+      temp.del('bindToken');
+      saveSession(r.sessionToken, r.user);
+      toast('綁定成功，歡迎 ' + r.user.name, 'ok');
+      afterLogin();
+    } catch (err) {
+      const x = err.extra || {};
+      if (err.code === 'BIND_EXPIRED') { temp.del('bindToken'); toast('驗證已過期，請重新登入', 'error'); return go('#/login'); }
+      if (err.code === 'MEMBER_DISABLED') { temp.del('bindToken'); return go('#/status?s=disabled'); }
+      if (err.code === 'LOCKED' || x.retryAfterSec) { locked = true; lockFor(Number(x.retryAfterSec) || 300); return; }
+      if (err.code === 'ALREADY_BOUND') { toast('這位會員已綁定其他 LINE 帳號，請洽協會處理。', 'error'); return; }
+      let msg = err.message;
+      if (x.attemptsLeft !== undefined) msg += '（還可嘗試 ' + x.attemptsLeft + ' 次）';
+      toast(msg, 'error');
+    } finally { if (!locked) submit.disabled = false; }
+  };
+}
+
+/* ---- 新會員：線上申請 ---- */
+function renderRegister() {
+  setMain('<h1>申請加入會員</h1>' + stepsHtml(2) +
+    '<div class="banner info">送出後由協會人員審核，通過後您就可以使用。審核結果會在您下次開啟本頁時顯示。</div>' +
+    '<form id="reg-form" class="card" novalidate autocomplete="off">' +
+    '<div class="field"><label for="r-name">姓名 <span class="req">*</span></label><input id="r-name" name="name" type="text" maxlength="20"></div>' +
+    '<div class="field"><label for="r-phone">手機號碼 <span class="req">*</span></label><input id="r-phone" name="phone" type="tel" inputmode="numeric" maxlength="16" placeholder="例如 0912345678"></div>' +
+    '<div class="field"><label for="r-id">身分證字號後四碼 <span class="req">*</span></label><input id="r-id" name="idLast4" type="text" maxlength="4" placeholder="例如 5678">' +
+    '<div class="hint">用來日後核對身分，只收後四碼。</div></div>' +
+    '<div class="field"><label for="r-mail">電子郵件（選填）</label><input id="r-mail" name="email" type="email" inputmode="email" maxlength="80" placeholder="收據或通知可使用">' +
+    '</div>' +
+    '<fieldset class="field"><legend>您的身分 <span class="req">*</span></legend><div class="choices">' +
+    MEMBER_TYPES.map((m, i) => '<label class="choice"><input type="radio" name="memberType" value="' + m[0] + '"' + (i === 0 ? ' checked' : '') + '><span>' + m[1] + '</span></label>').join('') +
+    '</div></fieldset>' +
+    '<div class="field"><div class="check"><input type="checkbox" id="r-priv" name="privacy" value="1">' +
+    '<label for="r-priv">我已閱讀並同意協會蒐集、使用我填寫的個人資料，用於會員管理。</label></div>' +
+    '<button type="button" class="btn small" id="show-priv">閱讀隱私權說明</button></div>' +
+    '<div class="btn-row"><a class="btn" href="#/bind">← 返回</a><button type="submit" class="btn primary">送出申請</button></div></form>', '申請加入會員');
+
+  $('#show-priv').onclick = () => {
+    const dlg = openModal('<h2>個人資料使用說明</h2>' +
+      '<p>社團法人台灣帕金森病友權益促進會（以下稱本會）蒐集您的姓名、手機、身分證後四碼、電子郵件與會員身分，目的為會員資格審核、會員服務、活動通知與收據開立。</p>' +
+      '<p>資料僅供本會使用，不會提供給無關的第三方。您可以隨時洽本會查詢、更正或刪除。</p>' +
+      '<p class="muted">版本：' + esc(CONFIG.PRIVACY_VERSION) + '</p>' +
+      '<div class="btn-row"><button type="button" class="btn primary" id="priv-x">我知道了</button></div>', { label: '隱私權說明' });
+    $('#priv-x', dlg.el).onclick = () => dlg.close();
+  };
+
+  const form = $('#reg-form'), submit = $('button[type=submit]', form);
+  const reqId = newRequestId();          // 同一張表單重按，後端只會處理一次
+  form.onsubmit = async (e) => {
+    e.preventDefault(); clearInvalid(form);
+    const d = formData(form);
+    d.phone = normPhone(d.phone);
+    d.idLast4 = (d.idLast4 || '').toUpperCase();
+    if (!d.name) return markInvalid(form, 'name', '請填寫姓名');
+    if (!/^09\d{8}$/.test(d.phone)) return markInvalid(form, 'phone', '手機需為 10 碼，並以 09 開頭');
+    if (!/^[A-Z0-9]{4}$/.test(d.idLast4)) return markInvalid(form, 'idLast4', '請填 4 碼（數字或英文）');
+    if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return markInvalid(form, 'email', '電子郵件格式不正確');
+    if (!form.elements.privacy.checked) return markInvalid(form, 'privacy', '需要勾選同意才能送出申請');
+    submit.disabled = true;
+    try {
+      const r = await api(API_CONTRACT.register, {
+        bindToken: temp.get('bindToken'), name: d.name, phone: d.phone, idLast4: d.idLast4,
+        email: d.email || '', memberType: d.memberType || '病友',
+        privacyAccepted: true, privacyVersion: CONFIG.PRIVACY_VERSION, ua: navigator.userAgent.slice(0, 100)
+      }, { loading: true, silent: true, requestId: reqId });
+      temp.del('bindToken');
+      if (r && r.sessionToken && r.user) {            // 後端若設定為免審核，直接登入
+        saveSession(r.sessionToken, r.user); toast('歡迎加入，' + r.user.name, 'ok'); return afterLogin();
+      }
+      go('#/status?s=pending');
+    } catch (err) {
+      if (err.code === 'BIND_EXPIRED') { temp.del('bindToken'); toast('驗證已過期，請重新登入', 'error'); return go('#/login'); }
+      if (err.code === 'DUPLICATE_MEMBER') {
+        toast('這組資料已經是會員了，請改用「我已是會員」核對綁定。', 'error'); return go('#/bind?m=existing');
+      }
+      toast(err.message, 'error');
+    } finally { submit.disabled = false; }
+  };
+}
+
+/* ==================================================================
+ * 狀態頁：審核中／已停用／暫時鎖定
+ * ================================================================== */
+function renderStatus(params) {
+  const s = params.s || 'pending';
+  const contact = (CONFIG.CONTACT_PHONE || CONFIG.CONTACT_EMAIL)
+    ? '<p class="muted">協會聯絡方式：' + esc([CONFIG.CONTACT_PHONE, CONFIG.CONTACT_EMAIL].filter(Boolean).join('　')) + '</p>'
+    : '<p class="muted">如有疑問，請洽協會工作人員。</p>';
+
+  if (s === 'disabled') {
+    setMain('<div class="status-page"><span class="ic" aria-hidden="true">🚫</span><h1>帳號目前無法使用</h1></div>' +
+      '<div class="banner danger">您的會員帳號已被停用。如果您認為這是誤會，請聯絡協會。</div>' + contact +
+      '<div class="btn-row"><a class="btn" href="#/announcements">看公開公告</a></div>', '帳號已停用');
+    return;
+  }
+  if (s === 'locked') {
+    setMain('<div class="status-page"><span class="ic" aria-hidden="true">⏱</span><h1>暫時無法登入</h1></div>' +
+      '<div id="lock-box"></div><div class="btn-row"><button type="button" class="btn primary" id="again" disabled>重新登入</button></div>' + contact, '暫時鎖定');
+    const again = $('#again');
+    const sec = LoginInfo.retryAfterSec || 300;
+    startLockTimer($('#lock-box'), sec, () => { again.disabled = false; });
+    again.onclick = () => go('#/login');
+    return;
+  }
+  // pending
+  setMain('<div class="status-page"><span class="ic" aria-hidden="true">⏳</span><h1>申請審核中</h1></div>' + stepsHtml(3).replace('class="now"', '') +
+    '<div class="banner warn">您的資料已送出，等待協會人員審核。審核通過後，您就能使用所有功能。</div>' + contact +
+    '<div class="btn-row"><button type="button" class="btn primary" id="recheck">重新檢查審核結果</button>' +
+    '<a class="btn" href="#/announcements">先看公開公告</a></div>', '審核中');
+  const b = $('#recheck');
+  b.onclick = once(b, async () => {
+    const r = await autoLogin();
+    if (r === 'pending') return toast('目前仍在審核中，請稍後再來看看。', 'info');
+    if (!goByLoginState(r)) { toast(LoginInfo.message || '檢查失敗，請稍後再試', 'error'); }
+  });
+}
+
+/* ====== 第 4 段從這裡接續（共用函式與各頁面、啟動）====== */
+/* ==================================================================
+ * 共用函式與常數
+ * ================================================================== */
+const PAY_METHODS = ['匯款轉帳', '現金', '支票', 'ATM轉帳', '其他'];
+const ST = { pending: '待審核', active: '啟用', disabled: '停用' };
+
+function todayLocal() {
+  const d = new Date(), p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+/** 以本地時區計算到期日剩餘天數（到期日當天 23:59 前都算有效） */
+function daysLeft(dateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr || ''));
+  if (!m) return NaN;
+  const end = new Date(+m[1], +m[2] - 1, +m[3], 23, 59, 59);
+  return Math.ceil((end - new Date()) / 86400000);
+}
+function statusBadge(s) {
+  s = String(s || '');
+  let cls = 'info', icon = '•';
+  if (/確認|有效|已發布|正常|啟用|已撥款/.test(s)) { cls = 'ok'; icon = '✔'; }
+  else if (/待/.test(s)) { cls = 'warn'; icon = '⏳'; }
+  else if (/退回|作廢|停用|失敗/.test(s)) { cls = 'danger'; icon = '✖'; }
+  return '<span class="badge ' + cls + '">' + icon + ' ' + esc(s) + '</span>';
+}
+function pagerHtml(r) {
+  if (!r || (r.page <= 1 && !r.hasMore)) return '';
+  return '<div class="pager">' +
+    '<button type="button" class="btn" data-pg="' + (r.page - 1) + '"' + (r.page <= 1 ? ' disabled' : '') + '>← 上一頁</button>' +
+    '<span>第 ' + r.page + ' 頁</span>' +
+    '<button type="button" class="btn" data-pg="' + (r.page + 1) + '"' + (!r.hasMore ? ' disabled' : '') + '>下一頁 →</button></div>';
+}
+function bindFilePick(root, inputSel, previewSel) {
+  let prepared = null;
+  const input = $(inputSel, root), prev = $(previewSel, root);
+  input.onchange = async () => {
+    prepared = null; prev.innerHTML = '';
+    const f = input.files && input.files[0]; if (!f) return;
+    showLoading('正在處理照片…');
+    try {
+      prepared = await prepareFile(f);
+      prev.innerHTML = prepared.mime === 'application/pdf'
+        ? '<p>📄 已選擇：' + esc(prepared.name) + '</p>'
+        : '<img alt="已選擇的憑證預覽" src="' + prepared.dataUrl + '">';
+    } catch (e) { toast(e.message, 'error'); input.value = ''; }
+    finally { hideLoading(); }
+  };
+  return () => prepared;
+}
+/** 只允許 http(s) 與圖片 data URL */
+const safeImgSrc = (u) => /^https?:\/\/|^data:image\/(png|jpe?g|webp|gif);base64,/i.test(String(u || ''));
+
+/* ==================== 首頁 ==================== */
+Routes.add('/home', {
+  title: '首頁', auth: 'member', nav: 'home',
+  async render(p, c) {
+    const u = State.user || {};
+    let tiles =
+      '<a class="tile" href="#/health"><span class="ic" aria-hidden="true">📝</span>今日記錄<span class="sub">症狀與服藥</span></a>' +
+      '<a class="tile" href="#/forum"><span class="ic" aria-hidden="true">💬</span>病友論壇<span class="sub">交流分享</span></a>' +
+      '<a class="tile" href="#/payment"><span class="ic" aria-hidden="true">💳</span>繳會費<span class="sub">上傳匯款憑證</span></a>' +
+      '<a class="tile" href="#/donation"><span class="ic" aria-hidden="true">💝</span>捐款<span class="sub">支持協會</span></a>' +
+      '<a class="tile" href="#/receipts"><span class="ic" aria-hidden="true">🧾</span>我的收據<span class="sub">查看與列印</span></a>' +
+      '<a class="tile" href="#/announcements"><span class="ic" aria-hidden="true">📢</span>最新公告<span class="sub">活動與課程</span></a>';
+    if (isAdmin()) tiles += '<a class="tile" href="#/admin"><span class="ic" aria-hidden="true">🛠</span>管理後台<span class="sub">會員與財務</span></a>';
+    setMain('<h1>您好，' + esc(u.name || '會員') + '</h1>' +
+      '<div id="home-alert"></div><div class="tile-grid">' + tiles + '</div>' +
+      '<h2 style="margin-top:1.4rem">最新公告</h2><div id="home-ann"><div class="empty">載入中…</div></div>', '首頁');
+
+    if (u.expiryDate) {
+      const left = daysLeft(u.expiryDate);
+      if (!isNaN(left)) {
+        if (left < 0) $('#home-alert').innerHTML = '<div class="banner danger">❗ 您的會籍已於 ' + esc(u.expiryDate) + ' 到期。<a href="#/payment">前往繳費</a></div>';
+        else if (left <= 30) $('#home-alert').innerHTML = '<div class="banner warn">⏳ 您的會籍將於 ' + esc(u.expiryDate) + ' 到期（還有 ' + left + ' 天）。<a href="#/payment">前往繳費</a></div>';
+      }
+    }
+    try {
+      const r = normList(await api(ACT.annList, { page: 1, pageSize: 3 }, { retry: true, silent: true }));
+      if (c.stale()) return;
+      $('#home-ann').innerHTML = r.items.length
+        ? '<ul class="list">' + r.items.map((a) =>
+            '<li><a class="list-item" href="#/announcements?id=' + encodeURIComponent(a.id || '') + '"><span class="t">' +
+            (a.isPinned ? '📌 ' : '') + (a.isImportant ? '❗' : '') + esc(a.title) + '</span><span class="m">' +
+            esc(String(a.publishedAt || '').slice(0, 10)) + (a.category ? '・' + esc(a.category) : '') + '</span></a></li>').join('') + '</ul>'
+        : '<div class="empty">目前沒有公告</div>';
+    } catch (e) { if (!c.stale()) $('#home-ann').innerHTML = '<div class="banner warn">公告暫時讀不到，請稍後再試。</div>'; }
+  }
+});
+
+/* ==================== 公告 ==================== */
+Routes.add('/announcements', {
+  title: '公告', auth: 'public', nav: 'announcements',
+  async render(p, c) {
+    const page = Number(p.page || 1), cat = p.category || '';
+    const action = State.user ? ACT.annList : ACT.annPublic;
+    setMain('<h1>公告</h1>' + (State.user ? '' : '<div class="banner info">您尚未登入，只能看到公開公告。<a href="#/login">登入後可看到更多</a></div>') +
+      '<div class="tabs" role="group" aria-label="公告分類">' +
+      ['', '活動', '課程', '重要'].map((k) => '<button type="button" class="btn" data-cat="' + k + '" aria-pressed="' + (cat === k ? 'true' : 'false') + '">' + (k || '全部') + '</button>').join('') +
+      '</div><div id="ann-list"><div class="empty">載入中…</div></div>', '公告');
+    $$('[data-cat]').forEach((b) => { b.onclick = () => go('#/announcements?category=' + encodeURIComponent(b.dataset.cat)); });
+
+    const r = normList(await api(action, { page: page, pageSize: 10, category: cat }, { retry: true }));
+    if (c.stale()) return;
+    const box = $('#ann-list');
+    if (!r.items.length) { box.innerHTML = '<div class="empty"><span class="ic" aria-hidden="true">📭</span>目前沒有公告</div>'; return; }
+    box.innerHTML = r.items.map((a) =>
+      '<article class="card' + (a.isPinned ? ' pinned' : '') + '" id="ann-' + esc(a.id) + '">' +
+      '<h2>' + (a.isPinned ? '📌 ' : '') + esc(a.title) + '</h2>' +
+      '<p>' + (a.isImportant ? '<span class="badge danger">❗ 重要</span> ' : '') +
+      (a.category ? '<span class="badge info">' + esc(a.category) + '</span> ' : '') +
+      '<span class="muted">' + esc(String(a.publishedAt || '').slice(0, 10)) + '</span></p>' +
+      '<div style="white-space:pre-wrap">' + esc(a.content) + '</div>' +
+      (a.linkUrl && /^https?:\/\//i.test(a.linkUrl) ? '<p><a href="' + esc(a.linkUrl) + '" target="_blank" rel="noopener noreferrer">開啟相關連結 ↗</a></p>' : '') + '</article>').join('') + pagerHtml(r);
+    $$('[data-pg]', box).forEach((b) => { b.onclick = () => go('#/announcements?category=' + encodeURIComponent(cat) + '&page=' + b.dataset.pg); });
+    if (p.id) { const t = document.getElementById('ann-' + p.id); if (t) t.scrollIntoView({ block: 'start' }); }
+  }
+});
+
+/* ==================== 我的 ==================== */
+Routes.add('/me', {
+  title: '我的', auth: 'member', nav: 'me',
+  async render() {
+    const u = State.user || {};
+    const rows = [['姓名', u.name], ['會員編號', u.memberId], ['會員類別', u.memberType], ['會籍到期', u.expiryDate], ['會籍狀態', u.membershipState]]
+      .filter((x) => x[1]).map((x) => '<dt>' + x[0] + '</dt><dd>' + esc(x[1]) + '</dd>').join('');
+    setMain('<h1>我的</h1><div class="card"><dl class="kv">' + rows + '</dl></div>' +
+      '<div class="tile-grid">' +
+      '<a class="tile" href="#/payment"><span class="ic" aria-hidden="true">💳</span>繳會費</a>' +
+      '<a class="tile" href="#/donation"><span class="ic" aria-hidden="true">💝</span>捐款</a>' +
+      '<a class="tile" href="#/receipts"><span class="ic" aria-hidden="true">🧾</span>我的收據</a>' +
+      '<a class="tile" href="#/my-payments"><span class="ic" aria-hidden="true">📋</span>申報紀錄</a></div>' +
+      '<div class="card" style="margin-top:1.2rem"><h2>閱讀設定</h2><p class="muted">字體大小、高對比、朗讀，請使用畫面最上方的三個按鈕。</p></div>' +
+      '<button type="button" class="btn danger block" id="do-logout">登出</button>', '我的');
+    $('#do-logout').onclick = logout;
+  }
+});
+
+/* ==================== 會費／捐款申報表單 ==================== */
+function paymentFormHtml(kind) {
+  const fee = kind === 'payment';
+  return '<form id="pay-form" class="card" novalidate>' +
+    (fee ? '<div class="field"><label for="f-year">繳費年度</label><input id="f-year" name="year" type="number" inputmode="numeric"></div>'
+         : '<div class="field"><label for="f-donor">捐款人姓名</label><input id="f-donor" name="donorName" type="text" placeholder="不填則使用會員姓名"></div>' +
+           '<div class="field"><label for="f-purpose">捐款用途</label><input id="f-purpose" name="purpose" type="text" placeholder="例如：一般捐款"></div>') +
+    '<fieldset class="field"><legend>常用金額（點一下自動填入）</legend><div class="choices">' +
+    [500, 1000, 1500, 3000, 5000].map((n) => '<label class="choice"><input type="radio" name="preset" value="' + n + '"><span>' + n.toLocaleString() + ' 元</span></label>').join('') +
+    '</div></fieldset>' +
+    '<div class="field"><label for="f-amt">金額（元）<span class="req"> *</span></label><input id="f-amt" name="amount" type="number" inputmode="numeric" min="1" placeholder="例如 1500"></div>' +
+    '<div class="field"><label for="f-date">' + (fee ? '繳費' : '捐款') + '日期 <span class="req">*</span></label><input id="f-date" name="payDate" type="date" max="' + todayLocal() + '" value="' + todayLocal() + '"></div>' +
+    '<fieldset class="field"><legend>付款方式</legend><div class="choices">' +
+    PAY_METHODS.map((m, i) => '<label class="choice"><input type="radio" name="method" value="' + m + '"' + (i === 0 ? ' checked' : '') + '><span>' + m + '</span></label>').join('') +
+    '</div></fieldset>' +
+    '<div class="field"><div class="lbl">付款憑證 <span class="req">*</span></div><div class="file-pick">' +
+    '<input id="f-file" type="file" accept="image/*,application/pdf" aria-label="選擇付款憑證照片或PDF"><div id="f-prev"></div></div>' +
+    '<div class="hint">請拍下匯款明細或收據。照片會自動縮小。</div></div>' +
+    '<div class="field"><label for="f-note">備註（選填）</label><textarea id="f-note" name="note" maxlength="300"></textarea></div>' +
+    '<div class="btn-row"><button type="submit" class="btn primary">送出申報</button></div></form>';
+}
+
+function bindPaymentForm(kind) {
+  const form = $('#pay-form');
+  const getFile = bindFilePick(form, '#f-file', '#f-prev');
+  const draft = bindDraft(form, kind, ['year', 'payDate']);
+  if (form.elements.year) form.elements.year.value = new Date().getFullYear();
+  radios(form, 'preset').forEach((r) => { r.checked = false; r.onchange = () => { form.elements.amount.value = r.value; }; });
+  form.elements.amount.addEventListener('input', () => { radios(form, 'preset').forEach((r) => { r.checked = false; }); });
+
+  let reqId = newRequestId();   // 同一份內容重按送出，後端只處理一次
+  form.addEventListener('input', () => { reqId = newRequestId(); });
+
+  form.onsubmit = async (e) => {
+    e.preventDefault(); clearInvalid(form);
+    const d = formData(form);
+    const amt = Number(d.amount);
+    if (!amt || amt <= 0 || amt !== Math.floor(amt)) return markInvalid(form, 'amount', '請輸入正確金額（整數）');
+    if (!d.payDate) return markInvalid(form, 'payDate', '請選擇日期');
+    if (d.payDate > todayLocal()) return markInvalid(form, 'payDate', '日期不能是未來');
+    const f = getFile();
+    if (!f) { toast('請先上傳付款憑證', 'error'); return $('#f-file').focus(); }
+    if (!(await confirmBox('確認送出', '金額 ' + money(amt) + '，日期 ' + d.payDate + '。送出後等待協會確認。', '確認送出'))) return;
+
+    const body = { amount: amt, payDate: d.payDate, method: d.method, note: d.note, proof: toUpload(f) };
+    if (kind === 'payment') body.year = Number(d.year); else { body.donorName = d.donorName; body.purpose = d.purpose; }
+    const btn = $('button[type=submit]', form); btn.disabled = true;
+    try {
+      await api(kind === 'payment' ? ACT.paySubmit : ACT.donSubmit, body,
+        { loading: true, loadingMsg: '正在上傳，請勿離開…', requestId: reqId });
+      draft.clear();
+      toast('已送出，協會確認後會開立電子收據。', 'ok');
+      go('#/my-payments');
+    } catch (err) { /* api 已提示 */ } finally { btn.disabled = false; }
+  };
+}
+
+Routes.add('/payment', {
+  title: '繳會費', auth: 'member', nav: 'me',
+  async render() {
+    setMain('<h1>繳會費</h1><div class="banner info">請先完成匯款或繳現金，再回來上傳憑證。協會核對後會開立電子收據。</div>' + paymentFormHtml('payment'), '繳會費');
+    bindPaymentForm('payment');
+  }
+});
+Routes.add('/donation', {
+  title: '捐款', auth: 'member', nav: 'me',
+  async render() {
+    setMain('<h1>捐款</h1><div class="banner info">感謝您的支持。請先完成匯款，再上傳憑證。</div>' + paymentFormHtml('donation'), '捐款');
+    bindPaymentForm('donation');
+  }
+});
+
+/* ==================== 申報紀錄 ==================== */
+Routes.add('/my-payments', {
+  title: '申報紀錄', auth: 'member', nav: 'me',
+  async render(p, c) {
+    setMain('<h1>申報紀錄</h1><div id="pm-list"><div class="empty">載入中…</div></div>', '申報紀錄');
+    const res = await Promise.all([api(ACT.payMy, {}, { retry: true }), api(ACT.donMy, {}, { retry: true })]);
+    if (c.stale()) return;
+    const a = normList(res[0]).items, b = normList(res[1]).items;
+    const items = a.map((x) => ({ k: '會費 ' + (x.year || '') + ' 年', t: x.createdAt || x.payDate || '', x: x }))
+      .concat(b.map((x) => ({ k: '捐款（' + (x.purpose || '一般') + '）', t: x.createdAt || x.payDate || '', x: x })))
+      .sort((m, n) => String(n.t).localeCompare(String(m.t)));
+    $('#pm-list').innerHTML = items.length ? '<ul class="list">' + items.map((i) =>
+      '<li class="card"><h3>' + esc(i.k) + '　' + money(i.x.amount) + '</h3><p>' + statusBadge(i.x.status) + '</p>' +
+      '<p class="muted">繳款日 ' + esc(i.x.payDate || '—') + (i.x.method ? '・' + esc(i.x.method) : '') + '</p>' +
+      (i.x.rejectReason ? '<div class="banner danger">退回原因：' + esc(i.x.rejectReason) + '</div>' : '') +
+      (i.x.receiptNo ? '<a class="btn small" href="#/receipt?no=' + encodeURIComponent(i.x.receiptNo) + '">查看收據 ' + esc(i.x.receiptNo) + '</a>' : '') +
+      '</li>').join('') + '</ul>'
+      : '<div class="empty"><span class="ic" aria-hidden="true">📭</span>還沒有申報紀錄</div>';
+  }
+});
+
+/* ==================== 收據 ==================== */
+Routes.add('/receipts', {
+  title: '我的收據', auth: 'member', nav: 'me',
+  async render(p, c) {
+    setMain('<h1>我的收據</h1><div id="rc-list"><div class="empty">載入中…</div></div>', '我的收據');
+    const r = normList(await api(ACT.rcMy, {}, { retry: true }));
+    if (c.stale()) return;
+    $('#rc-list').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((x) =>
+      '<li><a class="list-item" href="#/receipt?no=' + encodeURIComponent(x.receiptNo) + '"><span class="t">' + esc(x.type || '') + '收據　' + money(x.amount) + '</span>' +
+      '<span class="m">' + esc(x.issueDate || '') + '・' + esc(x.receiptNo) + '　' + statusBadge(x.status || '有效') + '</span></a></li>').join('') + '</ul>'
+      : '<div class="empty"><span class="ic" aria-hidden="true">🧾</span>目前沒有收據。協會確認款項後會自動開立。</div>';
+  }
+});
+
+Routes.add('/receipt', {
+  title: '收據', auth: 'member', nav: 'me',
+  async render(p, c) {
+    if (!p.no) return go('#/receipts');
+    setMain('<h1>電子收據</h1><div id="rc-box"><div class="empty">載入中…</div></div>' +
+      '<div class="btn-row no-print"><a class="btn" href="#/receipts">← 回收據列表</a><button type="button" class="btn primary" id="rc-print">列印 / 存成 PDF</button></div>', '收據');
+    const r = await api(ACT.rcGet, { receiptNo: p.no }, { retry: true });
+    if (c.stale()) return;
+    const html = typeof r === 'string' ? r : (r && (r.html || r.content)) || '';
+    if (!html) { $('#rc-box').innerHTML = '<div class="banner warn">這張收據目前沒有可顯示的內容。</div>'; return; }
+    const fr = document.createElement('iframe');
+    fr.setAttribute('sandbox', 'allow-same-origin allow-modals');
+    fr.title = '電子收據 ' + p.no;
+    fr.style.cssText = 'width:100%;height:70vh;border:3px solid var(--line);border-radius:16px;background:#fff';
+    fr.srcdoc = html;
+    $('#rc-box').innerHTML = ''; $('#rc-box').appendChild(fr);
+    $('#rc-print').onclick = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast('此瀏覽器無法列印，請截圖保存', 'info'); } };
+  }
+});
+
+/* ==================== 論壇列表 ==================== */
+Routes.add('/forum', {
+  title: '病友論壇', auth: 'member', nav: 'home',
+  async render(p, c) {
+    const page = Number(p.page || 1), cat = p.category || '';
+    setMain('<h1>病友論壇</h1><div class="banner info">請勿張貼他人隱私或醫療建議。貼文顯示您的姓名，照片以連結方式儲存，知道連結的人都能看到，請避免上傳含個資的照片。身體不適請就醫。</div>' +
+      '<a class="btn primary block" href="#/forum-new">✏️ 我要發文</a><div style="height:16px"></div>' +
+      '<div class="field"><label for="fcat">分類</label><select id="fcat"><option value="">全部</option></select></div>' +
+      '<div id="fl"><div class="empty">載入中…</div></div>', '病友論壇');
+    const raw = await api(ACT.forumList, { page: page, pageSize: 10, category: cat }, { retry: true });
+    if (c.stale()) return;
+    const r = normList(raw);
+    const sel = $('#fcat');
+    ((raw && raw.categories) || FORUM_CATS).forEach((k) => {
+      const o = document.createElement('option'); o.value = k; o.textContent = k; if (k === cat) o.selected = true; sel.appendChild(o);
+    });
+    sel.onchange = () => go('#/forum?category=' + encodeURIComponent(sel.value));
+    $('#fl').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((x) =>
+      '<li><a class="list-item" href="#/forum-post?id=' + encodeURIComponent(x.postId || x.id) + '"><span class="t">' + (x.isPinned ? '📌 ' : '') + esc(x.title) + '</span>' +
+      '<span class="m">' + esc(x.authorName || '') + '・' + esc(x.category || '') + '・' + esc(String(x.createdAt || '').slice(0, 10)) +
+      '・👍 ' + (x.likeCount || 0) + '・💬 ' + (x.commentCount || 0) + '</span></a></li>').join('') + '</ul>' + pagerHtml(r)
+      : '<div class="empty"><span class="ic" aria-hidden="true">💬</span>還沒有文章，來發第一篇吧</div>';
+    $$('[data-pg]', $('#fl')).forEach((b) => { b.onclick = () => go('#/forum?category=' + encodeURIComponent(cat) + '&page=' + b.dataset.pg); });
+  }
+});
+
+/* ==================== 發文 ==================== */
+Routes.add('/forum-new', {
+  title: '發文', auth: 'member', nav: 'home',
+  async render() {
+    setMain('<h1>發表文章</h1><form id="nf" class="card" novalidate>' +
+      '<fieldset class="field"><legend>分類</legend><div class="choices">' +
+      FORUM_CATS.map((k, i) => '<label class="choice"><input type="radio" name="category" value="' + k + '"' + (i === 0 ? ' checked' : '') + '><span>' + k + '</span></label>').join('') + '</div></fieldset>' +
+      '<div class="field"><label for="nt">標題 <span class="req">*</span></label><input id="nt" name="title" type="text" maxlength="80"></div>' +
+      '<div class="field"><label for="nc">內容 <span class="req">*</span></label><textarea id="nc" name="content" maxlength="3000"></textarea></div>' +
+      '<div class="field"><div class="lbl">照片（最多 4 張，選填）</div><div class="file-pick"><input id="ni" type="file" accept="image/*" multiple aria-label="選擇照片"><div id="np"></div></div>' +
+      '<div class="hint">照片會公開在論壇，請勿上傳含個資或病歷的照片。</div></div>' +
+      '<div class="btn-row"><a class="btn" href="#/forum">取消</a><button type="submit" class="btn primary">發表</button></div></form>', '發文');
+    const form = $('#nf'), draft = bindDraft(form, 'forum-new');
+    let imgs = [];
+    let reqId = newRequestId();
+    form.addEventListener('input', () => { reqId = newRequestId(); });
+    $('#ni').onchange = async (e) => {
+      imgs = []; $('#np').innerHTML = '';
+      const files = Array.from(e.target.files).slice(0, 4);
+      if (e.target.files.length > 4) toast('最多 4 張，只取前 4 張', 'info');
       showLoading('正在處理照片…');
       try {
-        prepared = await prepareFile(f);
-        prev.innerHTML = prepared.mime === 'application/pdf'
-          ? '<p>📄 已選擇：' + esc(prepared.name) + '</p>'
-          : '<img alt="已選擇的憑證預覽" src="' + prepared.dataUrl + '">';
-      } catch (e) { toast(e.message, 'error'); input.value = ''; }
+        for (const f of files) {
+          const x = await prepareFile(f, 600000); imgs.push(x);
+          $('#np').insertAdjacentHTML('beforeend', '<img alt="已選擇的照片" src="' + x.dataUrl + '" style="max-height:120px;margin:6px">');
+        }
+        reqId = newRequestId();
+      } catch (err) { toast(err.message, 'error'); imgs = []; $('#np').innerHTML = ''; }
       finally { hideLoading(); }
     };
-    return () => prepared;
-  }
-  /** 只允許 http(s) 與圖片 data URL */
-  const safeImgSrc = (u) => /^https?:\/\/|^data:image\/(png|jpe?g|webp|gif);base64,/i.test(String(u || ''));
-
-  /* ==================== 首頁 ==================== */
-  Routes.add('/home', {
-    title: '首頁', auth: 'member', nav: 'home',
-    async render(p, c) {
-      const u = State.user || {};
-      let tiles =
-        '<a class="tile" href="#/health"><span class="ic" aria-hidden="true">📝</span>今日記錄<span class="sub">症狀與服藥</span></a>' +
-        '<a class="tile" href="#/forum"><span class="ic" aria-hidden="true">💬</span>病友論壇<span class="sub">交流分享</span></a>' +
-        '<a class="tile" href="#/payment"><span class="ic" aria-hidden="true">💳</span>繳會費<span class="sub">上傳匯款憑證</span></a>' +
-        '<a class="tile" href="#/donation"><span class="ic" aria-hidden="true">💝</span>捐款<span class="sub">支持協會</span></a>' +
-        '<a class="tile" href="#/receipts"><span class="ic" aria-hidden="true">🧾</span>我的收據<span class="sub">查看與列印</span></a>' +
-        '<a class="tile" href="#/announcements"><span class="ic" aria-hidden="true">📢</span>最新公告<span class="sub">活動與課程</span></a>';
-      if (isAdmin()) tiles += '<a class="tile" href="#/admin"><span class="ic" aria-hidden="true">🛠</span>管理後台<span class="sub">會員與財務</span></a>';
-      setMain('<h1>您好，' + esc(u.name || '會員') + '</h1>' +
-        '<div id="home-alert"></div><div class="tile-grid">' + tiles + '</div>' +
-        '<h2 style="margin-top:1.4rem">最新公告</h2><div id="home-ann"><div class="empty">載入中…</div></div>', '首頁');
-
-      if (u.expiryDate) {
-        const left = daysLeft(u.expiryDate);
-        if (!isNaN(left)) {
-          if (left < 0) $('#home-alert').innerHTML = '<div class="banner danger">❗ 您的會籍已於 ' + esc(u.expiryDate) + ' 到期。<a href="#/payment">前往繳費</a></div>';
-          else if (left <= 30) $('#home-alert').innerHTML = '<div class="banner warn">⏳ 您的會籍將於 ' + esc(u.expiryDate) + ' 到期（還有 ' + left + ' 天）。<a href="#/payment">前往繳費</a></div>';
-        }
-      }
+    form.onsubmit = async (e) => {
+      e.preventDefault(); clearInvalid(form);
+      const d = formData(form);
+      if (!d.title) return markInvalid(form, 'title', '請填寫標題');
+      if (!d.content) return markInvalid(form, 'content', '請填寫內容');
+      const btn = $('button[type=submit]', form); btn.disabled = true;
       try {
-        const r = normList(await api(ACT.annList, { page: 1, pageSize: 3 }, { retry: true, silent: true }));
-        if (c.stale()) return;
-        $('#home-ann').innerHTML = r.items.length
-          ? '<ul class="list">' + r.items.map((a) =>
-              '<li><a class="list-item" href="#/announcements?id=' + encodeURIComponent(a.id || '') + '"><span class="t">' +
-              (a.isPinned ? '📌 ' : '') + (a.isImportant ? '❗' : '') + esc(a.title) + '</span><span class="m">' +
-              esc(String(a.publishedAt || '').slice(0, 10)) + (a.category ? '・' + esc(a.category) : '') + '</span></a></li>').join('') + '</ul>'
-          : '<div class="empty">目前沒有公告</div>';
-      } catch (e) { if (!c.stale()) $('#home-ann').innerHTML = '<div class="banner warn">公告暫時讀不到，請稍後再試。</div>'; }
-    }
-  });
-
-  /* ==================== 公告 ==================== */
-  Routes.add('/announcements', {
-    title: '公告', auth: 'public', nav: 'announcements',
-    async render(p, c) {
-      const page = Number(p.page || 1), cat = p.category || '';
-      const action = State.user ? ACT.annList : ACT.annPublic;
-      setMain('<h1>公告</h1>' + (State.user ? '' : '<div class="banner info">您尚未登入，只能看到公開公告。<a href="#/login">登入後可看到更多</a></div>') +
-        '<div class="tabs" role="group" aria-label="公告分類">' +
-        ['', '活動', '課程', '重要'].map((k) => '<button type="button" class="btn" data-cat="' + k + '" aria-pressed="' + (cat === k ? 'true' : 'false') + '">' + (k || '全部') + '</button>').join('') +
-        '</div><div id="ann-list"><div class="empty">載入中…</div></div>', '公告');
-      $$('[data-cat]').forEach((b) => { b.onclick = () => go('#/announcements?category=' + encodeURIComponent(b.dataset.cat)); });
-
-      const r = normList(await api(action, { page: page, pageSize: 10, category: cat }, { retry: true }));
-      if (c.stale()) return;
-      const box = $('#ann-list');
-      if (!r.items.length) { box.innerHTML = '<div class="empty"><span class="ic" aria-hidden="true">📭</span>目前沒有公告</div>'; return; }
-      box.innerHTML = r.items.map((a) =>
-        '<article class="card' + (a.isPinned ? ' pinned' : '') + '" id="ann-' + esc(a.id) + '">' +
-        '<h2>' + (a.isPinned ? '📌 ' : '') + esc(a.title) + '</h2>' +
-        '<p>' + (a.isImportant ? '<span class="badge danger">❗ 重要</span> ' : '') +
-        (a.category ? '<span class="badge info">' + esc(a.category) + '</span> ' : '') +
-        '<span class="muted">' + esc(String(a.publishedAt || '').slice(0, 10)) + '</span></p>' +
-        '<div style="white-space:pre-wrap">' + esc(a.content) + '</div>' +
-        (a.linkUrl && /^https?:\/\//i.test(a.linkUrl) ? '<p><a href="' + esc(a.linkUrl) + '" target="_blank" rel="noopener noreferrer">開啟相關連結 ↗</a></p>' : '') + '</article>').join('') + pagerHtml(r);
-      $$('[data-pg]', box).forEach((b) => { b.onclick = () => go('#/announcements?category=' + encodeURIComponent(cat) + '&page=' + b.dataset.pg); });
-      if (p.id) { const t = document.getElementById('ann-' + p.id); if (t) t.scrollIntoView({ block: 'start' }); }
-    }
-  });
-
-  /* ==================== 我的 ==================== */
-  Routes.add('/me', {
-    title: '我的', auth: 'member', nav: 'me',
-    async render() {
-      const u = State.user || {};
-      const rows = [['姓名', u.name], ['會員編號', u.memberId], ['會員類別', u.memberType], ['會籍到期', u.expiryDate], ['會籍狀態', u.membershipState]]
-        .filter((x) => x[1]).map((x) => '<dt>' + x[0] + '</dt><dd>' + esc(x[1]) + '</dd>').join('');
-      setMain('<h1>我的</h1><div class="card"><dl class="kv">' + rows + '</dl></div>' +
-        '<div class="tile-grid">' +
-        '<a class="tile" href="#/payment"><span class="ic" aria-hidden="true">💳</span>繳會費</a>' +
-        '<a class="tile" href="#/donation"><span class="ic" aria-hidden="true">💝</span>捐款</a>' +
-        '<a class="tile" href="#/receipts"><span class="ic" aria-hidden="true">🧾</span>我的收據</a>' +
-        '<a class="tile" href="#/my-payments"><span class="ic" aria-hidden="true">📋</span>申報紀錄</a></div>' +
-        '<div class="card" style="margin-top:1.2rem"><h2>閱讀設定</h2><p class="muted">字體大小、高對比、朗讀，請使用畫面最上方的三個按鈕。</p></div>' +
-        '<button type="button" class="btn danger block" id="do-logout">登出</button>', '我的');
-      $('#do-logout').onclick = logout;
-    }
-  });
-
-  /* ==================== 會費／捐款申報表單 ==================== */
-  function paymentFormHtml(kind) {
-    const fee = kind === 'payment';
-    return '<form id="pay-form" class="card" novalidate>' +
-      (fee ? '<div class="field"><label for="f-year">繳費年度</label><input id="f-year" name="year" type="number" inputmode="numeric"></div>'
-           : '<div class="field"><label for="f-donor">捐款人姓名</label><input id="f-donor" name="donorName" type="text" placeholder="不填則使用會員姓名"></div>' +
-             '<div class="field"><label for="f-purpose">捐款用途</label><input id="f-purpose" name="purpose" type="text" placeholder="例如：一般捐款"></div>') +
-      '<fieldset class="field"><legend>常用金額（點一下自動填入）</legend><div class="choices">' +
-      [500, 1000, 1500, 3000, 5000].map((n) => '<label class="choice"><input type="radio" name="preset" value="' + n + '"><span>' + n.toLocaleString() + ' 元</span></label>').join('') +
-      '</div></fieldset>' +
-      '<div class="field"><label for="f-amt">金額（元）<span class="req"> *</span></label><input id="f-amt" name="amount" type="number" inputmode="numeric" min="1" placeholder="例如 1500"></div>' +
-      '<div class="field"><label for="f-date">' + (fee ? '繳費' : '捐款') + '日期 <span class="req">*</span></label><input id="f-date" name="payDate" type="date" max="' + todayLocal() + '" value="' + todayLocal() + '"></div>' +
-      '<fieldset class="field"><legend>付款方式</legend><div class="choices">' +
-      PAY_METHODS.map((m, i) => '<label class="choice"><input type="radio" name="method" value="' + m + '"' + (i === 0 ? ' checked' : '') + '><span>' + m + '</span></label>').join('') +
-      '</div></fieldset>' +
-      '<div class="field"><div class="lbl">付款憑證 <span class="req">*</span></div><div class="file-pick">' +
-      '<input id="f-file" type="file" accept="image/*,application/pdf" aria-label="選擇付款憑證照片或PDF"><div id="f-prev"></div></div>' +
-      '<div class="hint">請拍下匯款明細或收據。照片會自動縮小。</div></div>' +
-      '<div class="field"><label for="f-note">備註（選填）</label><textarea id="f-note" name="note" maxlength="300"></textarea></div>' +
-      '<div class="btn-row"><button type="submit" class="btn primary">送出申報</button></div></form>';
+        const r = await api(ACT.forumCreate, { title: d.title, content: d.content, category: d.category, images: imgs.map(toUpload) },
+          { loading: true, loadingMsg: '正在發表…', requestId: reqId });
+        draft.clear(); toast('已發表', 'ok');
+        const id = r && (r.postId || r.id);
+        go(id ? '#/forum-post?id=' + encodeURIComponent(id) : '#/forum');
+      } catch (err) {} finally { btn.disabled = false; }
+    };
   }
+});
 
-  function bindPaymentForm(kind) {
-    const form = $('#pay-form');
-    const getFile = bindFilePick(form, '#f-file', '#f-prev');
-    const draft = bindDraft(form, kind, ['year', 'payDate']);   // 年度與日期不還原舊值
-    if (form.elements.year) form.elements.year.value = new Date().getFullYear();
-    $$('input[name=preset]', form).forEach((r) => { r.checked = false; r.onchange = () => { form.elements.amount.value = r.value; }; });
-    form.elements.amount.addEventListener('input', () => { $$('input[name=preset]', form).forEach((r) => { r.checked = false; }); });
+/* ==================== 文章與留言 ==================== */
+Routes.add('/forum-post', {
+  title: '文章', auth: 'member', nav: 'home',
+  async render(p, c) {
+    if (!p.id) return go('#/forum');
+    const r = await api(ACT.forumGet, { postId: p.id }, { retry: true });
+    if (c.stale()) return;
+    const x = r.post || r, comments = r.comments || x.comments || [];
+    setMain('<a class="btn small" href="#/forum">← 回論壇</a><article class="card" style="margin-top:16px"><h1>' + esc(x.title) + '</h1>' +
+      '<p class="muted">' + esc(x.authorName || '') + '・' + esc(x.category || '') + '・' + esc(String(x.createdAt || '').slice(0, 16)) + '</p>' +
+      '<div style="white-space:pre-wrap">' + esc(x.content) + '</div>' +
+      (x.linkUrl && /^https?:\/\//i.test(x.linkUrl) ? '<p><a href="' + esc(x.linkUrl) + '" target="_blank" rel="noopener noreferrer">開啟相關連結 ↗</a></p>' : '') +
+      (x.images || []).map((u) => safeImgSrc(u) ? '<img alt="文章附圖" loading="lazy" src="' + esc(u) + '" style="margin-top:12px">' : '').join('') +
+      '<div class="btn-row"><button type="button" class="btn" id="lk" aria-pressed="' + (x.liked ? 'true' : 'false') + '"></button>' +
+      (x.mine || isAdmin() ? '<button type="button" class="btn danger" id="dp">刪除文章</button>' : '') + '</div></article>' +
+      (isAdmin() ? '<button type="button" class="btn block" id="pin">' + (x.isPinned ? '📌 取消置頂' : '📌 置頂') + '</button><div style="height:16px"></div>' : '') +
+      '<h2>留言（' + comments.length + '）</h2><ul class="list" id="cm">' + comments.map((m) =>
+        '<li class="card"><p><strong>' + esc(m.authorName || '') + '</strong>　<span class="muted">' + esc(String(m.createdAt || '').slice(5, 16)) + '</span></p><div style="white-space:pre-wrap">' + esc(m.content) + '</div>' +
+        (m.mine || isAdmin() ? '<button type="button" class="btn small danger" data-dc="' + esc(m.commentId || m.id) + '">刪除</button>' : '') + '</li>').join('') + '</ul>' +
+      '<form id="cf" class="card" novalidate><div class="field"><label for="cc">我要留言</label><textarea id="cc" name="content" maxlength="500"></textarea></div>' +
+      '<button type="submit" class="btn primary block">送出留言</button></form>', x.title);
+
+    const lk = $('#lk');
+    const paintLike = (liked, n) => { lk.setAttribute('aria-pressed', liked ? 'true' : 'false'); lk.textContent = (liked ? '👍 已按讚' : '👍 讚') + '（' + n + '）'; };
+    paintLike(!!x.liked, x.likeCount || 0);
+    lk.onclick = once(lk, async () => {
+      try { const res = await api(ACT.forumLike, { postId: p.id }); paintLike(!!res.liked, res.likeCount || 0); } catch (e) {}
+    });
+    const dp = $('#dp');
+    if (dp) dp.onclick = async () => {
+      if (!(await confirmDanger('刪除文章', '文章刪除後無法復原。', '刪除'))) return;
+      try { await api(ACT.forumDelete, { postId: p.id }, { loading: true }); toast('已刪除', 'ok'); go('#/forum'); } catch (e) {}
+    };
+    const pin = $('#pin');
+    if (pin) pin.onclick = once(pin, async () => { try { await api(ACT.forumPin, { postId: p.id, pinned: !x.isPinned }, { loading: true }); route(); } catch (e) {} });
+    $$('[data-dc]').forEach((b) => { b.onclick = async () => {
+      if (!(await confirmBox('刪除留言', '確定刪除這則留言？', '刪除'))) return;
+      try { await api(ACT.forumDelComment, { commentId: b.dataset.dc, postId: p.id }, { loading: true }); route(); } catch (e) {}
+    }; });
+    const cf = $('#cf'), draft = bindDraft(cf, 'cm-' + p.id);
+    let reqId = newRequestId();
+    cf.addEventListener('input', () => { reqId = newRequestId(); });
+    cf.onsubmit = async (e) => {
+      e.preventDefault(); clearInvalid(cf);
+      const d = formData(cf); if (!d.content) return markInvalid(cf, 'content', '請輸入留言');
+      const btn = $('button[type=submit]', cf); btn.disabled = true;
+      try { await api(ACT.forumComment, { postId: p.id, content: d.content }, { loading: true, requestId: reqId }); draft.clear(); route(); }
+      catch (err) {} finally { btn.disabled = false; }
+    };
+  }
+});
+
+/* ==================== 管理後台首頁 ==================== */
+Routes.add('/admin', {
+  title: '管理後台', auth: 'admin', nav: 'home',
+  async render(p, c) {
+    setMain('<h1>管理後台</h1><div id="dash"><div class="empty">載入中…</div></div>', '管理後台');
+    const d = await api(ACT.adminDash, {}, { retry: true });
+    if (c.stale()) return;
+    const num = (n, t) => '<div class="card center"><div class="big-num">' + esc(n == null ? '—' : n) + '</div>' + t + '</div>';
+    let h = '<div class="tile-grid">' + num(d.activeMembers, '有效會員') + num(d.pendingMembers, '待審會員') + num(d.expiringSoon, '30 天內到期') + num(d.expired, '已到期') + '</div>' +
+      '<div class="tile-grid" style="margin-top:16px"><a class="tile" href="#/admin-members' + (d.pendingMembers ? '?status=' + encodeURIComponent(ST.pending) : '') + '"><span class="ic" aria-hidden="true">👥</span>會員管理' + (d.pendingMembers ? '<span class="sub">有 ' + esc(d.pendingMembers) + ' 位待審</span>' : '') + '</a>' +
+      '<a class="tile" href="#/forum"><span class="ic" aria-hidden="true">💬</span>論壇管理</a></div>';
+    if (d.finance && isFinance()) {
+      const f = d.finance;
+      h += '<h2 style="margin-top:1.4rem">財務（' + esc(f.year || '') + '）</h2><div class="tile-grid">' +
+        num(f.pendingPayments, '待審會費') + num(f.pendingDonations, '待審捐款') + num(f.pendingExpenses, '待審支出') + num(f.awaitingPayout, '待撥款') + '</div>' +
+        '<div class="card center" style="margin-top:16px"><div class="big-num">' + money(f.yearIncome) + '</div>本年度收入</div>' +
+        '<div class="tile-grid"><a class="tile" href="#/admin-review?t=payment"><span class="ic" aria-hidden="true">💳</span>審核會費</a>' +
+        '<a class="tile" href="#/admin-review?t=donation"><span class="ic" aria-hidden="true">💝</span>審核捐款</a></div>';
+    }
+    $('#dash').innerHTML = h;
+  }
+});
+
+/* ==================== 會員管理（含註冊申請審核） ==================== */
+Routes.add('/admin-members', {
+  title: '會員管理', auth: 'admin', nav: 'home',
+  async render(p, c) {
+    const page = Number(p.page || 1), kw = p.q || '', stFilter = p.status || '';
+    setMain('<a class="btn small" href="#/admin">← 回後台</a><h1 style="margin-top:12px">會員管理</h1>' +
+      '<div class="tabs" role="group" aria-label="狀態篩選">' +
+      [['', '全部'], [ST.pending, '待審核'], [ST.active, '啟用'], [ST.disabled, '停用']].map((k) =>
+        '<button type="button" class="btn" data-sf="' + esc(k[0]) + '" aria-pressed="' + (stFilter === k[0] ? 'true' : 'false') + '">' + k[1] + '</button>').join('') + '</div>' +
+      '<form id="sf" class="field"><label for="sq">搜尋姓名、編號或電話</label><input id="sq" type="search" value="' + esc(kw) + '">' +
+      '<button type="submit" class="btn primary block" style="margin-top:12px">搜尋</button></form><div id="ml"><div class="empty">載入中…</div></div>', '會員管理');
+    const base = () => '#/admin-members?q=' + encodeURIComponent(kw) + '&status=' + encodeURIComponent(stFilter);
+    $$('[data-sf]').forEach((b) => { b.onclick = () => go('#/admin-members?q=' + encodeURIComponent(kw) + '&status=' + encodeURIComponent(b.dataset.sf)); });
+    $('#sf').onsubmit = (e) => { e.preventDefault(); go('#/admin-members?q=' + encodeURIComponent($('#sq').value.trim()) + '&status=' + encodeURIComponent(stFilter)); };
+    const r = normList(await api(ACT.adminMembers, { page: page, pageSize: 15, keyword: kw, status: stFilter }, { retry: true }));
+    if (c.stale()) return;
+    $('#ml').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((m) => {
+      const pending = m.status === ST.pending;
+      return '<li class="card"><h3>' + esc(m.name) + '　<small class="muted">' + esc(m.memberId) + '</small></h3><p>' + esc(m.memberType || '') + '　' + statusBadge(m.status) +
+        '</p><p class="muted">電話 ' + esc(m.phoneMasked || '—') + '・到期 ' + esc(m.expiryDate || '—') + '・' + (m.lineBound ? 'LINE 已綁定' : 'LINE 未綁定') + '</p>' +
+        (pending && m.registeredAt ? '<p class="muted">申請時間 ' + esc(String(m.registeredAt).slice(0, 16)) + '</p>' : '') +
+        '<div class="btn-row">' +
+        (pending
+          ? '<button type="button" class="btn small primary" data-ok="' + esc(m.memberId) + '">核准加入</button><button type="button" class="btn small danger" data-no="' + esc(m.memberId) + '">退回申請</button>'
+          : '<button type="button" class="btn small ' + (m.status === ST.disabled ? '' : 'danger') + '" data-st="' + esc(m.memberId) + '" data-to="' + (m.status === ST.disabled ? ST.active : ST.disabled) + '">' + (m.status === ST.disabled ? '重新啟用' : '停用') + '</button>') +
+        (m.lineBound ? '<button type="button" class="btn small" data-ub="' + esc(m.memberId) + '">解除 LINE 綁定</button>' : '') + '</div></li>';
+    }).join('') + '</ul>' + pagerHtml(r)
+      : '<div class="empty">找不到符合的會員</div>';
+    $$('[data-pg]', $('#ml')).forEach((b) => { b.onclick = () => go(base() + '&page=' + b.dataset.pg); });
+
+    $$('[data-ok]').forEach((b) => { b.onclick = async () => {
+      if (!(await confirmBox('核准加入', '核准後這位申請人就能使用會員功能。', '核准'))) return;
+      try { await api(ACT.adminApprove, { memberId: b.dataset.ok }, { loading: true }); toast('已核准', 'ok'); route(); } catch (e) {}
+    }; });
+    $$('[data-no]').forEach((b) => { b.onclick = () => {
+      const dlg = openModal('<h2>退回申請</h2><div class="field"><label for="rr">退回原因（內部紀錄）</label><textarea id="rr" maxlength="200"></textarea></div>' +
+        '<div class="btn-row"><button type="button" class="btn" id="m-c">取消</button><button type="button" class="btn danger primary" id="m-o">確認退回</button></div>', { label: '退回申請' });
+      $('#m-c', dlg.el).onclick = () => dlg.close();
+      const ok = $('#m-o', dlg.el);
+      ok.onclick = once(ok, async () => {
+        const reason = $('#rr', dlg.el).value.trim(); if (!reason) return toast('請填寫退回原因', 'error');
+        try { await api(ACT.adminRejectReg, { memberId: b.dataset.no, reason: reason }, { loading: true }); dlg.close(); toast('已退回', 'ok'); route(); } catch (e) {}
+      });
+    }; });
+    $$('[data-st]').forEach((b) => { b.onclick = async () => {
+      const stop = b.dataset.to === ST.disabled;
+      const ok = stop ? await confirmDanger('停用會員', '停用後該會員會被登出，無法再使用。', '停用') : await confirmBox('重新啟用', '確定重新啟用這位會員？', '啟用');
+      if (!ok) return;
+      try { await api(ACT.adminSetStatus, { memberId: b.dataset.st, status: b.dataset.to }, { loading: true }); toast('已更新', 'ok'); route(); } catch (e) {}
+    }; });
+    $$('[data-ub]').forEach((b) => { b.onclick = async () => {
+      if (!(await confirmBox('解除 LINE 綁定', '該會員需要重新綁定才能登入。', '解除'))) return;
+      try { await api(ACT.adminUnbind, { memberId: b.dataset.ub }, { loading: true }); toast('已解除', 'ok'); route(); } catch (e) {}
+    }; });
+  }
+});
+
+/* ==================== 憑證預覽（Blob URL） ==================== */
+function b64ToBlobUrl(b64, mime) {
+  const bin = atob(b64), arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([arr], { type: mime }));
+}
+async function showProof(fileId) {
+  try {
+    const r = await api(ACT.filePreview, { fileId: fileId }, { loading: true });
+    if (!r || !r.base64) return toast('無法顯示此檔案', 'error');
+    const mime = r.mime || 'image/jpeg';
+    const url = b64ToBlobUrl(r.base64, mime);
+    const isPdf = /pdf/i.test(mime);
+    const body = isPdf
+      ? '<p>這是 PDF 檔案，請點下方按鈕開啟。</p><a class="btn block" href="' + url + '" target="_blank" rel="noopener">📄 開啟 PDF</a>'
+      : '<img alt="付款憑證" src="' + url + '">';
+    const dlg = openModal('<h2>付款憑證</h2>' + body +
+      '<div class="btn-row"><button type="button" class="btn primary" id="pv-x">關閉</button></div>',
+      { label: '付款憑證', onClose: () => setTimeout(() => URL.revokeObjectURL(url), 60000) });
+    $('#pv-x', dlg.el).onclick = () => dlg.close();
+  } catch (e) {}
+}
+
+/* ==================== 會費／捐款審核 ==================== */
+Routes.add('/admin-review', {
+  title: '審核', auth: 'finance', nav: 'home',
+  async render(p, c) {
+    const kind = p.t === 'donation' ? 'donation' : 'payment';
+    const isPay = kind === 'payment';
+    setMain('<a class="btn small" href="#/admin">← 回後台</a><h1 style="margin-top:12px">審核' + (isPay ? '會費' : '捐款') + '</h1><div id="rv"><div class="empty">載入中…</div></div>', '審核');
+    const res = await Promise.all([
+      api(isPay ? ACT.payAdminList : ACT.donAdminList, { status: ST.pending, pageSize: 30 }, { retry: true }),
+      api(ACT.finOptions, {}, { retry: true })
+    ]);
+    if (c.stale()) return;
+    const r = normList(res[0]), opt = res[1] || {};
+    const accounts = opt.accounts || [], projects = opt.projects || [];
+    if (!accounts.length) { $('#rv').innerHTML = '<div class="banner warn">尚未建立資金帳戶，請先建立帳戶，才能核准入帳。</div>'; return; }
+    const myId = (State.user && State.user.memberId) || '';
+    $('#rv').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((x) =>
+      '<li class="card"><h3>' + money(x.amount) + '　' + esc(x.memberName || x.donorName || x.memberId || '') + '</h3>' +
+      '<p class="muted">' + (isPay ? esc(x.year || '') + ' 年度' : esc(x.purpose || '')) + '・' + esc(x.payDate || '') + '・' + esc(x.method || '') + '</p>' +
+      (x.note ? '<p>備註：' + esc(x.note) + '</p>' : '') +
+      (x.memberId && x.memberId === myId ? '<div class="banner warn">這是您自己的申報，建議由其他人審核。</div>' : '') +
+      '<div class="btn-row">' + (x.proofFileId ? '<button type="button" class="btn small" data-pv="' + esc(x.proofFileId) + '">看憑證</button>' : '') +
+      '<button type="button" class="btn small primary" data-ap="' + esc(x.id) + '" data-amt="' + esc(x.amount) + '">核准</button>' +
+      '<button type="button" class="btn small danger" data-rj="' + esc(x.id) + '">退回</button></div></li>').join('') + '</ul>'
+      : '<div class="empty"><span class="ic" aria-hidden="true">🎉</span>沒有待審項目</div>';
+
+    $$('[data-pv]').forEach((b) => { b.onclick = () => showProof(b.dataset.pv); });
+    $$('[data-ap]').forEach((b) => { b.onclick = () => {
+      const dlg = openModal('<h2>核准入帳 ' + money(b.dataset.amt) + '</h2><div class="field"><label for="ac">收款帳戶</label><select id="ac">' +
+        accounts.map((a) => '<option value="' + esc(a.accountId) + '">' + esc(a.name) + '（' + money(a.balance) + '）</option>').join('') + '</select></div>' +
+        '<div class="field"><label for="pj">專案（選填）</label><select id="pj"><option value="">不指定</option>' + projects.map((n) => '<option>' + esc(n) + '</option>').join('') + '</select></div>' +
+        '<div class="btn-row"><button type="button" class="btn" id="m-c">取消</button><button type="button" class="btn primary" id="m-o">確認入帳</button></div>', { label: '核准入帳' });
+      $('#m-c', dlg.el).onclick = () => dlg.close();
+      const ok = $('#m-o', dlg.el);
+      const approveReqId = newRequestId();   // 同一筆核准固定編號，連點或逾時重送都只入帳一次
+      ok.onclick = once(ok, async () => {
+        try {
+          const res2 = await api(isPay ? ACT.payApprove : ACT.donApprove,
+            { id: b.dataset.ap, accountId: $('#ac', dlg.el).value, projectName: $('#pj', dlg.el).value },
+            { loading: true, loadingMsg: '正在入帳，請勿離開…', requestId: approveReqId });
+          dlg.close(); toast('已核准' + (res2 && res2.receiptNo ? '，收據編號 ' + res2.receiptNo : ''), 'ok'); route();
+        } catch (e) {}
+      });
+    }; });
+    $$('[data-rj]').forEach((b) => { b.onclick = () => {
+      const dlg = openModal('<h2>退回申報</h2><div class="field"><label for="rr">退回原因（會讓會員看到）</label><textarea id="rr" maxlength="200"></textarea></div>' +
+        '<div class="btn-row"><button type="button" class="btn" id="m-c">取消</button><button type="button" class="btn danger primary" id="m-o">確認退回</button></div>', { label: '退回申報' });
+      $('#m-c', dlg.el).onclick = () => dlg.close();
+      const ok = $('#m-o', dlg.el);
+      ok.onclick = once(ok, async () => {
+        const reason = $('#rr', dlg.el).value.trim(); if (!reason) return toast('請填寫退回原因', 'error');
+        try { await api(isPay ? ACT.payReject : ACT.donReject, { id: b.dataset.rj, reason: reason }, { loading: true }); dlg.close(); toast('已退回', 'ok'); route(); } catch (e) {}
+      });
+    }; });
+  }
+});
+
+/* ==================================================================
+ * 健康記錄
+ * ================================================================== */
+const MOOD_OPTS = [[1, '😣', '很差'], [2, '😕', '不好'], [3, '😐', '普通'], [4, '🙂', '不錯'], [5, '😄', '很好']];
+const STATE_OPTS = [['', '未填'], ['ON', 'ON 藥效好'], ['OFF', 'OFF 藥效退'], ['DYS', 'DYS 異動多']];
+const STATE_TEXT = { ON: 'ON 藥效好', OFF: 'OFF 藥效退', DYS: 'DYS 異動多' };
+
+function numInput(id, name, label, min, max, hint) {
+  return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" name="' + name +
+    '" type="number" inputmode="decimal" min="' + min + '" max="' + max + '" step="any">' +
+    (hint ? '<div class="hint">' + hint + '</div>' : '') + '</div>';
+}
+
+Routes.add('/health', {
+  title: '健康記錄', auth: 'member', nav: 'health',
+  async render(p, c) {
+    let consented = null;
+    try {
+      const prof = await api('member.getProfile', {}, { retry: true, silent: true });
+      consented = prof.healthConsent === true;
+      if (State.user) State.user.healthConsent = consented;
+    } catch (e) {
+      if (c.stale()) return;
+      if (SESSION_FAIL_CODES.indexOf(e.code) !== -1) return;
+      setMain('<h1>健康記錄</h1><div class="banner warn">暫時讀不到您的設定：' + esc(e.message) + '</div><button type="button" class="btn primary" id="retry-h">重新載入</button>', '健康記錄');
+      $('#retry-h').onclick = () => route();
+      return;
+    }
+    if (c.stale()) return;
+
+    if (!consented) {
+      setMain('<h1>健康記錄</h1><div class="banner info">健康資料屬於敏感個資。需要您同意後，協會才會為您保存。您可以隨時刪除自己的紀錄。</div>' +
+        '<div class="check"><input type="checkbox" id="cs"><label for="cs">我同意協會保存我自己輸入的健康記錄</label></div>' +
+        '<button type="button" class="btn primary block" id="cs-ok" disabled>同意並開始記錄</button>', '健康記錄');
+      $('#cs').onchange = (e) => { $('#cs-ok').disabled = !e.target.checked; };
+      const ok = $('#cs-ok');
+      ok.onclick = once(ok, async () => {
+        try { await api('member.setConsent', { healthConsent: true, privacyVersion: CONFIG.PRIVACY_VERSION }, { loading: true }); route(); } catch (e) {}
+      });
+      return;
+    }
+
+    setMain('<h1>今日記錄</h1><div class="banner info">同一天再次儲存，會更新當天的記錄。</div>' +
+      '<form id="hf" class="card" novalidate>' +
+      '<div class="field"><label for="h-date">日期</label><input id="h-date" name="logDate" type="date" max="' + todayLocal() + '" value="' + todayLocal() + '"></div>' +
+      '<fieldset class="field"><legend>今天心情</legend><div class="choices">' +
+      MOOD_OPTS.map((m) => '<label class="choice"><input type="radio" name="mood" value="' + m[0] + '"><span><span aria-hidden="true" style="font-size:1.6rem">' + m[1] + '</span>' + m[2] + '</span></label>').join('') +
+      '</div></fieldset>' +
+      '<fieldset class="field"><legend>藥效狀態</legend><div class="choices">' +
+      STATE_OPTS.map((s, i) => '<label class="choice"><input type="radio" name="state" value="' + s[0] + '"' + (i === 0 ? ' checked' : '') + '><span>' + s[1] + '</span></label>').join('') +
+      '</div></fieldset>' +
+      numInput('h-ex', 'exerciseMin', '運動（分鐘）', 0, 600) +
+      numInput('h-sl', 'sleepHours', '昨晚睡眠（小時）', 0, 24) +
+      numInput('h-tap', 'tapScore', '敲擊分數（0–100）', 0, 100, '沒有測量可以不填') +
+      numInput('h-voc', 'vocalScore', '發聲分數（0–100）', 0, 100, '沒有測量可以不填') +
+      '<div class="field"><label for="h-med">今天服藥情形</label><textarea id="h-med" name="medication" maxlength="300" placeholder="例如：早午晚都有按時吃"></textarea></div>' +
+      '<div class="field"><label for="h-sym">症狀（顫抖、僵硬、跌倒…）</label><textarea id="h-sym" name="symptoms" maxlength="500"></textarea></div>' +
+      '<div class="field"><label for="h-note">其他想記下的事</label><textarea id="h-note" name="note" maxlength="1000"></textarea></div>' +
+      '<div class="field"><label for="h-dq">想請教醫師的問題</label><textarea id="h-dq" name="doctorQuestion" maxlength="500"></textarea></div>' +
+      '<div class="btn-row"><button type="submit" class="btn primary">儲存今天的記錄</button></div></form>' +
+      '<div class="btn-row"><a class="btn" href="#/health-summary">給醫師看的摘要</a></div>' +
+      '<h2 style="margin-top:1.4rem">最近記錄</h2><div id="hl"><div class="empty">載入中…</div></div>', '健康記錄');
+
+    const form = $('#hf');
+    const numOrEmpty = (v) => (v === '' || v === undefined ? '' : Number(v));
+
+    let logsByDate = {};
+    function fillForm(log) {
+      radios(form, 'mood').forEach((r) => { r.checked = !!log && String(r.value) === String(log.mood); });
+      radios(form, 'state').forEach((r) => { r.checked = r.value === (log ? (log.state || '') : ''); });
+      ['exerciseMin', 'sleepHours', 'tapScore', 'vocalScore', 'medication', 'symptoms', 'note', 'doctorQuestion'].forEach((k) => {
+        form.elements[k].value = log && log[k] !== undefined && log[k] !== null ? log[k] : '';
+      });
+    }
+    form.elements.logDate.onchange = () => fillForm(logsByDate[form.elements.logDate.value]);
 
     form.onsubmit = async (e) => {
       e.preventDefault(); clearInvalid(form);
       const d = formData(form);
-      const amt = Number(d.amount);
-      if (!amt || amt <= 0 || amt !== Math.floor(amt)) return markInvalid(form, 'amount', '請輸入正確金額（整數）');
-      if (!d.payDate) return markInvalid(form, 'payDate', '請選擇日期');
-      if (d.payDate > todayLocal()) return markInvalid(form, 'payDate', '日期不能是未來');
-      const f = getFile();
-      if (!f) { toast('請先上傳付款憑證', 'error'); return $('#f-file').focus(); }
-      if (!(await confirmBox('確認送出', '金額 ' + money(amt) + '，日期 ' + d.payDate + '。送出後等待協會確認。', '確認送出'))) return;
-
-      const body = { amount: amt, payDate: d.payDate, method: d.method, note: d.note, proof: toUpload(f) };
-      if (kind === 'payment') body.year = Number(d.year); else { body.donorName = d.donorName; body.purpose = d.purpose; }
+      if (!d.logDate) return markInvalid(form, 'logDate', '請選擇日期');
+      if (d.logDate > todayLocal()) return markInvalid(form, 'logDate', '日期不能是未來');
+      const rng = [['exerciseMin', 0, 600, '運動分鐘'], ['sleepHours', 0, 24, '睡眠時數'], ['tapScore', 0, 100, '敲擊分數'], ['vocalScore', 0, 100, '發聲分數']];
+      for (const [k, lo, hi, label] of rng) {
+        if (d[k] !== '' && d[k] !== undefined) {
+          const n = Number(d[k]);
+          if (!isFinite(n) || n < lo || n > hi) return markInvalid(form, k, label + '需介於 ' + lo + ' 到 ' + hi);
+        }
+      }
+      const body = {
+        logDate: d.logDate, mood: numOrEmpty(d.mood), state: d.state || '',
+        exerciseMin: numOrEmpty(d.exerciseMin), sleepHours: numOrEmpty(d.sleepHours),
+        tapScore: numOrEmpty(d.tapScore), vocalScore: numOrEmpty(d.vocalScore),
+        medication: d.medication || '', symptoms: d.symptoms || '',
+        note: d.note || '', doctorQuestion: d.doctorQuestion || ''
+      };
       const btn = $('button[type=submit]', form); btn.disabled = true;
       try {
-        await api(kind === 'payment' ? ACT.paySubmit : ACT.donSubmit, body, { loading: true, loadingMsg: '正在上傳，請勿離開…' });   // 寫入不重試
-        draft.clear();
-        toast('已送出，協會確認後會開立電子收據。', 'ok');
-        go('#/my-payments');
-      } catch (err) { /* api 已提示 */ } finally { btn.disabled = false; }
+        const r = await api('health.saveLog', body, { loading: true });
+        toast(r && r.updated ? '已更新當天記錄' : '已儲存', 'ok');
+        route();
+      } catch (err) {} finally { btn.disabled = false; }
     };
+
+    try {
+      const r = normList(await api('health.listLogs', { days: 30 }, { retry: true }));
+      if (c.stale()) return;
+      r.items.forEach((x) => { logsByDate[x.logDate] = x; });
+      if (logsByDate[todayLocal()]) fillForm(logsByDate[todayLocal()]);
+      const rows = (x) => [
+        ['心情', x.mood !== '' && x.mood != null ? (MOOD_OPTS.find((m) => m[0] === Number(x.mood)) || [0, '', x.mood])[1] + ' ' + x.mood + ' 分' : ''],
+        ['藥效狀態', STATE_TEXT[x.state] || ''],
+        ['運動', x.exerciseMin !== '' && x.exerciseMin != null ? x.exerciseMin + ' 分鐘' : ''],
+        ['睡眠', x.sleepHours !== '' && x.sleepHours != null ? x.sleepHours + ' 小時' : ''],
+        ['敲擊分數', x.tapScore], ['發聲分數', x.vocalScore],
+        ['服藥', x.medication], ['症狀', x.symptoms], ['備註', x.note], ['想問醫師', x.doctorQuestion]
+      ].filter((kv) => kv[1] !== '' && kv[1] != null);
+      $('#hl').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((x) =>
+        '<li class="card"><h3>' + esc(x.logDate || '') + '</h3><dl class="kv">' +
+        rows(x).map((kv) => '<dt>' + esc(kv[0]) + '</dt><dd>' + esc(kv[1]) + '</dd>').join('') +
+        '</dl>' + (x.aiSummary ? '<div class="banner info" style="margin-top:12px;white-space:pre-wrap">' + esc(x.aiSummary) + '</div>' : '') +
+        '<button type="button" class="btn small danger" style="margin-top:12px" data-dl="' + esc(x.id) + '">刪除</button></li>').join('') + '</ul>'
+        : '<div class="empty"><span class="ic" aria-hidden="true">📝</span>還沒有記錄</div>';
+      $$('[data-dl]').forEach((b) => { b.onclick = async () => {
+        if (!(await confirmDanger('刪除記錄', '這筆健康記錄刪除後無法復原。', '刪除'))) return;
+        try { await api('health.deleteLog', { id: b.dataset.dl }, { loading: true }); toast('已刪除', 'ok'); route(); } catch (e) {}
+      }; });
+    } catch (e) { if (!c.stale()) $('#hl').innerHTML = '<div class="banner warn">記錄暫時讀不到。</div>'; }
   }
+});
 
-  Routes.add('/payment', {
-    title: '繳會費', auth: 'member', nav: 'me',
-    async render() {
-      setMain('<h1>繳會費</h1><div class="banner info">請先完成匯款或繳現金，再回來上傳憑證。協會核對後會開立電子收據。</div>' + paymentFormHtml('payment'), '繳會費');
-      bindPaymentForm('payment');
-    }
-  });
-  Routes.add('/donation', {
-    title: '捐款', auth: 'member', nav: 'me',
-    async render() {
-      setMain('<h1>捐款</h1><div class="banner info">感謝您的支持。請先完成匯款，再上傳憑證。</div>' + paymentFormHtml('donation'), '捐款');
-      bindPaymentForm('donation');
-    }
-  });
-
-  /* ==================== 申報紀錄 ==================== */
-  Routes.add('/my-payments', {
-    title: '申報紀錄', auth: 'member', nav: 'me',
-    async render(p, c) {
-      setMain('<h1>申報紀錄</h1><div id="pm-list"><div class="empty">載入中…</div></div>', '申報紀錄');
-      const res = await Promise.all([api(ACT.payMy, {}, { retry: true }), api(ACT.donMy, {}, { retry: true })]);
-      if (c.stale()) return;
-      const a = normList(res[0]).items, b = normList(res[1]).items;
-      const items = a.map((x) => ({ k: '會費 ' + (x.year || '') + ' 年', t: x.createdAt || x.payDate || '', x: x }))
-        .concat(b.map((x) => ({ k: '捐款（' + (x.purpose || '一般') + '）', t: x.createdAt || x.payDate || '', x: x })))
-        .sort((m, n) => String(n.t).localeCompare(String(m.t)));
-      $('#pm-list').innerHTML = items.length ? '<ul class="list">' + items.map((i) =>
-        '<li class="card"><h3>' + esc(i.k) + '　' + money(i.x.amount) + '</h3><p>' + statusBadge(i.x.status) + '</p>' +
-        '<p class="muted">繳款日 ' + esc(i.x.payDate || '—') + (i.x.method ? '・' + esc(i.x.method) : '') + '</p>' +
-        (i.x.rejectReason ? '<div class="banner danger">退回原因：' + esc(i.x.rejectReason) + '</div>' : '') +
-        (i.x.receiptNo ? '<a class="btn small" href="#/receipt?no=' + encodeURIComponent(i.x.receiptNo) + '">查看收據 ' + esc(i.x.receiptNo) + '</a>' : '') +
-        '</li>').join('') + '</ul>'
-        : '<div class="empty"><span class="ic" aria-hidden="true">📭</span>還沒有申報紀錄</div>';
-    }
-  });
-
-  /* ==================== 收據 ==================== */
-  Routes.add('/receipts', {
-    title: '我的收據', auth: 'member', nav: 'me',
-    async render(p, c) {
-      setMain('<h1>我的收據</h1><div id="rc-list"><div class="empty">載入中…</div></div>', '我的收據');
-      const r = normList(await api(ACT.rcMy, {}, { retry: true }));
-      if (c.stale()) return;
-      $('#rc-list').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((x) =>
-        '<li><a class="list-item" href="#/receipt?no=' + encodeURIComponent(x.receiptNo) + '"><span class="t">' + esc(x.type || '') + '收據　' + money(x.amount) + '</span>' +
-        '<span class="m">' + esc(x.issueDate || '') + '・' + esc(x.receiptNo) + '　' + statusBadge(x.status || '有效') + '</span></a></li>').join('') + '</ul>'
-        : '<div class="empty"><span class="ic" aria-hidden="true">🧾</span>目前沒有收據。協會確認款項後會自動開立。</div>';
-    }
-  });
-
-  Routes.add('/receipt', {
-    title: '收據', auth: 'member', nav: 'me',
-    async render(p, c) {
-      if (!p.no) return go('#/receipts');
-      setMain('<h1>電子收據</h1><div id="rc-box"><div class="empty">載入中…</div></div>' +
-        '<div class="btn-row no-print"><a class="btn" href="#/receipts">← 回收據列表</a><button type="button" class="btn primary" id="rc-print">列印 / 存成 PDF</button></div>', '收據');
-      const r = await api(ACT.rcGet, { receiptNo: p.no }, { retry: true });
-      if (c.stale()) return;
-      const html = typeof r === 'string' ? r : (r && (r.html || r.content)) || '';
-      if (!html) { $('#rc-box').innerHTML = '<div class="banner warn">這張收據目前沒有可顯示的內容。</div>'; return; }
+/* ==================== 給醫師的摘要 ==================== */
+Routes.add('/health-summary', {
+  title: '給醫師的摘要', auth: 'member', nav: 'health',
+  async render(p, c) {
+    const days = [7, 14, 30].indexOf(Number(p.days)) !== -1 ? Number(p.days) : 14;
+    setMain('<a class="btn small" href="#/health">← 回記錄</a><h1 style="margin-top:12px">給醫師看的摘要</h1>' +
+      '<div class="banner warn">這是依您的記錄整理的文字，僅供看診時溝通，不是診斷。</div>' +
+      '<div class="tabs" role="group" aria-label="統計期間">' +
+      [7, 14, 30].map((n) => '<button type="button" class="btn" data-days="' + n + '" aria-pressed="' + (n === days ? 'true' : 'false') + '">最近 ' + n + ' 天</button>').join('') + '</div>' +
+      '<div id="sm"><div class="empty">整理中，可能需要幾秒…</div></div>' +
+      '<div class="btn-row no-print"><button type="button" class="btn primary" id="sm-print" disabled>列印 / 存成 PDF</button></div>', '看診摘要');
+    $$('[data-days]').forEach((b) => { b.onclick = () => go('#/health-summary?days=' + b.dataset.days); });
+    const r = await api('health.clinicSummary', { days: days }, { loading: true, retry: true });
+    if (c.stale()) return;
+    const out = typeof r === 'string' ? r : ((r && (r.html || r.text || r.summary)) || '');
+    if (/^\s*</.test(out)) {
       const fr = document.createElement('iframe');
       fr.setAttribute('sandbox', 'allow-same-origin allow-modals');
-      fr.title = '電子收據 ' + p.no;
-      fr.style.cssText = 'width:100%;height:70vh;border:3px solid var(--line);border-radius:16px;background:#fff';
-      fr.srcdoc = html;
-      $('#rc-box').innerHTML = ''; $('#rc-box').appendChild(fr);
-      $('#rc-print').onclick = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast('此瀏覽器無法列印，請截圖保存', 'info'); } };
+      fr.title = '看診摘要'; fr.srcdoc = out;
+      fr.style.cssText = 'width:100%;height:65vh;border:3px solid var(--line);border-radius:16px;background:#fff';
+      $('#sm').innerHTML = ''; $('#sm').appendChild(fr);
+      const pb = $('#sm-print'); pb.disabled = false;
+      pb.onclick = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast('此瀏覽器無法列印，請截圖保存', 'info'); } };
+    } else {
+      $('#sm').innerHTML = '<div class="card" style="white-space:pre-wrap">' + esc(out || '目前沒有足夠的記錄可以整理') + '</div>';
     }
-  });
-
-  /* ==================== 論壇列表 ==================== */
-  Routes.add('/forum', {
-    title: '病友論壇', auth: 'member', nav: 'home',
-    async render(p, c) {
-      const page = Number(p.page || 1), cat = p.category || '';
-      setMain('<h1>病友論壇</h1><div class="banner info">請勿張貼他人隱私或醫療建議。貼文顯示您的姓名，照片以連結方式儲存，知道連結的人都能看到，請避免上傳含個資的照片。身體不適請就醫。</div>' +
-        '<a class="btn primary block" href="#/forum-new">✏️ 我要發文</a><div style="height:16px"></div>' +
-        '<div class="field"><label for="fcat">分類</label><select id="fcat"><option value="">全部</option></select></div>' +
-        '<div id="fl"><div class="empty">載入中…</div></div>', '病友論壇');
-      const raw = await api(ACT.forumList, { page: page, pageSize: 10, category: cat }, { retry: true });
-      if (c.stale()) return;
-      const r = normList(raw);
-      const sel = $('#fcat');
-      ((raw && raw.categories) || FORUM_CATS).forEach((k) => {
-        const o = document.createElement('option'); o.value = k; o.textContent = k; if (k === cat) o.selected = true; sel.appendChild(o);
-      });
-      sel.onchange = () => go('#/forum?category=' + encodeURIComponent(sel.value));
-      $('#fl').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((x) =>
-        '<li><a class="list-item" href="#/forum-post?id=' + encodeURIComponent(x.postId || x.id) + '"><span class="t">' + (x.isPinned ? '📌 ' : '') + esc(x.title) + '</span>' +
-        '<span class="m">' + esc(x.authorName || '') + '・' + esc(x.category || '') + '・' + esc(String(x.createdAt || '').slice(0, 10)) +
-        '・👍 ' + (x.likeCount || 0) + '・💬 ' + (x.commentCount || 0) + '</span></a></li>').join('') + '</ul>' + pagerHtml(r)
-        : '<div class="empty"><span class="ic" aria-hidden="true">💬</span>還沒有文章，來發第一篇吧</div>';
-      $$('[data-pg]', $('#fl')).forEach((b) => { b.onclick = () => go('#/forum?category=' + encodeURIComponent(cat) + '&page=' + b.dataset.pg); });
-    }
-  });
-  const FORUM_CATS = ['交流', '提問', '經驗分享', '運動復健', '飲食生活', '照顧者園地', '其他'];
-
-  /* ==================== 發文 ==================== */
-  Routes.add('/forum-new', {
-    title: '發文', auth: 'member', nav: 'home',
-    async render() {
-      setMain('<h1>發表文章</h1><form id="nf" class="card" novalidate>' +
-        '<fieldset class="field"><legend>分類</legend><div class="choices">' +
-        FORUM_CATS.map((k, i) => '<label class="choice"><input type="radio" name="category" value="' + k + '"' + (i === 0 ? ' checked' : '') + '><span>' + k + '</span></label>').join('') + '</div></fieldset>' +
-        '<div class="field"><label for="nt">標題 <span class="req">*</span></label><input id="nt" name="title" type="text" maxlength="80"></div>' +
-        '<div class="field"><label for="nc">內容 <span class="req">*</span></label><textarea id="nc" name="content" maxlength="3000"></textarea></div>' +
-        '<div class="field"><div class="lbl">照片（最多 4 張，選填）</div><div class="file-pick"><input id="ni" type="file" accept="image/*" multiple aria-label="選擇照片"><div id="np"></div></div>' +
-        '<div class="hint">照片會公開在論壇，請勿上傳含個資或病歷的照片。</div></div>' +
-        '<div class="btn-row"><a class="btn" href="#/forum">取消</a><button type="submit" class="btn primary">發表</button></div></form>', '發文');
-      const form = $('#nf'), draft = bindDraft(form, 'forum-new');
-      let imgs = [];
-      $('#ni').onchange = async (e) => {
-        imgs = []; $('#np').innerHTML = '';
-        const files = Array.from(e.target.files).slice(0, 4);
-        if (e.target.files.length > 4) toast('最多 4 張，只取前 4 張', 'info');
-        showLoading('正在處理照片…');
-        try {
-          for (const f of files) {
-            const x = await prepareFile(f, 600000); imgs.push(x);
-            $('#np').insertAdjacentHTML('beforeend', '<img alt="已選擇的照片" src="' + x.dataUrl + '" style="max-height:120px;margin:6px">');
-          }
-        } catch (err) { toast(err.message, 'error'); imgs = []; $('#np').innerHTML = ''; }
-        finally { hideLoading(); }
-      };
-      form.onsubmit = async (e) => {
-        e.preventDefault(); clearInvalid(form);
-        const d = formData(form);
-        if (!d.title) return markInvalid(form, 'title', '請填寫標題');
-        if (!d.content) return markInvalid(form, 'content', '請填寫內容');
-        const btn = $('button[type=submit]', form); btn.disabled = true;
-        try {
-          const r = await api(ACT.forumCreate, { title: d.title, content: d.content, category: d.category, images: imgs.map(toUpload) }, { loading: true, loadingMsg: '正在發表…' });
-          draft.clear(); toast('已發表', 'ok');
-          const id = r && (r.postId || r.id);
-          go(id ? '#/forum-post?id=' + encodeURIComponent(id) : '#/forum');
-        } catch (err) {} finally { btn.disabled = false; }
-      };
-    }
-  });
-
-  /* ==================== 文章與留言 ==================== */
-  Routes.add('/forum-post', {
-    title: '文章', auth: 'member', nav: 'home',
-    async render(p, c) {
-      if (!p.id) return go('#/forum');
-      const r = await api(ACT.forumGet, { postId: p.id }, { retry: true });
-      if (c.stale()) return;
-      const x = r.post || r, comments = r.comments || x.comments || [];
-      setMain('<a class="btn small" href="#/forum">← 回論壇</a><article class="card" style="margin-top:16px"><h1>' + esc(x.title) + '</h1>' +
-        '<p class="muted">' + esc(x.authorName || '') + '・' + esc(x.category || '') + '・' + esc(String(x.createdAt || '').slice(0, 16)) + '</p>' +
-        '<div style="white-space:pre-wrap">' + esc(x.content) + '</div>' +
-        (x.linkUrl && /^https?:\/\//i.test(x.linkUrl) ? '<p><a href="' + esc(x.linkUrl) + '" target="_blank" rel="noopener noreferrer">開啟相關連結 ↗</a></p>' : '') +
-        (x.images || []).map((u) => safeImgSrc(u) ? '<img alt="文章附圖" loading="lazy" src="' + esc(u) + '" style="margin-top:12px">' : '').join('') +
-        '<div class="btn-row"><button type="button" class="btn" id="lk" aria-pressed="' + (x.liked ? 'true' : 'false') + '"></button>' +
-        (x.mine || isAdmin() ? '<button type="button" class="btn danger" id="dp">刪除文章</button>' : '') + '</div></article>' +
-        (isAdmin() ? '<button type="button" class="btn block" id="pin">' + (x.isPinned ? '📌 取消置頂' : '📌 置頂') + '</button><div style="height:16px"></div>' : '') +
-        '<h2>留言（' + comments.length + '）</h2><ul class="list" id="cm">' + comments.map((m) =>
-          '<li class="card"><p><strong>' + esc(m.authorName || '') + '</strong>　<span class="muted">' + esc(String(m.createdAt || '').slice(5, 16)) + '</span></p><div style="white-space:pre-wrap">' + esc(m.content) + '</div>' +
-          (m.mine || isAdmin() ? '<button type="button" class="btn small danger" data-dc="' + esc(m.commentId || m.id) + '">刪除</button>' : '') + '</li>').join('') + '</ul>' +
-        '<form id="cf" class="card" novalidate><div class="field"><label for="cc">我要留言</label><textarea id="cc" name="content" maxlength="500"></textarea></div>' +
-        '<button type="submit" class="btn primary block">送出留言</button></form>', x.title);
-
-      // 按讚：只更新按鈕，不重繪整頁
-      const lk = $('#lk');
-      const paintLike = (liked, n) => { lk.setAttribute('aria-pressed', liked ? 'true' : 'false'); lk.textContent = (liked ? '👍 已按讚' : '👍 讚') + '（' + n + '）'; };
-      paintLike(!!x.liked, x.likeCount || 0);
-      lk.onclick = once(lk, async () => {
-        try { const res = await api(ACT.forumLike, { postId: p.id }); paintLike(!!res.liked, res.likeCount || 0); } catch (e) {}
-      });
-      const dp = $('#dp');
-      if (dp) dp.onclick = async () => {
-        if (!(await confirmDanger('刪除文章', '文章刪除後無法復原。', '刪除'))) return;
-        try { await api(ACT.forumDelete, { postId: p.id }, { loading: true }); toast('已刪除', 'ok'); go('#/forum'); } catch (e) {}
-      };
-      const pin = $('#pin');
-      if (pin) pin.onclick = once(pin, async () => { try { await api(ACT.forumPin, { postId: p.id, pinned: !x.isPinned }, { loading: true }); route(); } catch (e) {} });
-      $$('[data-dc]').forEach((b) => { b.onclick = async () => {
-        if (!(await confirmBox('刪除留言', '確定刪除這則留言？', '刪除'))) return;
-        try { await api(ACT.forumDelComment, { commentId: b.dataset.dc, postId: p.id }, { loading: true }); route(); } catch (e) {}
-      }; });
-      const cf = $('#cf'), draft = bindDraft(cf, 'cm-' + p.id);
-      cf.onsubmit = async (e) => {
-        e.preventDefault(); clearInvalid(cf);
-        const d = formData(cf); if (!d.content) return markInvalid(cf, 'content', '請輸入留言');
-        const btn = $('button[type=submit]', cf); btn.disabled = true;
-        try { await api(ACT.forumComment, { postId: p.id, content: d.content }, { loading: true }); draft.clear(); route(); }
-        catch (err) {} finally { btn.disabled = false; }
-      };
-    }
-  });
-
-  /* ==================== 管理後台首頁 ==================== */
-  Routes.add('/admin', {
-    title: '管理後台', auth: 'admin', nav: 'home',
-    async render(p, c) {
-      setMain('<h1>管理後台</h1><div id="dash"><div class="empty">載入中…</div></div>', '管理後台');
-      const d = await api(ACT.adminDash, {}, { retry: true });
-      if (c.stale()) return;
-      const num = (n, t) => '<div class="card center"><div class="big-num">' + esc(n == null ? '—' : n) + '</div>' + t + '</div>';
-      let h = '<div class="tile-grid">' + num(d.activeMembers, '有效會員') + num(d.pendingMembers, '待審會員') + num(d.expiringSoon, '30 天內到期') + num(d.expired, '已到期') + '</div>' +
-        '<div class="tile-grid" style="margin-top:16px"><a class="tile" href="#/admin-members"><span class="ic" aria-hidden="true">👥</span>會員管理</a>' +
-        '<a class="tile" href="#/forum"><span class="ic" aria-hidden="true">💬</span>論壇管理</a></div>';
-      if (d.finance && isFinance()) {
-        const f = d.finance;
-        h += '<h2 style="margin-top:1.4rem">財務（' + esc(f.year || '') + '）</h2><div class="tile-grid">' +
-          num(f.pendingPayments, '待審會費') + num(f.pendingDonations, '待審捐款') + num(f.pendingExpenses, '待審支出') + num(f.awaitingPayout, '待撥款') + '</div>' +
-          '<div class="card center" style="margin-top:16px"><div class="big-num">' + money(f.yearIncome) + '</div>本年度收入</div>' +
-          '<div class="tile-grid"><a class="tile" href="#/admin-review?t=payment"><span class="ic" aria-hidden="true">💳</span>審核會費</a>' +
-          '<a class="tile" href="#/admin-review?t=donation"><span class="ic" aria-hidden="true">💝</span>審核捐款</a></div>';
-      }
-      $('#dash').innerHTML = h;
-    }
-  });
-
-  /* ==================== 會員管理 ==================== */
-  Routes.add('/admin-members', {
-    title: '會員管理', auth: 'admin', nav: 'home',
-    async render(p, c) {
-      const page = Number(p.page || 1), kw = p.q || '';
-      setMain('<a class="btn small" href="#/admin">← 回後台</a><h1 style="margin-top:12px">會員管理</h1>' +
-        '<form id="sf" class="field"><label for="sq">搜尋姓名、編號或電話</label><input id="sq" type="search" value="' + esc(kw) + '">' +
-        '<button type="submit" class="btn primary block" style="margin-top:12px">搜尋</button></form><div id="ml"><div class="empty">載入中…</div></div>', '會員管理');
-      $('#sf').onsubmit = (e) => { e.preventDefault(); go('#/admin-members?q=' + encodeURIComponent($('#sq').value.trim())); };
-      const r = normList(await api(ACT.adminMembers, { page: page, pageSize: 15, keyword: kw }, { retry: true }));
-      if (c.stale()) return;
-      $('#ml').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((m) =>
-        '<li class="card"><h3>' + esc(m.name) + '　<small class="muted">' + esc(m.memberId) + '</small></h3><p>' + esc(m.memberType || '') + '　' + statusBadge(m.status) +
-        '</p><p class="muted">電話 ' + esc(m.phoneMasked || '—') + '・到期 ' + esc(m.expiryDate || '—') + '・' + (m.lineBound ? 'LINE 已綁定' : 'LINE 未綁定') + '</p>' +
-        '<div class="btn-row"><button type="button" class="btn small ' + (m.status === ST.disabled ? '' : 'danger') + '" data-st="' + esc(m.memberId) + '" data-to="' + (m.status === ST.disabled ? ST.active : ST.disabled) + '">' + (m.status === ST.disabled ? '重新啟用' : '停用') + '</button>' +
-        (m.lineBound ? '<button type="button" class="btn small" data-ub="' + esc(m.memberId) + '">解除 LINE 綁定</button>' : '') + '</div></li>').join('') + '</ul>' + pagerHtml(r)
-        : '<div class="empty">找不到符合的會員</div>';
-      $$('[data-pg]', $('#ml')).forEach((b) => { b.onclick = () => go('#/admin-members?q=' + encodeURIComponent(kw) + '&page=' + b.dataset.pg); });
-      $$('[data-st]').forEach((b) => { b.onclick = async () => {
-        const stop = b.dataset.to === ST.disabled;
-        const ok = stop ? await confirmDanger('停用會員', '停用後該會員會被登出，無法再使用。', '停用') : await confirmBox('重新啟用', '確定重新啟用這位會員？', '啟用');
-        if (!ok) return;
-        try { await api(ACT.adminSetStatus, { memberId: b.dataset.st, status: b.dataset.to }, { loading: true }); toast('已更新', 'ok'); route(); } catch (e) {}
-      }; });
-      $$('[data-ub]').forEach((b) => { b.onclick = async () => {
-        if (!(await confirmBox('解除 LINE 綁定', '該會員需要重新綁定才能登入。', '解除'))) return;
-        try { await api(ACT.adminUnbind, { memberId: b.dataset.ub }, { loading: true }); toast('已解除', 'ok'); route(); } catch (e) {}
-      }; });
-    }
-  });
-
-  /* ==================== 憑證預覽（Blob URL） ==================== */
-  function b64ToBlobUrl(b64, mime) {
-    const bin = atob(b64), arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    return URL.createObjectURL(new Blob([arr], { type: mime }));
   }
-  async function showProof(fileId) {
+});
+
+/* ==================================================================
+ * 啟動（必須放在所有 Routes.add 之後）
+ * ================================================================== */
+window.addEventListener('hashchange', route);
+window.addEventListener('pageshow', (e) => { if (e.persisted) route(); });
+window.addEventListener('unhandledrejection', (e) => { if (!(e.reason instanceof ApiError)) console.error(e.reason); });
+
+async function boot() {
+  initAccessibility();
+  const cached = store.get(CONFIG.SESSION_USER_KEY);
+  if (cached && State.token) { try { State.user = JSON.parse(cached); } catch (e) {} }
+  setGuest(!State.user);
+  if (State.token) {
     try {
-      const r = await api(ACT.filePreview, { fileId: fileId }, { loading: true });
-      if (!r || !r.base64) return toast('無法顯示此檔案', 'error');
-      const mime = r.mime || 'image/jpeg';
-      const url = b64ToBlobUrl(r.base64, mime);
-      const isPdf = /pdf/i.test(mime);
-      const body = isPdf
-        ? '<p>這是 PDF 檔案，請點下方按鈕開啟。</p><a class="btn block" href="' + url + '" target="_blank" rel="noopener">📄 開啟 PDF</a>'
-        : '<img alt="付款憑證" src="' + url + '">';
-      const dlg = openModal('<h2>付款憑證</h2>' + body +
-        '<div class="btn-row"><button type="button" class="btn primary" id="pv-x">關閉</button></div>',
-        { label: '付款憑證', onClose: () => setTimeout(() => URL.revokeObjectURL(url), 60000) });
-      $('#pv-x', dlg.el).onclick = () => dlg.close();
-    } catch (e) {}
+      const r = await api(API_CONTRACT.me, {}, { silent: true, retry: true });
+      State.user = r.user || r;
+    } catch (e) {
+      if (!State.token) State.user = null;   // 登入過期：api() 已清除
+      if (e.code === 'MEMBER_DISABLED') { setGuest(true); location.hash = '#/status?s=disabled'; }
+    }
   }
+  setGuest(!State.user);
+  if (!location.hash) location.hash = State.user ? (takeReturnTo() || '#/home') : '#/login';
+  route();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+</script>
+</body>
+</html>
 
-  /* ==================== 會費／捐款審核 ==================== */
-  Routes.add('/admin-review', {
-    title: '審核', auth: 'finance', nav: 'home',
-    async render(p, c) {
-      const kind = p.t === 'donation' ? 'donation' : 'payment';
-      const isPay = kind === 'payment';
-      setMain('<a class="btn small" href="#/admin">← 回後台</a><h1 style="margin-top:12px">審核' + (isPay ? '會費' : '捐款') + '</h1><div id="rv"><div class="empty">載入中…</div></div>', '審核');
-      const res = await Promise.all([
-        api(isPay ? ACT.payAdminList : ACT.donAdminList, { status: ST.pending, pageSize: 30 }, { retry: true }),
-        api(ACT.finOptions, {}, { retry: true })
-      ]);
-      if (c.stale()) return;
-      const r = normList(res[0]), opt = res[1] || {};
-      const accounts = opt.accounts || [], projects = opt.projects || [];
-      if (!accounts.length) { $('#rv').innerHTML = '<div class="banner warn">尚未建立資金帳戶，請先建立帳戶，才能核准入帳。</div>'; return; }
-      const myId = (State.user && State.user.memberId) || '';
-      $('#rv').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((x) =>
-        '<li class="card"><h3>' + money(x.amount) + '　' + esc(x.memberName || x.donorName || x.memberId || '') + '</h3>' +
-        '<p class="muted">' + (isPay ? esc(x.year || '') + ' 年度' : esc(x.purpose || '')) + '・' + esc(x.payDate || '') + '・' + esc(x.method || '') + '</p>' +
-        (x.note ? '<p>備註：' + esc(x.note) + '</p>' : '') +
-        (x.memberId && x.memberId === myId ? '<div class="banner warn">這是您自己的申報，建議由其他人審核。</div>' : '') +
-        '<div class="btn-row">' + (x.proofFileId ? '<button type="button" class="btn small" data-pv="' + esc(x.proofFileId) + '">看憑證</button>' : '') +
-        '<button type="button" class="btn small primary" data-ap="' + esc(x.id) + '" data-amt="' + esc(x.amount) + '">核准</button>' +
-        '<button type="button" class="btn small danger" data-rj="' + esc(x.id) + '">退回</button></div></li>').join('') + '</ul>'
-        : '<div class="empty"><span class="ic" aria-hidden="true">🎉</span>沒有待審項目</div>';
 
-      $$('[data-pv]').forEach((b) => { b.onclick = () => showProof(b.dataset.pv); });
-      $$('[data-ap]').forEach((b) => { b.onclick = () => {
-        const dlg = openModal('<h2>核准入帳 ' + money(b.dataset.amt) + '</h2><div class="field"><label for="ac">收款帳戶</label><select id="ac">' +
-          accounts.map((a) => '<option value="' + esc(a.accountId) + '">' + esc(a.name) + '（' + money(a.balance) + '）</option>').join('') + '</select></div>' +
-          '<div class="field"><label for="pj">專案（選填）</label><select id="pj"><option value="">不指定</option>' + projects.map((n) => '<option>' + esc(n) + '</option>').join('') + '</select></div>' +
-          '<div class="btn-row"><button type="button" class="btn" id="m-c">取消</button><button type="button" class="btn primary" id="m-o">確認入帳</button></div>', { label: '核准入帳' });
-        $('#m-c', dlg.el).onclick = () => dlg.close();
-        const ok = $('#m-o', dlg.el);
-        ok.onclick = once(ok, async () => {
-          try {
-            const res2 = await api(isPay ? ACT.payApprove : ACT.donApprove,
-              { id: b.dataset.ap, accountId: $('#ac', dlg.el).value, projectName: $('#pj', dlg.el).value },
-              { loading: true, loadingMsg: '正在入帳，請勿離開…' });   // 不重試
-            dlg.close(); toast('已核准' + (res2 && res2.receiptNo ? '，收據編號 ' + res2.receiptNo : ''), 'ok'); route();
-          } catch (e) {}
-        });
-      }; });
-      $$('[data-rj]').forEach((b) => { b.onclick = () => {
-        const dlg = openModal('<h2>退回申報</h2><div class="field"><label for="rr">退回原因（會讓會員看到）</label><textarea id="rr" maxlength="200"></textarea></div>' +
-          '<div class="btn-row"><button type="button" class="btn" id="m-c">取消</button><button type="button" class="btn danger primary" id="m-o">確認退回</button></div>', { label: '退回申報' });
-        $('#m-c', dlg.el).onclick = () => dlg.close();
-        const ok = $('#m-o', dlg.el);
-        ok.onclick = once(ok, async () => {
-          const reason = $('#rr', dlg.el).value.trim(); if (!reason) return toast('請填寫退回原因', 'error');
-          try { await api(isPay ? ACT.payReject : ACT.donReject, { id: b.dataset.rj, reason: reason }, { loading: true }); dlg.close(); toast('已退回', 'ok'); route(); } catch (e) {}
-        });
-      }; });
-    }
-  });
 
-  /* ==================================================================
-   * 健康記錄（欄位對應後端 HEALTH_LOGS）
-   * ================================================================== */
-  const MOOD_OPTS = [[1, '😣', '很差'], [2, '😕', '不好'], [3, '😐', '普通'], [4, '🙂', '不錯'], [5, '😄', '很好']];
-  const STATE_OPTS = [['', '未填'], ['ON', 'ON 藥效好'], ['OFF', 'OFF 藥效退'], ['DYS', 'DYS 異動多']];
-  const STATE_TEXT = { ON: 'ON 藥效好', OFF: 'OFF 藥效退', DYS: 'DYS 異動多' };
-
-  function numInput(id, name, label, min, max, hint) {
-    return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" name="' + name +
-      '" type="number" inputmode="decimal" min="' + min + '" max="' + max + '" step="any">' +
-      (hint ? '<div class="hint">' + hint + '</div>' : '') + '</div>';
-  }
-
-  Routes.add('/health', {
-    title: '健康記錄', auth: 'member', nav: 'health',
-    async render(p, c) {
-      let consented = null;
-      try {
-        const prof = await api('member.getProfile', {}, { retry: true, silent: true });
-        consented = prof.healthConsent === true;
-        if (State.user) State.user.healthConsent = consented;
-      } catch (e) {
-        if (c.stale()) return;
-        if (SESSION_FAIL_CODES.indexOf(e.code) !== -1) return;
-        // 讀取失敗不等於「未同意」：顯示重試
-        setMain('<h1>健康記錄</h1><div class="banner warn">暫時讀不到您的設定：' + esc(e.message) + '</div><button type="button" class="btn primary" id="retry-h">重新載入</button>', '健康記錄');
-        $('#retry-h').onclick = () => route();
-        return;
-      }
-      if (c.stale()) return;
-
-      if (!consented) {
-        setMain('<h1>健康記錄</h1><div class="banner info">健康資料屬於敏感個資。需要您同意後，協會才會為您保存。您可以隨時刪除自己的紀錄。</div>' +
-          '<div class="check"><input type="checkbox" id="cs"><label for="cs">我同意協會保存我自己輸入的健康記錄</label></div>' +
-          '<button type="button" class="btn primary block" id="cs-ok" disabled>同意並開始記錄</button>', '健康記錄');
-        $('#cs').onchange = (e) => { $('#cs-ok').disabled = !e.target.checked; };
-        const ok = $('#cs-ok');
-        ok.onclick = once(ok, async () => {
-          try { await api('member.setConsent', { healthConsent: true }, { loading: true }); route(); } catch (e) {}
-        });
-        return;
-      }
-
-      setMain('<h1>今日記錄</h1><div class="banner info">同一天再次儲存，會更新當天的記錄。</div>' +
-        '<form id="hf" class="card" novalidate>' +
-        '<div class="field"><label for="h-date">日期</label><input id="h-date" name="logDate" type="date" max="' + todayLocal() + '" value="' + todayLocal() + '"></div>' +
-        '<fieldset class="field"><legend>今天心情</legend><div class="choices">' +
-        MOOD_OPTS.map((m) => '<label class="choice"><input type="radio" name="mood" value="' + m[0] + '"><span><span aria-hidden="true" style="font-size:1.6rem">' + m[1] + '</span>' + m[2] + '</span></label>').join('') +
-        '</div></fieldset>' +
-        '<fieldset class="field"><legend>藥效狀態</legend><div class="choices">' +
-        STATE_OPTS.map((s, i) => '<label class="choice"><input type="radio" name="state" value="' + s[0] + '"' + (i === 0 ? ' checked' : '') + '><span>' + s[1] + '</span></label>').join('') +
-        '</div></fieldset>' +
-        numInput('h-ex', 'exerciseMin', '運動（分鐘）', 0, 600) +
-        numInput('h-sl', 'sleepHours', '昨晚睡眠（小時）', 0, 24) +
-        numInput('h-tap', 'tapScore', '敲擊分數（0–100）', 0, 100, '沒有測量可以不填') +
-        numInput('h-voc', 'vocalScore', '發聲分數（0–100）', 0, 100, '沒有測量可以不填') +
-        '<div class="field"><label for="h-med">今天服藥情形</label><textarea id="h-med" name="medication" maxlength="300" placeholder="例如：早午晚都有按時吃"></textarea></div>' +
-        '<div class="field"><label for="h-sym">症狀（顫抖、僵硬、跌倒…）</label><textarea id="h-sym" name="symptoms" maxlength="500"></textarea></div>' +
-        '<div class="field"><label for="h-note">其他想記下的事</label><textarea id="h-note" name="note" maxlength="1000"></textarea></div>' +
-        '<div class="field"><label for="h-dq">想請教醫師的問題</label><textarea id="h-dq" name="doctorQuestion" maxlength="500"></textarea></div>' +
-        '<div class="btn-row"><button type="submit" class="btn primary">儲存今天的記錄</button></div></form>' +
-        '<div class="btn-row"><a class="btn" href="#/health-summary">給醫師看的摘要</a></div>' +
-        '<h2 style="margin-top:1.4rem">最近記錄</h2><div id="hl"><div class="empty">載入中…</div></div>', '健康記錄');
-
-      const form = $('#hf');
-      const numOrEmpty = (v) => (v === '' || v === undefined ? '' : Number(v));
-
-      // 選到已有記錄的日期時，帶入該天內容（同一天只會有一筆）
-      let logsByDate = {};
-      function fillForm(log) {
-        form.elements.mood.forEach ? Array.from(form.elements.mood).forEach((r) => { r.checked = String(r.value) === String(log ? log.mood : ''); }) : null;
-        Array.from(form.elements.state).forEach((r) => { r.checked = r.value === (log ? (log.state || '') : ''); });
-        ['exerciseMin', 'sleepHours', 'tapScore', 'vocalScore', 'medication', 'symptoms', 'note', 'doctorQuestion'].forEach((k) => {
-          form.elements[k].value = log && log[k] !== undefined && log[k] !== null ? log[k] : '';
-        });
-      }
-      form.elements.logDate.onchange = () => fillForm(logsByDate[form.elements.logDate.value]);
-
-      form.onsubmit = async (e) => {
-        e.preventDefault(); clearInvalid(form);
-        const d = formData(form);
-        if (!d.logDate) return markInvalid(form, 'logDate', '請選擇日期');
-        if (d.logDate > todayLocal()) return markInvalid(form, 'logDate', '日期不能是未來');
-        const rng = [['exerciseMin', 0, 600, '運動分鐘'], ['sleepHours', 0, 24, '睡眠時數'], ['tapScore', 0, 100, '敲擊分數'], ['vocalScore', 0, 100, '發聲分數']];
-        for (const [k, lo, hi, label] of rng) {
-          if (d[k] !== '' && d[k] !== undefined) {
-            const n = Number(d[k]);
-            if (!isFinite(n) || n < lo || n > hi) return markInvalid(form, k, label + '需介於 ' + lo + ' 到 ' + hi);
-          }
-        }
-        const body = {
-          logDate: d.logDate, mood: numOrEmpty(d.mood), state: d.state || '',
-          exerciseMin: numOrEmpty(d.exerciseMin), sleepHours: numOrEmpty(d.sleepHours),
-          tapScore: numOrEmpty(d.tapScore), vocalScore: numOrEmpty(d.vocalScore),
-          medication: d.medication || '', symptoms: d.symptoms || '',
-          note: d.note || '', doctorQuestion: d.doctorQuestion || ''
-        };
-        const btn = $('button[type=submit]', form); btn.disabled = true;
-        try {
-          const r = await api('health.saveLog', body, { loading: true });
-          toast(r && r.updated ? '已更新當天記錄' : '已儲存', 'ok');
-          route();
-        } catch (err) {} finally { btn.disabled = false; }
-      };
-
-      try {
-        const r = normList(await api('health.listLogs', { days: 30 }, { retry: true }));
-        if (c.stale()) return;
-        r.items.forEach((x) => { logsByDate[x.logDate] = x; });
-        if (logsByDate[todayLocal()]) fillForm(logsByDate[todayLocal()]);
-        const rows = (x) => [
-          ['心情', x.mood !== '' && x.mood != null ? (MOOD_OPTS.find((m) => m[0] === Number(x.mood)) || [0, '', x.mood])[1] + ' ' + x.mood + ' 分' : ''],
-          ['藥效狀態', STATE_TEXT[x.state] || ''],
-          ['運動', x.exerciseMin !== '' && x.exerciseMin != null ? x.exerciseMin + ' 分鐘' : ''],
-          ['睡眠', x.sleepHours !== '' && x.sleepHours != null ? x.sleepHours + ' 小時' : ''],
-          ['敲擊分數', x.tapScore], ['發聲分數', x.vocalScore],
-          ['服藥', x.medication], ['症狀', x.symptoms], ['備註', x.note], ['想問醫師', x.doctorQuestion]
-        ].filter((kv) => kv[1] !== '' && kv[1] != null);
-        $('#hl').innerHTML = r.items.length ? '<ul class="list">' + r.items.map((x) =>
-          '<li class="card"><h3>' + esc(x.logDate || '') + '</h3><dl class="kv">' +
-          rows(x).map((kv) => '<dt>' + esc(kv[0]) + '</dt><dd>' + esc(kv[1]) + '</dd>').join('') +
-          '</dl>' + (x.aiSummary ? '<div class="banner info" style="margin-top:12px;white-space:pre-wrap">' + esc(x.aiSummary) + '</div>' : '') +
-          '<button type="button" class="btn small danger" style="margin-top:12px" data-dl="' + esc(x.id) + '">刪除</button></li>').join('') + '</ul>'
-          : '<div class="empty"><span class="ic" aria-hidden="true">📝</span>還沒有記錄</div>';
-        $$('[data-dl]').forEach((b) => { b.onclick = async () => {
-          if (!(await confirmDanger('刪除記錄', '這筆健康記錄刪除後無法復原。', '刪除'))) return;
-          try { await api('health.deleteLog', { id: b.dataset.dl }, { loading: true }); toast('已刪除', 'ok'); route(); } catch (e) {}
-        }; });
-      } catch (e) { if (!c.stale()) $('#hl').innerHTML = '<div class="banner warn">記錄暫時讀不到。</div>'; }
-    }
-  });
-
-  /* ==================== 給醫師的摘要 ==================== */
-  Routes.add('/health-summary', {
-    title: '給醫師的摘要', auth: 'member', nav: 'health',
-    async render(p, c) {
-      const days = [7, 14, 30].indexOf(Number(p.days)) !== -1 ? Number(p.days) : 14;
-      setMain('<a class="btn small" href="#/health">← 回記錄</a><h1 style="margin-top:12px">給醫師看的摘要</h1>' +
-        '<div class="banner warn">這是依您的記錄整理的文字，僅供看診時溝通，不是診斷。</div>' +
-        '<div class="tabs" role="group" aria-label="統計期間">' +
-        [7, 14, 30].map((n) => '<button type="button" class="btn" data-days="' + n + '" aria-pressed="' + (n === days ? 'true' : 'false') + '">最近 ' + n + ' 天</button>').join('') + '</div>' +
-        '<div id="sm"><div class="empty">整理中，可能需要幾秒…</div></div>' +
-        '<div class="btn-row no-print"><button type="button" class="btn primary" id="sm-print" disabled>列印 / 存成 PDF</button></div>', '看診摘要');
-      $$('[data-days]').forEach((b) => { b.onclick = () => go('#/health-summary?days=' + b.dataset.days); });
-      const r = await api('health.clinicSummary', { days: days }, { loading: true, retry: true });
-      if (c.stale()) return;
-      const out = typeof r === 'string' ? r : ((r && (r.html || r.text || r.summary)) || '');
-      if (/^\s*</.test(out)) {
-        const fr = document.createElement('iframe');
-        fr.setAttribute('sandbox', 'allow-same-origin allow-modals');
-        fr.title = '看診摘要'; fr.srcdoc = out;
-        fr.style.cssText = 'width:100%;height:65vh;border:3px solid var(--line);border-radius:16px;background:#fff';
-        $('#sm').innerHTML = ''; $('#sm').appendChild(fr);
-        const pb = $('#sm-print'); pb.disabled = false;
-        pb.onclick = () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast('此瀏覽器無法列印，請截圖保存', 'info'); } };
-      } else {
-        $('#sm').innerHTML = '<div class="card" style="white-space:pre-wrap">' + esc(out || '目前沒有足夠的記錄可以整理') + '</div>';
-      }
-    }
-  });
-
-  /* ==================================================================
-   * 啟動（必須放在所有 Routes.add 之後）
-   * ================================================================== */
-  window.addEventListener('hashchange', route);
-  window.addEventListener('pageshow', (e) => { if (e.persisted) route(); });
-  window.addEventListener('unhandledrejection', (e) => { if (!(e.reason instanceof ApiError)) console.error(e.reason); });
-
-  async function boot() {
-    initAccessibility();
-    const cached = store.get(CONFIG.SESSION_USER_KEY);
-    if (cached && State.token) { try { State.user = JSON.parse(cached); } catch (e) {} }
-    if (State.token) {
-      try {
-        const r = await api(API_CONTRACT.me, {}, { silent: true, retry: true });
-        State.user = r.user || r;
-      } catch (e) {
-        // 登入過期時 api() 已清除；只是網路問題則保留快取的登入資料
-        if (!State.token) State.user = null;
-      }
-    }
-    if (!location.hash) location.hash = State.user ? '#/home' : '#/login';
-    route();
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-  </script>
-  </body>
-  </html>
-
+</body>
+</html>
