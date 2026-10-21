@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>山腳貓 11/1 欣賞埤塘之美團騎活動</title>
-    <!-- 引入 Bootstrap 5 CSS 確保排版美觀與響應式 -->
+    <title>山腳貓 11/1 欣賞埤塘之美團騎活動報名</title>
+    <!-- 引入 Bootstrap 5 CSS 確保響應式與大方排版 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
-            background-color: #f8f9fa;
+            background-color: #f4f6f9;
             font-size: 18px; /* 針對易讀性設計的大字體 */
             color: #2c3e50;
         }
@@ -27,17 +27,40 @@
             background-color: #05b34c;
             color: white;
         }
+        .user-profile-card {
+            background-color: #e8f8f0;
+            border: 1px solid #a3e4d7;
+            border-radius: 10px;
+            padding: 15px;
+        }
+        .user-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
     </style>
 </head>
 <body>
 
-    <div class="container my-4">
+    <div class="container my-4" style="max-width: 600px;">
         <div class="card shadow-sm">
             <div class="card-header card-header-custom text-center py-3">
                 <h2>🐱 山腳貓首場團騎</h2>
                 <p class="mb-0 fs-5">主題：欣賞埤塘之美</p>
             </div>
             <div class="card-body">
+                <!-- LINE 使用者資訊顯示區 -->
+                <div id="profileSection" class="user-profile-card mb-4 d-none">
+                    <div class="d-flex align-items-center">
+                        <img id="userAvatar" src="" alt="頭像" class="user-avatar me-3">
+                        <div>
+                            <p class="mb-0 text-muted fs-6">歡迎車友，</p>
+                            <h5 id="userName" class="mb-0 fw-bold text-success">載入中...</h5>
+                        </div>
+                    </div>
+                </div>
+
                 <p><strong>📅 日期：</strong>11/1（週日）｜早餐自理</p>
                 <hr>
                 <h5>📍 集合點資訊</h5>
@@ -48,10 +71,27 @@
                 <hr>
                 <h5>🚴‍♂️ 沿途亮點概要</h5>
                 <p class="text-muted fs-6">
-                    老街溪單車道 ➔ 青禾藝術 (5-5埤塘) ➔ 橫山藝術 (5-8生態埤塘) ➔ 青塘園/永恆之塔 ➔ 圓光佛學院 (補水/洗手間) ➔ 月桃路新埤塘 ➔ 溪海埤塘 (高台賞機) ➔ 華興池生態公園 ➔ 韓湘樓午餐
+                    老街溪單車道 ➔ 青禾藝術 ➔ 橫山藝術 ➔ 青塘園 ➔ 圓光佛學院 (補水/洗手間) ➔ 溪海高台賞機 ➔ 華興池生態公園 ➔ 韓湘樓午餐
                 </p>
                 <hr>
                 <p class="text-danger fw-bold">⚠️ 注意事項：遇雨取消（早上五點公告），騎乘請注意安全。</p>
+
+                <!-- 報名操作區 -->
+                <div class="mt-4 p-3 bg-light rounded border">
+                    <h5 class="fw-bold mb-3">📝 快速線上報名</h5>
+                    <div class="mb-3">
+                        <label for="lunchOption" class="form-label fw-bold">午餐選項：</label>
+                        <select id="lunchOption" class="form-select form-select-lg">
+                            <option value="參加午餐（韓湘樓）">參加午餐（韓湘樓大快朵頤）</option>
+                            <option value="不參加午餐">不參加午餐（需備註）</option>
+                        </select>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button id="registerBtn" class="btn btn-primary py-3 fs-5 fw-bold" onclick="submitRegistration()">
+                            ✅ 確認送出報名
+                        </button>
+                    </div>
+                </div>
                 
                 <!-- LINE 分享按鈕 -->
                 <div class="d-grid gap-2 mt-4">
@@ -68,6 +108,11 @@
     <script>
         // 請替換為您在 LINE Developers 建立的 LIFF ID
         const LIFF_ID = "2009456572-mxeoY8wg";
+        
+        // 請替換為您的 Google Apps Script Web App 部署網址（用來接收報名資料）
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz9f_lKPL_2pHZp-E3wdg5ghSU3f4KEszaBa5rB25VVTkOrtuPoutK3vWYiqRKzvGHPhQ/exec";
+
+        let userProfile = {};
 
         window.onload = function() {
             initializeLiff(LIFF_ID);
@@ -77,24 +122,73 @@
             liff.init({
                 liffId: liffId
             }).then(() => {
-                // 初始化成功後啟用分享按鈕
-                if (liff.isApiAvailable('shareTargetPicker')) {
-                    document.getElementById('shareBtn').removeAttribute('disabled');
+                if (!liff.isLoggedIn()) {
+                    liff.login();
                 } else {
-                    alert('此環境暫不支援一鍵分享功能，請在 LINE App 內開啟。');
+                    // 取得使用者 LINE 個人資料
+                    liff.getProfile().then(profile => {
+                        userProfile = profile;
+                        document.getElementById('userName').innerText = profile.displayName;
+                        if (profile.pictureUrl) {
+                            document.getElementById('userAvatar').src = profile.pictureUrl;
+                        } else {
+                            document.getElementById('userAvatar').src = "https://via.placeholder.com/50";
+                        }
+                        document.getElementById('profileSection').classList.remove('d-none');
+                    }).catch(err => {
+                        console.error('Failed to get profile data', err);
+                    });
+
+                    // 檢查是否支援分享功能
+                    if (liff.isApiAvailable('shareTargetPicker')) {
+                        document.getElementById('shareBtn').removeAttribute('disabled');
+                    }
                 }
             }).catch((err) => {
                 console.error('LIFF Initialization failed', err);
+                alert('LIFF 初始化失敗，請確認網址或授權設定。');
+            });
+        }
+
+        function submitRegistration() {
+            if (!userProfile.userId) {
+                alert('尚未抓取到 LINE 身分，請重新整理頁面或在 LINE 內開啟。');
+                return;
+            }
+
+            const lunchVal = document.getElementById('lunchOption').value;
+            const btn = document.getElementById('registerBtn');
+            btn.disabled = true;
+            btn.innerText = '處理中...';
+
+            // 傳送資料至 Google Apps Script 後端
+            const postData = {
+                userId: userProfile.userId,
+                displayName: userProfile.displayName,
+                lunch: lunchVal,
+                timestamp: new Date().toISOString()
+            };
+
+            fetch(GAS_WEB_APP_URL, {
+                method: 'POST',
+                mode: 'no-cors', // Google Apps Script 常用跨域設定
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(postData)
+            }).then(() => {
+                alert(`感謝 ${userProfile.displayName}！報名資訊已成功送出 🎉`);
+                btn.disabled = false;
+                btn.innerText = '✅ 修改 / 重新送出報名';
+            }).catch(error => {
+                console.error('Error:', error);
+                alert('送出失敗，請稍後再試或直接於群組接龍。');
+                btn.disabled = false;
+                btn.innerText = '✅ 確認送出報名';
             });
         }
 
         function shareToLine() {
-            if (!liff.isLoggedIn()) {
-                liff.login();
-                return;
-            }
-
-            // 使用 Flex Message 卡牌分享至聊天室
             liff.shareTargetPicker([
                 {
                     "type": "flex",
@@ -148,28 +242,6 @@
                                         }
                                     ],
                                     "margin": "lg"
-                                },
-                                {
-                                    "type": "box",
-                                    "layout": "baseline",
-                                    "contents": [
-                                        {
-                                            "type": "text",
-                                            "text": "集合點",
-                                            "color": "#aaaaaa",
-                                            "size": "sm",
-                                            "flex": 2
-                                        },
-                                        {
-                                            "type": "text",
-                                            "text": "07:00 中山國小\n07:45 機捷老街溪站 (長頸鹿旁)",
-                                            "wrap": true,
-                                            "color": "#666666",
-                                            "size": "sm",
-                                            "flex": 5
-                                        }
-                                    ],
-                                    "margin": "md"
                                 }
                             ]
                         },
@@ -183,7 +255,7 @@
                                     "height": "sm",
                                     "action": {
                                         "type": "uri",
-                                        "label": "查看詳細資訊",
+                                        "label": "點我查看並線上報名",
                                         "uri": window.location.href
                                     },
                                     "color": "#2C3E50"
@@ -194,13 +266,10 @@
                 }
             ]).then(function (res) {
                 if (res) {
-                    alert("行程分享成功！");
-                } else {
-                    // 使用者取消分享
-                    console.log("TargetPicker was closed.");
+                    console.log("分享成功");
                 }
             }).catch(function (error) {
-                alert("分享失敗：" + JSON.stringify(error));
+                console.error("分享失敗", error);
             });
         }
     </script>
