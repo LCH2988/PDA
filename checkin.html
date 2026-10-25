@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>活動簽到｜台灣帕金森病友權益促進會</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{--main:#1d5f80;--dark:#0f3d54;--accent:#ffb02e;--ok:#1b8a4b;--bad:#c0392b}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;background:#f1f5f8;font-size:18px;padding-bottom:30px}
+header{background:var(--dark);color:#fff;padding:12px 14px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+header a{color:#fff;font-size:.85rem;font-weight:400}
+main{max-width:560px;margin:auto;padding:12px}
+select,input{width:100%;min-height:52px;font-size:1rem;padding:8px 12px;border:2px solid var(--main);border-radius:12px;font-family:inherit;background:#fff}
+.btn{display:flex;align-items:center;justify-content:center;width:100%;min-height:56px;border:0;border-radius:14px;background:var(--accent);font-size:1rem;font-weight:800;margin:8px 0;cursor:pointer;font-family:inherit}
+.btn.sec{background:var(--main);color:#fff}.btn.gh{background:#fff;border:2px solid var(--main);color:var(--dark)}
+.card{background:#fff;border:2px solid #c9d6de;border-radius:14px;padding:12px;margin-bottom:10px}
+.prog{display:flex;justify-content:space-around;text-align:center}.prog b{display:block;font-size:2rem;color:var(--main)}
+#reader{border-radius:14px;overflow:hidden}
+#res{display:none;border-radius:16px;padding:18px;text-align:center;color:#fff;margin:10px 0}
+#res.ok{background:var(--ok)}#res.dup{background:#b9770e}#res.err{background:var(--bad)}
+#res .n{font-size:2rem;font-weight:800}
+#hist div{padding:8px 4px;border-bottom:1px solid #dde}
+#gate{position:fixed;inset:0;background:#f1f5f8;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center;z-index:9}
+</style>
+</head>
+<body>
+<div id="gate">載入中…</div>
+<header><span>📲 活動簽到</span><a href="admin.html">回後台</a></header>
+<main>
+  <label style="font-weight:800">選擇活動</label>
+  <select id="ev" onchange="EV=this.value;refresh()"></select>
+  <div class="card prog" style="margin-top:10px"><div><b id="arr">0</b>已到人數</div><div><b id="tot">0</b>報名人數</div></div>
+  <div id="res"></div>
+  <button class="btn sec" id="scanBtn" onclick="toggleScan()">📷 開啟相機掃描</button>
+  <div id="reader"></div>
+  <details class="card"><summary style="font-weight:800;min-height:44px">手動輸入報到碼</summary>
+    <input id="manual" placeholder="貼上或輸入報到碼">
+    <button class="btn gh" onclick="manualSubmit()">送出</button>
+    <p style="font-size:.85rem;color:#556">找不到 QR 時，請到「管理後台 → 報名名單」直接標記出席。</p></details>
+  <h3>最近簽到</h3><div class="card" id="hist">尚無</div>
+</main>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbwPI9Xw7jsvSRIeTHkRk9yOFzBvW_DtwBMADDGl_AOJRF2zFGPtF665DE41OjpuSEop/exec';   // ← 請改成您最新部署的網址
+const LIFF_ID = '2009456572-M5AJNSHB';
+
+let idToken = null, EV = '', scanner = null, busy = false, lastCode = '', lastAt = 0;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(action, params = {}) {
+  if (!API_URL) return demo(action, params);
+  const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, params, idToken }) });
+  const j = await res.json();
+  if (!j.ok) {
+    if (/過期|請先登入/.test(j.message || '') && LIFF_ID) setTimeout(() => { liff.logout(); liff.login({ redirectUri: location.href }); }, 1000);
+    throw new Error(j.message || '發生錯誤');
+  }
+  return j.data;
+}
+
+function beep(ok) {
+  try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(); o.frequency.value = ok ? 880 : 220;
+    o.connect(c.destination); o.start(); setTimeout(() => o.stop(), ok ? 150 : 400); } catch (e) {}
+  if (navigator.vibrate) navigator.vibrate(ok ? 80 : [200, 80, 200]);
+}
+function show(cls, html) { const r = $('#res'); r.className = cls; r.style.display = 'block'; r.innerHTML = html; }
+
+async function submit(code) {
+  code = String(code || '').trim(); if (!code || busy) return;
+  if (code === lastCode && Date.now() - lastAt < 4000) return;
+  busy = true; lastCode = code; lastAt = Date.now();
+  try {
+    const r = await api('admin_checkin', { code, eventId: EV });
+    beep(!r.already);
+    show(r.already ? 'dup' : 'ok', `<div>${r.already ? '⚠️ 已經簽到過了' : '✅ 簽到成功'}</div><div class="n">${esc(r.name)}</div>
+      <div>共 ${r.people} 人${r.note ? '<br>📝 ' + esc(r.note) : ''}</div>`);
+    if (!r.already) {
+      const h = $('#hist'); if (h.textContent === '尚無') h.innerHTML = '';
+      h.insertAdjacentHTML('afterbegin', `<div>${new Date().toTimeString().slice(0, 5)}　${esc(r.name)}（${r.people} 人）</div>`);
+    }
+    refresh().catch(() => {});
+  } catch (e) {
+    beep(false); lastCode = '';
+    show('err', `<div class="n">❌</div>${esc(e.message)}`);
+  }
+  setTimeout(() => busy = false, 800);
+}
+function manualSubmit() { const i = $('#manual'); const v = i.value; i.value = ''; submit(v); }
+
+async function toggleScan() {
+  if (scanner) {
+    try { await scanner.stop(); scanner.clear(); } catch (e) {}
+    scanner = null; $('#scanBtn').textContent = '📷 開啟相機掃描'; return;
+  }
+  scanner = new Html5Qrcode('reader');
+  try {
+    await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 240, height: 240 } }, t => submit(t));
+    $('#scanBtn').textContent = '⏹ 關閉相機';
+  } catch (e) { scanner = null; alert('無法開啟相機，請確認已允許相機權限，且網址為 https。'); }
+}
+
+async function refresh() {
+  const list = await api('admin_checkinEvents');
+  const sel = $('#ev');
+  if (!sel.options.length) {
+    sel.innerHTML = list.map(e => `<option value="${esc(e.id)}">${esc(String(e.date).slice(0, 10))}　${esc(e.title)}</option>`).join('');
+    EV = EV || (list[0] && list[0].id) || '';
+  }
+  const cur = list.find(e => e.id === EV) || {};
+  $('#arr').textContent = cur.arrived ?? 0; $('#tot').textContent = cur.total ?? 0;
+}
+
+function demo(a) {
+  if (a === 'login') return { role: 'admin', displayName: '示範' };
+  if (a === 'admin_checkinEvents') return [{ id: 'E1', title: '運動復健工作坊', date: '2026-11-15', total: 12, arrived: 3 }];
+  if (a === 'admin_checkin') return { name: '王小明', people: 2, note: '需要輪椅位', already: false };
+  return {};
+}
+
+(async () => {
+  const gate = h => $('#gate').innerHTML = h;
+  try {
+    let me;
+    if (LIFF_ID) {
+      await liff.init({ liffId: LIFF_ID });
+      if (!liff.isLoggedIn()) return gate('<div><h2>工作人員登入</h2><button class="btn" onclick="liff.login({redirectUri:location.href})">💚 LINE 登入</button></div>');
+      idToken = liff.getIDToken();
+      const pr = await liff.getProfile();
+      me = await api('login', { displayName: pr.displayName, pictureUrl: pr.pictureUrl });
+    } else me = await api('login');
+    if (me.role !== 'admin') return gate('<div><h2>🚫 沒有權限</h2>只有管理員與工作人員可以使用簽到頁。</div>');
+    $('#gate').style.display = 'none';
+    await refresh();
+  } catch (e) { $('#gate').innerHTML = '發生錯誤：' + esc(e.message); }
+})();
+</script>
+</body>
+</html>
