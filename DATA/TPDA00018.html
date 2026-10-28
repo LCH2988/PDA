@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>即時雙向對話翻譯</title>
+  <title>即時雙向對話翻譯 (手動控制段落)</title>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { margin: 0; background: #f0f2f5; display: flex; flex-direction: column; height: 100vh; }
@@ -24,8 +24,8 @@
     .speak-btn { background: rgba(0,0,0,0.08); border: none; border-radius: 50%; width: 32px; height: 32px; cursor: pointer; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; color: inherit; flex-shrink: 0; }
     .bubble.right .speak-btn { background: rgba(255,255,255,0.2); }
 
-    /* 狀態提示列 */
-    #status { text-align: center; font-size: 15px; font-weight: 600; color: #d93025; background: #fff8e6; padding: 8px; min-height: 36px; display: flex; align-items: center; justify-content: center; border-top: 1px solid #eee; }
+    /* 即時收音預覽與狀態提示列 */
+    #status { text-align: center; font-size: 16px; font-weight: 600; color: #1967d2; background: #fff8e6; padding: 10px 14px; min-height: 44px; display: flex; align-items: center; justify-content: center; border-top: 1px solid #eee; word-break: break-word; }
 
     /* 底部控制區 */
     .controls { background: #ffffff; padding: 14px 16px; box-shadow: 0 -2px 6px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 12px; }
@@ -39,7 +39,8 @@
     .btn { flex: 1; padding: 16px; border: none; border-radius: 14px; font-size: 18px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; }
     .btn-a { background: #e8f0fe; color: #1967d2; border: 2px solid #aecbfa; }
     .btn-b { background: #007aff; color: #ffffff; border: 2px solid #007aff; }
-    .btn.recording { background: #ea4335 !important; color: #ffffff !important; border-color: #ea4335 !important; animation: pulse 1s infinite; }
+    .btn.recording { background: #ea4335 !important; color: #ffffff !important; border-color: #ea4335 !important; animation: pulse 1.2s infinite; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(0.98); opacity: 0.85; } 100% { transform: scale(1); } }
   </style>
@@ -76,12 +77,12 @@
   <!-- 對話紀錄 -->
   <div id="chat-box">
     <div class="bubble left">
-      <div class="original-text">系統提示</div>
-      <div class="translated-text">點擊下方「🎤 說話」按鈕並允許麥克風權限，即可開始即時語音翻譯。</div>
+      <div class="original-text">系統提示（手控段落模式）</div>
+      <div class="translated-text">點擊「🎤 說話」開始連續收音（中間停頓不會中斷），講完後請再次點擊按鈕「⏹ 停止並翻譯」才會整段送出。</div>
     </div>
   </div>
 
-  <div id="status">🟢 準備就緒，請點擊下方按鈕說話或輸入文字</div>
+  <div id="status">🟢 準備就緒，點擊下方按鈕開始說話</div>
 
   <!-- 底部操作按鈕 -->
   <div class="controls">
@@ -98,54 +99,78 @@
 
   <script>
     // ⚠️ 請將下方引號內的網址替換為你的 GAS 網頁應用程式網址 (結尾為 /exec)
-    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxTyNG_wp5ZU9V4mlR2qZHGWFz2cOHaDPFmvsPIZ1ccz7UDa-tIX69bABHmqKeNWHHg/exec';
+    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxIQMEHCsijQQMEqJczItSvfRfccuDGpbBcjb0pgctVzVulpVQlsdz6gUTT0Km_Fi33/exec';
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null;
     let isRecording = false;
+    let manualStop = true;        // 標記是否為使用者手動點擊停止
     let currentSpeaker = null;
+    let finalParagraph = '';      // 累積已確認的句子
+    let interimParagraph = '';    // 暫存正在講的句子
 
     if (SpeechRecognition) {
       recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
+      recognition.continuous = true;     // ✅ 開啟連續收音模式（停頓不會自動斷開）
+      recognition.interimResults = true; // ✅ 即時顯示正在講的字句
 
       recognition.onstart = () => {
         isRecording = true;
         updateUIRecording(true);
-        setStatus('🎙️ 正在聆聽中...請開始說話');
+        if (!finalParagraph) {
+          setStatus('🎙️ 持續收音中...講完請按「⏹ 停止並翻譯」');
+        }
       };
 
       recognition.onresult = (event) => {
-        let interim = '';
-        let final = '';
+        interimParagraph = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
+            // 將每句講完的內容累加起來，並補上適當空格或標點
+            finalParagraph += event.results[i][0].transcript + ' ';
           } else {
-            interim += event.results[i][0].transcript;
+            interimParagraph += event.results[i][0].transcript;
           }
         }
-        if (interim) setStatus('👂 辨識中：' + interim);
-        if (final) processTranslation(final, currentSpeaker);
+        // 即時在狀態列顯示目前累積的整段話
+        const currentTotal = (finalParagraph + interimParagraph).trim();
+        if (currentTotal) {
+          setStatus('📝 目前段落：' + currentTotal);
+        }
       };
 
       recognition.onerror = (event) => {
         if (event.error === 'not-allowed') {
+          manualStop = true;
+          stopRecording();
           setStatus('❌ 麥克風權限被拒絕！請點網址列左側圖示允許麥克風。');
         } else if (event.error === 'no-speech') {
-          setStatus('⚠️ 沒有收到聲音，請再點一次按鈕說話。');
+          // 連續模式下若太久沒講話，不中斷，等待 onend 自動重啟
         } else {
-          setStatus('❌ 語音辨識錯誤：' + event.error);
+          console.warn('語音辨識警告:', event.error);
         }
-        stopRecording();
       };
 
       recognition.onend = () => {
+        // 如果不是使用者手動按停止（例如瀏覽器因靜音過久自動切斷），則自動重新接續收音
+        if (!manualStop) {
+          try {
+            recognition.start();
+          } catch (e) {}
+          return;
+        }
+
+        // 使用者手動按下停止：結束收音並送出整段文字
         stopRecording();
+        const fullText = (finalParagraph + interimParagraph).trim();
+        if (fullText) {
+          processTranslation(fullText, currentSpeaker);
+        } else {
+          setStatus('⚠️ 未偵測到語音內容，請重新點擊說話。');
+        }
       };
     } else {
-      setStatus('❌ 您的瀏覽器不支援語音辨識，請使用 Chrome 或 Safari 開啟。');
+      setStatus('❌ 您的瀏覽器不支援語音辨識，請使用 Chrome 開啟。');
     }
 
     function toggleSpeech(speaker) {
@@ -154,13 +179,19 @@
         return;
       }
 
+      // 正在錄音中 -> 點擊代表「手動停止並送出翻譯」
       if (isRecording) {
+        manualStop = true;
         recognition.stop();
-        setStatus('⏹ 已停止聆聽');
         return;
       }
 
+      // 開始新段落錄音 -> 清空累積文字
+      manualStop = false;
+      finalParagraph = '';
+      interimParagraph = '';
       currentSpeaker = speaker;
+
       const langA = document.getElementById('langA').value;
       const langB = document.getElementById('langB').value;
       recognition.lang = (speaker === 'A') ? langA : langB;
@@ -182,14 +213,18 @@
       const btnB = document.getElementById('btnB');
       btnA.classList.remove('recording');
       btnB.classList.remove('recording');
+      btnA.disabled = false;
+      btnB.disabled = false;
 
       if (recording) {
         if (currentSpeaker === 'A') {
           btnA.classList.add('recording');
-          btnA.innerText = '⏹ 停止說話 (聆聽中...)';
+          btnA.innerText = '⏹ 停止並翻譯';
+          btnB.disabled = true; // 錄音時鎖定另一方按鈕避免誤觸
         } else {
           btnB.classList.add('recording');
-          btnB.innerText = '⏹ 停止說話 (聆聽中...)';
+          btnB.innerText = '⏹ 停止並翻譯';
+          btnA.disabled = true;
         }
       } else {
         btnA.innerText = '🎤 甲方說話';
@@ -216,10 +251,9 @@
       const sourceLang = (speaker === 'A') ? langA : langB;
       const targetLang = (speaker === 'A') ? langB : langA;
 
-      setStatus('⏳ 正在翻譯：「' + text + '」...');
+      setStatus('⏳ 正在翻譯整段內容：「' + text + '」...');
 
       try {
-        // 使用 text/plain 避開 CORS 預檢請求 (Preflight)
         const response = await fetch(GAS_API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -273,7 +307,6 @@
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      // 修正語音合成語言代碼
       utterance.lang = lang === 'cmn-Hant-TW' ? 'zh-TW' : lang;
       window.speechSynthesis.speak(utterance);
     }
