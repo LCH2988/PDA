@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <base target="_top">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
+  <!-- 若主機能設定回應標頭，請改用標頭並加上 frame-ancestors 'none' -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://static.line-scdn.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src https://script.google.com https://script.googleusercontent.com https://api.line.me https://access.line.me https://liff.line.me https://liffsdk.line-scdn.net; base-uri 'none'; form-action 'none'">
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <title>協會志工服務平台</title>
   <style>
     :root {
@@ -49,7 +51,6 @@
     }
     #message { white-space: pre-wrap; padding: 12px; border-radius: 8px; background: #e5f2ec; }
     #message.error { background: #fdeaea; color: #821f1f; }
-    /* 保留節點讓螢幕閱讀器能朗讀，只在空白時視覺隱藏 */
     #message:empty { padding: 0; margin: 0; height: 0; overflow: hidden; background: none; }
     label { display: block; margin: 12px 0; font-weight: 600; }
     input:not([type="checkbox"]), select, textarea {
@@ -89,10 +90,11 @@
   </main>
 
   <script>
-    // 由 Auth.gs 提供，已對 HTML script 結束字元做跳脫。
-    const BOOT = <?!= boot ?>;
+    // ★ 改成您的設定
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxKEKIuxnYZGmKrdyf3TmOxaf_KSKUB6Lx52rAFqx_EJEgSJF-2USVwBU3mgQGfBEdt/exec';
+    const LIFF_ID = '2009456572-ZNpC8066';
 
-    const STORE = { token: 'vp_session_v1', loginKey: 'vp_login_browser_key_v1' };
+    const STORE = { token: 'vp_session_v1' };
 
     const app = {
       token: '', me: null, page: '', generation: 0,
@@ -128,7 +130,6 @@
       $('message').className = error ? 'error' : '';
     }
 
-    // 登入失效已由 call() 處理並切到登入畫面，不再覆蓋訊息
     function showError(error) {
       if (error && error.code === 'AUTH') return;
       message(error && error.message || '發生錯誤。', true);
@@ -136,40 +137,57 @@
 
     function storageGet(key) {
       try { return sessionStorage.getItem(key) || ''; }
-      catch (_) { throw new Error('瀏覽器無法使用登入儲存空間，請使用支援的外部瀏覽器。'); }
+      catch (_) { throw new Error('瀏覽器無法使用登入儲存空間，請使用支援的瀏覽器。'); }
     }
     function storageSet(key, value) {
       try { sessionStorage.setItem(key, value); }
-      catch (_) { throw new Error('無法保存登入流程，請檢查瀏覽器隱私設定。'); }
+      catch (_) { throw new Error('無法保存登入狀態，請檢查瀏覽器隱私設定。'); }
     }
     function storageRemove(key) {
       try { sessionStorage.removeItem(key); } catch (_) {}
     }
 
-    function rpc(name, ...args) {
-      return new Promise((resolve, reject) => {
-        google.script.run
-          .withSuccessHandler(result => {
-            if (!result || !result.ok) {
-              const error = new Error(result && result.error || '系統回應異常。');
-              error.code = result && result.code || '';
-              reject(error);
-              return;
-            }
-            if (result.expiresAt) setExpiry(Number(result.expiresAt));
-            resolve(result.data);
-          })
-          .withFailureHandler(() => {
-            reject(new Error('連線或伺服器處理失敗，請稍後重試。'));
-          })[name](...args);
-      });
+    /*
+     * 以 POST text/plain 呼叫 GAS Web API（簡單請求，不觸發 CORS 預檢）。
+     * token 放在 body，不放自訂標頭。
+     */
+    async function rpc(name, ...args) {
+      let response;
+
+      try {
+        response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ fn: name, args: args }),
+          redirect: 'follow',
+          credentials: 'omit',
+          cache: 'no-store'
+        });
+      } catch (_) {
+        throw new Error('連線失敗，請檢查網路後重試。');
+      }
+
+      let result;
+      try {
+        result = await response.json();
+      } catch (_) {
+        throw new Error('連線或伺服器處理失敗，請稍後重試。');
+      }
+
+      if (!result || !result.ok) {
+        const error = new Error(result && result.error || '系統回應異常。');
+        error.code = result && result.code || '';
+        throw error;
+      }
+
+      if (result.expiresAt) setExpiry(Number(result.expiresAt));
+      return result.data;
     }
 
     async function call(action, payload = {}) {
       try {
         return await rpc('api', app.token, action, payload);
       } catch (error) {
-        // 只有伺服器明確回報登入失效時才清除登入狀態
         if (error.code === 'AUTH' && app.token) {
           endLocalSession();
           showLogin(error.message, true);
@@ -252,7 +270,7 @@
       return b;
     }
 
-    /* 通用表單：文字一律以 DOM 屬性設定；建立類表單的 requestId 固定，重試沿用。 */
+    /* 通用表單：文字一律以 DOM 屬性設定；requestId 固定於表單生命週期，重試沿用。 */
     function form(parent, fields, submitText, handler) {
       const node = el('form');
       const controls = {};
@@ -339,7 +357,7 @@
       return { name, label, type: 'datetime-local', value: localInput(value), required };
     }
 
-    /* ---------- 登入到期（伺服器會依操作順延，前端以最新回傳值為準） ---------- */
+    /* ---------- 登入到期 ---------- */
 
     function renderIdentity() {
       if (!app.me) { $('identity').textContent = ''; return; }
@@ -392,6 +410,9 @@
         catch (_) { /* 即使伺服器失敗，也清除本機狀態 */ }
         finally {
           endLocalSession();
+          try {
+            if (liff.isLoggedIn() && !liff.isInClient()) liff.logout();
+          } catch (_) {}
           showLogin('已清除本分頁登入狀態。', false);
         }
       }, 'secondary');
@@ -404,10 +425,11 @@
       app.me = null;
       app.expiresAt = 0;
       storageRemove(STORE.token);
-      storageRemove(STORE.loginKey);
       $('nav').replaceChildren();
       $('identity').textContent = '';
     }
+
+    /* ---------- LIFF 登入 ---------- */
 
     function showLogin(text = '', isError = false) {
       clearPage();
@@ -415,74 +437,63 @@
       message(text, isError);
 
       const box = card('以 LINE 登入');
-      note(box, '請在同一個瀏覽器、同一個分頁完成登入。不要使用共用裝置保存資料。');
-      note(box, '若內建瀏覽器登入失敗，請先將整個平台開啟於外部瀏覽器，再從頭登入。');
+      note(box, '請使用 LINE 帳號登入。不要使用共用裝置保存資料。');
       note(box, '每個 LINE 帳號同一時間只保留一個登入；在新裝置登入，舊裝置會被登出。');
 
-      button(box, '準備 LINE 登入', async () => {
-        const result = await rpc('getLoginUrl');
-        storageSet(STORE.loginKey, result.browserKey);
-
-        box.replaceChildren(el('h3', '登入連結已準備'));
-        note(box, '請點擊下方連結，在本分頁繼續。連結十分鐘後失效。');
-
-        const a = el('a', '前往 LINE 登入', 'button');
-        a.href = result.url;
-        a.target = '_top';
-        a.rel = 'noreferrer';
-        box.append(a);
+      button(box, '以 LINE 登入', async () => {
+        if (!liff.isLoggedIn()) {
+          liff.login({ redirectUri: location.origin + location.pathname });
+          return;
+        }
+        await finishLogin();
       });
+    }
+
+    async function finishLogin() {
+      const idToken = liff.getIDToken();
+      if (!idToken) {
+        throw new Error('無法取得 LINE 身分憑證，請關閉後從 LINE 重新開啟。');
+      }
+
+      let result;
+      try {
+        result = await rpc('loginWithLiff', idToken);
+      } catch (error) {
+        // 外部瀏覽器：清除 LINE 登入狀態，下次取得新的憑證
+        try { if (!liff.isInClient()) liff.logout(); } catch (_) {}
+        throw error;
+      }
+
+      storageSet(STORE.token, result.token);
+      app.token = result.token;
+
+      await loadIdentity();
+      await openPage('profile');
+      message('登入成功。');
     }
 
     async function start() {
       try {
-        if (BOOT.error) {
-          storageRemove(STORE.loginKey);
-          showLogin(BOOT.error, true);
-          return;
-        }
+        await liff.init({ liffId: LIFF_ID });
 
-        if (BOOT.callback) {
-          const browserKey = storageGet(STORE.loginKey);
-          const existing = storageGet(STORE.token);
-
-          if (!browserKey && existing) {
-            // 重新整理：授權碼已使用過，沿用既有登入，不再交換
-            app.token = existing;
-          } else {
-            if (!browserKey) {
-              throw new Error('找不到原登入分頁資料，請在同一瀏覽器重新登入。');
-            }
-            message('正在完成 LINE 身分驗證……');
-
-            const result = await rpc(
-              'completeLineLogin',
-              BOOT.callback.code, BOOT.callback.state, browserKey
-            );
-
-            storageRemove(STORE.loginKey);
-            storageSet(STORE.token, result.token);
-            app.token = result.token;
+        app.token = storageGet(STORE.token);
+        if (app.token) {
+          try {
+            await loadIdentity();
+            await openPage('profile');
+            return;
+          } catch (error) {
+            if (error.code !== 'AUTH') throw error;
+            app.token = '';
           }
-
-          BOOT.callback = null; // 授權碼不寫入任何儲存空間
-        } else {
-          app.token = storageGet(STORE.token);
         }
 
-        if (!app.token) { showLogin(); return; }
-
-        await loadIdentity();
-        await openPage('profile');
-        message('登入成功。');
+        if (!liff.isLoggedIn()) { showLogin(); return; }
+        await finishLogin();
       } catch (error) {
-        // 登入失效已由 call() 處理；其他錯誤（如網路中斷）不清除已保存的登入
-        if (error.code !== 'AUTH') {
-          app.token = '';
-          app.me = null;
-          storageRemove(STORE.loginKey);
-          showLogin(error.message, true);
-        }
+        app.token = '';
+        app.me = null;
+        showLogin(error.message, true);
       }
     }
 
@@ -915,4 +926,3 @@
   </script>
 </body>
 </html>
-
