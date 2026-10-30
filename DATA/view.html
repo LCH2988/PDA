@@ -3,116 +3,159 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>載入中... - 網頁檢視器</title>
-    <!-- 引入 Tailwind CSS -->
+    <title>網頁檢視與權限平台</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-        #appFrame { width: 100%; height: 100%; border: none; display: block; background: #fff; }
+        body { font-size: 18px; background-color: #f3f4f6; color: #1f2937; }
+        .big-btn { font-size: 20px; padding: 12px 24px; border-radius: 12px; font-weight: bold; transition: all 0.2s; }
     </style>
 </head>
-<body>
+<body class="min-h-screen p-4 md:p-8">
 
-    <!-- 載入中的提示畫面（高齡友善大字體） -->
-    <div id="loadingScreen" class="fixed inset-0 bg-blue-900 text-white flex flex-col items-center justify-center space-y-6 z-50">
-        <div class="text-3xl font-bold animate-pulse">⏳ 正在從雲端載入網頁，請稍候...</div>
-        <div class="text-xl text-blue-200" id="loadingStatus">正在連線至資料庫...</div>
+    <div class="max-w-4xl mx-auto space-y-6">
+        
+        <!-- 頂部身分與導覽列 -->
+        <header class="bg-blue-800 text-white p-6 rounded-2xl shadow-lg flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold">📂 雲端網頁專屬清單</h1>
+                <p class="text-blue-200 mt-1" id="userRoleDesc">目前身分：一般使用者（僅顯示公開與指定檔案）</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <input type="text" id="usernameInput" placeholder="輸入您的代號/信箱" class="p-3 text-black rounded-xl text-lg w-48">
+                <button onclick="switchRole()" id="roleBtn" class="big-btn bg-amber-500 hover:bg-amber-600 text-black">切換成管理者</button>
+            </div>
+        </header>
+
+        <!-- 檔案清單區 -->
+        <div class="bg-white p-6 rounded-2xl shadow-md space-y-4">
+            <h2 class="text-2xl font-bold text-gray-800">📋 可用的網頁清單</h2>
+            <div id="fileListContainer" class="space-y-3 divide-y divide-gray-100">
+                <p class="text-center text-gray-500 py-8">正在讀取檔案清單...</p>
+            </div>
+        </div>
+
     </div>
 
-    <!-- 密碼輸入對話框（若該網頁設有密碼） -->
-    <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 hidden z-50">
-        <div class="bg-white p-8 rounded-3xl max-w-md w-full shadow-2xl space-y-6 text-center">
-            <h3 class="text-3xl font-bold text-gray-800">🔑 此網頁受密碼保護</h3>
-            <p class="text-gray-600 text-lg">請輸入解鎖密碼以觀看內容：</p>
-            
+    <!-- 密碼輸入對話框 -->
+    <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white p-8 rounded-2xl max-w-md w-full shadow-2xl space-y-6 text-center">
+            <h3 class="text-2xl font-bold text-gray-800">🔑 檔案受密碼保護</h3>
+            <p class="text-gray-600 text-lg" id="unlockFileName">請輸入解鎖密碼：</p>
             <input type="password" id="unlockPasswordInput" placeholder="請輸入密碼" 
-                   class="w-full text-2xl p-4 border-4 border-blue-400 rounded-2xl text-center focus:border-blue-600 focus:outline-none">
-
-            <div class="flex gap-4 pt-2">
-                <button onclick="submitPassword()" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-2xl font-bold py-4 rounded-2xl shadow-lg">
-                    確定開啟
-                </button>
+                   class="w-full text-xl p-4 border-2 border-gray-300 rounded-xl text-center focus:outline-none">
+            <div class="flex gap-4">
+                <button onclick="closePasswordModal()" class="big-btn bg-gray-300 hover:bg-gray-400 text-gray-800 flex-1">取消</button>
+                <button onclick="executeUnlock()" class="big-btn bg-blue-600 hover:bg-blue-700 text-white flex-1">確定開啟</button>
             </div>
-            <p id="errorMsg" class="text-red-500 font-bold text-lg hidden">密碼錯誤，請重新輸入！</p>
         </div>
     </div>
 
-    <!-- 全螢幕網頁呈現框 -->
-    <iframe id="appFrame"></iframe>
-
     <script>
         // *** 請將此處替換為您的 GAS 網頁應用程式網址 ***
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbzkNU7wMVz1-1wbRCmjUBQidksCb4YGikCjN22mnTqQH-FUAN6tusAsLiCJ1bjRNJJ_ew/exec";
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbwiNwzu6FHNgH_x2Fqx7eEwBadFRNjZR8_-FP3lSQRgKv2NjOcSUETCt5FcgdWnrsHcqQ/exec";
 
-        // 從網址列取得檔案 ID (例如: view.html?id=WEB_1729000000000)
-        const urlParams = new URLSearchParams(window.location.search);
-        const fileId = urlParams.get('id');
+        let currentRole = "user"; // "user" 或 "admin"
+        let targetFileIdToOpen = null;
+        const ADMIN_SECRET = "8730"; // 管理者解鎖密碼（可自行更改）
 
         window.onload = function() {
-            if (!fileId) {
-                showError("找不到網頁代號！請確認網址是否正確。");
-                return;
-            }
-            // 初次嘗試載入（不帶密碼）
-            loadWebPage("");
+            loadFileList();
         };
 
-        async function loadWebPage(password) {
+        // 切換身分
+        function switchRole() {
+            if (currentRole === "user") {
+                let pwd = prompt("請輸入管理者密碼：");
+                if (pwd === ADMIN_SECRET) {
+                    currentRole = "admin";
+                    document.getElementById('userRoleDesc').innerText = "目前身分：⚙️ 管理者（可檢視所有檔案）";
+                    document.getElementById('roleBtn').innerText = "切換回一般使用者";
+                    document.getElementById('roleBtn').className = "big-btn bg-emerald-500 hover:bg-emerald-600 text-white";
+                    loadFileList();
+                } else if (pwd !== null) {
+                    alert("管理者密碼錯誤！");
+                }
+            } else {
+                currentRole = "user";
+                document.getElementById('userRoleDesc').innerText = "目前身分：一般使用者（僅顯示公開與指定檔案）";
+                document.getElementById('roleBtn').innerText = "切換成管理者";
+                document.getElementById('roleBtn').className = "big-btn bg-amber-500 hover:bg-amber-600 text-black";
+                loadFileList();
+            }
+        }
+
+        // 載入清單
+        async function loadFileList() {
+            const container = document.getElementById('fileListContainer');
+            container.innerHTML = `<p class="text-center text-gray-500 py-8">正在載入清單...</p>`;
+            const username = document.getElementById('usernameInput').value;
+
             try {
-                document.getElementById('loadingStatus').innerText = "正在取得網頁內容...";
                 const response = await fetch(GAS_URL, {
                     method: "POST",
                     body: JSON.stringify({
-                        action: "load",
-                        id: fileId,
-                        password: password
+                        action: "list",
+                        role: currentRole,
+                        user: username
                     })
                 });
                 const result = await response.json();
 
                 if (result.status === "success") {
-                    // 隱藏載入畫面與密碼框
-                    document.getElementById('loadingScreen').style.display = 'none';
-                    document.getElementById('passwordModal').style.display = 'none';
-                    
-                    // 設定瀏覽器標題
-                    document.title = result.title || "網頁預覽";
-
-                    // 將 HTML 程式碼透過 Blob 渲染至全螢幕 iframe
-                    const iframe = document.getElementById('appFrame');
-                    const blob = new Blob([result.code], { type: 'text/html;charset=utf-8' });
-                    iframe.src = URL.createObjectURL(blob);
-                } else {
-                    // 判斷是否為密碼錯誤或需要密碼
-                    if (result.message.includes("密碼") || result.message.includes("保護")) {
-                        document.getElementById('loadingScreen').style.display = 'none';
-                        document.getElementById('passwordModal').classList.remove('hidden');
-                        if (password !== "") {
-                            document.getElementById('errorMsg').classList.remove('hidden');
-                        }
-                    } else {
-                        showError(result.message);
+                    if (result.list.length === 0) {
+                        container.innerHTML = `<p class="text-center text-gray-500 py-8">目前沒有您可檢視的網頁檔案。</p>`;
+                        return;
                     }
+
+                    let html = "";
+                    result.list.forEach(file => {
+                        let lockBadge = file.hasPassword ? `<span class="bg-red-100 text-red-700 px-2 py-1 rounded text-sm font-bold ml-2">🔒 有密碼</span>` : ``;
+                        let publicBadge = file.isPublic ? `<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-sm ml-2">🌐 公開</span>` : `<span class="bg-purple-100 text-purple-700 px-2 py-1 rounded text-sm ml-2">🔒 指定授權</span>`;
+                        
+                        html += `
+                            <div class="flex justify-between items-center p-4 hover:bg-gray-50 rounded-xl">
+                                <div>
+                                    <h3 class="text-xl font-bold text-gray-800">${file.title} ${lockBadge} ${publicBadge}</h3>
+                                    <p class="text-sm text-gray-500 mt-1">更新時間：${file.updatedAt}</p>
+                                </div>
+                                <button onclick="openFile('${file.id}', '${file.title.replace(/'/g, "\\'")}', ${file.hasPassword})" 
+                                        class="big-btn bg-blue-600 hover:bg-blue-700 text-white py-2 px-6">
+                                    全螢幕開啟
+                                </button>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
                 }
             } catch (err) {
-                showError("連線至伺服器失敗，請檢查網路連線。");
+                container.innerHTML = `<p class="text-center text-red-500 py-8">連線伺服器失敗</p>`;
             }
         }
 
-        function submitPassword() {
-            const pwd = document.getElementById('unlockPasswordInput').value;
-            document.getElementById('errorMsg').classList.add('hidden');
-            document.getElementById('passwordModal').classList.add('hidden');
-            document.getElementById('loadingScreen').style.display = 'flex';
-            document.getElementById('loadingStatus').innerText = "正在驗證密碼...";
-            loadWebPage(pwd);
+        function openFile(id, title, hasPassword) {
+            targetFileIdToOpen = id;
+            if (hasPassword) {
+                document.getElementById('unlockFileName').innerText = `檔案「${title}」受密碼保護，請輸入密碼：`;
+                document.getElementById('unlockPasswordInput').value = "";
+                document.getElementById('passwordModal').classList.remove('hidden');
+            } else {
+                redirectToViewer(id, "");
+            }
         }
 
-        function showError(message) {
-            document.getElementById('loadingScreen').innerHTML = `
-                <div class="text-3xl font-bold text-red-300">❌ 開啟失敗</div>
-                <div class="text-xl text-white mt-2">${message}</div>
-            `;
+        function closePasswordModal() {
+            document.getElementById('passwordModal').classList.add('hidden');
+        }
+
+        function executeUnlock() {
+            const pwd = document.getElementById('unlockPasswordInput').value;
+            closePasswordModal();
+            redirectToViewer(targetFileIdToOpen, pwd);
+        }
+
+        function redirectToViewer(id, password) {
+            // 點擊後跳轉至專屬全螢幕檢視與下載頁面
+            window.location.href = `view.html?id=${id}&pwd=${encodeURIComponent(password)}`;
         }
     </script>
 </body>
