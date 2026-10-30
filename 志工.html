@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>協會志工服務平台</title>
+  <style>
+    :root {
+      --brand: #146c62; --dark: #173c37; --bg: #f4f7f6;
+      --border: #d6e0dc; --muted: #53665f; --danger: #a32c2c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: #172e27;
+      font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif;
+      font-size: 17px; line-height: 1.65;
+    }
+    header { background: var(--dark); color: white; padding: 22px 18px; }
+    header h1 { margin: 0; font-size: 1.4rem; }
+    header p { margin: 6px 0 0; color: #daece6; }
+    main { max-width: 1020px; margin: auto; padding: 18px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+    button, input, select, textarea { font: inherit; }
+    button, .button {
+      display: inline-block; border: 1px solid var(--brand); border-radius: 9px;
+      background: var(--brand); color: white; padding: 10px 15px;
+      min-height: 46px; cursor: pointer; text-decoration: none; margin: 4px 7px 4px 0;
+    }
+    button.secondary { background: white; color: var(--brand); }
+    button.danger { background: white; color: var(--danger); border-color: var(--danger); }
+    button:disabled { opacity: .55; cursor: wait; }
+    button:focus-visible, a:focus-visible, input:focus-visible,
+    select:focus-visible, textarea:focus-visible {
+      outline: 3px solid #d19320; outline-offset: 3px;
+    }
+    .card {
+      padding: 20px; border: 1px solid var(--border); border-radius: 12px;
+      background: white; margin: 14px 0; overflow-wrap: anywhere;
+    }
+    h2 { font-size: 1.35rem; }
+    h3 { margin: 0 0 10px; font-size: 1.15rem; }
+    p { margin: 8px 0; }
+    .muted { color: var(--muted); font-size: .95rem; }
+    .notice {
+      background: #fff8df; border-left: 5px solid #bc8c22;
+      padding: 12px 15px; margin: 12px 0;
+    }
+    #message { white-space: pre-wrap; padding: 12px; border-radius: 8px; background: #e5f2ec; }
+    #message.error { background: #fdeaea; color: #821f1f; }
+    /* 保留節點讓螢幕閱讀器能朗讀，只在空白時視覺隱藏 */
+    #message:empty { padding: 0; margin: 0; height: 0; overflow: hidden; background: none; }
+    label { display: block; margin: 12px 0; font-weight: 600; }
+    input:not([type="checkbox"]), select, textarea {
+      width: 100%; display: block; margin-top: 5px; border: 1px solid #92a59d;
+      border-radius: 7px; padding: 10px; background: white; color: #172e27;
+    }
+    input[type="checkbox"] { width: 21px; height: 21px; vertical-align: middle; margin-right: 8px; }
+    textarea { min-height: 100px; resize: vertical; }
+    .details {
+      border: 2px solid #b78626; background: #fffaf0; padding: 14px;
+      border-radius: 8px; white-space: pre-wrap;
+    }
+    .row { white-space: pre-wrap; }
+    a { color: #126358; }
+    [hidden] { display: none !important; }
+    @media (max-width: 600px) {
+      main { padding: 12px; }
+      .card { padding: 15px; }
+      nav button { flex: 1 1 42%; margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>協會志工服務平台</h1>
+    <p>安全服務・必要授權・分鐘核定</p>
+  </header>
+  <main>
+    <div id="identity" class="muted"></div>
+    <div id="message" role="status" aria-live="polite"></div>
+    <nav id="nav" aria-label="主要功能"></nav>
+    <section id="view" aria-label="功能內容"></section>
+    <footer class="muted">
+      <p>緊急事件請先聯絡當地緊急服務及協會；本平台不是即時通報系統。</p>
+      <p id="contact"></p>
+    </footer>
+  </main>
+
+  <script>
+    // 由 Auth.gs 提供，已對 HTML script 結束字元做跳脫。
+    const BOOT = <?!= boot ?>;
+
+    const STORE = { token: 'vp_session_v1', loginKey: 'vp_login_browser_key_v1' };
+
+    const app = {
+      token: '', me: null, page: '', generation: 0,
+      timers: [], expiryTimer: null, expiresAt: 0
+    };
+
+    const $ = id => document.getElementById(id);
+    const view = $('view');
+
+    const statusNames = {
+      pending: '待審核', active: '已啟用', suspended: '已停權', open: '開放',
+      cancelled: '已取消', confirmed: '報名成功', invited: '待接受',
+      accepted: '已接受', declined: '已婉拒', revoked: '已撤銷',
+      expired: '逾期未回應', pending_review: '待核定',
+      incident_pending: '安全事件待處理', closed: '已結案',
+      checked_in: '已報到、未退場', approved: '已核定'
+    };
+    const taskTypes = { phone: '電話關懷', home: '到宅服務', hospital: '就醫陪伴' };
+    const outcomeNames = {
+      completed: '已完成', unreachable: '未聯繫上',
+      cancelled: '未執行／取消', follow_up: '需承辦人後續處理'
+    };
+
+    function el(tag, text, className) {
+      const node = document.createElement(tag);
+      if (text !== undefined && text !== null) node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    }
+
+    function message(text, error = false) {
+      $('message').textContent = text || '';
+      $('message').className = error ? 'error' : '';
+    }
+
+    // 登入失效已由 call() 處理並切到登入畫面，不再覆蓋訊息
+    function showError(error) {
+      if (error && error.code === 'AUTH') return;
+      message(error && error.message || '發生錯誤。', true);
+    }
+
+    function storageGet(key) {
+      try { return sessionStorage.getItem(key) || ''; }
+      catch (_) { throw new Error('瀏覽器無法使用登入儲存空間，請使用支援的外部瀏覽器。'); }
+    }
+    function storageSet(key, value) {
+      try { sessionStorage.setItem(key, value); }
+      catch (_) { throw new Error('無法保存登入流程，請檢查瀏覽器隱私設定。'); }
+    }
+    function storageRemove(key) {
+      try { sessionStorage.removeItem(key); } catch (_) {}
+    }
+
+    function rpc(name, ...args) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(result => {
+            if (!result || !result.ok) {
+              const error = new Error(result && result.error || '系統回應異常。');
+              error.code = result && result.code || '';
+              reject(error);
+              return;
+            }
+            if (result.expiresAt) setExpiry(Number(result.expiresAt));
+            resolve(result.data);
+          })
+          .withFailureHandler(() => {
+            reject(new Error('連線或伺服器處理失敗，請稍後重試。'));
+          })[name](...args);
+      });
+    }
+
+    async function call(action, payload = {}) {
+      try {
+        return await rpc('api', app.token, action, payload);
+      } catch (error) {
+        // 只有伺服器明確回報登入失效時才清除登入狀態
+        if (error.code === 'AUTH' && app.token) {
+          endLocalSession();
+          showLogin(error.message, true);
+        }
+        throw error;
+      }
+    }
+
+    function dateText(value) {
+      if (!value) return '未設定';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '未設定';
+      return new Intl.DateTimeFormat('zh-TW', {
+        timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit',
+        day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+      }).format(date);
+    }
+
+    function localInput(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      const pad = n => String(n).padStart(2, '0');
+      return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' +
+        pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+    }
+
+    function requestId() {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function clearPage() {
+      app.generation++;
+      app.timers.forEach(clearTimeout);
+      app.timers = [];
+      view.replaceChildren();
+    }
+
+    function card(title, parent = view) {
+      const box = el('section', undefined, 'card');
+      box.append(el('h3', title));
+      parent.append(box);
+      return box;
+    }
+
+    function line(parent, title, value) {
+      parent.append(el('p', title + '：' + String(value ?? ''), 'row'));
+    }
+
+    function note(parent, text) {
+      parent.append(el('p', text, 'muted'));
+    }
+
+    function link(parent, title, url) {
+      if (!url || !/^https:\/\//i.test(url)) return;
+      const a = el('a', title);
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      parent.append(a, document.createTextNode('　'));
+    }
+
+    function button(parent, title, handler, style = '') {
+      const b = el('button', title, style);
+      b.type = 'button';
+      b.addEventListener('click', async () => {
+        if (b.disabled) return;
+        b.disabled = true;
+        try {
+          message('');
+          await handler();
+        } catch (error) {
+          showError(error);
+        } finally {
+          b.disabled = false;
+        }
+      });
+      parent.append(b);
+      return b;
+    }
+
+    /* 通用表單：文字一律以 DOM 屬性設定；建立類表單的 requestId 固定，重試沿用。 */
+    function form(parent, fields, submitText, handler) {
+      const node = el('form');
+      const controls = {};
+      const fixedRequestId = requestId();
+
+      fields.forEach(field => {
+        const label = el('label');
+        const text = field.label || field.name;
+        let input;
+
+        if (field.type === 'select') {
+          input = el('select');
+          (field.options || []).forEach(option => {
+            const item = el('option', option.label);
+            item.value = option.value;
+            input.append(item);
+          });
+        } else if (field.type === 'textarea') {
+          input = el('textarea');
+        } else {
+          input = el('input');
+          input.type = field.type || 'text';
+        }
+
+        input.name = field.name;
+        if (field.required) input.required = true;
+        if (field.maxLength) input.maxLength = field.maxLength;
+        if (field.min !== undefined) input.min = field.min;
+        if (field.max !== undefined) input.max = field.max;
+        if (field.type === 'number') input.step = '1';
+
+        if (field.type === 'checkbox') {
+          input.checked = field.value === true;
+          label.append(input, document.createTextNode(text));
+        } else {
+          label.append(document.createTextNode(text), input);
+          if (field.value !== undefined) input.value = field.value;
+        }
+
+        if (field.help) label.append(el('small', field.help, 'muted'));
+        controls[field.name] = { input, field };
+        node.append(label);
+      });
+
+      const submit = el('button', submitText);
+      submit.type = 'submit';
+      node.append(submit);
+
+      node.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (submit.disabled || !node.reportValidity()) return;
+
+        submit.disabled = true;
+        try {
+          message('');
+          const data = { requestId: fixedRequestId };
+
+          Object.entries(controls).forEach(([name, entry]) => {
+            const { input, field } = entry;
+            if (field.type === 'checkbox') data[name] = input.checked;
+            else if (field.type === 'number') data[name] = Number(input.value);
+            else if (field.type === 'datetime-local') {
+              data[name] = input.value ? new Date(input.value).toISOString() : '';
+            } else data[name] = input.value.trim();
+          });
+
+          await handler(data);
+        } catch (error) {
+          showError(error);
+        } finally {
+          submit.disabled = false;
+        }
+      });
+
+      parent.append(node);
+      return node;
+    }
+
+    function selectField(name, label, items, value) {
+      return { name, label, type: 'select', options: items, value, required: true };
+    }
+
+    function dateField(name, label, value, required = true) {
+      return { name, label, type: 'datetime-local', value: localInput(value), required };
+    }
+
+    /* ---------- 登入到期（伺服器會依操作順延，前端以最新回傳值為準） ---------- */
+
+    function renderIdentity() {
+      if (!app.me) { $('identity').textContent = ''; return; }
+      $('identity').textContent =
+        (app.me.user.name || '尚未填寫姓名') + '｜' +
+        (statusNames[app.me.user.status] || app.me.user.status) +
+        '｜登入到期：' + dateText(app.expiresAt);
+    }
+
+    function setExpiry(expiresAt) {
+      if (!expiresAt || !app.token) return;
+      app.expiresAt = expiresAt;
+      renderIdentity();
+
+      clearTimeout(app.expiryTimer);
+      app.expiryTimer = setTimeout(() => {
+        endLocalSession();
+        showLogin('登入時間已到，請重新登入。', true);
+      }, Math.max(0, expiresAt - Date.now()));
+    }
+
+    async function loadIdentity() {
+      app.me = await call('me');
+      $('contact').textContent = app.me.associationPhone
+        ? '協會聯絡電話：' + app.me.associationPhone : '';
+      setExpiry(Number(app.me.expiresAt));
+      renderIdentity();
+      renderNavigation();
+    }
+
+    function renderNavigation() {
+      const nav = $('nav');
+      nav.replaceChildren();
+
+      const items = [
+        ['profile', '我的資料'], ['activities', '活動報名'],
+        ['tasks', '服務任務'], ['hours', '我的時數']
+      ];
+
+      if (app.me.roles.admin) items.push(['users', '志工審核'], ['adminActivities', '活動管理']);
+      if (app.me.roles.officer) items.push(['clients', '病友建檔'], ['officerTasks', '個案派案']);
+      if (app.me.roles.admin || app.me.roles.officer) items.push(['review', '時數核定']);
+
+      items.forEach(([page, title]) => {
+        button(nav, title, () => openPage(page), 'secondary');
+      });
+
+      button(nav, '登出', async () => {
+        try { await call('logout'); }
+        catch (_) { /* 即使伺服器失敗，也清除本機狀態 */ }
+        finally {
+          endLocalSession();
+          showLogin('已清除本分頁登入狀態。', false);
+        }
+      }, 'secondary');
+    }
+
+    function endLocalSession() {
+      clearTimeout(app.expiryTimer);
+      clearPage();
+      app.token = '';
+      app.me = null;
+      app.expiresAt = 0;
+      storageRemove(STORE.token);
+      storageRemove(STORE.loginKey);
+      $('nav').replaceChildren();
+      $('identity').textContent = '';
+    }
+
+    function showLogin(text = '', isError = false) {
+      clearPage();
+      $('nav').replaceChildren();
+      message(text, isError);
+
+      const box = card('以 LINE 登入');
+      note(box, '請在同一個瀏覽器、同一個分頁完成登入。不要使用共用裝置保存資料。');
+      note(box, '若內建瀏覽器登入失敗，請先將整個平台開啟於外部瀏覽器，再從頭登入。');
+      note(box, '每個 LINE 帳號同一時間只保留一個登入；在新裝置登入，舊裝置會被登出。');
+
+      button(box, '準備 LINE 登入', async () => {
+        const result = await rpc('getLoginUrl');
+        storageSet(STORE.loginKey, result.browserKey);
+
+        box.replaceChildren(el('h3', '登入連結已準備'));
+        note(box, '請點擊下方連結，在本分頁繼續。連結十分鐘後失效。');
+
+        const a = el('a', '前往 LINE 登入', 'button');
+        a.href = result.url;
+        a.target = '_top';
+        a.rel = 'noreferrer';
+        box.append(a);
+      });
+    }
+
+    async function start() {
+      try {
+        if (BOOT.error) {
+          storageRemove(STORE.loginKey);
+          showLogin(BOOT.error, true);
+          return;
+        }
+
+        if (BOOT.callback) {
+          const browserKey = storageGet(STORE.loginKey);
+          const existing = storageGet(STORE.token);
+
+          if (!browserKey && existing) {
+            // 重新整理：授權碼已使用過，沿用既有登入，不再交換
+            app.token = existing;
+          } else {
+            if (!browserKey) {
+              throw new Error('找不到原登入分頁資料，請在同一瀏覽器重新登入。');
+            }
+            message('正在完成 LINE 身分驗證……');
+
+            const result = await rpc(
+              'completeLineLogin',
+              BOOT.callback.code, BOOT.callback.state, browserKey
+            );
+
+            storageRemove(STORE.loginKey);
+            storageSet(STORE.token, result.token);
+            app.token = result.token;
+          }
+
+          BOOT.callback = null; // 授權碼不寫入任何儲存空間
+        } else {
+          app.token = storageGet(STORE.token);
+        }
+
+        if (!app.token) { showLogin(); return; }
+
+        await loadIdentity();
+        await openPage('profile');
+        message('登入成功。');
+      } catch (error) {
+        // 登入失效已由 call() 處理；其他錯誤（如網路中斷）不清除已保存的登入
+        if (error.code !== 'AUTH') {
+          app.token = '';
+          app.me = null;
+          storageRemove(STORE.loginKey);
+          showLogin(error.message, true);
+        }
+      }
+    }
+
+    async function openPage(page) {
+      clearPage();
+      app.page = page;
+      message('');
+      const generation = app.generation;
+      view.append(el('p', '載入中……', 'muted'));
+
+      try {
+        const loaders = {
+          profile: renderProfile, activities: renderActivities, tasks: renderTasks,
+          hours: renderHours, users: renderUsers, adminActivities: renderAdminActivities,
+          clients: renderClients, officerTasks: renderOfficerTasks, review: renderReview
+        };
+
+        const loader = loaders[page];
+        if (!loader) throw new Error('不支援的畫面。');
+        await loader(generation);
+      } catch (error) {
+        if (error.code === 'AUTH' || generation !== app.generation) return;
+        view.replaceChildren();
+        message(error.message, true);
+        button(view, '重新載入', () => openPage(page), 'secondary');
+      }
+    }
+
+    function ready(generation, title) {
+      if (generation !== app.generation) return false;
+      view.replaceChildren(el('h2', title));
+      return true;
+    }
+
+    async function renderProfile(generation) {
+      await loadIdentity();
+      if (!ready(generation, '我的資料與服務承諾')) return;
+
+      const me = app.me;
+      const box = card('基本資料');
+      line(box, 'LINE 使用者識別碼', me.user.id);
+      note(box, '此識別碼用於協會設定管理角色，不是密碼；請勿公開張貼。');
+      line(box, '訓練有效期限', dateText(me.user.trainingUntil));
+
+      link(box, '閱讀完整個資告知', me.noticeUrl);
+      link(box, '閱讀服務規範', me.rulesUrl);
+
+      if (!me.noticeUrl || !me.rulesUrl) {
+        box.append(el('p', '協會尚未完成告知文件設定，目前不能送出申請。', 'notice'));
+        return;
+      }
+
+      note(box, '請先開啟閱讀完整文件。勾選不代表免除協會依法應盡的告知義務。');
+
+      form(box, [
+        { name: 'name', label: '姓名', value: me.user.name, required: true, maxLength: 60 },
+        { name: 'phone', label: '聯絡電話', type: 'tel', value: me.user.phone, required: true, maxLength: 30 },
+        { name: 'region', label: '主要服務地區', value: me.user.region, required: true, maxLength: 60 },
+        {
+          name: 'notify', type: 'checkbox', value: me.user.notify,
+          label: '同意接收平台服務通知（是否成功送達另依通知功能與LINE設定）'
+        },
+        {
+          name: 'consent', type: 'checkbox', required: true,
+          label: '我已閱讀完整個資告知及服務規範，並同意目前版本的服務與保密承諾：' + me.consentVersion
+        }
+      ], '儲存並送交審核', async data => {
+        data.consentVersion = me.consentVersion;
+        await call('saveProfile', data);
+        await openPage('profile');
+        message('資料已儲存；是否啟用請以審核狀態為準。');
+      });
+    }
+
+    async function renderActivities(generation) {
+      const items = await call('activities');
+      if (!ready(generation, '活動報名')) return;
+      if (!items.length) note(view, '目前沒有可顯示的活動。');
+
+      items.forEach(item => {
+        const box = card(item.title);
+        line(box, '狀態', statusNames[item.status] || item.status);
+        line(box, '時間', dateText(item.startAt) + ' ～ ' + dateText(item.endAt));
+        line(box, '地點', item.location);
+        line(box, '報名截止', dateText(item.deadlineAt));
+        line(box, '名額', item.booked + '／' + item.capacity);
+        if (item.description) line(box, '說明', item.description);
+        if (item.requiresTraining) note(box, '本活動須有涵蓋全程的有效訓練資格。');
+        if (item.myAttendanceStatus) {
+          line(box, '我的出勤', statusNames[item.myAttendanceStatus] || item.myAttendanceStatus);
+        }
+
+        if (!item.mine && item.registrationOpen) {
+          button(box, '報名', async () => {
+            await call('register', { id: item.id });
+            await openPage('activities');
+            message('報名已完成。');
+          });
+        }
+
+        if (item.mine) {
+          note(box, '您已報名。');
+
+          if (!item.myAttendanceStatus && Date.now() < item.startAt) {
+            button(box, '取消報名', async () => {
+              if (!confirm('確定取消這場活動的報名？')) return;
+              await call('cancelRegistration', { id: item.id });
+              await openPage('activities');
+              message('已取消報名。');
+            }, 'danger');
+          }
+
+          if (!item.myAttendanceStatus && item.status === 'open') {
+            form(box, [
+              { name: 'code', label: '現場報到碼', required: true, maxLength: 30 }
+            ], '確認報到', async data => {
+              await call('checkIn', { id: item.id, code: data.code });
+              await openPage('activities');
+              message('報到完成。');
+            });
+          }
+
+          if (item.myAttendanceStatus === 'checked_in') {
+            button(box, '退場並送出時數', async () => {
+              if (!confirm('確定現在結束本次活動出勤？')) return;
+              const result = await call('checkOut', { id: item.id });
+              await openPage('activities');
+              message('已送出待核定分鐘數：' + result.proposedMinutes);
+            });
+          }
+        }
+      });
+    }
+
+    async function renderTasks(generation) {
+      const items = await call('myTasks');
+      if (!ready(generation, '我的服務任務')) return;
+      if (!items.length) note(view, '目前沒有服務任務。');
+
+      items.forEach(item => {
+        const box = card(taskTypes[item.type] || '服務任務');
+        line(box, '地區', item.region);
+        line(box, '摘要', item.summary);
+        line(box, '時間', dateText(item.startAt) + ' ～ ' + dateText(item.endAt));
+        line(box, '狀態', statusNames[item.status] || item.status);
+
+        if (item.status === 'invited') {
+          button(box, '接受任務', async () => {
+            await call('acceptTask', { id: item.id });
+            await openPage('tasks');
+            message('已接受服務任務。');
+          });
+          button(box, '婉拒', async () => {
+            if (!confirm('確定婉拒此任務？')) return;
+            await call('declineTask', { id: item.id });
+            await openPage('tasks');
+            message('已婉拒。');
+          }, 'secondary');
+        }
+
+        if (item.status === 'accepted') {
+          note(box, '聯絡資料開放期間：' + dateText(item.accessFrom) + ' ～ ' + dateText(item.accessUntil));
+          detailsButton(box, item.id, generation);
+
+          note(box, '請勿記錄病歷、診斷或其他非必要個資。緊急事件請先通報，不要等待平台處理。');
+
+          form(box, [
+            selectField('outcome', '服務結果', Object.entries(outcomeNames)
+              .map(([value, label]) => ({ value, label }))),
+            { name: 'minutes', label: '實際服務分鐘', type: 'number', min: 0, max: 1440, required: true, value: 0 },
+            { name: 'incident', label: '本次有安全事件，需承辦人處理', type: 'checkbox' },
+            { name: 'note', label: '必要回報摘要（勿填病情或非必要個資）', type: 'textarea', maxLength: 300 }
+          ], '送出服務回報', async data => {
+            if (!confirm('送出後會停止提供病友聯絡資料，且無法自行覆寫回報。確定送出？')) return;
+            await call('reportTask', Object.assign(data, { id: item.id }));
+            await openPage('tasks');
+            message('服務回報已送出。');
+          });
+        }
+      });
+    }
+
+    function detailsButton(parent, taskId, generation) {
+      const output = el('div');
+      parent.append(output);
+
+      button(parent, '查看必要聯絡資料', async () => {
+        const data = await call('taskDetails', { id: taskId });
+        if (generation !== app.generation || !output.isConnected) return;
+
+        output.replaceChildren();
+        const detail = el('div', undefined, 'details');
+        line(detail, '稱呼', data.name);
+        line(detail, '聯絡電話', data.phone);
+        if (data.address) line(detail, '到宅地址', data.address);
+        if (data.privateInstructions) line(detail, '受限指引', data.privateInstructions);
+
+        note(detail, '畫面最多顯示60秒；請勿截圖、轉傳或另存。');
+        button(detail, '立即隱藏', () => output.replaceChildren(), 'secondary');
+        output.append(detail);
+
+        const lifetime = data.accessUntil
+          ? Math.max(0, Math.min(60000, data.accessUntil - Date.now()))
+          : 60000;
+
+        app.timers.push(setTimeout(() => output.replaceChildren(), lifetime));
+      }, 'secondary');
+    }
+
+    async function renderHours(generation) {
+      const data = await call('myHours');
+      if (!ready(generation, '我的服務時數')) return;
+
+      const summary = card('已核定合計');
+      line(summary, '分鐘', data.approvedMinutes);
+      line(summary, '時數', (data.approvedMinutes / 60).toFixed(2) + ' 小時');
+      note(summary, '以核定整數分鐘為正式計算依據；小時僅為顯示換算。');
+
+      data.records.forEach(item => {
+        const box = card(item.sourceType === 'activity' ? '活動出勤' : '病友服務');
+        line(box, '日期', dateText(item.serviceAt));
+        line(box, '狀態', statusNames[item.status] || item.status);
+        line(box, '申報分鐘', item.proposedMinutes);
+        line(box, '核定分鐘', item.approvedMinutes);
+        line(box, '紀錄編號', item.id);
+      });
+    }
+
+    async function renderUsers(generation) {
+      const users = await call('adminUsers');
+      if (!ready(generation, '行政：志工審核')) return;
+
+      note(view, '不能審核自己的帳號；請由另一位行政人員處理。');
+
+      users.forEach(user => {
+        const box = card(user.name || '尚未填寫姓名');
+        line(box, '電話', user.phone);
+        line(box, '地區', user.region);
+        line(box, '承諾版本', user.consentVersion || '未完成');
+        line(box, 'LINE識別碼', user.id);
+
+        if (user.id === app.me.user.id) {
+          note(box, '這是您自己的帳號。');
+          return;
+        }
+
+        form(box, [
+          selectField('status', '帳號狀態', [
+            { value: 'pending', label: '待審核' },
+            { value: 'active', label: '啟用' },
+            { value: 'suspended', label: '停權' }
+          ], user.status),
+          dateField('trainingUntil', '訓練有效期限（可留空）', user.trainingUntil, false)
+        ], '儲存審核結果', async data => {
+          await call('reviewUser', Object.assign(data, { id: user.id }));
+          await openPage('users');
+          message('志工審核結果已儲存。');
+        });
+      });
+    }
+
+    async function renderAdminActivities(generation) {
+      const items = await call('adminActivities');
+      if (!ready(generation, '行政：活動管理')) return;
+
+      const box = card('建立活動');
+      note(box, '日期輸入採您裝置的本地時區；清單統一顯示台灣時間。請確認裝置時區正確。');
+      form(box, [
+        { name: 'title', label: '活動名稱', required: true, maxLength: 120 },
+        { name: 'location', label: '活動地點（勿填病友住址）', required: true, maxLength: 200 },
+        { name: 'description', label: '活動說明', type: 'textarea', maxLength: 1000 },
+        dateField('startAt', '開始時間'),
+        dateField('endAt', '結束時間'),
+        dateField('deadlineAt', '報名截止'),
+        { name: 'capacity', label: '名額', type: 'number', min: 1, max: 100, value: 10, required: true },
+        { name: 'requiresTraining', label: '需要有效訓練資格', type: 'checkbox' }
+      ], '建立活動', async data => {
+        await call('createActivity', data);
+        await openPage('adminActivities');
+        message('活動已建立。');
+      });
+
+      items.forEach(item => {
+        const c = card(item.title);
+        line(c, '時間', dateText(item.startAt) + ' ～ ' + dateText(item.endAt));
+        line(c, '狀態', statusNames[item.status] || item.status);
+        line(c, '已報名', item.booked + '／' + item.capacity);
+        line(c, '現場報到碼', item.checkCode);
+        note(c, '報到碼僅在現場提供，請勿公開張貼。');
+
+        if (item.status !== 'cancelled') {
+          form(c, [
+            { name: 'reason', label: '取消原因', required: true, maxLength: 300 }
+          ], '取消活動', async data => {
+            if (!confirm('確定取消活動？本操作不保證LINE通知送達，請另行確認聯繫。')) return;
+            await call('cancelActivity', { id: item.id, reason: data.reason });
+            await openPage('adminActivities');
+            message('活動已取消；請確認報名者已獲通知。');
+          });
+        }
+      });
+    }
+
+    async function renderClients(generation) {
+      const items = await call('clients');
+      if (!ready(generation, '個案承辦：病友建檔')) return;
+
+      const box = card('建立必要聯絡資料');
+      note(box, '只存必要資料。不得在此上傳身分證、病歷或完整同意文件。');
+      form(box, [
+        { name: 'name', label: '病友稱呼', required: true, maxLength: 60 },
+        { name: 'phone', label: '必要聯絡電話', type: 'tel', required: true, maxLength: 30 },
+        { name: 'address', label: '到宅地址（非到宅服務可留空）', maxLength: 200 },
+        { name: 'authorizationReference', label: '個資利用依據之文件／內部紀錄編號', required: true, maxLength: 180 },
+        { name: 'authorized', label: '已依協會程序確認利用依據並完成必要告知', type: 'checkbox', required: true }
+      ], '建立病友資料', async data => {
+        await call('createClient', data);
+        await openPage('clients');
+        message('病友資料已建立。');
+      });
+
+      const list = card('我承辦的病友');
+      if (!items.length) note(list, '目前沒有病友資料。');
+      items.forEach(item => list.append(el('p', item.name, 'row')));
+    }
+
+    async function renderOfficerTasks(generation) {
+      const [clients, users, tasks] = await Promise.all([
+        call('clients'), call('assignmentUsers'), call('officerTasks')
+      ]);
+
+      if (!ready(generation, '個案承辦：服務派案')) return;
+      const box = card('建立服務邀請');
+
+      if (!clients.length || !users.length) {
+        note(box, '需先有自己承辦的病友，以及訓練有效的啟用志工，才能派案。');
+      } else {
+        note(box, '摘要會在接受任務前顯示，不得填病友姓名、電話、地址或病情。系統無法自動判斷您填入的內容是否含個資。');
+        form(box, [
+          selectField('clientId', '病友', clients.map(x => ({ value: x.id, label: x.name }))),
+          selectField('uid', '受派志工', users.map(x => ({ value: x.id, label: x.name + '／' + x.region }))),
+          selectField('type', '服務類型', Object.entries(taskTypes).map(([value, label]) => ({ value, label }))),
+          { name: 'region', label: '大致服務地區', required: true, maxLength: 60 },
+          { name: 'summary', label: '非個資服務摘要', type: 'textarea', required: true, maxLength: 200 },
+          { name: 'privateInstructions', label: '受限集合與安全指引（就醫集合地點填此處）', type: 'textarea', maxLength: 500 },
+          dateField('startAt', '開始時間'),
+          dateField('endAt', '結束時間')
+        ], '建立服務邀請', async data => {
+          await call('createTask', data);
+          await openPage('officerTasks');
+          message('服務邀請已建立；本畫面不代表LINE通知已送達。');
+        });
+      }
+
+      tasks.forEach(item => {
+        const c = card(taskTypes[item.type] + '｜' + item.region);
+        line(c, '摘要', item.summary);
+        line(c, '時間', dateText(item.startAt) + ' ～ ' + dateText(item.endAt));
+        line(c, '受派志工', item.volunteerName || '（未知）');
+        line(c, '狀態', statusNames[item.status] || item.status);
+        detailsButton(c, item.id, generation);
+
+        if (['invited', 'accepted'].includes(item.status)) {
+          form(c, [
+            { name: 'reason', label: '撤銷原因', required: true, maxLength: 300 }
+          ], '撤銷任務與查閱授權', async data => {
+            if (!confirm('確定撤銷任務？請另外確認已聯繫志工。')) return;
+            await call('revokeTask', { id: item.id, reason: data.reason });
+            await openPage('officerTasks');
+            message('任務已撤銷；志工後續將無法查閱，但已讀取的資料無法遠端收回。');
+          });
+        }
+      });
+    }
+
+    async function renderReview(generation) {
+      const items = await call('reviewAttendance');
+      if (!ready(generation, '授權範圍內的時數核定')) return;
+      note(view, '不允許自行核定本人時數；核定後無法從本介面直接覆寫。');
+      if (!items.length) note(view, '目前沒有待核定紀錄。');
+
+      items.forEach(item => {
+        const box = card(item.volunteerName || '志工');
+        line(box, '類型', item.sourceType === 'activity' ? '一般活動' : '病友服務');
+        line(box, '服務日期', dateText(item.serviceAt));
+        line(box, '申報分鐘', item.proposedMinutes);
+        line(box, '來源編號', item.sourceId);
+        if (item.outcome) line(box, '服務結果', outcomeNames[item.outcome] || item.outcome);
+        if (item.note) line(box, '回報摘要', item.note);
+        if (item.autoClosed) {
+          box.append(el('p', '此筆為志工未退場、由系統於活動結束後自動結算，請向志工確認實際時數再核定。', 'notice'));
+        }
+
+        if (item.selfRecord) {
+          note(box, '這是您的紀錄，請由另一位具適當權限的人員處理。');
+          return;
+        }
+
+        const fields = [{
+          name: 'minutes', label: '核定分鐘（不得高於申報）',
+          type: 'number', min: 0, max: item.proposedMinutes,
+          value: item.proposedMinutes, required: true
+        }];
+
+        if (item.incident) {
+          box.append(el('p', '本筆含安全事件，應先完成實際處理。', 'notice'));
+          fields.push(
+            { name: 'incidentResolved', label: '已完成安全事件處理', type: 'checkbox', required: true },
+            { name: 'incidentResolutionReference', label: '處理紀錄編號（勿貼入敏感事件全文）', required: true, maxLength: 180 }
+          );
+        }
+
+        form(box, fields, '確認核定', async data => {
+          if (!confirm('確定核定？本版不提供直接覆寫已核定分鐘。')) return;
+          await call('approveAttendance', Object.assign(data, { id: item.id }));
+          await openPage('review');
+          message('時數已核定。');
+        });
+      });
+    }
+
+    // 切換分頁／背景時，立即移除目前畫面中的聯絡資料。
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        document.querySelectorAll('.details').forEach(node => node.remove());
+      }
+    });
+
+    start();
+  </script>
+</body>
+</html>
+
