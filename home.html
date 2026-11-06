@@ -1991,8 +1991,7 @@ async function openEventSurveyStatsModal(eventId, eventTitle) {
       const rows = [headers].concat(rawRows.map(function (r) {
         return [r.id, r.eventId, r.createdAt, r.name, r.phone, r.companions || 0, r.checkedAt ? '已出席' : '已報名', typeof r.answers === 'object' ? JSON.stringify(r.answers) : (r.answers || '')];
       }));
-      const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('
-');
+      const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -2064,8 +2063,7 @@ function openVolunteerReportExportModal() {
           const rows = [hdr].concat(items.map(function (h) {
             return [h.recordId, h.volunteerId, h.volunteerName, h.group, h.date, h.hours, h.shiftTitle, h.summary, h.allowance || 0, h.status, h.reviewer || ''];
           }));
-          const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('
-');
+          const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\n');
           const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -4287,481 +4285,677 @@ registerAdminPage({
 });
 
 /* =========================================================================
-   十五、財務報表、前台內容彈窗、後台專案/頁面/權限與全域路由初始化
+   十五、前台各頁面視圖物件 (PAGES)
    ========================================================================= */
 
-const REPORTS = [
-  ['incomeExpenseStatement', '收支餘絀表'], ['ledger', '分類帳'], ['journal', '日記簿'], ['budgetComparison', '預算與決算比較表'],
-  ['fundraising', '勸募活動收支報告'], ['bankReconciliation', '銀行存款調節表'], ['balanceSheet', '資產負債表（現金基礎）'],
-  ['netAssetChanges', '淨資產變動表'], ['cashFlow', '現金流量表']
-];
-function periodText(y, m) { return '中華民國 ' + (y - 1911) + ' 年' + (m ? ' ' + m + ' 月' : '度'); }
-function rptTbl(cols, rows, foot) {
-  return '<table style="width:100%;border-collapse:collapse;font-size:.92rem"><thead><tr>' + cols.map(function (c) {
-    return '<th style="background:#f1f5f9;border:1px solid #94a3b8;padding:6px 8px;text-align:' + (c.num ? 'right' : 'left') + '">' + esc(c.h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
-    (rows.length ? rows.map(function (r) { return '<tr>' + cols.map(function (c) {
-      const v = c.f(r); return '<td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:' + (c.num ? 'right' : 'left') + (c.bold ? ';font-weight:900' : '') + '">' + esc(v) + '</td>'; }).join('') + '</tr>'; }).join('')
-      : '<tr><td colspan="' + cols.length + '" style="border:1px solid #cbd5e1;padding:8px;text-align:center;color:#64748b">本期無資料</td></tr>') +
-    '</tbody>' + (foot || '') + '</table>';
-}
-function rptFoot(cells) { return '<tfoot><tr>' + cells.map(function (c, i) { return '<td style="border:1px solid #94a3b8;padding:6px 8px;font-weight:900;background:#f8fafc;text-align:' + (i ? 'right' : 'left') + '">' + esc(c) + '</td>'; }).join('') + '</tr></tfoot>'; }
-const M = fmtMoney;
-
-function buildReportHtml(type, r, meta) {
-  const name = REPORTS.filter(function (x) { return x[0] === type; })[0][1];
-  let body = '';
-  if (type === 'incomeExpenseStatement') {
-    const cs = [{ h: '科目', f: function (x) { return x.subjectCode + ' ' + x.subjectName; } }, { h: '金額', num: true, f: function (x) { return M(x.amount); } }];
-    body = '<h3>收入</h3>' + rptTbl(cs, r.income, rptFoot(['收入合計', M(r.totalIncome)])) + '<h3 style="margin-top:14px">支出</h3>' + rptTbl(cs, r.expense, rptFoot(['支出合計', M(r.totalExpense)])) +
-      '<h3 style="margin-top:14px">本期' + (r.surplus >= 0 ? '賸餘' : '短絀') + '：' + esc(M(r.surplus)) + '</h3>';
-  } else if (type === 'ledger') {
-    body = '<p>期初餘額：<b>' + esc(M(r.openingBalance)) + '</b></p>' + rptTbl([{ h: '日期', f: function (x) { return x.date; } }, { h: '科目', f: function (x) { return x.subjectCode + ' ' + x.subjectName; } },
-      { h: '摘要', f: function (x) { return x.description; } }, { h: '收入', num: true, f: function (x) { return x.debit ? M(x.debit) : ''; } }, { h: '支出', num: true, f: function (x) { return x.credit ? M(x.credit) : ''; } },
-      { h: '餘額', num: true, f: function (x) { return M(x.balance); } }], r.items, rptFoot(['期末餘額', '', '', '', '', M(r.endingBalance)]));
-  } else if (type === 'journal') {
-    body = rptTbl([{ h: '日期', f: function (x) { return x.date; } }, { h: '單號', f: function (x) { return x.refNo; } }, { h: '科目', f: function (x) { return x.subjectCode + ' ' + x.subjectName; } },
-      { h: '摘要', f: function (x) { return x.description; } }, { h: '借方', num: true, f: function (x) { return x.debit ? M(x.debit) : ''; } }, { h: '貸方', num: true, f: function (x) { return x.credit ? M(x.credit) : ''; } }], r.items);
-  } else if (type === 'budgetComparison') {
-    body = rptTbl([{ h: '科目', f: function (x) { return x.subjectName; } }, { h: '預算', num: true, f: function (x) { return M(x.budgetAmt); } }, { h: '決算（年度累計）', num: true, f: function (x) { return M(x.usedAmt); } },
-      { h: '執行率', num: true, f: function (x) { return x.rate + '%'; } }, { h: '差異', num: true, f: function (x) { return M(x.remainAmt); } }], r.items);
-  } else if (type === 'fundraising') {
-    body = rptTbl([{ h: '日期', f: function (x) { return x.date; } }, { h: '捐款人', f: function (x) { return x.name; } }, { h: '用途', f: function (x) { return x.purpose; } },
-      { h: '收據編號', f: function (x) { return x.receiptNo; } }, { h: '金額', num: true, f: function (x) { return M(x.amount); } }], r.items, rptFoot(['合計', '', '', '', M(r.totalAmount)]));
-  } else if (type === 'bankReconciliation') {
-    const line = function (k, v) { return '<tr><td style="border:1px solid #cbd5e1;padding:7px 8px">' + esc(k) + '</td><td style="border:1px solid #cbd5e1;padding:7px 8px;text-align:right">' + esc(v) + '</td></tr>'; };
-    body = r.provided
-      ? '<table style="width:100%;border-collapse:collapse"><tbody>' + line('銀行對帳單餘額', M(r.bankBalance)) + line('加：在途存款', M(r.depositsInTransit)) + line('減：未兌現支票／在途付款', M(r.outstandingChecks)) +
-        line('調整後銀行餘額', M(r.adjustedBank)) + line('帳面餘額（系統流水帳）', M(r.bookBalance)) + line('差異（應為 0）', M(r.diff)) + '</tbody></table>' +
-        (r.diff === 0 ? '<div class="alert ok" style="margin-top:10px">✅ 調節後相符。</div>' : '<div class="alert err" style="margin-top:10px">⚠️ 尚有差異 ' + esc(M(r.diff)) + '，請檢查未記錄的收支或手續費。</div>')
-      : '<div class="alert warn">請在上方輸入「銀行對帳單餘額」後再查詢，才能進行調節。</div>' + rptTbl([{ h: '帳面餘額（系統）', f: function () { return M(r.bookBalance); } }], [1]);
-    body += '<h3 style="margin-top:14px">各帳戶帳面餘額</h3>' + rptTbl([{ h: '帳戶', f: function (x) { return x.name; } }, { h: '帳面餘額', num: true, f: function (x) { return M(x.bookBalance); } }], r.accounts) +
-      (r.systemConsistent === false ? '<div class="alert err" style="margin-top:10px">⚠️ 「資金帳戶」記錄的目前餘額（' + esc(M(r.systemBalance)) + '）與流水帳計算不一致，請管理員檢查。</div>' : '');
-  } else if (type === 'balanceSheet') {
-    const cs = [{ h: '項目', f: function (x) { return x.name; } }, { h: '金額', num: true, f: function (x) { return M(x.amount); } }];
-    body = '<h3>資產</h3>' + rptTbl(cs, r.assets, rptFoot(['資產總計', M(r.totalAssets)])) + '<h3 style="margin-top:14px">負債</h3>' + rptTbl(cs, r.liabilities, rptFoot(['負債總計', M(r.totalLiabilities)])) +
-      '<h3 style="margin-top:14px">淨資產</h3>' + rptTbl(cs, r.netAssets, rptFoot(['淨資產總計', M(r.totalNetAssets)])) + '<div class="report-note">' + esc(r.note) + '</div>';
-  } else if (type === 'netAssetChanges') {
-    body = rptTbl([{ h: '項目', f: function (x) { return x.name; } }, { h: '期初', num: true, f: function (x) { return M(x.initAmt); } }, { h: '本期增加', num: true, f: function (x) { return M(x.addAmt); } },
-      { h: '本期減少', num: true, f: function (x) { return M(x.decAmt); } }, { h: '期末', num: true, f: function (x) { return M(x.endAmt); } }], r.items) +
-      '<div class="report-note">現金基礎：期初含帳戶初始餘額與之前累計收支。</div>';
-  } else if (type === 'cashFlow') {
-    body = rptTbl([{ h: '項目', f: function (x) { return (x.level ? '　　' : '') + x.name; } }, { h: '金額', num: true, f: function (x) { return x.amount === undefined ? '' : M(x.amount); } }], r.items);
-  }
-  return '<div class="report-print" style="background:#fff;padding:14px;color:#14202b">' +
-    '<div class="report-head"><h2>' + esc(ORG_TITLE) + '</h2><h2>' + esc(name) + '</h2><div class="small">' + esc(periodText(meta.year, meta.month)) +
-      (meta.project ? '｜專案：' + esc(meta.project) : '') + '</div></div>' + body +
-    '<div class="report-note">列印時間：' + esc(todayStr()) + '　製表：' + esc(S.member.name) + '。本表為系統依流水帳自動產生，供內部參考；正式申報請經會計人員核對。</div></div>';
+async function cmsPage(key, title, navPrefixHtml) {
+  const p = await cms(key);
+  const finalTitle = (p && p.title) || title;
+  const rawBody = (p && p.content) ? p.content : (TXT[key] || '');
+  const bodyHtml = rich(rawBody);
+  const attHtml = p && p.attachments ? renderAttachmentsHtml(p.attachments) : '';
+  const editBtn = canManageContent()
+    ? `<button type="button" class="btn sm gh noprint" data-page-edit="${esc(key)}" data-default-title="${esc(finalTitle)}">✏️ 直接編輯本頁內容與附件</button>`
+    : '';
+  return `${navPrefixHtml || ''}<article class="card letter">
+    <div class="row-between" style="align-items:center"><h2>${esc(finalTitle)}</h2>${editBtn}</div>
+    ${['family','questions','emergency'].includes(key)?medicalNotice():''}
+    ${bodyHtml}
+    ${attHtml}
+  </article>`;
 }
 
-registerAdminPage({
-  key: 'reports', title: '財務報表', icon: '📈', group: '報表', roles: null,
-  render: async function (el) {
-    const projects = (await api('project.list', {}, { silent: true })).items;
-    const y = thisYear();
-    el.innerHTML = '<h1>財務報表</h1><div class="card"><div class="grid c2">' +
-      fieldHtml({ id: 'rpType', label: '報表', type: 'select', options: REPORTS.map(function (r) { return { value: r[0], label: r[1] }; }) }) +
-      fieldHtml({ id: 'rpYear', label: '年度', type: 'select', options: [y - 3, y - 2, y - 1, y, y + 1], value: y }) +
-      fieldHtml({ id: 'rpMonth', label: '月份', type: 'select', options: [{ value: '', label: '全年度' }].concat([1,2,3,4,5,6,7,8,9,10,11,12].map(function (m) { return { value: m, label: m + ' 月' }; })) }) +
-      fieldHtml({ id: 'rpProj', label: '專案', type: 'select', options: projectOptions(projects, '（全部）') }) + '</div>' +
-      '<div id="rpBank" hidden><div class="grid c3">' +
-        fieldHtml({ id: 'rpBal', label: '銀行對帳單餘額', inputmode: 'numeric', hint: '必填' }) + fieldHtml({ id: 'rpDep', label: '在途存款', inputmode: 'numeric', value: '0' }) +
-        fieldHtml({ id: 'rpChk', label: '未兌現支票／在途付款', inputmode: 'numeric', value: '0' }) + '</div></div>' +
-      '<div class="row"><button type="button" class="btn" id="rpGo">產生報表</button><button type="button" class="btn btn-purple" id="rpPrint" disabled>🖨️ 列印</button></div></div>' +
-      '<div id="rpOut" class="card" aria-live="polite"><p class="muted center">請選擇條件後按「產生報表」。</p></div>';
-    let lastHtml = '';
-    const sync = function () { $('#rpBank', el).hidden = val('rpType', el) !== 'bankReconciliation'; };
-    $('#rpType', el).addEventListener('change', sync); sync();
-    $('#rpGo', el).addEventListener('click', function (e) {
-      run(e.currentTarget, async function () {
-        const type = val('rpType', el), meta = { year: Number(val('rpYear', el)), month: Number(val('rpMonth', el)) || 0, project: val('rpProj', el) };
-        const p = { year: meta.year, month: meta.month || undefined, projectName: meta.project };
-        if (type === 'bankReconciliation') {
-          const num = function (id) { const v = val(id, el).replace(/,/g, ''); if (v !== '' && !/^-?\d+(\.\d+)?$/.test(v)) throw new Error('金額請輸入數字'); return v; };
-          p.bankBalance = num('rpBal'); p.depositsInTransit = num('rpDep') || 0; p.outstandingChecks = num('rpChk') || 0;
-        }
-        const r = await api('report.' + type, p);
-        lastHtml = buildReportHtml(type, r, meta);
-        $('#rpOut', el).innerHTML = lastHtml; $('#rpPrint', el).disabled = false;
-      });
-    });
-    $('#rpPrint', el).addEventListener('click', function () { if (lastHtml) printHtml(lastHtml); });
-  }
-});
+const TXT = {
+  fee_intro:`## 歡迎加入「社團法人台灣帕金森病友權益促進會」
 
-/* =========================================================================
-   十六、後台與前台內容維護（整合自訂問卷設計器於 Events 編輯）
-   ========================================================================= */
+成為本會正式會員，與全國病友、家屬及醫療復健團隊攜手同行：
+- 享有本會各項講座、復健課程與聯誼活動優先報名權
+- 定期接收帕金森最新醫療新知、福利補助與會務資訊
+- 參與會員大會，共同推動帕金森病友醫療與照護權益`,
+  donate_intro:`## 您的每一分捐款，都是病友前行的力量
 
-async function openFrontCmsModal(sheetName, itemId, defaultValues) {
-  let row = Object.assign({ status: 'published', publishDate: todayTW(), date: todayTW(), order: 10 }, defaultValues || {});
-  if (itemId) {
-    if (sheetName === 'News') row = await api('getNewsDetail', { id: itemId });
-    else if (sheetName === 'Highlights') row = await api('getHighlightDetail', { id: itemId });
-    else if (sheetName === 'Events') row = await api('getEventDetail', { id: itemId });
-    else if (sheetName === 'Docs') {
-      const all = await api('getDocs');
-      row = all.find(x => x.id === itemId) || row;
-    } else if (sheetName === 'Resources') {
-      const all = await api('getResources');
-      row = all.find(x => x.id === itemId) || row;
-    } else if (sheetName === 'FAQ') {
-      const all = await api('getFaq');
-      row = all.find(x => x.id === itemId) || row;
-    } else if (sheetName === 'Board') {
-      const ab = await api('getAbout');
-      row = (ab.board || []).find(x => x.id === itemId) || row;
+本會為依法核准立案之非營利社團法人（立案字號：台內團字第 1080027359 號），您的愛心捐款將專款專用於：
+- 帕金森病友及家屬支持團體、運動復健課程與衛教講座
+- 弱勢與急難病友家庭關懷扶助
+- 帕金森病友醫療權益倡議與照護資源推廣`,
+  invoice_guide:`## 隨手捐發票，愛心助病友（愛心碼 8730）
+
+您平時消費的每一張雲端電子發票，都能化為支持帕金森病友的實際力量！
+
+## 三種捐贈發票方式
+- 門市結帳口述：於四大超商、全聯、百貨或支援雲端發票店家結帳時，直接告訴店員「我要捐發票，愛心碼 8730」或出示下方條碼
+- 手機條碼載具設定：於財政部「統一發票兌獎 App」或電子發票整合服務平台，將預設捐贈碼設定為「8730（社團法人台灣帕金森病友權益促進會）」
+- 紙本發票郵寄：可將未過期之紙本統一發票寄至本會會址（新北市三重區中正北路 518 號 8 樓）`,
+  volunteer_intro:`## 誠摯邀請您加入帕促會志工隊
+
+無論您是病友家屬、醫護復健專業人員、學生或熱心民眾，都歡迎依您的時間與專長加入我們：
+- 活動支援組：協助講座、病友聯誼活動報到、引導與現場支援
+- 病友關懷組：電話關懷問安、陪伴支持與經驗傾聽
+- 復健陪伴組：協助太極拳、大動作訓練、健走等運動課程陪伴
+- 行政與宣導組：協助文書整理、活動攝影紀錄與衛教推廣`,
+  about_extra:`## 組織服務範疇與公開資訊
+
+- 全國病友與家屬支持網絡建立與定期聚會
+- 帕金森疾病衛教手冊編印與專題醫學講座舉辦
+- 病友用藥、深腦刺激術（DBS）與長照福利資源諮詢轉介`,
+  letter:`親愛的朋友：
+
+如果您剛得知自己或家人罹患帕金森病，心裡可能很亂，這是正常的。
+
+## 您不需要一次懂所有事
+
+先喘口氣。帕金森病是慢性疾病，有藥物、復健與生活調整可以幫助您維持生活品質。很多病友都能規律生活、參加活動、照顧家人。
+
+## 現在可以做的三件事
+
+- 固定回診，把症狀與疑問記下來
+- 每天動一動，哪怕只有十分鐘
+- 找到可以說話的人：家人、朋友或病友
+
+## 您不孤單
+
+協會有活動、論壇與各地病友，歡迎隨時加入我們。`,
+  family:`## 給照顧者的話
+
+照顧帕金森病友很辛苦，您的休息和健康同樣重要。
+
+## 日常照顧小撇步
+
+- 協助規律服藥，可用藥盒或手機鬧鐘提醒
+- 居家移除門檻、地毯，浴室加裝扶手與防滑墊
+- 給病友多一點時間完成動作，不要催促
+- 鼓勵每天運動與外出
+
+## 照顧自己
+
+- 輪流請其他家人分擔
+- 定期安排休息
+- 多和其他照顧者交流，可到「病友論壇」的「照顧者交流」
+
+## 需要協助時
+
+可洽詢長照專線 1966，或向醫院社工詢問補助與資源。`,
+  questions:`- 我的診斷與目前的分期是什麼？
+- 目前的藥物是什麼？何時吃、吃多久、有哪些副作用？
+- 漏吃藥或症狀變化時，我該怎麼辦？
+- 建議做哪些復健或運動？
+- 需要定期做哪些檢查？下次什麼時候回診？
+- 有哪些情況需要提早回診或掛急診？
+- 可以申請哪些補助或證明？`,
+  emergency:`## 出現以下情況，請立即撥 119 或前往急診
+
+- 跌倒後有明顯受傷、無法起身或頭部撞傷
+- 吞嚥嗆咳、呼吸困難
+- 突然意識不清、嚴重混亂或幻覺
+- 高燒、持續嘔吐無法服藥
+
+## 以下情況請提早聯絡您的醫師
+
+- 症狀明顯變差或藥效持續時間變短
+- 新出現的幻覺、嚴重情緒低落
+- 頻繁跌倒
+- 藥物副作用讓您不舒服`,
+  privacy:`（草案，正式公告前請由法務審閱）
+
+## 我們蒐集哪些資料
+
+- LINE 登入資料：使用者識別碼、顯示名稱、頭像
+- 您自行填寫的姓名、電話、Email、生日、居住縣市、地址、身分、身分證字號、論壇暱稱及自願提供之健康資料
+- 活動報名資料、會費與捐款登錄資料與論壇發言
+
+## 使用目的
+
+會員會籍管理、會費與捐款核對、電子收據開立與國稅局年度申報、活動聯繫與報到、論壇審核、病友關懷與協會業務聯繫。
+
+## 論壇顯示名稱
+
+論壇一律顯示您設定的「暱稱」；未設定時只顯示 LINE 名稱的部分字元，不會公開完整名稱。
+
+## 保存與保護
+
+資料儲存於協會管理的雲端服務，僅限授權管理人員查看，查看敏感個人資料或健康資料會留下系統稽核紀錄。
+
+## 您的權利
+
+您可以隨時查詢、更正個人資料，或隨時取消健康資料同意（取消後將自動清除已填健康資料）。
+
+## 聯絡
+
+請見本站頁尾的聯絡資訊。`,
+  accessibility:`本站致力於讓不同年齡與能力的使用者都能順利使用。
+
+## 目前提供
+
+- 可調整字體大小（A− / A＋）
+- 高對比模式
+- 頁面朗讀
+- 大按鈕與簡化步驟
+- 依身分引導的功能清單
+
+## 意見回饋
+
+若您在使用上遇到困難，請透過頁尾的聯絡方式告訴我們，我們會盡力改善。`
+};
+
+const PAGES = {
+  async home() {
+    const [d, pubAnns] = await Promise.all([
+      api('getHome').catch(function(){ return { stats:{}, highlights:[], news:[], events:[] }; }),
+      api('announcement.publicList', {}, { silent: true }).catch(function () { return null; })
+    ]);
+    const s = d.stats || {};
+    const highlights = d.highlights || [];
+    const newsList = d.news || [];
+    const annList = d.announcements || (pubAnns && pubAnns.items) || [];
+    window._homeAnns = annList;
+    const labels = [['members','有效會員'],['events','辦過活動'],['participants','參與人次'],['volunteers','志工'],['groups','據點'],['resources','衛教資源']];
+    const o = org();
+    return `
+      <!-- ===== 首頁最上方：最新消息與公告 ===== -->
+      <section class="home-news-top" aria-label="最新消息與公告">
+        <div class="row-between" style="align-items:center;margin-bottom:10px">
+          <div>
+            <h1 style="margin:0;font-size:1.45rem">📢 最新消息與公告</h1>
+            <div class="muted small">掌握協會最新會務公告、活動通知、病友權益與帕金森醫療衛教新知</div>
+          </div>
+          <div class="row">
+            ${canManageWeb() ? btn('cms-new','＋ 新增最新消息','btn sm sec',{sheet:'News'}) : ''}
+            ${canManageWeb() ? '<button type="button" class="btn sm acc" data-action="front-ann-new">＋ 新增會務公告</button>' : ''}
+            <a class="btn gh sm" href="#/news">看全部消息 →</a>
+            <a class="btn gh sm" href="#/announcements">會務公告 →</a>
+          </div>
+        </div>
+        <nav class="chips noprint" style="margin:6px 0 12px" aria-label="消息與公告篩選">
+          <button type="button" class="btn sm gh on" data-home-news-cat="all">全部顯示</button>
+          <button type="button" class="btn sm gh" data-home-news-cat="pinned">📌 置頂重點</button>
+          <button type="button" class="btn sm gh" data-home-news-cat="news">📰 官網最新消息</button>
+          <button type="button" class="btn sm gh" data-home-news-cat="ann">📢 協會會務公告</button>
+        </nav>
+        ${newsList.length ? `<div id="homeNewsGrid" class="cards">${newsList.map(n => `<div class="home-news-item" data-hncat="news" data-hnpin="${yes(n.pinned)?'1':'0'}">${newsCard(n)}</div>`).join('')}</div>` : '<p class="muted">目前沒有最新消息</p>'}
+        ${annList.length ? `
+          <div id="homeAnnList" style="margin-top:12px">
+            <h3 style="margin:8px 0">📋 近期協會會務公告</h3>
+            <div class="cards">
+              ${annList.map(a => `<div class="card home-news-item" data-hncat="ann" data-hnpin="${a.pinned==='Y'?'1':'0'}">
+                <div class="card-grow">
+                  <div>${a.pinned==='Y'?'📌 ':''}<span class="tag">${esc(a.category||'會務公告')}</span> <span class="muted small">${esc(fmtD(a.date))}</span></div>
+                  <strong style="display:block;margin:6px 0;font-size:1.05rem">${esc(a.title)}</strong>
+                  <div class="muted small pre">${esc(String(a.content||'').slice(0,120))}${String(a.content||'').length>120?'…':''}</div>
+                  ${renderAttachmentsHtml(a.attachments)}
+                </div>
+                ${canManageWeb() ? `<div class="cms-bar noprint">
+                  <button type="button" class="btn sm gh" data-front-ann-edit="${esc(a.id)}">✏️ 編輯公告</button>
+                  <button type="button" class="btn sm bad" data-front-ann-del="${esc(a.id)}">🗑️ 刪除</button>
+                </div>` : ''}
+              </div>`).join('')}
+            </div>
+          </div>` : ''}
+      </section>
+
+      <!-- ===== 協會標語與核心統計 ===== -->
+      <section class="hero">
+        <h2 style="color:#fff;margin:0 0 6px">${esc(CFG.slogan||'帕金森的路上，您不孤單')}</h2>
+        <div class="small" style="opacity:.92">${esc(o.name)}（${esc(o.reg)}）</div>
+        ${canManageWeb() ? `<div style="margin-top:10px">${btn('site-config-edit','✏️ 編輯首頁標語與協會資訊','btn sm acc')}</div>` : ''}
+      </section>
+      <div class="stats">${labels.map(([k,l])=>`<div class="stat"><b>${num(s[k])}</b>${l}</div>`).join('')}</div>
+
+      <!-- ===== 活動與花絮 ===== -->
+      <div class="row-between" style="align-items:center;margin-top:20px">
+        <h2>📅 近期活動報名</h2>
+        <div class="row">
+          ${canManageEvent() ? btn('cms-new','＋ 新增活動','btn sm sec',{sheet:'Events'}) : ''}
+          <a class="btn gh sm" href="#/events">前往活動與花絮 →</a>
+        </div>
+      </div>
+      ${d.events.length?'<div class="cards">'+d.events.map(eventCard).join('')+'</div>':'<p class="muted">目前沒有即將舉辦的活動</p>'}
+
+      <div class="row-between" style="align-items:center;margin-top:20px">
+        <h2>📸 活動花絮回顧</h2>
+        <div class="row">
+          ${canManageEvent() ? btn('cms-new','＋ 新增活動花絮','btn sm sec',{sheet:'Highlights'}) : ''}
+          <a class="btn gh sm" href="#/highlights">看全部花絮 →</a>
+        </div>
+      </div>
+      ${highlights.length?'<div class="cards">'+highlights.map(highlightCard).join('')+'</div>':'<div class="card muted">歡迎點選「＋ 新增活動花絮」上傳活動照片、檔案與回顧紀錄！</div>'}
+
+      <!-- ===== 支持協會四大行動 ===== -->
+      <section class="card give" style="margin-top:22px">
+        <div class="row-between" style="align-items:center">
+          <h2 style="margin:0">❤️ 支持協會（四大參與方式）</h2>
+          <a class="btn sm gh" href="#/support">進入支持協會專區 →</a>
+        </div>
+        <div class="support-grid-4" style="text-align:left">
+          <div class="support-card-item">
+            <div><span class="sc-num">1. 加入會員</span><h3 style="margin:4px 0 8px">💳 申請入會／繳交會費</h3><p class="muted small">常年會費 NT$ ${num(MEMBER_FEE)}／年，線上登錄並領取正式電子收據。</p></div>
+            <a class="btn sec" href="#/fee">前往加入會員 →</a>
+          </div>
+          <div class="support-card-item">
+            <div><span class="sc-num">2. 捐款支持</span><h3 style="margin:4px 0 8px">💝 線上捐款支持</h3><p class="muted small">支持病友關懷、復健講座與急難救助，開立正式抵稅電子收據。</p></div>
+            <a class="btn red" href="#/donate">前往捐款支持 →</a>
+          </div>
+          <div class="support-card-item">
+            <div><span class="sc-num">3. 捐贈發票</span><h3 style="margin:4px 0 8px">🧾 電子發票愛心碼 ${esc(o.love)}</h3><p class="muted small">結帳口述愛心碼「${esc(o.love)}」或設定手機條碼載具捐贈發票。</p></div>
+            <a class="btn acc" href="#/invoice">查看捐贈發票說明 →</a>
+          </div>
+          <div class="support-card-item">
+            <div><span class="sc-num">4. 加入志工</span><h3 style="margin:4px 0 8px">🙌 獨立志工專區</h3><p class="muted small">線上報名加入志工隊、參與排班服務、申報時數並下載服務證明。</p></div>
+            <a class="btn" style="background:var(--purple)" href="#/volunteer">進入志工專區 →</a>
+          </div>
+        </div>
+      </section>`;
+  },
+  async start() {
+    const k = getPersona();
+    return `<h2>🧭 請問您是哪一種身分？</h2><p>選擇後，我們會列出最適合您的功能。隨時可以重新選擇。</p>${chooser(k)}`;
+  },
+  async for(k) {
+    const p = PERSONAS[k];
+    if (!p) return '<h2>找不到這個身分</h2><a href="#/start">重新選擇身分</a>';
+    setPersona(k);
+    const others = PERSONA_ORDER.filter(x => x !== k).map(x => `<a href="#/for/${x}">${PERSONAS[x].icon} ${esc(PERSONAS[x].name)}</a>`).join('');
+    return `<h2>${p.icon} ${esc(p.name)}</h2><p>${esc(p.intro)}</p>${tiles(p.tasks)}
+      ${['newbie','patient','family'].includes(k)?medicalNotice():''}
+      <h3>不是您嗎？換個身分看看</h3><nav class="chips" aria-label="其他身分">${others}</nav>`;
+  },
+  async my() {
+    const favs = getFavs(), k = getPersona();
+    return `<h2>⭐ 我的捷徑</h2>${favs.length?`<div class="cards">${favs.map((f,i)=>`<div class="card"><a href="${esc(f.h)}"><strong>${esc(f.t)}</strong></a><div>${btn('fav-del','移除','btn gh sm',{i})}</div></div>`).join('')}</div>`:
+      '<div class="card">還沒有捷徑。到任何頁面按「☆ 加入我的捷徑」，就會出現在這裡與首頁。</div>'}
+      <h3>我的身分</h3><div class="card">${PERSONAS[k]?esc(PERSONAS[k].icon+' '+PERSONAS[k].name):'尚未選擇'}<div>${PERSONAS[k]?`<a class="btn sec sm" href="#/for/${k}">我的功能清單</a>`:''}<a class="btn gh sm" href="#/start">重新選擇身分</a></div></div>`;
+  },
+  async newcomer(sub) {
+    const topNav = eduSubNavHtml('newcomer');
+    if (!sub) return `${topNav}<h2>🌱 新手專區</h2><p>剛確診，不知道從哪裡開始？照順序看就好。</p>${tiles(NC_ITEMS.map(([k,l])=>[l.split(' ')[0],l.split(' ').slice(1).join(' '),k[0]==='/'?'#'+k:'#/newcomer/'+k]))}${medicalNotice()}`;
+    const nav = topNav + ncNav(sub);
+    if (sub==='letter') return cmsPage('letter','給您的一封信', nav);
+    if (sub==='checklist') return nav + `<h2>✅ 第一個月清單</h2><div class="card"><div class="pbar" aria-hidden="true"><div id="pbarIn"></div></div><p id="pbarTxt" aria-live="polite"></p></div>` +
+      WEEKS.map(([t,items],i)=>`<section class="card week"><h3>${esc(t)}</h3>${items.map((x,j)=>`<label class="chk"><input type="checkbox" data-chk="w${i}_${j}">${esc(x)}</label>`).join('')}</section>`).join('') +
+      '<p class="muted">勾選紀錄只存在您這支手機的瀏覽器。</p>';
+    if (sub==='questions') return (await cmsPage('questions','🩺 回診可以問醫師什麼', nav)) + `<p>${btn('print','🖨️ 列印問題清單','btn gh sm')}</p>`;
+    if (sub==='diary') return nav + `<h2>📝 症狀日誌</h2><p>列印後每天簡單記錄，回診時給醫師參考。</p><div class="tw"><table><thead><tr><th>日期</th><th>吃藥時間</th><th>最好的時段</th><th>最差的時段</th><th>跌倒／特殊狀況</th></tr></thead><tbody>${
+      Array.from({length:7},()=>'<tr><td>　</td><td></td><td></td><td></td><td></td></tr>').join('')}</tbody></table></div><p>${btn('print','🖨️ 列印','btn gh sm')}</p>`;
+    if (sub==='emergency') return cmsPage('emergency','🚨 何時要就醫', nav);
+    return `${topNav}<h2>找不到頁面</h2><a href="#/newcomer">回新手專區</a>`;
+  },
+  async news(id) {
+    const subNav = newsSubNavHtml('news');
+    if (!id) {
+      const list = await api('getNews');
+      return `${subNav}
+        <div class="row-between" style="align-items:center">
+          <h2>📰 最新消息</h2>
+          ${canManageContent() ? btn('cms-new','＋ 新增最新消息','btn sec',{sheet:'News'}) : ''}
+        </div>
+        ${list.length?'<div class="cards">'+list.map(newsCard).join('')+'</div>':'<div class="card muted">目前沒有消息</div>'}`;
     }
-  }
+    const n = await api('getNewsDetail',{id});
+    return `${subNav}<p><a href="#/news">← 回消息列表</a></p><article class="card">
+      ${n.coverId?`<img class="detail-cover" src="${esc(imageUrl(n.coverId))}" alt="">`:''}
+      <h2>${esc(n.title)}</h2>
+      <div>${tag(n.category)} <span class="muted">${esc(fmtD(n.publishDate))}</span></div>
+      ${rich(n.content)}
+      ${renderAttachmentsHtml(n.attachments, n.attachUrl)}
+      ${cmsBtnsHtml('News', n.id)}
+    </article>`;
+  },
+  async highlights(id) {
+    const subNav = eventsSubNavHtml('highlights');
+    if (!id) {
+      const list = await api('getHighlights');
+      return `${subNav}
+        <div class="row-between" style="align-items:center">
+          <h2>📸 活動花絮與相簿回顧</h2>
+          ${canManageContent() ? btn('cms-new','＋ 新增活動花絮','btn sec',{sheet:'Highlights'}) : ''}
+        </div>
+        <p class="muted">記錄協會歷次講座、運動復健與病友聯誼的溫馨時刻。支援上傳不限張數照片、檔案與影片連結。</p>
+        ${list.length ? '<div class="cards">' + list.map(highlightCard).join('') + '</div>' : emptyHtml('目前尚無活動花絮，歡迎點選右上角「＋ 新增活動花絮」上傳照片與紀錄！', '📸')}`;
+    }
+    const h = await api('getHighlightDetail', { id });
+    return `${subNav}<p><a href="#/highlights">← 回活動花絮列表</a></p>
+      <article class="card">
+        <div>${yes(h.pinned)?'📌 ':''}<span class="tag g">${esc(h.category || '活動回顧')}</span> <span class="muted">📅 ${esc(fmtD(h.date))}</span></div>
+        <h2>${esc(h.title)}</h2>
+        ${rich(h.content)}
+        ${renderAttachmentsHtml(h.attachments)}
+        ${cmsBtnsHtml('Highlights', h.id)}
+      </article>`;
+  },
+  async events(id) {
+    const subNav = eventsSubNavHtml('events');
+    if (!id) {
+      const list = await api('getEvents');
+      return `${subNav}
+        <div class="row-between" style="align-items:center">
+          <h2>📅 近期活動報名</h2>
+          ${canManageContent() ? btn('cms-new','＋ 新增活動','btn sec',{sheet:'Events'}) : ''}
+        </div>
+        ${list.length?'<div class="cards">'+list.map(eventCard).join('')+'</div>':'<p class="muted">目前沒有活動</p>'}`;
+    }
+    const e = await api('getEventDetail',{id});
+    const preName = (S.member && S.member.name) || (ME && ME.name) || '';
+    const prePhone = (S.member && S.member.phone) || (ME && ME.phone) || '';
+    let form;
+    if (!e.registrationOpen) form = `<div class="notice">${esc(e.registrationMessage||'暫不開放報名')}</div>`;
+    else if (!isLoggedIn()) form = loginCard();
+    else form = `<form id="registerForm" class="form card" data-id="${esc(e.id)}"><h3>我要報名</h3>
+      ${input('rName','姓名',preName,'text','required maxlength="30" autocomplete="name"')}
+      ${input('rPhone','電話',prePhone,'tel','required maxlength="20" autocomplete="tel"')}
+      ${input('rComp','同行人數(不含本人,0–10)','0','number','min="0" max="10" step="1" required')}
+      ${renderFrontSurveyHtml(e.customQuestions)}
+      <label for="rNote">備註(飲食、行動不便等)</label><textarea id="rNote" rows="3" maxlength="300"></textarea>
+      <label class="chk"><input type="checkbox" id="rConsent" required>我同意協會為活動聯繫與報到蒐集上述資料(<a href="#/privacy">隱私權政策</a>)</label>
+      <button class="btn sec" type="submit">送出報名</button></form>`;
 
-  const isNew = !itemId;
-  const titles = {
-    News: isNew ? '＋ 新增最新消息' : '✏️ 編輯最新消息',
-    Highlights: isNew ? '＋ 新增活動花絮' : '✏️ 編輯活動花絮',
-    Events: isNew ? '＋ 新增活動（可規劃專屬問卷）' : '✏️ 編輯活動與問卷',
-    Docs: isNew ? '＋ 新增下載檔案' : '✏️ 編輯下載檔案',
-    Resources: isNew ? '＋ 新增衛教資源' : '✏️ 編輯衛教資源',
-    FAQ: isNew ? '＋ 新增常見問題' : '✏️ 編輯常見問題',
-    Board: isNew ? '＋ 新增理監事' : '✏️ 編輯理監事'
-  };
-
-  let fieldsHtml = '';
-  if (sheetName === 'News') {
-    fieldsHtml =
-      fieldHtml({ id: 'fcTitle', label: '標題', required: true, value: row.title, maxlength: 200 }) +
-      '<div class="grid c3">' +
-        fieldHtml({ id: 'fcCat', label: '分類', type: 'select', options: NEWS_CATS, value: row.category || '公告' }) +
-        fieldHtml({ id: 'fcDate', label: '發布日期', type: 'date', required: true, value: fmtD(row.publishDate) || todayTW() }) +
-        fieldHtml({ id: 'fcStatus', label: '狀態', type: 'select', options: STATUS_PUB.map(x => ({ value: x[0], label: x[1] })), value: row.status || 'published' }) +
-      '</div>' +
-      '<label class="check" style="margin-bottom:12px"><input type="checkbox" id="fcPin"' + (yes(row.pinned) ? ' checked' : '') + '><span>📌 置頂這則消息</span></label>' +
-      fieldHtml({ id: 'fcContent', label: '內容（空一行＝新段落；「- 」開頭＝項目符號；「## 」開頭＝小標題）', type: 'textarea', value: row.content, maxlength: 30000 });
-  } else if (sheetName === 'Highlights') {
-    fieldsHtml =
-      fieldHtml({ id: 'fcTitle', label: '活動花絮標題', required: true, value: row.title, maxlength: 200 }) +
-      '<div class="grid c3">' +
-        fieldHtml({ id: 'fcCat', label: '分類', type: 'select', options: HIGHLIGHT_CATS, value: row.category || '活動回顧' }) +
-        fieldHtml({ id: 'fcDate', label: '活動日期', type: 'date', required: true, value: fmtD(row.date) || todayTW() }) +
-        fieldHtml({ id: 'fcStatus', label: '狀態', type: 'select', options: STATUS_PUB.map(x => ({ value: x[0], label: x[1] })), value: row.status || 'published' }) +
-      '</div>' +
-      '<label class="check" style="margin-bottom:12px"><input type="checkbox" id="fcPin"' + (yes(row.pinned) ? ' checked' : '') + '><span>📌 置頂這則活動花絮</span></label>' +
-      fieldHtml({ id: 'fcContent', label: '活動回顧與心得內容', type: 'textarea', value: row.content, maxlength: 30000 });
-  } else if (sheetName === 'Events') {
-    fieldsHtml =
-      fieldHtml({ id: 'fcTitle', label: '活動名稱', required: true, value: row.title, maxlength: 200 }) +
-      '<div class="grid c2">' +
-        fieldHtml({ id: 'fcDate', label: '活動日期', type: 'date', required: true, value: fmtD(row.date) || todayTW() }) +
-        fieldHtml({ id: 'fcDeadline', label: '報名截止日（選填）', type: 'date', value: fmtD(row.deadline) }) +
-        fieldHtml({ id: 'fcLocation', label: '活動地點', required: true, value: row.location, maxlength: 200 }) +
-        fieldHtml({ id: 'fcCap', label: '總名額（含同行者）', type: 'number', required: true, value: row.capacity || 50, min: 1 }) +
-      '</div>' +
-      fieldHtml({ id: 'fcStatus', label: '狀態', type: 'select', options: STATUS_PUB.map(x => ({ value: x[0], label: x[1] })), value: row.status || 'published' }) +
-      fieldHtml({ id: 'fcContent', label: '活動詳細說明', type: 'textarea', value: row.description, maxlength: 30000 }) +
-      surveyBuilderHtml(row.customQuestions);
-  } else if (sheetName === 'Docs') {
-    fieldsHtml =
-      fieldHtml({ id: 'fcTitle', label: '檔案或表單名稱', required: true, value: row.title, maxlength: 150 }) +
-      '<div class="grid c3">' +
-        fieldHtml({ id: 'fcCat', label: '檔案分類', type: 'select', options: DOC_CATS, value: row.category || '會務與入會表格' }) +
-        fieldHtml({ id: 'fcDate', label: '發布日期', type: 'date', value: fmtD(row.publishDate) || todayTW() }) +
-        fieldHtml({ id: 'fcOrder', label: '排序（數字小在前）', type: 'number', value: row.order || 10, min: 1 }) +
-      '</div>' +
-      fieldHtml({ id: 'fcUrl', label: '直接下載網址（選填，亦可直接於下方上傳任意格式檔案）', type: 'url', value: row.url || '', placeholder: 'https://...' }) +
-      fieldHtml({ id: 'fcContent', label: '檔案說明（選填）', type: 'textarea', value: row.description || '', maxlength: 5000 });
-  } else if (sheetName === 'Resources') {
-    fieldsHtml =
-      fieldHtml({ id: 'fcTitle', label: '衛教資源標題', required: true, value: row.title, maxlength: 200 }) +
-      '<div class="grid c3">' +
-        fieldHtml({ id: 'fcCat', label: '主題分類', type: 'select', options: RES_CATS, value: row.category || '疾病認識' }) +
-        fieldHtml({ id: 'fcType', label: '資源形式', type: 'select', options: RES_TYPES.map(x => ({ value: x[0], label: x[1] })), value: row.type || 'article' }) +
-        fieldHtml({ id: 'fcDate', label: '發布日期', type: 'date', value: fmtD(row.publishDate) || todayTW() }) +
-      '</div>' +
-      fieldHtml({ id: 'fcUrl', label: '外部連結網址（選填，亦可於下方上傳照片與檔案）', type: 'url', value: row.url || '', placeholder: 'https://...' }) +
-      fieldHtml({ id: 'fcContent', label: '衛教內容與說明', type: 'textarea', value: row.description || '', maxlength: 20000 });
-  } else if (sheetName === 'FAQ') {
-    fieldsHtml =
-      fieldHtml({ id: 'fcTitle', label: '常見問題（Question）', required: true, value: row.question, maxlength: 200 }) +
-      fieldHtml({ id: 'fcContent', label: '解答內容（Answer）', type: 'textarea', required: true, value: row.answer, maxlength: 10000 }) +
-      fieldHtml({ id: 'fcOrder', label: '排序（數字小在前）', type: 'number', value: row.order || 10, min: 1 });
-  } else if (sheetName === 'Board') {
-    fieldsHtml =
-      '<div class="grid c3">' +
-        fieldHtml({ id: 'fcTitle', label: '姓名', required: true, value: row.name, maxlength: 40 }) +
-        fieldHtml({ id: 'fcCat', label: '職稱（例：理事長、常務理事、監事）', required: true, value: row.title, maxlength: 40 }) +
-        fieldHtml({ id: 'fcOrder', label: '排序（數字小在前）', type: 'number', value: row.order || 10, min: 1 }) +
-      '</div>';
-  }
-
-  const m = openModal({
-    title: titles[sheetName] || '編輯內容', static: true, wide: true,
-    body: '<form id="adminEditForm" novalidate>' + fieldsHtml + mediaEditorHtml('fcMedia') + '<div id="fcErr" style="margin-top:10px"></div></form>',
-    footer: '<button type="button" class="btn btn-gray" data-close>取消</button><button type="button" class="btn sec" data-ok>💾 儲存並發布</button>'
-  });
-
-  const mediaCtl = bindMediaEditor(m.el, 'fcMedia', row.attachments, sheetName.toLowerCase());
-  const surveyCtl = sheetName === 'Events' ? bindSurveyBuilder(m.el) : null;
-  const fmEl = m.$('form'); if (fmEl) fmEl.addEventListener('submit', function (ev) { ev.preventDefault(); ev.stopPropagation(); m.$('[data-ok]').click(); });
-
-  m.$('[data-ok]').addEventListener('click', function (e) {
-    run(e.currentTarget, async function () {
-      const err = function (s) { m.$('#fcErr').innerHTML = alertHtml(s); };
-      if (mediaCtl.isUploading()) return err('照片或檔案正在上傳中，請稍候完成再儲存');
-      const att = mediaCtl.getValue();
-      const payload = { id: itemId || '', attachments: att, coverId: (att.photos[0] && att.photos[0].id) || row.coverId || '' };
-
-      if (sheetName === 'News') {
-        payload.title = val('fcTitle', m.el);
-        payload.category = val('fcCat', m.el);
-        payload.publishDate = val('fcDate', m.el);
-        payload.status = val('fcStatus', m.el) || 'published';
-        payload.pinned = m.$('#fcPin').checked ? 'Y' : '';
-        payload.content = val('fcContent', m.el);
-        payload.attachUrl = (att.files[0] && att.files[0].url) || row.attachUrl || '';
-      } else if (sheetName === 'Highlights') {
-        payload.title = val('fcTitle', m.el);
-        payload.category = val('fcCat', m.el);
-        payload.date = val('fcDate', m.el);
-        payload.status = val('fcStatus', m.el) || 'published';
-        payload.pinned = m.$('#fcPin').checked ? 'Y' : '';
-        payload.content = val('fcContent', m.el);
-      } else if (sheetName === 'Events') {
-        payload.title = val('fcTitle', m.el);
-        payload.date = val('fcDate', m.el);
-        payload.deadline = val('fcDeadline', m.el);
-        payload.location = val('fcLocation', m.el);
-        payload.capacity = Number(val('fcCap', m.el)) || 50;
-        payload.status = val('fcStatus', m.el) || 'published';
-        payload.description = val('fcContent', m.el);
-        payload.customQuestions = surveyCtl ? surveyCtl.getQuestions() : [];
-      } else if (sheetName === 'Docs') {
-        payload.title = val('fcTitle', m.el);
-        payload.category = val('fcCat', m.el);
-        payload.publishDate = val('fcDate', m.el);
-        payload.order = Number(val('fcOrder', m.el)) || 10;
-        payload.url = val('fcUrl', m.el) || (att.files[0] && (att.files[0].downloadUrl || att.files[0].url)) || (att.links[0] && att.links[0].url) || '';
-        payload.description = val('fcContent', m.el);
-        payload.status = 'published';
-      } else if (sheetName === 'Resources') {
-        payload.title = val('fcTitle', m.el);
-        payload.category = val('fcCat', m.el);
-        payload.type = val('fcType', m.el);
-        payload.publishDate = val('fcDate', m.el);
-        payload.url = val('fcUrl', m.el) || (att.files[0] && att.files[0].url) || (att.links[0] && att.links[0].url) || '';
-        payload.description = val('fcContent', m.el);
-        payload.status = 'published';
-      } else if (sheetName === 'FAQ') {
-        payload.question = val('fcTitle', m.el);
-        payload.answer = val('fcContent', m.el);
-        payload.order = Number(val('fcOrder', m.el)) || 10;
-        payload.status = 'published';
-      } else if (sheetName === 'Board') {
-        payload.name = val('fcTitle', m.el);
-        payload.title = val('fcCat', m.el);
-        payload.order = Number(val('fcOrder', m.el)) || 10;
-      }
-
+    let regMgrHtml = '';
+    if (canManageContent()) {
       try {
-        await api('admin_save', { sheet: sheetName, row: payload });
-      } catch (x) { return err(x.message); }
-      m.close(true);
-      toast('✅ 已儲存並更新頁面', 'ok');
-      route();
-    });
-  });
-}
+        const allRegs = await api('admin_list', { sheet: 'Registrations' });
+        const evRegs = allRegs.filter(r => r.eventId === e.id);
+        regMgrHtml = `<div class="card" style="margin-top:18px">
+          <div class="row-between" style="align-items:center">
+            <h3 style="margin:0">📋 本活動報名名單管理（共 ${evRegs.length} 筆）</h3>
+            <div class="row">
+              <button type="button" class="btn sm acc" data-action="ev-stats-view" data-eventid="${esc(e.id)}" data-eventtitle="${esc(e.title)}">📊 問卷統計分析</button>
+              ${btn('ev-reg-add','＋ 新增報名者','btn sm sec',{eventid:e.id})}
+            </div>
+          </div>
+          <div class="table-wrap" style="margin-top:10px"><table class="tbl stack"><thead><tr><th>姓名</th><th>電話</th><th>同行</th><th>備註</th><th>問卷填答</th><th>狀態</th><th>操作</th></tr></thead><tbody>
+            ${evRegs.length ? evRegs.map((r, idx) => {
+              const ansObj = parseAnswers(r.answers);
+              const ansSummary = Object.keys(ansObj).length ? Object.entries(ansObj).map(([k,v]) => `${Array.isArray(v)?v.join(','):v}`).join('；') : '—';
+              return `<tr>
+                <td data-label="姓名"><b>${esc(r.name)}</b></td>
+                <td data-label="電話">${esc(r.phone)}</td>
+                <td data-label="同行">${num(r.companions)}</td>
+                <td data-label="備註">${esc(r.note || '—')}</td>
+                <td data-label="問卷填答" class="small"><div class="clip" title="${esc(ansSummary)}">${esc(ansSummary)}</div></td>
+                <td data-label="狀態">${tag(r.status)}</td>
+                <td data-label="操作">
+                  <button type="button" class="btn sm gh" data-ev-reg-edit="${esc(r.id)}" data-eventid="${esc(e.id)}">✏️ 修改</button>
+                  <button type="button" class="btn sm bad" data-ev-reg-del="${esc(r.id)}">🗑️ 刪除</button>
+                </td>
+              </tr>`;
+            }).join('') : '<tr><td colspan="7" class="center muted">尚無報名資料</td></tr>'}
+          </tbody></table></div>
+        </div>`;
+        window._curEvRegs = evRegs;
+      } catch (err) {}
+    }
 
-async function deleteFrontCmsItem(sheetName, itemId) {
-  if (!(await confirmDialog('確定要永久刪除此項目嗎？', { danger: true, okText: '確定刪除' }))) return;
-  await api('admin_delete', { sheet: sheetName, id: itemId });
-  toast('🗑️ 已刪除', 'ok');
-  if (location.hash.split('/').length > 2) {
-    const base = { News: '#/news', Highlights: '#/highlights', Events: '#/events' }[sheetName];
-    if (base) { location.hash = base; return; }
+    return `${subNav}<p><a href="#/events">← 回活動列表</a></p><article class="card">
+      ${e.coverId?`<img class="detail-cover" src="${esc(imageUrl(e.coverId))}" alt="">`:''}
+      <h2>${esc(e.title)}</h2>
+      <p>📅 ${esc(fmtD(e.date))}<br>📍 ${esc(e.location)}${e.deadline?'<br>⏰ 報名截止 '+esc(e.deadline):''}<br>👥 剩餘名額 ${num(e.remaining)}／${num(e.capacity)}</p>
+      ${rich(e.description)}
+      ${renderAttachmentsHtml(e.attachments)}
+      ${cmsBtnsHtml('Events', e.id)}
+    </article>${form}${regMgrHtml}`;
+  },
+  async downloads(cat) {
+    const subNav = docsAboutSubNavHtml('downloads');
+    const list = await api('getDocs');
+    const cats = [...new Set(DOC_CATS.concat(list.map(d => d.category).filter(Boolean)))];
+    const shown = cat ? list.filter(d => d.category === cat) : list;
+    return `${subNav}
+      <div class="row-between" style="align-items:center">
+        <h2>📥 檔案下載專區</h2>
+        ${canManageContent() ? btn('cms-new','＋ 新增下載檔案','btn sec',{sheet:'Docs',cat:cat||''}) : ''}
+      </div>
+      <p class="muted">提供本會入會申請書、會務表單、衛教手冊、補助申請資訊及公開財務報告下載。</p>
+      <nav class="chips" aria-label="檔案分類">
+        <a href="#/downloads" class="${cat?'':'on'}">全部檔案</a>
+        ${cats.map(c => `<a href="#/downloads/${enc(c)}" class="${c===cat?'on':''}">${esc(c)}</a>`).join('')}
+      </nav>
+      ${shown.length ? '<div class="cards">' + shown.map(docCard).join('') + '</div>' : emptyHtml('目前此分類尚無檔案，可點選「＋ 新增下載檔案」直接上傳！', '📥')}`;
+  },
+  async resources(cat) {
+    const topNav = eduSubNavHtml('resources');
+    const list = await api('getResources'), cats = [...new Set(RES_CATS.concat(list.map(r=>r.category).filter(Boolean)))];
+    const shown = cat ? list.filter(r=>r.category===cat) : list;
+    const TYPE = {pdf:'📄 PDF',video:'🎬 影片',article:'📰 文章',link:'🔗 連結'};
+    return `${topNav}
+      <div class="row-between" style="align-items:center">
+        <h2>📚 衛教資源庫</h2>
+        ${canManageContent() ? btn('cms-new','＋ 新增衛教資源','btn sec',{sheet:'Resources',cat:cat||''}) : ''}
+      </div>
+      ${medicalNotice()}
+      <nav class="chips" aria-label="分類"><a href="#/resources" class="${cat?'':'on'}">全部</a>${
+        cats.map(c=>`<a href="#/resources/${enc(c)}" class="${c===cat?'on':''}">${esc(c)}</a>`).join('')}</nav>
+      ${shown.length?shown.map(r=>`<article class="card">
+        <div>${tag(r.category)} <span class="tag">${esc(TYPE[r.type]||r.type)}</span> <span class="muted small">${esc(fmtD(r.publishDate))}</span></div>
+        <h3 style="margin:8px 0">${esc(r.title)}</h3>
+        <div class="pre">${esc(r.description)}</div>
+        ${renderAttachmentsHtml(r.attachments, r.url)}
+        ${cmsBtnsHtml('Resources', r.id)}
+      </article>`).join(''):'<p class="muted">目前沒有資料</p>'}`;
+  },
+  async learn(a,b) {
+    const topNav = eduSubNavHtml('learn');
+    const extraPage = !a ? await cms('learn_extra') : null;
+    const extraHtml = (!a && ( (extraPage && (extraPage.content || (extraPage.attachments && (extraPage.attachments.photos?.length || extraPage.attachments.files?.length || extraPage.attachments.links?.length)))) || canManageContent() ))
+      ? `<div class="card">
+          <div class="row-between" style="align-items:center">
+            <h3 style="margin:0">📌 ${esc((extraPage && extraPage.title) || '協會補充衛教專欄與最新教材')}</h3>
+            ${canManageContent() ? `<button type="button" class="btn sm gh" data-page-edit="learn_extra" data-default-title="協會補充衛教專欄與最新教材">✏️ 編輯補充教材與上傳附件</button>` : ''}
+          </div>
+          ${extraPage && extraPage.content ? rich(extraPage.content) : (canManageContent() ? '<p class="muted small">可點選右上角「✏️ 編輯補充教材與上傳附件」在此新增補充圖文、講義檔案或影片連結。</p>' : '')}
+          ${extraPage && extraPage.attachments ? renderAttachmentsHtml(extraPage.attachments) : ''}
+        </div>`
+      : '';
+    return topNav + extraHtml + pkLearn(a,b);
+  },
+  family: () => cmsPage('family','👪 家屬照顧專區', eduSubNavHtml('family')),
+  privacy: () => cmsPage('privacy','隱私權政策'),
+  accessibility: () => cmsPage('accessibility','無障礙聲明'),
+  async faq() {
+    const topNav = eduSubNavHtml('faq');
+    const list = await api('getFaq');
+    return `${topNav}
+      <div class="row-between" style="align-items:center">
+        <h2>❓ 常見問題</h2>
+        ${canManageContent() ? btn('cms-new','＋ 新增常見問題','btn sec',{sheet:'FAQ'}) : ''}
+      </div>
+      ${list.length?list.map(f=>`<details class="card" open>
+        <summary>${esc(f.question)}</summary>
+        <div style="margin-top:8px">${rich(f.answer)}${renderAttachmentsHtml(f.attachments)}${cmsBtnsHtml('FAQ', f.id)}</div>
+      </details>`).join(''):'<p class="muted">目前沒有資料</p>'}`;
+  },
+  async forum(a,board) {
+    const chips = b => `<nav class="chips" aria-label="討論區"><a href="#/forum" class="${b?'':'on'}">全部主題</a>${BOARDS.map(x=>`<a href="#/forum/b/${enc(x)}" class="${x===b?'on':''}">${esc(x)}</a>`).join('')}</nav>`;
+    if (a==='new') {
+      setTimeout(() => openForumPostModal(null, board), 50);
+      a = null;
+    }
+    if (a && a!=='b') {
+      const d = await api('getForumPost',{id:a}), p = d.post;
+      window._curForumPost = p;
+      window._curForumReplies = d.replies || [];
+      const canEditPost = canManageContent() || (ME && p.userId === ME.userId);
+      return `<p><a href="#/forum">← 回病友論壇列表</a></p>
+        <article class="card">
+          <div>${tag(p.board)}</div>
+          <h2>${esc(p.title)}</h2>
+          <div class="muted">${esc(p.authorName)}　${esc(String(p.createdAt).slice(0,16))}</div>
+          <div class="pre" style="margin-top:10px">${esc(p.content)}</div>
+          ${renderAttachmentsHtml(p.attachments)}
+          ${canEditPost ? `<div class="cms-bar noprint">
+            <button type="button" class="btn sm gh" data-forum-post-edit="${esc(p.id)}">✏️ 編輯文章與附件</button>
+            <button type="button" class="btn sm bad" data-forum-post-del="${esc(p.id)}">🗑️ 刪除文章</button>
+          </div>` : ''}
+        </article>
+        <div class="row-between" style="align-items:center">
+          <h3>💬 回覆交流（${d.replies.length}）</h3>
+          <button type="button" class="btn sec sm" data-forum-reply-new="${esc(p.id)}">＋ 發表回覆（可附圖／檔案／連結）</button>
+        </div>
+        ${d.replies.map(r => {
+          const canEditRep = canManageContent() || (ME && r.userId === ME.userId);
+          return `<div class="card">
+            <div class="muted">${esc(r.authorName)}　${esc(String(r.createdAt).slice(0,16))}</div>
+            <div class="pre" style="margin-top:6px">${esc(r.content)}</div>
+            ${renderAttachmentsHtml(r.attachments)}
+            ${canEditRep ? `<div class="cms-bar noprint">
+              <button type="button" class="btn sm gh" data-forum-reply-edit="${esc(r.id)}" data-postid="${esc(p.id)}">✏️ 編輯回覆</button>
+              <button type="button" class="btn sm bad" data-forum-reply-del="${esc(r.id)}">🗑️ 刪除回覆</button>
+            </div>` : ''}
+          </div>`;
+        }).join('')||'<div class="card muted">還沒有回覆，歡迎點選右上方「＋ 發表回覆」分享您的經驗！</div>'}
+        <div class="muted">討論內容為病友與家屬經驗分享，不能取代醫師建議。</div>`;
+    }
+    const list = await api('getForumPosts'), shown = board ? list.filter(p=>p.board===board) : list;
+    window._curForumList = shown;
+    return `<div class="row-between" style="align-items:center">
+        <h2>💬 病友論壇</h2>
+        <button type="button" class="btn sec" data-forum-post-new="${esc(board||'')}">✏️ 發表新文章（可附照片／檔案／連結）</button>
+      </div>
+      ${chips(board)}
+      ${shown.length?shown.map(p=>{
+        const att = normalizeAttachments(p.attachments);
+        const canEditPost = canManageContent() || (ME && p.userId === ME.userId);
+        return `<article class="card">
+          <a class="link" href="#/forum/${enc(p.id)}">
+            <div>${tag(p.board)} ${att.photos.length?`<span class="tag">📷 ${att.photos.length} 圖</span>`:''} ${att.files.length?`<span class="tag">📎 ${att.files.length} 檔</span>`:''}</div>
+            <strong style="display:block;margin-top:6px;font-size:1.1rem">${esc(p.title)}</strong>
+            <div class="muted">${esc(p.authorName)}　${esc(String(p.createdAt).slice(0,10))}　💬 ${p.replyCount} 則回覆</div>
+          </a>
+          ${canEditPost ? `<div class="cms-bar noprint">
+            <button type="button" class="btn sm gh" data-forum-list-edit="${esc(p.id)}">✏️ 編輯</button>
+            <button type="button" class="btn sm bad" data-forum-post-del="${esc(p.id)}">🗑️ 刪除</button>
+          </div>` : ''}
+        </article>`;
+      }).join(''):'<div class="card muted">這裡還沒有文章，歡迎點擊「✏️ 發表新文章」！</div>'}`;
+  },
+  async support() {
+    const o = org(), cp = (l,t) => btn('copy','📋 複製'+l,'btn gh sm',{text:t,label:l});
+    return `${supportSubNavHtml('support')}
+      <div class="row-between" style="align-items:center">
+        <h1>❤️ 支持協會</h1>
+        ${canManageWeb() ? btn('site-config-edit','✏️ 編輯匯款帳號與發票愛心碼','btn sec sm') : ''}
+      </div>
+      <p class="muted">您的每一份支持，都能幫助帕金森病友與家屬獲得更完善的衛教、復健活動與關懷照護。請選擇以下任一方式支持我們：</p>
+      <div class="support-grid-4">
+        <div class="support-card-item">
+          <div>
+            <span class="sc-num">1. 加入會員</span>
+            <h2 style="margin:4px 0 8px;font-size:1.25rem">💳 加入會員（常年會費）</h2>
+            <p class="muted small">常年會費 NT$ ${num(MEMBER_FEE)} 元／年。線上填表入會並登錄繳費，核對後立即啟用會籍並開立正式電子收據。</p>
+          </div>
+          <div>
+            <a class="btn sec wide" href="#/fee">1. 前往加入會員／繳會費 →</a>
+            ${canManageWeb() ? '<button type="button" class="btn sm gh wide" data-page-edit="fee_intro" data-default-title="加入會員與常年會費說明">✏️ 編輯入會說明</button>' : ''}
+          </div>
+        </div>
+        <div class="support-card-item">
+          <div>
+            <span class="sc-num">2. 捐款支持</span>
+            <h2 style="margin:4px 0 8px;font-size:1.25rem">💝 捐款支持協會</h2>
+            <p class="muted small">支持病友關懷、運動復健與醫療講座。線上登錄匯款憑證，直接下載蓋有協會印鑑之正式抵稅電子收據。</p>
+          </div>
+          <div>
+            <a class="btn red wide" href="#/donate">2. 前往捐款支持 →</a>
+            ${canManageWeb() ? '<button type="button" class="btn sm gh wide" data-page-edit="donate_intro" data-default-title="捐款支持說明">✏️ 編輯捐款說明</button>' : ''}
+          </div>
+        </div>
+        <div class="support-card-item">
+          <div>
+            <span class="sc-num">3. 捐贈發票</span>
+            <h2 style="margin:4px 0 8px;font-size:1.25rem">🧾 捐贈雲端發票（${esc(o.love)}）</h2>
+            <p class="muted small">結帳時向店員口述愛心碼「<b>${esc(o.love)}</b>」或於載具設定預設捐贈，每張發票都能化為病友服務經費。</p>
+          </div>
+          <div>
+            <a class="btn acc wide" href="#/invoice">3. 前往捐贈發票專頁 →</a>
+            ${canManageWeb() ? '<button type="button" class="btn sm gh wide" data-page-edit="invoice_guide" data-default-title="捐贈發票愛心碼與設定教學">✏️ 編輯發票說明</button>' : ''}
+          </div>
+        </div>
+        <div class="support-card-item">
+          <div>
+            <span class="sc-num">4. 加入志工</span>
+            <h2 style="margin:4px 0 8px;font-size:1.25rem">🙌 加入志工（獨立專區）</h2>
+            <p class="muted small">前往獨立「志工專區」線上報名加入志工隊、報名活動排班、申報服勤時數並開立志願服務時數證明書。</p>
+          </div>
+          <div>
+            <a class="btn wide" style="background:var(--purple)" href="#/volunteer">4. 前往獨立志工專區 →</a>
+            ${canManageWeb() || canManageVolunteer() ? '<button type="button" class="btn sm gh wide" data-page-edit="volunteer_intro" data-default-title="志工團招募與服務說明">✏️ 編輯志工招募說明</button>' : ''}
+          </div>
+        </div>
+      </div>
+      <div class="grid c2">
+        <div class="card">
+          <h3>🏦 協會匯款與轉帳帳戶</h3>
+          <p>銀行：<b>${esc(o.bankName)}</b><br>戶名：<b>${esc(o.name)}</b><br>帳號：<b style="font-size:1.15rem;color:var(--primary)">${esc(o.account)}</b></p>
+          <div class="row">${cp('銀行帳號', o.account)} ${cp('協會戶名', o.name)}</div>
+        </div>
+        <div class="card">
+          <h3>🧾 電子發票愛心碼</h3>
+          <p>發票愛心碼：<b style="font-size:1.4rem;color:var(--danger)">${esc(o.love)}</b></p>
+          <p class="muted small">結帳時請告訴店員「捐發票，愛心碼 ${esc(o.love)}」。</p>
+          <div class="row">${cp('發票愛心碼', o.love)} <a class="btn sm sec" href="#/invoice">查看載具設定步驟 →</a></div>
+        </div>
+      </div>`;
+  },
+  async invoice() {
+    const o = org(), cp = (l,t) => btn('copy','📋 複製'+l,'btn sec',{text:t,label:l});
+    const pg = await cms('invoice_guide');
+    const title = (pg && pg.title) || '🧾 3. 捐贈發票支持協會';
+    const rawBody = (pg && pg.content) ? pg.content : TXT.invoice_guide;
+    return `${supportSubNavHtml('invoice')}
+      <div class="row-between" style="align-items:center">
+        <h1>${esc(title)}</h1>
+        <div class="row">
+          ${canManageWeb() ? `<button type="button" class="btn sm gh" data-page-edit="invoice_guide" data-default-title="捐贈發票愛心碼與設定教學">✏️ 直接編輯發票說明與圖片附件</button>` : ''}
+          ${canManageWeb() ? btn('site-config-edit','✏️ 修改愛心碼','btn sm acc') : ''}
+        </div>
+      </div>
+      <div class="lovecard" style="margin-bottom:18px">
+        <div style="font-weight:800">社團法人台灣帕金森病友權益促進會｜電子發票愛心碼</div>
+        <div class="in"><div class="love">${esc(o.love)}</div></div>
+        <div style="margin:10px 0">${cp('愛心碼 ' + o.love, o.love)}</div>
+        <div class="muted">結帳時請直接向店員口述「<b>愛心碼 ${esc(o.love)}</b>」，或於財政部雲端發票 App 設定預設捐贈</div>
+      </div>
+      <article class="card letter">
+        ${rich(rawBody)}
+        ${pg && pg.attachments ? renderAttachmentsHtml(pg.attachments) : ''}
+      </article>`;
+  },
+  async about() {
+    const subNav = docsAboutSubNavHtml('about');
+    const [d, extraPg] = await Promise.all([
+      api('getAbout'),
+      cms('about_extra').catch(function () { return null; })
+    ]);
+    const o = org();
+    const contact = [CFG.phone?'📞 電話：'+esc(CFG.phone):'',CFG.email?'✉️ Email：'+esc(CFG.email):'','📍 會址：'+esc(o.address)].filter(Boolean).join('<br>');
+    return `${subNav}
+      <div class="row-between" style="align-items:center">
+        <h2>🏛️ 協會的基本介紹</h2>
+        <div class="row">
+          ${canManageWeb() ? btn('site-config-edit','✏️ 編輯簡介、宗旨與聯絡資訊','btn sec sm') : ''}
+          ${canManageWeb() ? '<button type="button" class="btn sm gh" data-page-edit="about_extra" data-default-title="組織服務範疇與公開資訊">✏️ 編輯補充介紹與章程附件</button>' : ''}
+          <a class="btn sm acc" href="#/downloads">📥 前往下載專區 →</a>
+        </div>
+      </div>
+      <div class="card"><strong>${esc(o.name)}</strong><div class="muted">立案字號：${esc(o.reg)}</div></div>
+      <h3>協會簡介</h3><div class="card">${rich(d.intro || '（點選上方「✏️ 編輯簡介、宗旨與聯絡資訊」即可直接填寫）')}</div>
+      <h3>宗旨與願景</h3><div class="card">${rich(d.mission || '（點選上方「✏️ 編輯簡介、宗旨與聯絡資訊」即可直接填寫）')}</div>
+      <article class="card">
+        <h3>${esc((extraPg && extraPg.title) || '組織服務範疇與公開資訊')}</h3>
+        ${rich((extraPg && extraPg.content) || TXT.about_extra)}
+        ${extraPg && extraPg.attachments ? renderAttachmentsHtml(extraPg.attachments) : ''}
+      </article>
+      <div class="row-between" style="align-items:center">
+        <h3>理監事團隊</h3>
+        ${canManageWeb() ? btn('cms-new','＋ 新增理監事','btn sec sm',{sheet:'Board'}) : ''}
+      </div>
+      ${d.board.length?`<div class="cards">${d.board.map(b=>`<div class="card">
+        <div class="card-grow"><strong>${esc(b.name)}</strong><div class="muted">${esc(b.title)}</div>${renderAttachmentsHtml(b.attachments)}</div>
+        ${cmsBtnsHtml('Board', b.id)}
+      </div>`).join('')}</div>`:'<div class="card muted">尚無理監事資料</div>'}
+      <h3>聯絡我們</h3><div class="card">${contact}</div>`;
   }
-  route();
-}
-
-async function openPageEditModal(pageKey, defaultTitle, defaultContent) {
-  const cur = await cms(pageKey);
-  const titleVal = (cur && cur.title) || defaultTitle || '';
-  const contentVal = (cur && cur.content) || defaultContent || '';
-  const attVal = (cur && cur.attachments) || null;
-
-  const m = openModal({
-    title: '✏️ 編輯頁面內容：' + titleVal, static: true, wide: true,
-    body: '<form novalidate>' +
-      fieldHtml({ id: 'peTitle', label: '頁面標題', required: true, value: titleVal, maxlength: 150 }) +
-      fieldHtml({ id: 'peContent', label: '頁面內容（空一行＝新段落；「- 」開頭＝項目符號；「## 」開頭＝小標題）', type: 'textarea', value: contentVal, maxlength: 50000 }) +
-      mediaEditorHtml('peMedia') +
-      '<div id="peErr" style="margin-top:10px"></div></form>',
-    footer: '<button type="button" class="btn btn-gray" data-close>取消</button><button type="button" class="btn sec" data-ok>💾 儲存頁面</button>'
-  });
-  const mediaCtl = bindMediaEditor(m.el, 'peMedia', attVal, 'pages');
-  m.$('[data-ok]').addEventListener('click', function (e) {
-    run(e.currentTarget, async function () {
-      const err = function (s) { m.$('#peErr').innerHTML = alertHtml(s); };
-      if (mediaCtl.isUploading()) return err('檔案或照片正在上傳中，請稍候');
-      try {
-        await api('admin_savePage', { key: pageKey, title: val('peTitle', m.el), content: val('peContent', m.el), attachments: mediaCtl.getValue() });
-      } catch (x) { return err(x.message); }
-      m.close(true);
-      toast('✅ 頁面內容已儲存', 'ok');
-      route();
-    });
-  });
-}
-
-async function openSiteConfigQuickModal() {
-  const c = await api('admin_getConfig');
-  const m = openModal({
-    title: '✏️ 編輯官網標語、簡介、聯絡與匯款資訊', static: true, wide: true,
-    body: '<form novalidate>' +
-      '<div class="grid c2">' +
-        fieldHtml({ id: 'scSlogan', label: '首頁大標語', value: c.slogan || '帕金森的路上，您不孤單', maxlength: 120 }) +
-        fieldHtml({ id: 'scGroups', label: '全台據點數', type: 'number', value: c.groups || '0' }) +
-        fieldHtml({ id: 'scOrgName', label: '協會全名', value: c.orgName || ORG.name, maxlength: 100 }) +
-        fieldHtml({ id: 'scOrgReg', label: '立案字號', value: c.orgReg || ORG.reg, maxlength: 80 }) +
-        fieldHtml({ id: 'scPhone', label: '聯絡電話', value: c.phone || '', maxlength: 40 }) +
-        fieldHtml({ id: 'scEmail', label: '聯絡 Email', value: c.email || '', maxlength: 100 }) +
-        fieldHtml({ id: 'scBank', label: '匯款銀行與分行', value: c.bankName || ORG.bankName, maxlength: 80 }) +
-        fieldHtml({ id: 'scAcc', label: '匯款帳號', value: c.account || ORG.account, maxlength: 40 }) +
-        fieldHtml({ id: 'scLove', label: '發票愛心碼', value: c.loveCode || ORG.love, maxlength: 20 }) +
-        fieldHtml({ id: 'scAddr', label: '協會會址', value: c.address || ORG.address, maxlength: 150 }) +
-      '</div>' +
-      fieldHtml({ id: 'scIntro', label: '協會簡介', type: 'textarea', value: c.intro || '', maxlength: 5000 }) +
-      fieldHtml({ id: 'scMission', label: '宗旨與願景', type: 'textarea', value: c.mission || '', maxlength: 5000 }) +
-      '<div id="scErr" style="margin-top:10px"></div></form>',
-    footer: '<button type="button" class="btn btn-gray" data-close>取消</button><button type="button" class="btn sec" data-ok>💾 儲存設定</button>'
-  });
-  m.$('[data-ok]').addEventListener('click', function (e) {
-    run(e.currentTarget, async function () {
-      try {
-        await api('admin_setConfig', {
-          values: {
-            slogan: val('scSlogan', m.el), groups: val('scGroups', m.el),
-            orgName: val('scOrgName', m.el), orgReg: val('scOrgReg', m.el),
-            phone: val('scPhone', m.el), email: val('scEmail', m.el),
-            bankName: val('scBank', m.el), account: val('scAcc', m.el),
-            loveCode: val('scLove', m.el), address: val('scAddr', m.el),
-            intro: val('scIntro', m.el), mission: val('scMission', m.el)
-          }
-        });
-        CFG = await api('getConfig');
-        drawFooter(); drawGive();
-      } catch (x) { m.$('#scErr').innerHTML = alertHtml(x.message); return; }
-      m.close(true);
-      toast('✅ 協會設定已更新', 'ok');
-      route();
-    });
-  });
-}
+};
 
 /* =========================================================================
-   十七、前台論壇、報名名冊管理、全域監聽與啟動引擎 (結尾)
-   ========================================================================= */
-
-function openForumPostModal(post, defaultBoard) {
-  const isNew = !post;
-  post = post || { board: defaultBoard || BOARDS[0], title: '', content: '', attachments: null };
-  const m = openModal({
-    title: isNew ? '✏️ 發表論壇文章' : '✏️ 編輯論壇文章', static: true, wide: true,
-    body: '<form id="postForm" novalidate>' +
-      fieldHtml({ id: 'fBoard', label: '討論區分類', type: 'select', options: BOARDS, value: post.board || BOARDS[0] }) +
-      fieldHtml({ id: 'fTitle', label: '文章標題', required: true, value: post.title || '', maxlength: 150 }) +
-      fieldHtml({ id: 'fContent', label: '文章內容', type: 'textarea', required: true, value: post.content || '', maxlength: 20000 }) +
-      mediaEditorHtml('fpMedia') +
-      '<label class="check" style="margin-top:10px"><input type="checkbox" id="fConsent" checked><span>我了解文章公開後他人可見，且未包含不當個人資料</span></label>' +
-      '<div id="fpErr" style="margin-top:10px"></div></form>',
-    footer: '<button type="button" class="btn btn-gray" data-close>取消</button><button type="button" class="btn sec" data-ok>💾 ' + (isNew ? '立即發表' : '儲存修改') + '</button>'
-  });
-  const mediaCtl = bindMediaEditor(m.el, 'fpMedia', post.attachments, 'forum');
-  const fmEl = m.$('form'); if (fmEl) fmEl.addEventListener('submit', function (ev) { ev.preventDefault(); ev.stopPropagation(); m.$('[data-ok]').click(); });
-  m.$('[data-ok]').addEventListener('click', function (e) {
-    run(e.currentTarget, async function () {
-      const err = function (s) { m.$('#fpErr').innerHTML = alertHtml(s); };
-      if (mediaCtl.isUploading()) return err('照片或檔案正在上傳中，請稍候');
-      const title = val('fTitle', m.el), content = val('fContent', m.el), board = val('fBoard', m.el);
-      if (!title) return err('請填寫文章標題');
-      if (!content) return err('請填寫文章內容');
-      try {
-        if (isNew) {
-          const r = await api('createPost', { board: board, title: title, content: content, attachments: mediaCtl.getValue(), consent: true });
-          m.close(true);
-          toast('✅ 文章已發表！', 'ok');
-          location.hash = '#/forum/' + encodeURIComponent(r.id);
-        } else {
-          await api('savePost', { id: post.id, board: board, title: title, content: content, attachments: mediaCtl.getValue() });
-          m.close(true);
-          toast('✅ 文章已更新！', 'ok');
-          route();
-        }
-      } catch (x) { return err(x.message); }
-    });
-  });
-}
-
-function openForumReplyModal(reply, postId) {
-  const isNew = !reply;
-  reply = reply || { content: '', attachments: null };
-  const m = openModal({
-    title: isNew ? '💬 發表回覆' : '✏️ 編輯回覆', static: true, wide: true,
-    body: '<form id="replyForm" novalidate>' +
-      fieldHtml({ id: 'replyContent', label: '回覆內容', type: 'textarea', required: true, value: reply.content || '', maxlength: 10000 }) +
-      mediaEditorHtml('frMedia') +
-      '<div id="frErr" style="margin-top:10px"></div></form>',
-    footer: '<button type="button" class="btn btn-gray" data-close>取消</button><button type="button" class="btn sec" data-ok>💾 ' + (isNew ? '送出回覆' : '儲存回覆') + '</button>'
-  });
-  const mediaCtl = bindMediaEditor(m.el, 'frMedia', reply.attachments, 'forum');
-  const fmEl = m.$('form'); if (fmEl) fmEl.addEventListener('submit', function (ev) { ev.preventDefault(); ev.stopPropagation(); m.$('[data-ok]').click(); });
-  m.$('[data-ok]').addEventListener('click', function (e) {
-    run(e.currentTarget, async function () {
-      const err = function (s) { m.$('#frErr').innerHTML = alertHtml(s); };
-      if (mediaCtl.isUploading()) return err('照片或檔案正在上傳中，請稍候');
-      const content = val('replyContent', m.el);
-      if (!content) return err('請填寫回覆內容');
-      try {
-        if (isNew) await api('createReply', { postId: postId, content: content, attachments: mediaCtl.getValue() });
-        else await api('saveReply', { id: reply.id, content: content, attachments: mediaCtl.getValue() });
-      } catch (x) { return err(x.message); }
-      m.close(true);
-      toast('✅ 回覆已儲存', 'ok');
-      route();
-    });
-  });
-}
-
-function openEventRegModal(eventId, reg) {
-  const isNew = !reg;
-  reg = reg || { name: '', phone: '', companions: 0, note: '', status: '已報名' };
-  const m = openModal({
-    title: isNew ? '＋ 新增活動報名者' : '✏️ 修改報名資料', static: true,
-    body: '<form novalidate>' +
-      fieldHtml({ id: 'erName', label: '姓名', required: true, value: reg.name, maxlength: 40 }) +
-      fieldHtml({ id: 'erPhone', label: '電話', required: true, value: reg.phone, maxlength: 20 }) +
-      fieldHtml({ id: 'erComp', label: '同行人數（不含本人）', type: 'number', value: reg.companions || 0, min: 0 }) +
-      fieldHtml({ id: 'erStatus', label: '狀態', type: 'select', options: ['已報名','已出席','已取消'], value: reg.status || '已報名' }) +
-      fieldHtml({ id: 'erNote', label: '備註', type: 'textarea', value: reg.note || '', maxlength: 300 }) +
-      '<div id="erErr" style="margin-top:10px"></div></form>',
-    footer: '<button type="button" class="btn btn-gray" data-close>取消</button><button type="button" class="btn sec" data-ok>💾 儲存</button>'
-  });
-  m.$('[data-ok]').addEventListener('click', function (e) {
-    run(e.currentTarget, async function () {
-      try {
-        await api('admin_saveRegistration', {
-          id: reg.id || '', eventId: eventId,
-          name: val('erName', m.el), phone: val('erPhone', m.el),
-          companions: Number(val('erComp', m.el)) || 0,
-          status: val('erStatus', m.el), note: val('erNote', m.el)
-        });
-      } catch (x) { m.$('#erErr').innerHTML = alertHtml(x.message); return; }
-      m.close(true);
-      toast('✅ 報名資料已儲存', 'ok');
-      route();
-    });
-  });
-}
-
-/* =========================================================================
-   十八、全域監聽、QR Code 簽到台與啟動執行
+   十九、全域監聽、相機簽到與安全初始化
    ========================================================================= */
 
 function copyTextFallback(text, label) {
@@ -5148,7 +5342,7 @@ document.addEventListener('click', function (e) {
   }
 });
 
-/* ===== 路由主函式 ===== */
+/* ===== 路由主函式（具備逾時自動降級與強固例外捕捉）===== */
 const NAV_GROUP_MAP = {
   home:'home', start:'home', for:'home', my:'home', news:'home', announcements:'home',
   events:'events', highlights:'events',
@@ -5199,7 +5393,7 @@ async function route() {
     }
     let html;
     if(page==='forum')html=await PAGES.forum(segments[1],segments[1]==='b'?segments[2]:null);
-    else if(Object.hasOwn(PAGES,page))html=await PAGES[page](segments[1],segments[2]);
+    else if(PAGES && typeof PAGES[page] === 'function')html=await PAGES[page](segments[1],segments[2]);
     else html='<h2>找不到頁面</h2><a href="#/">回首頁</a>';
     if(seq!==routeSeq)return;
     $('#view').innerHTML=toolBar(page)+html;
@@ -5219,49 +5413,53 @@ window.addEventListener('visibilitychange',()=>{
 });
 window.addEventListener('pagehide',()=>{safely(stopCamera);});
 
+/* ===== 核心非同步開機流程（含自動逾時與免卡死安全防護）===== */
 (async()=>{
   drawNavigation();
   syncEditModeBtn();
   drawFooter();drawGive();
-  await initLiff();
 
+  // 1. LIFF 初始化（限制最多等候 3 秒，防止非 LINE 瀏覽器或慢速網路卡死）
+  try {
+    await Promise.race([
+      initLiff(),
+      new Promise(r => setTimeout(r, 3000))
+    ]);
+  } catch(e) { console.warn('LIFF init skipped:', e); }
+
+  // 2. 登入憑證驗證（有 token 時嘗試恢復身分，失敗則清空）
   const tok = loadToken();
   if (tok) {
     S.token = tok;
     try {
-      const r = await api('auth.me', {}, { silent: true });
+      const r = await Promise.race([
+        api('auth.me', {}, { silent: true }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))
+      ]);
       setMember(r.member, r.webProfile);
     } catch (e) {
       S.token = ''; clearToken();
     }
   }
 
-  let noauto = false;
-  try { noauto = !!sessionStorage.getItem(NOAUTO_KEY); } catch (e) {}
-  if (!S.member && liffReady && window.liff && !noauto && liff.isLoggedIn()) {
-    try {
-      idToken = liff.getIDToken();
-      if (idToken) {
-        const res = await api('login');
-        ME = res;
-        if (res.token && res.member) {
-          S.token = res.token;
-          storeToken(res.token, true);
-          setMember(res.member, res);
-        } else if (res.needsBinding && res.ticket) {
-          S.pendingBind = { ticket: res.ticket, lineName: res.lineName };
-        }
-      }
-    } catch (e) {
-      console.warn(e);
-    }
-  }
-
+  // 3. 嘗試讀取官網基礎設定（若連線逾時不卡死，維持預設內容）
   drawNavigation();
-  try { CFG = await api('getConfig'); } catch (e) { console.error(e); }
+  try {
+    CFG = await Promise.race([
+      api('getConfig'),
+      new Promise(r => setTimeout(() => r({}), 3500))
+    ]) || {};
+  } catch (e) { console.warn('getConfig skipped:', e); }
   drawFooter();drawGive();
+
+  // 4. 正式啟動首頁渲染
   await route();
-})().catch(e=>{console.error(e);toast(e.message,'err');});
+})().catch(e=>{
+  console.error('Boot error:', e);
+  toast(e.message,'err');
+  // 萬一開機流程發生例外，強制渲染首頁，絕不留空白載入
+  try { route(); } catch(x){}
+});
 </script>
 </body>
 </html>
