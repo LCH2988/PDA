@@ -1,119 +1,294 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>載入中... - 網頁檢視器</title>
-    <!-- 引入 Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-        #appFrame { width: 100%; height: 100%; border: none; display: block; background: #fff; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>檔案檢視</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body{font-size:18px;background:#f3f4f6;color:#1f2937}
+  .big-btn{font-size:18px;padding:12px 20px;border-radius:12px;font-weight:bold;box-shadow:0 4px 6px rgba(0,0,0,.1)}
+  .inp{width:100%;font-size:18px;padding:10px;border:2px solid #d1d5db;border-radius:12px}
+</style>
 </head>
-<body>
+<body class="min-h-screen p-3 md:p-6">
+<div class="max-w-5xl mx-auto space-y-4">
 
-    <!-- 載入中的提示畫面（高齡友善大字體） -->
-    <div id="loadingScreen" class="fixed inset-0 bg-blue-900 text-white flex flex-col items-center justify-center space-y-6 z-50">
-        <div class="text-3xl font-bold animate-pulse">⏳ 正在從雲端載入網頁，請稍候...</div>
-        <div class="text-xl text-blue-200" id="loadingStatus">正在連線至資料庫...</div>
+  <!-- 頂端列 -->
+  <header class="bg-blue-900 text-white p-4 rounded-2xl flex flex-wrap justify-between items-center gap-2">
+    <a href="view.html" class="text-2xl font-extrabold">📄 檔案檢視</a>
+    <div id="userBar" class="text-base flex items-center gap-2"></div>
+  </header>
+
+  <!-- 訊息 / 動作區 -->
+  <div id="panel" class="hidden bg-white p-6 rounded-2xl border-2 space-y-4 text-center"></div>
+
+  <!-- 內容 -->
+  <div id="viewer" class="hidden bg-white rounded-2xl border-2 overflow-hidden">
+    <div class="p-3 border-b flex flex-wrap justify-between items-center gap-2">
+      <h1 id="docTitle" class="text-xl font-bold break-all"></h1>
+      <div id="docActions" class="flex gap-2"></div>
     </div>
+    <div id="docBody"></div>
+  </div>
 
-    <!-- 密碼輸入對話框（若該網頁設有密碼） -->
-    <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 hidden z-50">
-        <div class="bg-white p-8 rounded-3xl max-w-md w-full shadow-2xl space-y-6 text-center">
-            <h3 class="text-3xl font-bold text-gray-800">🔑 此網頁受密碼保護</h3>
-            <p class="text-gray-600 text-lg">請輸入解鎖密碼以觀看內容：</p>
-            
-            <input type="password" id="unlockPasswordInput" placeholder="請輸入密碼" 
-                   class="w-full text-2xl p-4 border-4 border-blue-400 rounded-2xl text-center focus:border-blue-600 focus:outline-none">
+  <!-- 附件 -->
+  <div id="attBox" class="hidden bg-white p-4 rounded-2xl border-2"></div>
 
-            <div class="flex gap-4 pt-2">
-                <button onclick="submitPassword()" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-2xl font-bold py-4 rounded-2xl shadow-lg">
-                    確定開啟
-                </button>
+  <!-- 清單 -->
+  <div id="listBox" class="hidden bg-white p-5 rounded-2xl border-2 space-y-3">
+    <h2 class="text-2xl font-bold">📂 可瀏覽的檔案</h2>
+    <input id="searchInput" class="inp" placeholder="🔍 搜尋標題、檔名">
+    <div id="listBody" class="space-y-2"></div>
+  </div>
+</div>
+
+<script>
+/* ===== 設定(請修改) ===== */
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwoXG0VpPd81Kx0Bw1W6FuicT55KNolT5Fgx-KtSjJX07kEtq0ByDisuACeuPyt8OevQA/exec";
+const LINE_CHANNEL_ID = "2009456572";   // ← LINE Login channel 的 Channel ID(數字)
+/* LINE Developers 後台的 Callback URL 必須填入本頁網址(不含參數),例如:
+   https://你的網域/路徑/view.html */
+const REDIRECT_URI = location.origin + location.pathname;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtSize = n => { n = +n || 0; const u=["B","KB","MB","GB","TB"]; let i=0; while(n>=1024&&i<4){n/=1024;i++} return n.toFixed(i?1:0)+" "+u[i]; };
+const qs = new URLSearchParams(location.search);
+
+/* ===== 登入狀態 ===== */
+const SESSION_MS = 6 * 3600 * 1000 - 60000; // 略短於後端 6 小時
+function getAuth() {
+  try {
+    const a = JSON.parse(localStorage.getItem("lineAuth") || "null");
+    if (a && a.token && Date.now() < a.exp) return a;
+  } catch (e) {}
+  localStorage.removeItem("lineAuth");
+  return null;
+}
+function setAuth(token, label, lineName) {
+  localStorage.setItem("lineAuth", JSON.stringify({ token, label, lineName, exp: Date.now() + SESSION_MS }));
+}
+function logout() { localStorage.removeItem("lineAuth"); location.href = location.pathname + (qs.get("id") ? "?id=" + encodeURIComponent(qs.get("id")) : ""); }
+
+function renderUserBar() {
+  const a = getAuth();
+  $("userBar").innerHTML = a
+    ? `<span>👤 ${esc(a.label)}</span><button id="btnLogout" class="bg-white/20 px-3 py-1 rounded-lg text-sm font-bold">登出</button>`
+    : `<button id="btnLogin" class="bg-green-500 px-3 py-1 rounded-lg text-sm font-bold">LINE 登入</button>`;
+  $("btnLogout")?.addEventListener("click", logout);
+  $("btnLogin")?.addEventListener("click", () => startLine({}));
+}
+
+/* ===== API ===== */
+async function api(p) {
+  const a = getAuth();
+  const r = await fetch(GAS_URL, { method: "POST", headers: {"Content-Type":"text/plain;charset=utf-8"},
+    body: JSON.stringify({ ...p, token: a?.token }) });
+  return r.json();
+}
+
+/* ===== 面板顯示 ===== */
+function showPanel(html) {
+  $("viewer").classList.add("hidden"); $("attBox").classList.add("hidden");
+  $("listBox").classList.add("hidden");
+  $("panel").innerHTML = html; $("panel").classList.remove("hidden");
+}
+function hidePanel() { $("panel").classList.add("hidden"); }
+const msgBox = (icon, title, text, extra = "") =>
+  `<div class="text-5xl">${icon}</div><h2 class="text-2xl font-bold">${esc(title)}</h2>
+   <p class="text-gray-600 break-words">${esc(text)}</p>${extra}`;
+
+/* ===== LINE 登入流程 ===== */
+function randStr(n = 24) {
+  const a = new Uint8Array(n); crypto.getRandomValues(a);
+  return [...a].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function startLine({ bindCode, returnId }) {
+  if (!LINE_CHANNEL_ID || /[^\d]/.test(LINE_CHANNEL_ID)) return alert("尚未設定 LINE_CHANNEL_ID,請聯絡管理者");
+  const state = randStr(), nonce = randStr();
+  sessionStorage.setItem("lineFlow", JSON.stringify({ state, bindCode: bindCode || "", returnId: returnId ?? (qs.get("id") || "") }));
+  const u = "https://access.line.me/oauth2/v2.1/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: LINE_CHANNEL_ID, redirect_uri: REDIRECT_URI,
+    state, scope: "profile openid", nonce });
+  location.href = u;
+}
+async function handleCallback() {
+  const code = qs.get("code"), state = qs.get("state"), error = qs.get("error");
+  let flow = null;
+  try { flow = JSON.parse(sessionStorage.getItem("lineFlow") || "null"); } catch (e) {}
+  sessionStorage.removeItem("lineFlow");
+  const back = flow?.returnId ? "?id=" + encodeURIComponent(flow.returnId) : "";
+
+  if (error) return showPanel(msgBox("⚠️", "LINE 登入已取消", qs.get("error_description") || error,
+    `<a href="${esc(location.pathname + back)}" class="big-btn bg-blue-600 text-white inline-block">返回</a>`));
+  if (!flow || !code || state !== flow.state)
+    return showPanel(msgBox("⚠️", "登入驗證失敗", "狀態碼不符,請重新操作。",
+      `<a href="${esc(location.pathname)}" class="big-btn bg-blue-600 text-white inline-block">返回首頁</a>`));
+
+  showPanel(msgBox("⏳", "登入中...", "正在驗證 LINE 身分"));
+  try {
+    const r = await api({ action: "lineLogin", code, redirectUri: REDIRECT_URI, bindCode: flow.bindCode });
+    if (r.status !== "success") {
+      return showPanel(msgBox("❌", "登入失敗", r.message,
+        `<a href="${esc(location.pathname + back)}" class="big-btn bg-blue-600 text-white inline-block">返回</a>`));
+    }
+    setAuth(r.token, r.label, r.lineName);
+    if (flow.bindCode) {
+      showPanel(msgBox("✅", "綁定成功", `歡迎,${r.label}!您的 LINE 已完成綁定。`,
+        `<a href="${esc(location.pathname + back)}" class="big-btn bg-blue-600 text-white inline-block">開始瀏覽</a>`));
+      history.replaceState(null, "", location.pathname);
+      renderUserBar();
+    } else {
+      location.replace(location.pathname + back);
+    }
+  } catch (e) {
+    showPanel(msgBox("❌", "連線失敗", "請檢查網路後重試。"));
+  }
+}
+
+/* ===== 綁定頁 ===== */
+function showBind(code) {
+  showPanel(`<div class="text-5xl">🔗</div>
+    <h2 class="text-2xl font-bold">LINE 帳號綁定</h2>
+    <p class="text-gray-600">請用您的 LINE 登入,完成後即可瀏覽管理者授權給您的檔案。</p>
+    <button id="btnBind" class="big-btn bg-green-500 hover:bg-green-600 text-white">使用 LINE 登入並綁定</button>`);
+  $("btnBind").onclick = () => startLine({ bindCode: code, returnId: "" });
+}
+
+/* ===== 載入單一檔案 ===== */
+async function loadDoc(id, password) {
+  showPanel(msgBox("⏳", "載入中...", ""));
+  let r;
+  try { r = await api({ action: "load", id, password: password || "" }); }
+  catch (e) { return showPanel(msgBox("❌", "連線失敗", "請檢查網路後重試。", retryBtn())); }
+
+  if (r.status === "success") return renderDoc(r);
+
+  switch (r.code) {
+    case "NEED_PASSWORD": return showPwForm(id, !!password ? r.message : "");
+    case "NEED_LOGIN":
+      localStorage.removeItem("lineAuth"); renderUserBar();
+      showPanel(msgBox("🔒", "需要登入", "此檔案僅限被授權的使用者瀏覽,請先以 LINE 登入。",
+        `<button id="btnGo" class="big-btn bg-green-500 hover:bg-green-600 text-white">使用 LINE 登入</button>`));
+      $("btnGo").onclick = () => startLine({ returnId: id });
+      return;
+    case "FORBIDDEN":
+      return showPanel(msgBox("⛔", "沒有權限", r.message, `<a href="${esc(location.pathname)}" class="big-btn bg-blue-600 text-white inline-block">瀏覽其他檔案</a>`));
+    case "NOT_FOUND":
+      return showPanel(msgBox("🔍", "找不到檔案", "連結可能已失效或檔案已被刪除。"));
+    case "LOCKED":
+      return showPanel(msgBox("⏱️", "嘗試次數過多", r.message));
+    default:
+      return showPanel(msgBox("❌", "載入失敗", r.message, retryBtn()));
+  }
+}
+function retryBtn() { return `<button onclick="location.reload()" class="big-btn bg-blue-600 text-white">重新載入</button>`; }
+
+function showPwForm(id, errMsg) {
+  showPanel(`<div class="text-5xl">🔑</div>
+    <h2 class="text-2xl font-bold">此檔案需要密碼</h2>
+    ${errMsg ? `<p class="text-red-600 font-bold">${esc(errMsg)}</p>` : ""}
+    <form id="pwForm" class="max-w-sm mx-auto space-y-3">
+      <input type="password" id="pwInput" class="inp" placeholder="請輸入密碼" autocomplete="off" autofocus>
+      <button class="big-btn bg-blue-600 hover:bg-blue-700 text-white w-full">確認</button>
+    </form>`);
+  $("pwForm").onsubmit = e => { e.preventDefault(); const v = $("pwInput").value; if (v) loadDoc(id, v); };
+}
+
+/* ===== 顯示檔案 ===== */
+function textToHtml(t) { // 備用:後端已轉換,正常不會用到
+  return esc(t);
+}
+function renderDoc(r) {
+  hidePanel();
+  document.title = r.title || "檔案檢視";
+  $("docTitle").textContent = (r.type === "file" ? "📎 " : "📄 ") + (r.title || "");
+  $("docActions").innerHTML = "";
+  const body = $("docBody"); body.replaceChildren();
+
+  if (r.type === "file") {
+    const id = encodeURIComponent(r.driveId);
+    $("docActions").innerHTML =
+      `<a href="https://drive.google.com/uc?export=download&id=${id}" target="_blank" rel="noopener" class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold">⬇️ 下載</a>`;
+    const info = document.createElement("div");
+    info.className = "px-4 py-2 text-sm text-gray-500 break-all";
+    info.textContent = `${r.fileName || ""} ・ ${r.mimeType || ""} ・ ${fmtSize(r.size)}`;
+    const f = document.createElement("iframe");
+    f.src = `https://drive.google.com/file/d/${id}/preview`;
+    f.className = "w-full"; f.style.height = "75vh";
+    f.setAttribute("allow", "autoplay; fullscreen");
+    body.append(info, f);
+  } else {
+    const f = document.createElement("iframe");
+    f.className = "w-full"; f.style.height = "80vh";
+    f.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-modals");
+    f.srcdoc = r.code || "";
+    body.append(f);
+  }
+  $("viewer").classList.remove("hidden");
+  renderAttachments(r.attachments);
+}
+
+/* ===== 附件 ===== */
+function renderAttachments(list) {
+  const box = $("attBox");
+  if (!list || !list.length) { box.classList.add("hidden"); return; }
+  box.innerHTML = `<h3 class="text-xl font-bold mb-2">📎 附件下載(${list.length})</h3>` + list.map(a => {
+    const id = encodeURIComponent(a.driveId);
+    return `<div class="py-2 border-t flex flex-wrap items-center justify-between gap-2">
+      <div class="break-all"><b>${esc(a.name)}</b> <span class="text-sm text-gray-500">(${fmtSize(a.size)})</span></div>
+      <div class="flex gap-2 text-sm font-bold shrink-0">
+        <a href="https://drive.google.com/uc?export=download&id=${id}" target="_blank" rel="noopener" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg">⬇️ 下載</a>
+        <a href="https://drive.google.com/file/d/${id}/view" target="_blank" rel="noopener" class="bg-sky-500 text-white px-3 py-1.5 rounded-lg">預覽</a>
+      </div></div>`;
+  }).join("");
+  box.classList.remove("hidden");
+}
+
+/* ===== 清單 ===== */
+let listSeq = 0, searchTimer;
+async function loadList() {
+  hidePanel();
+  $("listBox").classList.remove("hidden");
+  const my = ++listSeq, body = $("listBody");
+  body.innerHTML = `<p class="text-center text-gray-500 py-4">載入中...</p>`;
+  try {
+    const r = await api({ action: "list", keyword: $("searchInput").value.trim() });
+    if (my !== listSeq) return;
+    if (r.status !== "success") { body.innerHTML = `<p class="text-center text-red-600">${esc(r.message)}</p>`; return; }
+    if (!r.list.length) { body.innerHTML = `<p class="text-center text-gray-500 py-4">沒有可瀏覽的檔案</p>`; return; }
+    const groups = new Map();
+    r.list.forEach(f => { const k = f.category || ""; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(f); });
+    const keys = [...groups.keys()].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+    if (groups.has("")) keys.push("");
+    body.innerHTML = keys.map(k => `
+      <div class="space-y-2">
+        <div class="bg-blue-50 text-blue-900 font-bold px-3 py-1 rounded-lg">${k ? "🏷️ " + esc(k) : "(未分類)"}</div>
+        ${groups.get(k).map(f => `
+          <a href="?id=${encodeURIComponent(f.id)}" class="block p-3 bg-gray-50 hover:bg-blue-50 border rounded-xl">
+            <div class="flex justify-between gap-2">
+              <b class="break-all">${f.type === "file" ? "📎" : "📄"} ${esc(f.title)}</b>
+              <span class="shrink-0 flex gap-1 h-fit">
+                ${f.hasPassword ? '<span class="bg-red-100 text-red-700 px-2 rounded text-xs">🔒密碼</span>' : ""}
+                ${f.attCount ? `<span class="bg-indigo-100 text-indigo-700 px-2 rounded text-xs">📎${f.attCount}</span>` : ""}
+              </span>
             </div>
-            <p id="errorMsg" class="text-red-500 font-bold text-lg hidden">密碼錯誤，請重新輸入！</p>
-        </div>
-    </div>
+            <div class="text-xs text-gray-500">${esc(f.updatedAt)}${f.type === "file" ? "・" + fmtSize(f.size) : ""}</div>
+          </a>`).join("")}
+      </div>`).join("");
+  } catch (e) { if (my === listSeq) body.innerHTML = `<p class="text-center text-red-600">連線失敗</p>`; }
+}
+$("searchInput").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 400); });
 
-    <!-- 全螢幕網頁呈現框 -->
-    <iframe id="appFrame"></iframe>
-
-    <script>
-        // *** 請將此處替換為您的 GAS 網頁應用程式網址 ***
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbztHGh49wQsli6vyYSjnzq5g6iKc0lx_9I_30a-EeQ0bspRnfEkIdRrSvegWkfkatv-9A/exec";
-
-        // 從網址列取得檔案 ID (例如: view.html?id=WEB_1729000000000)
-        const urlParams = new URLSearchParams(window.location.search);
-        const fileId = urlParams.get('id');
-
-        window.onload = function() {
-            if (!fileId) {
-                showError("找不到網頁代號！請確認網址是否正確。");
-                return;
-            }
-            // 初次嘗試載入（不帶密碼）
-            loadWebPage("");
-        };
-
-        async function loadWebPage(password) {
-            try {
-                document.getElementById('loadingStatus').innerText = "正在取得網頁內容...";
-                const response = await fetch(GAS_URL, {
-                    method: "POST",
-                    body: JSON.stringify({
-                        action: "load",
-                        id: fileId,
-                        password: password
-                    })
-                });
-                const result = await response.json();
-
-                if (result.status === "success") {
-                    // 隱藏載入畫面與密碼框
-                    document.getElementById('loadingScreen').style.display = 'none';
-                    document.getElementById('passwordModal').style.display = 'none';
-                    
-                    // 設定瀏覽器標題
-                    document.title = result.title || "網頁預覽";
-
-                    // 將 HTML 程式碼透過 Blob 渲染至全螢幕 iframe
-                    const iframe = document.getElementById('appFrame');
-                    const blob = new Blob([result.code], { type: 'text/html;charset=utf-8' });
-                    iframe.src = URL.createObjectURL(blob);
-                } else {
-                    // 判斷是否為密碼錯誤或需要密碼
-                    if (result.message.includes("密碼") || result.message.includes("保護")) {
-                        document.getElementById('loadingScreen').style.display = 'none';
-                        document.getElementById('passwordModal').classList.remove('hidden');
-                        if (password !== "") {
-                            document.getElementById('errorMsg').classList.remove('hidden');
-                        }
-                    } else {
-                        showError(result.message);
-                    }
-                }
-            } catch (err) {
-                showError("連線至伺服器失敗，請檢查網路連線。");
-            }
-        }
-
-        function submitPassword() {
-            const pwd = document.getElementById('unlockPasswordInput').value;
-            document.getElementById('errorMsg').classList.add('hidden');
-            document.getElementById('passwordModal').classList.add('hidden');
-            document.getElementById('loadingScreen').style.display = 'flex';
-            document.getElementById('loadingStatus').innerText = "正在驗證密碼...";
-            loadWebPage(pwd);
-        }
-
-        function showError(message) {
-            document.getElementById('loadingScreen').innerHTML = `
-                <div class="text-3xl font-bold text-red-300">❌ 開啟失敗</div>
-                <div class="text-xl text-white mt-2">${message}</div>
-            `;
-        }
-    </script>
+/* ===== 進入點 ===== */
+renderUserBar();
+(function main() {
+  if (qs.get("code") || qs.get("error")) return handleCallback();   // LINE 回呼
+  if (qs.get("bind")) return showBind(qs.get("bind"));              // 綁定連結
+  if (qs.get("id")) return loadDoc(qs.get("id"));                   // 單一檔案
+  loadList();                                                       // 檔案清單
+})();
+</script>
 </body>
 </html>
