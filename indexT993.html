@@ -13,6 +13,8 @@
     <p class="text-xs text-teal-100">LINE 志工服務平台 (LIFF)</p>
   </header>
 
+  <div id="statusBox" class="hidden bg-white rounded-xl p-4 shadow-sm border border-slate-200 mb-4 text-sm"></div>
+
   <main id="app" class="space-y-4">
     <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
       <h2 class="font-semibold text-teal-800 mb-2">個資蒐集告知與同意 (v2026.1)</h2>
@@ -27,56 +29,133 @@
 
     <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200 space-y-3">
       <h2 class="font-semibold text-teal-800">志工基本資料與保密切結</h2>
-      <input id="vName" type="text" placeholder="姓名（必填）" class="w-full border rounded-lg px-3 py-2 text-sm" />
+      <input id="vName" type="text" maxlength="50" placeholder="姓名（必填）" class="w-full border rounded-lg px-3 py-2 text-sm" />
       <select id="vIdentity" class="w-full border rounded-lg px-3 py-2 text-sm">
         <option value="病友">病友</option>
         <option value="家屬">家屬</option>
         <option value="一般民眾">一般民眾</option>
         <option value="專業人員">專業人員（醫護、物理治療等）</option>
       </select>
-      <input id="vPhone" type="tel" placeholder="聯絡電話" class="w-full border rounded-lg px-3 py-2 text-sm" />
-      <input id="vEmergency" type="text" placeholder="緊急聯絡人與電話" class="w-full border rounded-lg px-3 py-2 text-sm" />
-      <canvas id="sigPad" width="300" height="100" class="w-full border rounded-lg bg-slate-50"></canvas>
-      <button onclick="submitRegister()" class="w-full bg-teal-700 text-white py-2.5 rounded-lg font-medium text-sm">送出申請並簽署保密切結書</button>
+      <input id="vPhone" type="tel" maxlength="20" placeholder="聯絡電話（必填）" class="w-full border rounded-lg px-3 py-2 text-sm" />
+      <input id="vEmergency" type="text" maxlength="100" placeholder="緊急聯絡人與電話" class="w-full border rounded-lg px-3 py-2 text-sm" />
+
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs text-slate-600">電子保密切結書簽名（請於下方框內簽名）</span>
+          <button type="button" id="btnClearSig" class="text-xs text-teal-700 underline">清除重簽</button>
+        </div>
+        <canvas id="sigPad" width="300" height="100" class="w-full border rounded-lg bg-slate-50" style="touch-action:none"></canvas>
+      </div>
+
+      <button id="btnSubmit" onclick="submitRegister()" class="w-full bg-teal-700 disabled:bg-slate-300 text-white py-2.5 rounded-lg font-medium text-sm">送出申請並簽署保密切結書</button>
     </div>
   </main>
 
   <script>
     const LIFF_ID = '2001679903-r5VXNe5g';
-    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxxXy7SKWPCeqSmmxdUHQhIzAhn5C9yKYOyINN9L-FZtmlzMWNm67My9chjV79AuskU/exec';
-    let idToken = '';
+    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzc4ssZtOEHpoTFkr3-e-fgEgifY0tq7vFPSm2BfZtrf3ck9-lAaEEmL8i9n3wY9Ky6/exec';
+
+    let liffReady = false;
+    let hasSigned = false;
+
+    /* ---------- 簽名板 ---------- */
+    const canvas = document.getElementById('sigPad');
+    const ctx = canvas.getContext('2d');
+    ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.strokeStyle = '#0f172a';
+    let drawing = false;
+
+    function pos(e) {
+      const r = canvas.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
+    }
+    canvas.addEventListener('pointerdown', e => {
+      drawing = true; canvas.setPointerCapture(e.pointerId);
+      const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (!drawing) return;
+      const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasSigned = true;
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => canvas.addEventListener(ev, () => { drawing = false; }));
+    document.getElementById('btnClearSig').addEventListener('click', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height); hasSigned = false;
+    });
+
+    /* ---------- API ---------- */
+    async function callApi(action, data) {
+      if (!liffReady) throw new Error('請在 LINE 內開啟本頁面');
+      const idToken = liff.getIDToken(); // 每次呼叫前重新取得，避免過期
+      if (!idToken) { liff.login(); throw new Error('登入已過期，請重新登入'); }
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // 避免 CORS preflight
+        body: JSON.stringify({ action, idToken, data })
+      });
+      return res.json();
+    }
+
+    function showStatus(html) {
+      const box = document.getElementById('statusBox');
+      box.innerHTML = html;
+      box.classList.remove('hidden');
+    }
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
 
     window.onload = async () => {
       try {
         await liff.init({ liffId: LIFF_ID });
-        if (!liff.isLoggedIn()) liff.login();
-        idToken = liff.getIDToken();
-      } catch (e) { console.warn('LIFF init preview mode', e); }
+        if (!liff.isLoggedIn()) { liff.login(); return; } // 登入會導頁，後續不再執行
+        liffReady = true;
+        const json = await callApi('getMyProfile', {});
+        if (json.ok && json.registered) {
+          const p = json.profile;
+          showStatus(`<div class="font-semibold text-teal-800">${esc(p.name)}，您已完成註冊</div>
+            <div class="text-xs text-slate-600 mt-1">志工編號：${esc(p.volunteerId)}｜審核狀態：<b>${esc(p.status)}</b></div>`);
+          document.getElementById('app').classList.add('hidden');
+        }
+      } catch (e) {
+        console.warn('LIFF 初始化失敗（預覽模式）', e);
+        showStatus('<span class="text-amber-700 text-xs">目前非 LINE 環境或 LIFF 初始化失敗，無法送出申請。</span>');
+      }
     };
 
     async function submitRegister() {
-      if (!document.getElementById('pdpaAgree').checked) {
-        alert('請先勾選同意個資蒐集告知事項');
-        return;
+      const btn = document.getElementById('btnSubmit');
+      const name = document.getElementById('vName').value.trim();
+      const phone = document.getElementById('vPhone').value.trim();
+
+      if (!document.getElementById('pdpaAgree').checked) return alert('請先勾選同意個資蒐集告知事項');
+      if (!name) return alert('請輸入姓名');
+      if (!/^[0-9+\-\s]{8,20}$/.test(phone)) return alert('請輸入正確的聯絡電話');
+      if (!hasSigned) return alert('請於簽名框內簽名，以完成電子保密切結');
+
+      btn.disabled = true; btn.textContent = '送出中...';
+      try {
+        const json = await callApi('registerVolunteer', {
+          name,
+          identityType: document.getElementById('vIdentity').value,
+          phone,
+          emergencyContact: document.getElementById('vEmergency').value.trim(),
+          pdpaVersion: 'v2026.1',
+          ndaVersion: 'v2026.1',
+          deviceInfo: 'LIFF ' + (liff.getOS ? liff.getOS() : ''),
+          ndaSignatureDataUrl: canvas.toDataURL('image/png')
+        });
+        if (json.ok) {
+          alert('申請已送出！志工編號：' + json.volunteerId);
+          showStatus(`<div class="font-semibold text-teal-800">申請已送出</div>
+            <div class="text-xs text-slate-600 mt-1">志工編號：${esc(json.volunteerId)}｜狀態：申請中，請等候督導聯繫面談。</div>`);
+          document.getElementById('app').classList.add('hidden');
+        } else {
+          alert('錯誤：' + json.error);
+          btn.disabled = false; btn.textContent = '送出申請並簽署保密切結書';
+        }
+      } catch (e) {
+        alert('送出失敗：' + e.message);
+        btn.disabled = false; btn.textContent = '送出申請並簽署保密切結書';
       }
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'registerVolunteer',
-          idToken: idToken,
-          data: {
-            name: document.getElementById('vName').value,
-            identityType: document.getElementById('vIdentity').value,
-            phone: document.getElementById('vPhone').value,
-            emergencyContact: document.getElementById('vEmergency').value,
-            pdpaVersion: 'v2026.1',
-            ndaVersion: 'v2026.1',
-            ndaSignatureDataUrl: document.getElementById('sigPad').toDataURL()
-          }
-        })
-      });
-      const json = await res.json();
-      alert(json.ok ? '申請已送出！志工編號：' + json.volunteerId : '錯誤：' + json.error);
     }
   </script>
 </body>
