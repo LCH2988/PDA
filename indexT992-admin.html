@@ -226,10 +226,11 @@
 <script>
 /* ============ 設定 ============ */
 // 管理員 LIFF 必須與志工端屬於同一個 LINE Login channel（後端以 channel ID 驗證 ID Token）。
-// 若後台網址與前台不同，請在同一個 channel 另建一個 LIFF，並把 ID 填在這裡。
 const ADMIN_LIFF_ID = '2009456572-HOlrrokl';
-const GAS_URL = 'https://script.google.com/macros/s/AKfycby4AhiXklU9Nzn4b5KIL13pDNeECV1IoNPWWtLL6D8HN29dceXBFTYIXcEBIkzlZhuK/exec';
-const LIFF_URL_BASE = 'https://liff.line.me/2009456572-HOlrrokl';  // 志工端 LIFF（QR 連結用）
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwyquvsU1Mxs23_4q3Piy_tYuM8ykVzvlKjJMIRKGbnCoenmhofLbzmXr9dHp_V2ixr/exec';
+// 【已修正】QR 連結必須導向「志工端」LIFF，而不是管理端 LIFF
+const VOLUNTEER_LIFF_ID = '2009456572-ZBfM2edk';
+const LIFF_URL_BASE = 'https://liff.line.me/' + VOLUNTEER_LIFF_ID;
 const EMBEDDED = !!(window.google && google.script && google.script.run && typeof google.script.run.adminDispatchFromHtml === 'function');
 
 /* 資料只存在記憶體，不寫入 localStorage（避免個資殘留在瀏覽器） */
@@ -536,7 +537,7 @@ document.getElementById('btnOpenAddVol').addEventListener('click', () => {
     closeModal();
     const res = await cloud('adminAddVolunteer', payload);
     if (!res) return;
-    state.volunteers.unshift(Object.assign({ id: res.volunteerId, lineUserId: '', gender: '', birthday: '', hasIdNo: false, idNo: '', basicTrained: false, specialTrained: false, bookNo: '', ndaSigned: true, consentAt: nowStr() }, payload));
+    state.volunteers.unshift(Object.assign({ id: res.volunteerId, lineUserId: '', gender: '', birthday: '', hasIdNo: false, idNo: '', basicTrained: false, specialTrained: false, bookNo: '', ndaSigned: true, consentAt: '' }, payload));
     renderAll(); showToast('已新增志工申請');
   };
 });
@@ -623,7 +624,7 @@ function renderTasks() {
       </div>
       <div>
         <h3 class="font-black text-lg leading-snug">${esc(t.title)}</h3>
-        <p class="text-sm font-semibold text-slate-600 mt-1">📅 ${esc(t.date)} ${esc(t.time)}｜組長：${esc(t.leader)}<br>👥 名額 ${t.assigned.length}/${t.quota}（候補 ${t.waitlist.length}）</p>
+        <p class="text-sm font-semibold text-slate-600 mt-1">📅 ${esc(t.date)} ${esc(t.time)}｜組長：${esc(t.leader)}<br>📍 ${esc(t.location || '未填地點')}${(t.lat !== '' && t.lat !== undefined && t.lng !== '' && t.lng !== undefined) ? '（已設定定位）' : '（未設定定位，僅能掃 QR）'}<br>👥 名額 ${t.assigned.length}/${t.quota}（候補 ${t.waitlist.length}）</p>
       </div>
       <div class="text-sm bg-slate-50 rounded-2xl p-3 border border-slate-200 space-y-1">
         <div><b>正取：</b>${t.assigned.length ? esc(t.assigned.map(nameOf).join('、')) : '尚無'}</div>
@@ -739,7 +740,8 @@ function renderAttendance() {
   const kt = ts.value, kv = vs.value;
   ts.innerHTML = state.tasks.map(t => `<option value="${safeId(t.id)}">${esc(t.title)} (${esc(t.date)})</option>`).join('');
   vs.innerHTML = state.volunteers.filter(v => v.status === '在隊').map(v => `<option value="${safeId(v.id)}">${esc(v.name)}</option>`).join('');
-  if (kt) ts.value = kt; if (kv) vs.value = kv;
+  if (kt) ts.value = kt;
+  if (kv) vs.value = kv;
 
   document.getElementById('attList').innerHTML = state.attendance.slice().reverse().map(a => {
     const v = state.volunteers.find(x => x.id === a.volId), t = state.tasks.find(x => x.id === a.taskId);
@@ -782,9 +784,11 @@ document.getElementById('btnCheckIn').addEventListener('click', async () => {
   const t = state.tasks.find(x => x.id === taskId), v = state.volunteers.find(x => x.id === volId);
   if (!t || !v) return showToast('請選擇任務與志工');
   if (state.attendance.some(a => a.taskId === taskId && a.volId === volId && a.status === '已簽到(待簽退)')) return showToast('已有簽到中的紀錄，請先簽退');
-  const rec = { id: 'ATT' + Date.now(), taskId, volId, checkIn: nowStr(), checkOut: '', method: '組長補登', hours: 0, status: '已簽到(待簽退)' };
+  // 【已修正】編號改由後端產生，避免多人同時操作撞號
+  const rec = { taskId, volId, checkIn: nowStr(), checkOut: '', method: '組長補登', hours: 0, status: '已簽到(待簽退)' };
   const res = await cloud('adminManualCheckInOut', { type: 'CHECK_IN', record: rec });
   if (!res) return;
+  rec.id = res.attId;
   state.attendance.push(rec); renderAll(); showToast(`${v.name} 補登簽到完成`);
 });
 
@@ -918,7 +922,7 @@ document.getElementById('btnConfirmImport').addEventListener('click', async () =
   pendingImport = null;
   if (!res) return;
   await syncAll(false);
-  showToast(`已匯入 ${res.imported} 筆，略過 ${skipped} 筆`);
+  showToast(`已匯入 ${res.imported} 筆，略過 ${skipped + (res.skipped || 0)} 筆`);
 });
 
 /* ============ 個資申請 / 推播 / 保險 / 單位 / 稽核 ============ */
