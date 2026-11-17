@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>印章申請使用登記系統</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Microsoft JhengHei","PingFang TC",sans-serif;background:#f4f1ec;color:#333}
+  header{background:#8b1a1a;color:#fff;padding:14px 20px}
+  header h1{margin:0;font-size:20px}
+  header small{opacity:.85}
+  nav{display:flex;gap:4px;background:#e8e2d8;padding:8px 20px 0;flex-wrap:wrap}
+  nav button{border:0;padding:10px 18px;background:#d7cfc0;cursor:pointer;border-radius:6px 6px 0 0;font-size:15px}
+  nav button.active{background:#fff;font-weight:bold;color:#8b1a1a}
+  main{padding:20px;max-width:1100px;margin:auto}
+  .card{background:#fff;border-radius:8px;padding:16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+  h2{margin:0 0 12px;font-size:17px;color:#8b1a1a}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+  label{display:block;font-size:13px;color:#555;margin-bottom:3px}
+  input,select,textarea{width:100%;padding:7px;border:1px solid #bbb;border-radius:4px;font-size:14px;font-family:inherit}
+  button.btn{background:#8b1a1a;color:#fff;border:0;padding:8px 16px;border-radius:5px;cursor:pointer;font-size:14px;margin:4px 4px 0 0}
+  button.btn.gray{background:#666}
+  button.btn.green{background:#2e7d32}
+  button.btn.small{padding:3px 8px;font-size:12px;margin:1px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{border:1px solid #ccc;padding:6px;text-align:left;vertical-align:top}
+  th{background:#f0ebe2}
+  .tag{padding:2px 8px;border-radius:10px;font-size:12px;color:#fff}
+  .待審核{background:#e68a00}.已核准{background:#1976d2}.已用印{background:#2e7d32}.已駁回{background:#999}
+  .使用中{background:#2e7d32}.停用{background:#999}.遺失{background:#c62828}
+  .checks label{display:inline-block;margin:2px 10px 2px 0;font-size:14px;color:#333}
+  .checks input{width:auto}
+  .scroll{overflow-x:auto}
+  .tab{display:none}.tab.show{display:block}
+  #printArea{display:none}
+  @media print{
+    body>*:not(#printArea){display:none!important}
+    #printArea{display:block!important;padding:10mm}
+    #printArea table{font-size:14px}
+    #printArea th,#printArea td{border:1px solid #000;padding:8px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔖 印章申請使用登記系統</h1>
+  <small>台灣帕金森病友權益促進會</small>
+</header>
+<nav id="nav">
+  <button data-t="seals" class="active">印章清冊</button>
+  <button data-t="apply">用印申請</button>
+  <button data-t="log">用印登記簿</button>
+  <button data-t="output">報表產出 / 備份</button>
+</nav>
+<main>
+
+<!-- 印章清冊 -->
+<section id="seals" class="tab show">
+  <div class="card">
+    <h2>新增 / 編輯印章</h2>
+    <input type="hidden" id="s_id">
+    <div class="grid">
+      <div><label>印章名稱 *</label><input id="s_name" placeholder="例:團體圖記(大章)"></div>
+      <div><label>類別</label>
+        <select id="s_type"><option>核心印信</option><option>財務用章</option><option>憑證戳章</option><option>行政戳章</option></select></div>
+      <div><label>規格 / 尺寸</label><input id="s_size" placeholder="例:方形 4.2×4.2 cm"></div>
+      <div><label>保管人</label><input id="s_keeper"></div>
+      <div><label>刻製日期</label><input type="date" id="s_date"></div>
+      <div><label>狀態</label>
+        <select id="s_status"><option>使用中</option><option>停用</option><option>遺失</option></select></div>
+    </div>
+    <div style="margin-top:10px"><label>備註</label><input id="s_note"></div>
+    <button class="btn" onclick="saveSeal()">儲存印章</button>
+    <button class="btn gray" onclick="clearSeal()">清除</button>
+  </div>
+  <div class="card scroll">
+    <h2>印章清冊</h2>
+    <table><thead><tr><th>編號</th><th>名稱</th><th>類別</th><th>規格</th><th>保管人</th><th>刻製日</th><th>狀態</th><th>備註</th><th>操作</th></tr></thead>
+    <tbody id="sealBody"></tbody></table>
+  </div>
+</section>
+
+<!-- 用印申請 -->
+<section id="apply" class="tab">
+  <div class="card">
+    <h2>填寫用印申請單</h2>
+    <div class="grid">
+      <div><label>申請日期 *</label><input type="date" id="a_date"></div>
+      <div><label>申請人 *</label><input id="a_by"></div>
+      <div><label>文件名稱 *</label><input id="a_doc" placeholder="例:捐款收據、115年度財務報表"></div>
+      <div><label>用印份數</label><input type="number" id="a_copies" value="1" min="1"></div>
+    </div>
+    <div style="margin-top:10px"><label>用印事由</label><textarea id="a_purpose" rows="2"></textarea></div>
+    <div style="margin-top:10px"><label>選擇印章 *(可複選)</label><div class="checks" id="a_seals"></div></div>
+    <button class="btn" onclick="saveApp()">送出申請</button>
+  </div>
+  <div class="card scroll">
+    <h2>申請案件與審核</h2>
+    <table><thead><tr><th>單號</th><th>申請日</th><th>申請人</th><th>文件</th><th>印章</th><th>份數</th><th>狀態</th><th>操作</th></tr></thead>
+    <tbody id="appBody"></tbody></table>
+  </div>
+</section>
+
+<!-- 用印登記簿 -->
+<section id="log" class="tab">
+  <div class="card">
+    <h2>篩選</h2>
+    <div class="grid">
+      <div><label>起日</label><input type="date" id="f_from" onchange="renderLog()"></div>
+      <div><label>迄日</label><input type="date" id="f_to" onchange="renderLog()"></div>
+      <div><label>關鍵字(文件/申請人)</label><input id="f_kw" oninput="renderLog()"></div>
+      <div><label>狀態</label><select id="f_st" onchange="renderLog()"><option value="">全部</option><option>待審核</option><option>已核准</option><option>已用印</option><option>已駁回</option></select></div>
+    </div>
+  </div>
+  <div class="card scroll">
+    <h2>用印登記簿</h2>
+    <table><thead><tr><th>單號</th><th>申請日</th><th>申請人</th><th>文件</th><th>印章</th><th>份數</th><th>核准人</th><th>用印日</th><th>用印人</th><th>狀態</th></tr></thead>
+    <tbody id="logBody"></tbody></table>
+  </div>
+</section>
+
+<!-- 報表產出 -->
+<section id="output" class="tab">
+  <div class="card">
+    <h2>報表產出</h2>
+    <button class="btn green" onclick="printRegister('seals')">🖨 列印印章清冊</button>
+    <button class="btn green" onclick="printRegister('log')">🖨 列印用印登記簿</button>
+    <button class="btn" onclick="exportCSV('seals')">⬇ 匯出印章清冊 CSV</button>
+    <button class="btn" onclick="exportCSV('log')">⬇ 匯出用印登記簿 CSV</button>
+  </div>
+  <div class="card">
+    <h2>資料備份與還原</h2>
+    <p style="font-size:13px;color:#666">資料存於本機瀏覽器,更換電腦或清除瀏覽紀錄前,請先備份。</p>
+    <button class="btn gray" onclick="backup()">⬇ 備份 JSON</button>
+    <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="restore(event)">
+    <button class="btn gray" onclick="document.getElementById('restoreFile').click()">⬆ 還原 JSON</button>
+    <button class="btn" style="background:#c62828" onclick="resetAll()">重設為預設資料</button>
+  </div>
+</section>
+
+</main>
+<div id="printArea"></div>
+
+<script>
+const ORG="台灣帕金森病友權益促進會";
+const KEY="pdSealMgr_v1";
+const DEFAULT_SEALS=[
+  ["團體圖記(大章)","核心印信","方形 3.0~4.2 cm"],
+  ["理事長職章(小章)","核心印信","方形 1.0~1.5 cm"],
+  ["銀行印鑑章(大章)","核心印信","約 2.0×2.0 cm"],
+  ["銀行印鑑章(小章)","核心印信","約 1.0×1.0 cm"],
+  ["收據章(關防章)","財務用章","長方形 2.5×5.5 cm"],
+  ["統一編號章","財務用章","長方形 1.0×3.5 cm"],
+  ["會計章","財務用章","約 1.0×3.0 cm"],
+  ["出納章","財務用章","約 1.0×3.0 cm"],
+  ["總幹事章","財務用章","約 1.0×3.0 cm"],
+  ["付訖章","憑證戳章","約 1.5×4.0 cm"],
+  ["收訖章","憑證戳章","約 1.5×4.0 cm"],
+  ["核銷章","憑證戳章","約 3.0×5.0 cm"],
+  ["更正章","憑證戳章","約 1.0×1.0 cm"],
+  ["騎縫章","憑證戳章","圓形 直徑 2.0 cm"],
+  ["與正本相符章","憑證戳章","約 2.0×5.0 cm"],
+  ["收文章","行政戳章","—"],
+  ["發文章","行政戳章","—"],
+  ["地址章","行政戳章","—"]
+];
+let db;
+function load(){
+  try{db=JSON.parse(localStorage.getItem(KEY))}catch(e){db=null}
+  if(!db||!db.seals)initDefault();
+}
+function initDefault(){
+  db={seals:DEFAULT_SEALS.map((s,i)=>({id:"S"+String(i+1).padStart(3,"0"),name:s[0],type:s[1],size:s[2],keeper:"",date:"",status:"使用中",note:""})),apps:[]};
+  save();
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}}
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const today=()=>new Date().toISOString().slice(0,10);
+const sealName=id=>{const s=db.seals.find(x=>x.id===id);return s?s.name:"(已刪除)"};
+
+// tabs
+$("nav").addEventListener("click",e=>{
+  const t=e.target.dataset.t;if(!t)return;
+  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b===e.target));
+  document.querySelectorAll(".tab").forEach(s=>s.classList.toggle("show",s.id===t));
+  renderAll();
+});
+
+// seals
+function saveSeal(){
+  const name=$("s_name").value.trim();
+  if(!name){alert("請輸入印章名稱");return}
+  const id=$("s_id").value;
+  const obj={name,type:$("s_type").value,size:$("s_size").value,keeper:$("s_keeper").value,date:$("s_date").value,status:$("s_status").value,note:$("s_note").value};
+  if(id){Object.assign(db.seals.find(s=>s.id===id),obj)}
+  else{
+    const n=db.seals.reduce((m,s)=>Math.max(m,parseInt(s.id.slice(1))||0),0)+1;
+    db.seals.push({id:"S"+String(n).padStart(3,"0"),...obj});
+  }
+  save();clearSeal();renderAll();
+}
+function clearSeal(){["s_id","s_name","s_size","s_keeper","s_date","s_note"].forEach(i=>$(i).value="");$("s_status").value="使用中"}
+function editSeal(id){
+  const s=db.seals.find(x=>x.id===id);
+  $("s_id").value=s.id;$("s_name").value=s.name;$("s_type").value=s.type;$("s_size").value=s.size;
+  $("s_keeper").value=s.keeper;$("s_date").value=s.date;$("s_status").value=s.status;$("s_note").value=s.note;
+  window.scrollTo(0,0);
+}
+function delSeal(id){
+  if(db.apps.some(a=>a.sealIds.includes(id))){alert("此印章已有用印紀錄,無法刪除,請改為「停用」。");return}
+  if(confirm("確定刪除?")){db.seals=db.seals.filter(s=>s.id!==id);save();renderAll()}
+}
+function renderSeals(){
+  $("sealBody").innerHTML=db.seals.map(s=>`<tr><td>${s.id}</td><td>${esc(s.name)}</td><td>${s.type}</td><td>${esc(s.size)}</td><td>${esc(s.keeper)}</td><td>${s.date}</td><td><span class="tag ${s.status}">${s.status}</span></td><td>${esc(s.note)}</td>
+  <td><button class="btn small" onclick="editSeal('${s.id}')">編輯</button><button class="btn small gray" onclick="delSeal('${s.id}')">刪除</button></td></tr>`).join("");
+}
+
+// apps
+function renderSealChecks(){
+  const checked=[...document.querySelectorAll("#a_seals input:checked")].map(i=>i.value);
+  $("a_seals").innerHTML=db.seals.filter(s=>s.status==="使用中").map(s=>`<label><input type="checkbox" value="${s.id}" ${checked.includes(s.id)?"checked":""}> ${esc(s.name)}</label>`).join("");
+}
+function saveApp(){
+  const sealIds=[...document.querySelectorAll("#a_seals input:checked")].map(i=>i.value);
+  const date=$("a_date").value,by=$("a_by").value.trim(),doc=$("a_doc").value.trim();
+  if(!date||!by||!doc||!sealIds.length){alert("請填寫申請日期、申請人、文件名稱並至少選擇一枚印章");return}
+  const roc=new Date(date).getFullYear()-1911;
+  const n=db.apps.filter(a=>a.no.startsWith(roc+"-")).length+1;
+  db.apps.push({id:Date.now(),no:roc+"-"+String(n).padStart(4,"0"),date,by,doc,purpose:$("a_purpose").value,copies:$("a_copies").value||1,sealIds,status:"待審核",approver:"",approveDate:"",usedDate:"",usedBy:""});
+  save();$("a_by").value="";$("a_doc").value="";$("a_purpose").value="";$("a_copies").value=1;
+  document.querySelectorAll("#a_seals input").forEach(i=>i.checked=false);
+  renderAll();
+}
+function renderApps(){
+  $("appBody").innerHTML=[...db.apps].reverse().map(a=>{
+    let ops="";
+    if(a.status==="待審核")ops=`<button class="btn small green" onclick="approve(${a.id})">核准</button><button class="btn small gray" onclick="reject(${a.id})">駁回</button>`;
+    if(a.status==="已核准")ops=`<button class="btn small" onclick="useSeal(${a.id})">登記用印</button>`;
+    ops+=`<button class="btn small gray" onclick="printForm(${a.id})">列印申請單</button><button class="btn small gray" onclick="delApp(${a.id})">刪除</button>`;
+    return `<tr><td>${a.no}</td><td>${a.date}</td><td>${esc(a.by)}</td><td>${esc(a.doc)}</td><td>${a.sealIds.map(sealName).map(esc).join("、")}</td><td>${a.copies}</td><td><span class="tag ${a.status}">${a.status}</span></td><td>${ops}</td></tr>`}).join("");
+}
+const find=id=>db.apps.find(a=>a.id===id);
+function approve(id){const n=prompt("核准人姓名(理事長/總幹事):");if(!n)return;const a=find(id);a.status="已核准";a.approver=n;a.approveDate=today();save();renderAll()}
+function reject(id){const n=prompt("駁回人姓名:");if(!n)return;const a=find(id);a.status="已駁回";a.approver=n;a.approveDate=today();save();renderAll()}
+function useSeal(id){const n=prompt("實際用印人(印章保管人):");if(!n)return;const a=find(id);a.status="已用印";a.usedBy=n;a.usedDate=today();save();renderAll()}
+function delApp(id){if(confirm("確定刪除此申請?")){db.apps=db.apps.filter(a=>a.id!==id);save();renderAll()}}
+
+// log
+function filtered(){
+  const f=$("f_from").value,t=$("f_to").value,k=$("f_kw").value.trim(),s=$("f_st").value;
+  return db.apps.filter(a=>(!f||a.date>=f)&&(!t||a.date<=t)&&(!s||a.status===s)&&(!k||(a.doc+a.by).includes(k)));
+}
+function logRow(a){return [a.no,a.date,a.by,a.doc,a.sealIds.map(sealName).join("、"),a.copies,a.approver,a.usedDate,a.usedBy,a.status]}
+function renderLog(){
+  $("logBody").innerHTML=filtered().map(a=>{const r=logRow(a);return "<tr>"+r.map((c,i)=>i===9?`<td><span class="tag ${c}">${c}</span></td>`:`<td>${esc(c)}</td>`).join("")+"</tr>"}).join("");
+}
+
+// output
+function table(heads,rows){return `<table style="width:100%;border-collapse:collapse"><thead><tr>${heads.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>"<tr>"+r.map(c=>`<td>${esc(c)}</td>`).join("")+"</tr>").join("")}</tbody></table>`}
+function printRegister(type){
+  let title,html;
+  if(type==="seals"){title="印章清冊";html=table(["編號","名稱","類別","規格","保管人","刻製日","狀態","備註"],db.seals.map(s=>[s.id,s.name,s.type,s.size,s.keeper,s.date,s.status,s.note]))}
+  else{title="用印登記簿";html=table(["單號","申請日","申請人","文件","印章","份數","核准人","用印日","用印人","狀態"],filtered().map(logRow))}
+  $("printArea").innerHTML=`<h2 style="text-align:center;color:#000">${ORG}<br>${title}</h2><p style="text-align:right">列印日期:${today()}</p>${html}
+  <p style="margin-top:40px">承辦人:__________ 　 保管人:__________ 　 理事長:__________</p>`;
+  window.print();
+}
+function printForm(id){
+  const a=find(id);
+  const list=db.seals.filter(s=>s.status==="使用中").map(s=>`${a.sealIds.includes(s.id)?"☑":"☐"} ${esc(s.name)}`).join("　");
+  $("printArea").innerHTML=`
+  <h2 style="text-align:center;color:#000;font-size:22px">${ORG}<br>用印申請單</h2>
+  <p style="text-align:right">單號:${a.no}</p>
+  <table style="width:100%;border-collapse:collapse">
+    <tr><th width="18%">申請日期</th><td>${a.date}</td><th width="18%">申請人</th><td>${esc(a.by)}</td></tr>
+    <tr><th>文件名稱</th><td colspan="3">${esc(a.doc)}</td></tr>
+    <tr><th>用印份數</th><td colspan="3">${a.copies}</td></tr>
+    <tr><th>用印事由</th><td colspan="3" style="height:70px">${esc(a.purpose)}</td></tr>
+    <tr><th>用印種類</th><td colspan="3" style="line-height:1.9">${list}</td></tr>
+    <tr><th>審核結果</th><td colspan="3">${a.status}　核准人:${esc(a.approver)}　日期:${a.approveDate}</td></tr>
+    <tr><th>實際用印</th><td colspan="3">用印人:${esc(a.usedBy)}　用印日期:${a.usedDate}</td></tr>
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-top:-1px;text-align:center">
+    <tr><th>承辦人</th><th>會計</th><th>總幹事</th><th>理事長</th><th>印章保管人</th></tr>
+    <tr><td style="height:80px"></td><td></td><td></td><td></td><td></td></tr>
+  </table>`;
+  window.print();
+}
+function exportCSV(type){
+  let rows;
+  if(type==="seals")rows=[["編號","名稱","類別","規格","保管人","刻製日","狀態","備註"],...db.seals.map(s=>[s.id,s.name,s.type,s.size,s.keeper,s.date,s.status,s.note])];
+  else rows=[["單號","申請日","申請人","文件","印章","份數","核准人","用印日","用印人","狀態"],...filtered().map(logRow)];
+  const csv="\uFEFF"+rows.map(r=>r.map(c=>'"'+String(c==null?"":c).replace(/"/g,'""')+'"').join(",")).join("\r\n");
+  download(csv,(type==="seals"?"印章清冊":"用印登記簿")+"_"+today()+".csv","text/csv");
+}
+function download(content,name,mime){
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([content],{type:mime+";charset=utf-8"}));a.download=name;a.click();
+}
+function backup(){download(JSON.stringify(db,null,2),"印章系統備份_"+today()+".json","application/json")}
+function restore(e){
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.seals||!d.apps)throw 0;db=d;save();renderAll();alert("還原完成")}catch(x){alert("檔案格式錯誤")}};
+  r.readAsText(f);
+}
+function resetAll(){if(confirm("將清除所有資料並還原預設,確定嗎?")){initDefault();renderAll()}}
+
+function renderAll(){renderSeals();renderSealChecks();renderApps();renderLog()}
+load();$("a_date").value=today();renderAll();
+</script>
+</body>
+</html>
