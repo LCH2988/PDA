@@ -146,11 +146,11 @@
       </div>
     </section>
 
-    <!-- 6. 衛福部匯出入（完整支援 7 大官方標準檔） -->
+    <!-- 6. 衛福部匯出入（完整支援 7 大官方標準檔雙向匯出入） -->
     <section id="tab-mohw" class="tab-panel hidden space-y-4">
       <div class="bg-teal-900 text-white p-5 rounded-3xl shadow-md">
         <h2 class="text-lg font-black mb-1">衛福部系統 — 匯入與匯出中心</h2>
-        <p class="text-sm text-teal-100 leading-relaxed">完全相容衛福部「全國志願服務資訊系統」7 大標準 `.xls` 範本。匯出時才會向雲端解密讀取身分證，主資料表固定置於第 1 個工作表，日期自動轉為民國 7 碼。</p>
+        <p class="text-sm text-teal-100 leading-relaxed">完全相容衛福部「全國志願服務資訊系統」7 大標準 `.xls` 範本。支援雙向匯出與匯入，主資料表固定置於第 1 個工作表，日期自動轉換民國 7 碼。</p>
       </div>
 
       <div class="bg-white p-5 rounded-3xl border-2 border-slate-300 shadow-sm space-y-3">
@@ -165,7 +165,8 @@
       </div>
 
       <div class="bg-white p-5 rounded-3xl border-2 border-slate-300 shadow-sm space-y-3">
-        <h3 class="font-black text-lg">📥 匯入既有志工 Excel 名冊</h3>
+        <h3 class="font-black text-lg">📥 匯入衛福部標準清冊（支援 sf1e010 ~ sf1e090）</h3>
+        <p class="text-sm text-slate-600 leading-relaxed">可上傳衛福部匯出之單位資料、志工名冊、教育訓練、紀錄冊、服務時數、保險或獎項 Excel（建議先匯入 sf1e030 志工基本資料，再匯入其他紀錄）。</p>
         <input id="excelImportInput" type="file" accept=".xls,.xlsx" class="block w-full text-sm text-slate-700 file:mr-3 file:py-3 file:px-4 file:rounded-2xl file:border-0 file:text-sm file:font-black file:bg-teal-700 file:text-white" />
         <div id="importPreviewBox" class="text-sm bg-slate-50 border-2 border-slate-200 rounded-2xl p-3.5 text-slate-700 min-h-[80px]">尚未選擇檔案。</div>
         <button type="button" id="btnConfirmImport" disabled class="w-full min-h-[54px] bg-teal-700 disabled:bg-slate-300 text-white rounded-2xl text-base font-black">確認匯入至雲端</button>
@@ -243,7 +244,7 @@
 <script>
 /* ============ 設定 ============ */
 const ADMIN_LIFF_ID = '2009456572-HOlrrokl';
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbyr25XFQsNoRXD6TF_8mIhOfvXv3_7HIMat96g6-7MSWsWRdao9UmU2UhamQSbUdPwq/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxNax2TlypVxpFyoJOBc25bQ12CcqdU1sJBYiCfde8TSgjGEMdVqG91iphquvV7ThW8/exec';
 const VOLUNTEER_LIFF_ID = '2009456572-ZBfM2edk';
 const LIFF_URL_BASE = 'https://liff.line.me/' + VOLUNTEER_LIFF_ID;
 const EMBEDDED = !!(window.google && google.script && google.script.run && typeof google.script.run.adminDispatchFromHtml === 'function');
@@ -1040,7 +1041,33 @@ document.querySelectorAll('.btn-export').forEach(btn => btn.addEventListener('cl
   }
 }));
 
-/* ============ 匯入 ============ */
+/* ============ 匯入（支援衛福部 7 大標準清冊自動辨識與寫入） ============ */
+const MOHW_IMPORT_TYPES = {
+  '志工單位基本資料': { code: 'sf1e010', desc: '將更新「應用單位設定」（單位名稱、代碼、電話、地址）' },
+  '志工基本資料':     { code: 'sf1e030', desc: '將匯入或更新「志工基本資料」（以身分證或姓名＋生日比對）' },
+  '教育訓練時數記錄': { code: 'sf1e040', desc: '將匯入「教育訓練完訓紀錄」並自動勾選志工基礎/特殊完訓資格' },
+  '紀錄冊發放':       { code: 'sf1e050', desc: '將依姓名/身分證對應志工，批次更新「服務紀錄冊編號」' },
+  '服務時數記錄':     { code: 'sf1e060', desc: '將匯入「歷史核定服務時數」並自動歸檔對應服務專案' },
+  '志工保險紀錄':     { code: 'sf1e070', desc: '將批次匯入「志工保險名冊」（自動轉換民國起迄日與保險公司）' },
+  '其他獎項':         { code: 'sf1e090', desc: '將匯入「志工得獎與表揚事蹟紀錄」' }
+};
+
+function detectMohwSheetType(sheetName, headers) {
+  const cleanName = String(sheetName || '').trim();
+  for (const [k, v] of Object.entries(MOHW_IMPORT_TYPES)) {
+    if (cleanName.includes(k)) return { sheetType: k, ...v };
+  }
+  const hStr = headers.join(',');
+  if (hStr.includes('單位名稱') && hStr.includes('加入祥和計畫')) return { sheetType: '志工單位基本資料', ...MOHW_IMPORT_TYPES['志工單位基本資料'] };
+  if (hStr.includes('收編狀態') && hStr.includes('是否加入救災志工')) return { sheetType: '志工基本資料', ...MOHW_IMPORT_TYPES['志工基本資料'] };
+  if (hStr.includes('課程訓練日期起') && hStr.includes('訓練課程')) return { sheetType: '教育訓練時數記錄', ...MOHW_IMPORT_TYPES['教育訓練時數記錄'] };
+  if (hStr.includes('紀錄冊發冊別') && hStr.includes('紀錄冊號')) return { sheetType: '紀錄冊發放', ...MOHW_IMPORT_TYPES['紀錄冊發放'] };
+  if (hStr.includes('服務日期起') && hStr.includes('服務時數-小時')) return { sheetType: '服務時數記錄', ...MOHW_IMPORT_TYPES['服務時數記錄'] };
+  if (hStr.includes('投保日期_起') && hStr.includes('承保公司')) return { sheetType: '志工保險紀錄', ...MOHW_IMPORT_TYPES['志工保險紀錄'] };
+  if (hStr.includes('表揚單位') && hStr.includes('獎項名稱')) return { sheetType: '其他獎項', ...MOHW_IMPORT_TYPES['其他獎項'] };
+  return null;
+}
+
 document.getElementById('excelImportInput').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -1049,11 +1076,25 @@ document.getElementById('excelImportInput').addEventListener('change', e => {
     try {
       const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
       const name = wb.SheetNames[0];
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
-      pendingImport = { sheetName: name, rows };
-      const ok = name.includes('志工基本資料');
-      document.getElementById('importPreviewBox').innerHTML = `<div class="font-bold text-teal-900">第 1 工作表：${esc(name)}</div><div>共 <b>${rows.length}</b> 筆</div><div class="mt-1 font-bold ${ok ? 'text-emerald-700' : 'text-amber-700'}">${ok ? '可匯入名冊（以姓名＋生日比對重複）' : '此工作表僅供預覽，不會寫入名冊'}</div>`;
-      document.getElementById('btnConfirmImport').disabled = !rows.length || !ok;
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' })
+        .filter(r => Object.values(r).some(v => String(v).trim() !== ''));
+      const headers = rows.length ? Object.keys(rows[0]) : [];
+      const detected = detectMohwSheetType(name, headers);
+
+      if (detected && rows.length > 0) {
+        pendingImport = { sheetName: name, sheetType: detected.sheetType, code: detected.code, rows };
+        document.getElementById('importPreviewBox').innerHTML = `
+          <div class="font-black text-teal-900 text-base">✅ 辨識成功：${esc(detected.code)} ${esc(detected.sheetType)}</div>
+          <div class="text-slate-700 mt-1">有效資料筆數：<b>${rows.length}</b> 筆</div>
+          <div class="mt-1 font-bold text-emerald-700">${esc(detected.desc)}</div>`;
+        document.getElementById('btnConfirmImport').disabled = false;
+      } else {
+        pendingImport = null;
+        document.getElementById('importPreviewBox').innerHTML = `
+          <div class="font-bold text-rose-700">⚠️ 無法辨識工作表格式或無資料（第 1 工作表：${esc(name)}，共 ${rows.length} 筆）</div>
+          <div class="text-xs text-slate-600 mt-1">請確認上傳檔案為衛福部標準清冊（sf1e010 ~ sf1e090），且資料位於第 1 個工作表。</div>`;
+        document.getElementById('btnConfirmImport').disabled = true;
+      }
     } catch (err) {
       pendingImport = null;
       document.getElementById('importPreviewBox').textContent = '無法解析此檔案，請確認為有效的 .xls / .xlsx。';
@@ -1065,30 +1106,38 @@ document.getElementById('excelImportInput').addEventListener('change', e => {
 
 document.getElementById('btnConfirmImport').addEventListener('click', async () => {
   if (!pendingImport || !pendingImport.rows.length) return;
-  let skipped = 0, n = 0; const list = [];
-  pendingImport.rows.forEach(r => {
-    const name = String(r['姓名'] || '').trim();
-    if (!name) { skipped++; return; }
-    const birthday = roc7ToIso(r['出生日期']);
-    if (state.volunteers.some(v => v.name === name && v.birthday === birthday) || list.some(v => v.name === name && v.birthday === birthday)) { skipped++; return; }
-    const raw = String(r['志工身份別'] || '一般民眾');
-    list.push({
-      id: safeId(r['志工編號'] || '') || ('V_IMP_' + Date.now() + '_' + (n++)),
-      name, gender: String(r['性別']) === '2' ? '女' : '男', birthday,
-      phone: String(r['手機1'] || r['聯絡電話1'] || ''), idNo: String(r['身分證字號'] || '').trim().toUpperCase(),
-      identity: ['病友', '家屬', '一般民眾', '專業人員'].includes(raw) ? raw : '一般民眾',
-      skills: String(r['專長一'] || '匯入資料'), region: String(r['戶籍縣市'] || '桃園市')
+  const { code, sheetType, rows } = pendingImport;
+
+  // 整理欄位名稱（移除換行符號與空白）後傳送至後端批次處理
+  const normalizedRows = rows.map(r => {
+    const clean = {};
+    Object.keys(r).forEach(k => {
+      const shortKey = k.split('\n')[0].trim();
+      clean[shortKey] = String(r[k] ?? '').trim();
     });
+    return clean;
   });
-  if (!list.length) { showToast(`沒有可匯入的資料（略過 ${skipped} 筆）`); return; }
-  const res = await cloud('adminImportVolunteers', { volunteers: list });
-  list.forEach(v => { delete v.idNo; });
+
+  const res = await cloud('adminImportMohwBatch', {
+    code,
+    sheetType,
+    rows: normalizedRows
+  });
+
+  // 清除記憶體中的敏感個資
+  normalizedRows.forEach(r => { delete r['身分證字號']; });
+  pendingImport = null;
   document.getElementById('excelImportInput').value = '';
   document.getElementById('btnConfirmImport').disabled = true;
-  pendingImport = null;
   if (!res) return;
+
+  document.getElementById('importPreviewBox').innerHTML = `
+    <div class="font-black text-emerald-800">🎉 匯入完成（${esc(code)} ${esc(sheetType)}）</div>
+    <div class="text-sm font-bold text-slate-700 mt-1">新增/更新：<b>${res.imported || 0}</b> 筆｜略過重複或無效：<b>${res.skipped || 0}</b> 筆</div>
+    ${res.note ? `<div class="text-xs text-amber-800 mt-1">${esc(res.note)}</div>` : ''}`;
+
   await syncAll(false);
-  showToast(`已匯入 ${res.imported} 筆，略過 ${skipped + (res.skipped || 0)} 筆`);
+  showToast(`✅ 已成功匯入 ${res.imported || 0} 筆「${sheetType}」資料`);
 });
 
 /* ============ 個資申請 / 推播 / 保險登錄 / 單位 / 稽核 ============ */
