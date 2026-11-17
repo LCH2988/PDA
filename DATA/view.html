@@ -49,10 +49,14 @@
 </div>
 
 <script>
-/* ===== 設定區 ===== */
-const GAS_URL = "https://script.google.com/macros/s/AKfycbzb42Ag_wr52M40nuo3QpuTPLxdZgTDObdSM3zsFl1kpcTcrcJNLuSyynzXOJ7OKiyXYw/exec";
-const LINE_CHANNEL_ID = "2009456572"; // LINE Login Channel ID
-const LIFF_ID = "2009456572-VIoH1oY0";                   // 若有申請 LIFF ID 可填入(如 "2009456572-xxxxxxxx")；留空則自動使用上方 LINE_CHANNEL_ID 進行安全驗證
+/* ===== 設定區 (請確認下方參數) ===== */
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwPQGjZP9HX_2wva_yEhnj3DnT_g9_jv9szqHyeGYv3wbCzEXPq4cb0-OW5QbvWfY5KsA/exec";
+const LINE_CHANNEL_ID = "2009456572"; 
+
+/* ⚠️ 如果你有使用 LIFF，請務必填入完整的 LIFF_ID (例如 "2009456572-AbCdEfGh") 
+   若留空 ""，請確認 LINE Developers 後台 -> LINE Login -> Callback URL 有填入本頁完整網址(不含 ? 參數) */
+const LIFF_ID = "2009456572-VIoH1oY0"; 
+
 const REDIRECT_URI = location.origin + location.pathname;
 
 const $ = id => document.getElementById(id);
@@ -60,7 +64,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const fmtSize = n => { n = +n || 0; const u=["B","KB","MB","GB","TB"]; let i=0; while(n>=1024&&i<4){n/=1024;i++} return n.toFixed(i?1:0)+" "+u[i]; };
 const qs = new URLSearchParams(location.search);
 
-/* ===== 優先把網址上的 bind / id / folder 寫入暫存，避免 LINE 登入跳轉時遺失 ===== */
+/* ===== 優先把網址上的 bind / id / folder 寫入暫存，防止跳轉遺失 ===== */
 if (qs.get("bind")) localStorage.setItem("pendingBind", qs.get("bind").trim());
 if (qs.get("id")) sessionStorage.setItem("targetDocId", qs.get("id").trim());
 if (qs.get("folder")) sessionStorage.setItem("targetFolderId", qs.get("folder").trim());
@@ -68,6 +72,7 @@ if (qs.get("folder")) sessionStorage.setItem("targetFolderId", qs.get("folder").
 const INITIAL_DOC_ID = qs.get("id") || sessionStorage.getItem("targetDocId") || "";
 const SCOPE_FOLDER_ID = qs.get("folder") || sessionStorage.getItem("targetFolderId") || "";
 const SINGLE_FILE_LOCK = !!INITIAL_DOC_ID && !SCOPE_FOLDER_ID;
+const USE_LIFF = !!(LIFF_ID && LIFF_ID.includes("-"));
 
 let curFolder = SCOPE_FOLDER_ID || "";
 let allFiles = [], allFolders = [];
@@ -88,7 +93,8 @@ function setAuth(token, label, lineName) {
 function logout() {
   localStorage.removeItem("lineAuth");
   localStorage.removeItem("pendingBind");
-  try { if (window.liff && LIFF_ID && liff.isLoggedIn()) liff.logout(); } catch (e) {}
+  localStorage.removeItem("oauthRedirectUri");
+  try { if (window.liff && USE_LIFF && liff.isLoggedIn()) liff.logout(); } catch (e) {}
   const params = new URLSearchParams();
   if (INITIAL_DOC_ID) params.set("id", INITIAL_DOC_ID);
   if (SCOPE_FOLDER_ID) params.set("folder", SCOPE_FOLDER_ID);
@@ -127,7 +133,7 @@ const msgBox = (icon, title, text, extra = "") =>
   `<div class="text-5xl">${icon}</div><h2 class="text-2xl font-bold">${esc(title)}</h2>
    <p class="text-gray-600 break-words">${esc(text)}</p>${extra}`;
 
-/* ===== OAuth 隨機字串與導向 ===== */
+/* ===== 標準 OAuth 導向 (確保發出與驗證的 redirect_uri 100% 相同) ===== */
 function randStr(n = 16) {
   const a = new Uint8Array(n); crypto.getRandomValues(a);
   return [...a].map(b => b.toString(16).padStart(2, "0")).join("");
@@ -135,12 +141,16 @@ function randStr(n = 16) {
 
 function triggerLineAuth(bindCode = "") {
   if (bindCode) localStorage.setItem("pendingBind", bindCode);
+  // 強制固定並記憶此次送出的 redirect_uri，徹底防止 redirect_uri does not match
+  const exactRedirectUri = location.origin + location.pathname;
+  localStorage.setItem("oauthRedirectUri", exactRedirectUri);
+  localStorage.setItem("oauthMode", "manual");
+
   const state = randStr(), nonce = randStr();
-  localStorage.setItem("lineOAuthState", state);
   const u = "https://access.line.me/oauth2/v2.1/authorize?" + new URLSearchParams({
     response_type: "code",
     client_id: LINE_CHANNEL_ID,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: exactRedirectUri,
     state,
     scope: "profile openid",
     nonce
@@ -148,12 +158,14 @@ function triggerLineAuth(bindCode = "") {
   location.href = u;
 }
 
-/* ===== 處理 LINE OAuth 回呼 (?code=...) ===== */
+/* ===== 處理標準 OAuth 回呼 (?code=...) ===== */
 async function handleOAuthCallback() {
   const code = qs.get("code"), error = qs.get("error");
   const pendingBind = localStorage.getItem("pendingBind") || "";
+  // 取出當初送給 LINE 的一模一樣的 redirect_uri
+  const usedRedirectUri = localStorage.getItem("oauthRedirectUri") || REDIRECT_URI;
+  localStorage.removeItem("oauthMode");
 
-  // 清理網址列上的 code 與 state，恢復原本的 id 或 folder 參數
   const cleanParams = new URLSearchParams();
   if (INITIAL_DOC_ID) cleanParams.set("id", INITIAL_DOC_ID);
   if (SCOPE_FOLDER_ID) cleanParams.set("folder", SCOPE_FOLDER_ID);
@@ -170,14 +182,14 @@ async function handleOAuthCallback() {
     const r = await api({
       action: "lineLogin",
       code,
-      redirectUri: REDIRECT_URI,
+      redirectUri: usedRedirectUri,
       bindCode: pendingBind
     });
 
     if (r.status !== "success") {
       localStorage.removeItem("pendingBind");
       return showPanel(msgBox("🔒", "綁定或驗證失敗", r.message,
-        `<button onclick="location.reload()" class="big-btn bg-blue-600 text-white mt-2">重新操作</button>`));
+        `<button onclick="triggerLineAuth('${esc(pendingBind)}')" class="big-btn bg-blue-600 text-white mt-2">重新操作</button>`));
     }
 
     const wasBinding = !!pendingBind;
@@ -197,36 +209,57 @@ async function handleOAuthCallback() {
   }
 }
 
-/* ===== 若有設定 LIFF_ID 則使用 LIFF SDK 驗證 ===== */
+/* ===== LIFF SDK 原生驗證 (由 LIFF 自行處理 code 交換，不經由後端換 code) ===== */
 async function handleLiffAuth(bindCode = "") {
-  showPanel(msgBox("⏳", "LINE LIFF 安全驗證中...", ""));
+  showPanel(msgBox("⏳", "LINE LIFF 安全驗證中...", "正在確認您的 LINE 授權身分"));
   if (bindCode) localStorage.setItem("pendingBind", bindCode);
   try {
     await liff.init({ liffId: LIFF_ID });
   } catch (e) {
-    // 若 LIFF 初始化失敗，自動退回標準 LINE OAuth 流程確保不中斷
-    return triggerLineAuth(bindCode);
+    return showPanel(msgBox("❌", "LIFF 初始化失敗", "請檢查 LIFF_ID 設定：" + e.message));
   }
+
   if (!liff.isLoggedIn()) {
-    liff.login({ redirectUri: location.href });
+    // 清除網址上的舊 code 參數再交給 LIFF 登入，避免衝突
+    const cleanRedirect = location.origin + location.pathname;
+    liff.login({ redirectUri: cleanRedirect });
     return false;
   }
+
   const finalBind = bindCode || localStorage.getItem("pendingBind") || "";
   if (!finalBind && getAuth()) {
     renderUserBar();
     return true;
   }
-  const idToken = liff.getIDToken() || "";
+
   const accessToken = liff.getAccessToken() || "";
-  const r = await api({ action: "lineLogin", idToken, accessToken, bindCode: finalBind });
+  const idToken = liff.getIDToken() || "";
+
+  const r = await api({ action: "lineLogin", accessToken, idToken, bindCode: finalBind });
+  const wasBinding = !!finalBind;
   localStorage.removeItem("pendingBind");
+
+  // 清除網址列上 LIFF 帶回來的 code 與 liff.state
+  const cleanParams = new URLSearchParams();
+  if (INITIAL_DOC_ID) cleanParams.set("id", INITIAL_DOC_ID);
+  if (SCOPE_FOLDER_ID) cleanParams.set("folder", SCOPE_FOLDER_ID);
+  history.replaceState(null, "", location.pathname + (cleanParams.toString() ? "?" + cleanParams.toString() : ""));
+
   if (r.status !== "success") {
-    showPanel(msgBox("🔒", "無存取權限", r.message,
-      `<button onclick="logout()" class="big-btn bg-blue-600 text-white mt-2">重新登入</button>`));
+    showPanel(msgBox("🔒", "綁定或驗證失敗", r.message,
+      `<button onclick="logout()" class="big-btn bg-blue-600 text-white mt-2">重新驗證</button>`));
     return false;
   }
+
   setAuth(r.token, r.label, r.lineName);
   renderUserBar();
+
+  if (wasBinding) {
+    showPanel(msgBox("✅", "LINE LIFF 綁定成功！", `歡迎您，${r.label} (${r.lineName})！您的帳號已完成授權綁定。`,
+      `<button id="btnAfterBindLiff" class="big-btn bg-blue-600 text-white mt-2">開始瀏覽檔案</button>`));
+    $("btnAfterBindLiff").onclick = () => startAppAfterAuth();
+    return false; // 等待使用者點擊按鈕
+  }
   return true;
 }
 
@@ -238,7 +271,7 @@ function showBindScreen(code) {
     <p class="text-gray-600">綁定碼：<b class="text-blue-700 font-mono">${esc(code)}</b><br>請點擊下方按鈕使用 LINE 登入，完成後即可瀏覽授權給您的檔案。</p>
     <button id="btnStartBind" class="big-btn bg-green-600 hover:bg-green-700 text-white">🟢 使用 LINE 登入並綁定</button>`);
   $("btnStartBind").onclick = () => {
-    if (LIFF_ID && LIFF_ID.includes("-")) handleLiffAuth(code).then(ok => { if (ok) startAppAfterAuth(); });
+    if (USE_LIFF) handleLiffAuth(code).then(ok => { if (ok) startAppAfterAuth(); });
     else triggerLineAuth(code);
   };
 }
@@ -274,7 +307,7 @@ function showLoginPrompt() {
   showPanel(msgBox("🔒", "需要 LINE 實名驗證", "此平台受嚴格保護，請先以已綁定的 LINE 帳號登入。",
     `<button id="btnGoLogin" class="big-btn bg-green-600 hover:bg-green-700 text-white mt-2">🟢 使用 LINE 登入</button>`));
   $("btnGoLogin").onclick = () => {
-    if (LIFF_ID && LIFF_ID.includes("-")) handleLiffAuth().then(ok => { if (ok) startAppAfterAuth(); });
+    if (USE_LIFF) handleLiffAuth().then(ok => { if (ok) startAppAfterAuth(); });
     else triggerLineAuth();
   };
 }
@@ -505,19 +538,26 @@ async function startAppAfterAuth() {
 (async function main() {
   renderUserBar();
 
-  // 1. 優先處理 LINE OAuth 跳轉回來的 ?code=...
-  if (qs.get("code") || qs.get("error")) {
+  // 情況 1：若啟用了 LIFF_ID，且網址是 LIFF 跳轉回來的 (?code=... 或 ?liff.state=...)，交給 LIFF SDK 自己處理！
+  if (USE_LIFF && (qs.get("code") || qs.get("liff.state"))) {
+    const ok = await handleLiffAuth();
+    if (ok) startAppAfterAuth();
+    return;
+  }
+
+  // 情況 2：標準 OAuth 模式跳轉回來 (?code=...)
+  if (!USE_LIFF && (qs.get("code") || qs.get("error"))) {
     return handleOAuthCallback();
   }
 
-  // 2. 若網址帶有 ?bind=XXXX，顯示綁定畫面
+  // 情況 3：使用者點開綁定連結 (?bind=XXXX)
   if (qs.get("bind")) {
     return showBindScreen(qs.get("bind").trim());
   }
 
-  // 3. 檢查是否已登入
+  // 情況 4：一般進入，檢查是否已登入
   if (!getAuth()) {
-    if (LIFF_ID && LIFF_ID.includes("-")) {
+    if (USE_LIFF) {
       const ok = await handleLiffAuth();
       if (!ok) return;
     } else {
