@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檔案檢視</title>
+<title>檔案檢視 (LIFF 授權專用)</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
   body{font-size:18px;background:#f3f4f6;color:#1f2937}
   .big-btn{font-size:18px;padding:12px 20px;border-radius:12px;font-weight:bold;box-shadow:0 4px 6px rgba(0,0,0,.1)}
@@ -16,212 +17,262 @@
 
   <!-- 頂端列 -->
   <header class="bg-blue-900 text-white p-4 rounded-2xl flex flex-wrap justify-between items-center gap-2">
-    <a href="view.html" class="text-2xl font-extrabold">📄 檔案檢視</a>
+    <div id="brandArea" class="text-2xl font-extrabold">📄 檔案檢視</div>
     <div id="userBar" class="text-base flex items-center gap-2"></div>
   </header>
 
   <!-- 訊息 / 動作區 -->
   <div id="panel" class="hidden bg-white p-6 rounded-2xl border-2 space-y-4 text-center"></div>
 
-  <!-- 內容 -->
+  <!-- 單一檔案內容區 -->
   <div id="viewer" class="hidden bg-white rounded-2xl border-2 overflow-hidden">
-    <div class="p-3 border-b flex flex-wrap justify-between items-center gap-2">
-      <h1 id="docTitle" class="text-xl font-bold break-all"></h1>
+    <div class="p-3 border-b flex flex-wrap justify-between items-center gap-2 bg-gray-50">
+      <div class="flex items-center gap-2">
+        <button id="btnBackToFolder" class="hidden bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg font-bold text-base">⬅️ 返回資料夾</button>
+        <h1 id="docTitle" class="text-xl font-bold break-all"></h1>
+      </div>
       <div id="docActions" class="flex gap-2"></div>
     </div>
     <div id="docBody"></div>
   </div>
 
-  <!-- 附件 -->
+  <!-- 附件區 -->
   <div id="attBox" class="hidden bg-white p-4 rounded-2xl border-2"></div>
 
-  <!-- 清單 -->
-  <div id="listBox" class="hidden bg-white p-5 rounded-2xl border-2 space-y-3">
-    <h2 class="text-2xl font-bold">📂 可瀏覽的檔案</h2>
-    <input id="searchInput" class="inp" placeholder="🔍 搜尋標題、檔名">
-    <div id="listBody" class="space-y-2"></div>
+  <!-- 資料夾與檔案清單區 (僅在分享資料夾或總覽模式顯示) -->
+  <div id="listBox" class="hidden bg-white p-5 rounded-2xl border-2 space-y-4">
+    <div class="flex flex-wrap justify-between items-center gap-2">
+      <h2 id="listHeading" class="text-2xl font-bold">📂 授權瀏覽的資料夾與檔案</h2>
+    </div>
+    <input id="searchInput" class="inp" placeholder="🔍 在此範圍內搜尋標題、檔名...">
+    <!-- 資料夾麵包屑與下層子資料夾 -->
+    <div id="folderNav" class="space-y-2"></div>
+    <!-- 當前資料夾內的檔案 -->
+    <div id="listBody" class="space-y-3"></div>
   </div>
 </div>
 
 <script>
-/* ===== 設定(請修改) ===== */
+/* ===== 設定(請修改為您的正式參數) ===== */
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwPQGjZP9HX_2wva_yEhnj3DnT_g9_jv9szqHyeGYv3wbCzEXPq4cb0-OW5QbvWfY5KsA/exec";
-const LINE_CHANNEL_ID = "2009456572";   // ← LINE Login channel 的 Channel ID(數字)
-/* LINE Developers 後台的 Callback URL 必須填入本頁網址(不含參數),例如:
-   https://你的網域/路徑/view.html */
-const REDIRECT_URI = location.origin + location.pathname;
+const LIFF_ID = "2009456572-xxxxxxxx"; // ← 請填入 LINE Developers 後台的完整 LIFF ID
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtSize = n => { n = +n || 0; const u=["B","KB","MB","GB","TB"]; let i=0; while(n>=1024&&i<4){n/=1024;i++} return n.toFixed(i?1:0)+" "+u[i]; };
 const qs = new URLSearchParams(location.search);
 
-/* ===== 登入狀態 ===== */
-const SESSION_MS = 6 * 3600 * 1000 - 60000; // 略短於後端 6 小時
+/* ===== 分享範圍鎖定參數 (Scope Isolation) =====
+   1. 若網址為 ?id=WEB_xxx (無 folder 參數) -> 鎖定為「單一檔案隔離模式」，不允許查看任何其他檔案或返回清單
+   2. 若網址為 ?folder=FLD_xxx             -> 鎖定為「資料夾範圍模式」，僅能瀏覽該資料夾及其下層子資料夾與檔案
+*/
+const INITIAL_DOC_ID = qs.get("id") || "";
+const SCOPE_FOLDER_ID = qs.get("folder") || "";
+const SINGLE_FILE_LOCK = !!INITIAL_DOC_ID && !SCOPE_FOLDER_ID;
+
+let curFolder = SCOPE_FOLDER_ID || "";
+let allFiles = [], allFolders = [];
+
+/* ===== 登入狀態管理 ===== */
+const SESSION_MS = 5 * 3600 * 1000;
 function getAuth() {
   try {
-    const a = JSON.parse(localStorage.getItem("lineAuth") || "null");
+    const a = JSON.parse(localStorage.getItem("liffAuth") || "null");
     if (a && a.token && Date.now() < a.exp) return a;
   } catch (e) {}
-  localStorage.removeItem("lineAuth");
+  localStorage.removeItem("liffAuth");
   return null;
 }
 function setAuth(token, label, lineName) {
-  localStorage.setItem("lineAuth", JSON.stringify({ token, label, lineName, exp: Date.now() + SESSION_MS }));
+  localStorage.setItem("liffAuth", JSON.stringify({ token, label, lineName, exp: Date.now() + SESSION_MS }));
 }
-function logout() { localStorage.removeItem("lineAuth"); location.href = location.pathname + (qs.get("id") ? "?id=" + encodeURIComponent(qs.get("id")) : ""); }
+function logout() {
+  localStorage.removeItem("liffAuth");
+  try { if (window.liff && liff.isLoggedIn()) liff.logout(); } catch (e) {}
+  location.reload();
+}
 
 function renderUserBar() {
   const a = getAuth();
   $("userBar").innerHTML = a
-    ? `<span>👤 ${esc(a.label)}</span><button id="btnLogout" class="bg-white/20 px-3 py-1 rounded-lg text-sm font-bold">登出</button>`
-    : `<button id="btnLogin" class="bg-green-500 px-3 py-1 rounded-lg text-sm font-bold">LINE 登入</button>`;
+    ? `<span class="bg-blue-800 px-3 py-1 rounded-lg">👤 ${esc(a.label)} (${esc(a.lineName)})</span>
+       <button id="btnLogout" class="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg text-sm font-bold">登出</button>`
+    : `<span class="text-sm text-yellow-200">⏳ 尚未驗證</span>`;
   $("btnLogout")?.addEventListener("click", logout);
-  $("btnLogin")?.addEventListener("click", () => startLine({}));
 }
 
-/* ===== API ===== */
+/* ===== 後端 API 呼叫 ===== */
 async function api(p) {
   const a = getAuth();
-  const r = await fetch(GAS_URL, { method: "POST", headers: {"Content-Type":"text/plain;charset=utf-8"},
-    body: JSON.stringify({ ...p, token: a?.token }) });
+  const r = await fetch(GAS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ ...p, token: a?.token, scopeFolder: SCOPE_FOLDER_ID || undefined })
+  });
   return r.json();
 }
 
-/* ===== 面板顯示 ===== */
+/* ===== 面板顯示輔助 ===== */
 function showPanel(html) {
-  $("viewer").classList.add("hidden"); $("attBox").classList.add("hidden");
+  $("viewer").classList.add("hidden");
+  $("attBox").classList.add("hidden");
   $("listBox").classList.add("hidden");
-  $("panel").innerHTML = html; $("panel").classList.remove("hidden");
+  $("panel").innerHTML = html;
+  $("panel").classList.remove("hidden");
 }
 function hidePanel() { $("panel").classList.add("hidden"); }
 const msgBox = (icon, title, text, extra = "") =>
   `<div class="text-5xl">${icon}</div><h2 class="text-2xl font-bold">${esc(title)}</h2>
    <p class="text-gray-600 break-words">${esc(text)}</p>${extra}`;
 
-/* ===== LINE 登入流程 ===== */
-function randStr(n = 24) {
-  const a = new Uint8Array(n); crypto.getRandomValues(a);
-  return [...a].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-function startLine({ bindCode, returnId }) {
-  if (!LINE_CHANNEL_ID || /[^\d]/.test(LINE_CHANNEL_ID)) return alert("尚未設定 LINE_CHANNEL_ID,請聯絡管理者");
-  const state = randStr(), nonce = randStr();
-  sessionStorage.setItem("lineFlow", JSON.stringify({ state, bindCode: bindCode || "", returnId: returnId ?? (qs.get("id") || "") }));
-  const u = "https://access.line.me/oauth2/v2.1/authorize?" + new URLSearchParams({
-    response_type: "code", client_id: LINE_CHANNEL_ID, redirect_uri: REDIRECT_URI,
-    state, scope: "profile openid", nonce });
-  location.href = u;
-}
-async function handleCallback() {
-  const code = qs.get("code"), state = qs.get("state"), error = qs.get("error");
-  let flow = null;
-  try { flow = JSON.parse(sessionStorage.getItem("lineFlow") || "null"); } catch (e) {}
-  sessionStorage.removeItem("lineFlow");
-  const back = flow?.returnId ? "?id=" + encodeURIComponent(flow.returnId) : "";
-
-  if (error) return showPanel(msgBox("⚠️", "LINE 登入已取消", qs.get("error_description") || error,
-    `<a href="${esc(location.pathname + back)}" class="big-btn bg-blue-600 text-white inline-block">返回</a>`));
-  if (!flow || !code || state !== flow.state)
-    return showPanel(msgBox("⚠️", "登入驗證失敗", "狀態碼不符,請重新操作。",
-      `<a href="${esc(location.pathname)}" class="big-btn bg-blue-600 text-white inline-block">返回首頁</a>`));
-
-  showPanel(msgBox("⏳", "登入中...", "正在驗證 LINE 身分"));
+/* ===== 嚴格 LIFF 初始化與綁定驗證 ===== */
+async function ensureLiffSession(bindCode = "") {
+  showPanel(msgBox("⏳", "LINE LIFF 安全驗證中...", "正在確認您的 LINE 授權身分"));
   try {
-    const r = await api({ action: "lineLogin", code, redirectUri: REDIRECT_URI, bindCode: flow.bindCode });
+    await liff.init({ liffId: LIFF_ID });
+  } catch (e) {
+    showPanel(msgBox("❌", "LIFF 初始化失敗", "請確認 LIFF_ID 設定正確，並透過 LINE 開啟此連結。(" + e.message + ")"));
+    return false;
+  }
+
+  if (!liff.isLoggedIn()) {
+    liff.login({ redirectUri: location.href });
+    return false;
+  }
+
+  // 若已有未過期 Session 且非執行綁定動作，直接使用
+  if (!bindCode && getAuth()) {
+    renderUserBar();
+    return true;
+  }
+
+  const idToken = liff.getIDToken();
+  if (!idToken) {
+    logout();
+    return false;
+  }
+
+  try {
+    const r = await api({ action: "lineLogin", idToken, bindCode });
     if (r.status !== "success") {
-      return showPanel(msgBox("❌", "登入失敗", r.message,
-        `<a href="${esc(location.pathname + back)}" class="big-btn bg-blue-600 text-white inline-block">返回</a>`));
+      if (r.code === "TOKEN_EXPIRED") {
+        logout();
+        return false;
+      }
+      showPanel(msgBox("🔒", "無存取權限", r.message,
+        `<button onclick="location.reload()" class="big-btn bg-blue-600 text-white mt-2">重新整理</button>`));
+      return false;
     }
     setAuth(r.token, r.label, r.lineName);
-    if (flow.bindCode) {
-      showPanel(msgBox("✅", "綁定成功", `歡迎,${r.label}!您的 LINE 已完成綁定。`,
-        `<a href="${esc(location.pathname + back)}" class="big-btn bg-blue-600 text-white inline-block">開始瀏覽</a>`));
-      history.replaceState(null, "", location.pathname);
-      renderUserBar();
-    } else {
-      location.replace(location.pathname + back);
-    }
+    renderUserBar();
+    return true;
   } catch (e) {
-    showPanel(msgBox("❌", "連線失敗", "請檢查網路後重試。"));
+    showPanel(msgBox("❌", "伺服器連線失敗", "請檢查網路連線後重試。"));
+    return false;
   }
 }
 
-/* ===== 綁定頁 ===== */
-function showBind(code) {
+/* ===== 綁定專屬頁面 ===== */
+async function handleBindFlow(code) {
   showPanel(`<div class="text-5xl">🔗</div>
-    <h2 class="text-2xl font-bold">LINE 帳號綁定</h2>
-    <p class="text-gray-600">請用您的 LINE 登入,完成後即可瀏覽管理者授權給您的檔案。</p>
-    <button id="btnBind" class="big-btn bg-green-500 hover:bg-green-600 text-white">使用 LINE 登入並綁定</button>`);
-  $("btnBind").onclick = () => startLine({ bindCode: code, returnId: "" });
+    <h2 class="text-2xl font-bold">LINE LIFF 實名綁定</h2>
+    <p class="text-gray-600">點擊下方按鈕將您的 LINE 帳號與管理員核發的授權代號綁定。</p>
+    <button id="btnConfirmBind" class="big-btn bg-green-600 hover:bg-green-700 text-white">✅ 立即驗證並完成綁定</button>`);
+  $("btnConfirmBind").onclick = async () => {
+    const ok = await ensureLiffSession(code);
+    if (!ok) return;
+    const a = getAuth();
+    // 清除網址上的 bind 參數
+    const cleanUrl = location.pathname;
+    history.replaceState(null, "", cleanUrl);
+    showPanel(msgBox("🎉", "綁定成功", `歡迎您，${a.label}！您的 LINE 帳號已完成授權綁定。`,
+      `<a href="${esc(cleanUrl)}" class="big-btn bg-blue-600 text-white inline-block mt-2">進入平台</a>`));
+  };
 }
 
 /* ===== 載入單一檔案 ===== */
 async function loadDoc(id, password) {
-  showPanel(msgBox("⏳", "載入中...", ""));
+  showPanel(msgBox("⏳", "檔案載入中...", "正在驗證檔案權限"));
   let r;
   try { r = await api({ action: "load", id, password: password || "" }); }
-  catch (e) { return showPanel(msgBox("❌", "連線失敗", "請檢查網路後重試。", retryBtn())); }
+  catch (e) { return showPanel(msgBox("❌", "連線失敗", "請檢查網路後重試。")); }
 
-  if (r.status === "success") return renderDoc(r);
+  if (r.status === "success") return renderDoc(id, r);
 
   switch (r.code) {
-    case "NEED_PASSWORD": return showPwForm(id, !!password ? r.message : "");
+    case "NEED_PASSWORD":
+      return showPwForm(id, !!password ? r.message : "");
     case "NEED_LOGIN":
-      localStorage.removeItem("lineAuth"); renderUserBar();
-      showPanel(msgBox("🔒", "需要登入", "此檔案僅限被授權的使用者瀏覽,請先以 LINE 登入。",
-        `<button id="btnGo" class="big-btn bg-green-500 hover:bg-green-600 text-white">使用 LINE 登入</button>`));
-      $("btnGo").onclick = () => startLine({ returnId: id });
+      localStorage.removeItem("liffAuth");
+      if (await ensureLiffSession()) return loadDoc(id, password);
       return;
     case "FORBIDDEN":
-      return showPanel(msgBox("⛔", "沒有權限", r.message, `<a href="${esc(location.pathname)}" class="big-btn bg-blue-600 text-white inline-block">瀏覽其他檔案</a>`));
+      return showPanel(msgBox("⛔", "存取被拒", r.message));
     case "NOT_FOUND":
-      return showPanel(msgBox("🔍", "找不到檔案", "連結可能已失效或檔案已被刪除。"));
+      return showPanel(msgBox("🔍", "找不到檔案", "此分享連結可能已失效或檔案已被移除。"));
     case "LOCKED":
-      return showPanel(msgBox("⏱️", "嘗試次數過多", r.message));
+      return showPanel(msgBox("⏱️", "密碼錯誤次數過多", r.message));
     default:
-      return showPanel(msgBox("❌", "載入失敗", r.message, retryBtn()));
+      return showPanel(msgBox("❌", "載入失敗", r.message));
   }
 }
-function retryBtn() { return `<button onclick="location.reload()" class="big-btn bg-blue-600 text-white">重新載入</button>`; }
 
 function showPwForm(id, errMsg) {
   showPanel(`<div class="text-5xl">🔑</div>
-    <h2 class="text-2xl font-bold">此檔案需要密碼</h2>
+    <h2 class="text-2xl font-bold">此分享檔案受密碼保護</h2>
     ${errMsg ? `<p class="text-red-600 font-bold">${esc(errMsg)}</p>` : ""}
     <form id="pwForm" class="max-w-sm mx-auto space-y-3">
-      <input type="password" id="pwInput" class="inp" placeholder="請輸入密碼" autocomplete="off" autofocus>
-      <button class="big-btn bg-blue-600 hover:bg-blue-700 text-white w-full">確認</button>
+      <input type="password" id="pwInput" class="inp" placeholder="請輸入存取密碼" autocomplete="off" autofocus>
+      <button class="big-btn bg-blue-600 hover:bg-blue-700 text-white w-full">確認解鎖</button>
     </form>`);
-  $("pwForm").onsubmit = e => { e.preventDefault(); const v = $("pwInput").value; if (v) loadDoc(id, v); };
+  $("pwForm").onsubmit = e => {
+    e.preventDefault();
+    const v = $("pwInput").value;
+    if (v) loadDoc(id, v);
+  };
 }
 
-/* ===== 顯示檔案 ===== */
-function textToHtml(t) { // 備用:後端已轉換,正常不會用到
-  return esc(t);
-}
-function renderDoc(r) {
+function renderDoc(id, r) {
   hidePanel();
+  $("listBox").classList.add("hidden");
   document.title = r.title || "檔案檢視";
   $("docTitle").textContent = (r.type === "file" ? "📎 " : "📄 ") + (r.title || "");
   $("docActions").innerHTML = "";
-  const body = $("docBody"); body.replaceChildren();
+
+  // 若非「單一檔案隔離鎖定模式」，才顯示返回資料夾按鈕
+  const backBtn = $("btnBackToFolder");
+  if (SINGLE_FILE_LOCK) {
+    backBtn.classList.add("hidden");
+  } else {
+    backBtn.classList.remove("hidden");
+    backBtn.onclick = () => {
+      $("viewer").classList.add("hidden");
+      $("attBox").classList.add("hidden");
+      $("listBox").classList.remove("hidden");
+      renderExplorer();
+    };
+  }
+
+  const body = $("docBody");
+  body.replaceChildren();
 
   if (r.type === "file") {
-    const id = encodeURIComponent(r.driveId);
+    const did = encodeURIComponent(r.driveId);
     $("docActions").innerHTML =
-      `<a href="https://drive.google.com/uc?export=download&id=${id}" target="_blank" rel="noopener" class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold">⬇️ 下載</a>`;
+      `<a href="https://drive.google.com/uc?export=download&id=${did}" target="_blank" rel="noopener" class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold">⬇️ 下載檔案</a>`;
     const info = document.createElement("div");
     info.className = "px-4 py-2 text-sm text-gray-500 break-all";
     info.textContent = `${r.fileName || ""} ・ ${r.mimeType || ""} ・ ${fmtSize(r.size)}`;
     const f = document.createElement("iframe");
-    f.src = `https://drive.google.com/file/d/${id}/preview`;
-    f.className = "w-full"; f.style.height = "75vh";
+    f.src = `https://drive.google.com/file/d/${did}/preview`;
+    f.className = "w-full";
+    f.style.height = "75vh";
     f.setAttribute("allow", "autoplay; fullscreen");
     body.append(info, f);
   } else {
     const f = document.createElement("iframe");
-    f.className = "w-full"; f.style.height = "80vh";
+    f.className = "w-full";
+    f.style.height = "80vh";
     f.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-modals");
     f.srcdoc = r.code || "";
     body.append(f);
@@ -230,11 +281,10 @@ function renderDoc(r) {
   renderAttachments(r.attachments);
 }
 
-/* ===== 附件 ===== */
 function renderAttachments(list) {
   const box = $("attBox");
   if (!list || !list.length) { box.classList.add("hidden"); return; }
-  box.innerHTML = `<h3 class="text-xl font-bold mb-2">📎 附件下載(${list.length})</h3>` + list.map(a => {
+  box.innerHTML = `<h3 class="text-xl font-bold mb-2">📎 隨附檔案 (${list.length})</h3>` + list.map(a => {
     const id = encodeURIComponent(a.driveId);
     return `<div class="py-2 border-t flex flex-wrap items-center justify-between gap-2">
       <div class="break-all"><b>${esc(a.name)}</b> <span class="text-sm text-gray-500">(${fmtSize(a.size)})</span></div>
@@ -246,48 +296,165 @@ function renderAttachments(list) {
   box.classList.remove("hidden");
 }
 
-/* ===== 清單 ===== */
-let listSeq = 0, searchTimer;
-async function loadList() {
-  hidePanel();
-  $("listBox").classList.remove("hidden");
-  const my = ++listSeq, body = $("listBody");
-  body.innerHTML = `<p class="text-center text-gray-500 py-4">載入中...</p>`;
-  try {
-    const r = await api({ action: "list", keyword: $("searchInput").value.trim() });
-    if (my !== listSeq) return;
-    if (r.status !== "success") { body.innerHTML = `<p class="text-center text-red-600">${esc(r.message)}</p>`; return; }
-    if (!r.list.length) { body.innerHTML = `<p class="text-center text-gray-500 py-4">沒有可瀏覽的檔案</p>`; return; }
-    const groups = new Map();
-    r.list.forEach(f => { const k = f.category || ""; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(f); });
-    const keys = [...groups.keys()].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-Hant"));
-    if (groups.has("")) keys.push("");
-    body.innerHTML = keys.map(k => `
-      <div class="space-y-2">
-        <div class="bg-blue-50 text-blue-900 font-bold px-3 py-1 rounded-lg">${k ? "🏷️ " + esc(k) : "(未分類)"}</div>
-        ${groups.get(k).map(f => `
-          <a href="?id=${encodeURIComponent(f.id)}" class="block p-3 bg-gray-50 hover:bg-blue-50 border rounded-xl">
-            <div class="flex justify-between gap-2">
-              <b class="break-all">${f.type === "file" ? "📎" : "📄"} ${esc(f.title)}</b>
-              <span class="shrink-0 flex gap-1 h-fit">
-                ${f.hasPassword ? '<span class="bg-red-100 text-red-700 px-2 rounded text-xs">🔒密碼</span>' : ""}
-                ${f.attCount ? `<span class="bg-indigo-100 text-indigo-700 px-2 rounded text-xs">📎${f.attCount}</span>` : ""}
-              </span>
-            </div>
-            <div class="text-xs text-gray-500">${esc(f.updatedAt)}${f.type === "file" ? "・" + fmtSize(f.size) : ""}</div>
-          </a>`).join("")}
-      </div>`).join("");
-  } catch (e) { if (my === listSeq) body.innerHTML = `<p class="text-center text-red-600">連線失敗</p>`; }
-}
-$("searchInput").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 400); });
+/* ===== 資料夾與下層檔案階層瀏覽 (僅限授權與分享範圍內) ===== */
+const fById = id => allFolders.find(f => f.id === id);
+const byName = (a, b) => a.name.localeCompare(b.name, "zh-Hant");
 
-/* ===== 進入點 ===== */
-renderUserBar();
-(function main() {
-  if (qs.get("code") || qs.get("error")) return handleCallback();   // LINE 回呼
-  if (qs.get("bind")) return showBind(qs.get("bind"));              // 綁定連結
-  if (qs.get("id")) return loadDoc(qs.get("id"));                   // 單一檔案
-  loadList();                                                       // 檔案清單
+function getFolderPath(id) {
+  const p = [];
+  let f = fById(id), n = 0;
+  while (f && n++ < 20) {
+    p.unshift(f);
+    f = f.parent ? fById(f.parent) : null;
+  }
+  return p;
+}
+
+function countInFolderTree(folderId) {
+  const subIds = [folderId];
+  for (let i = 0; i < subIds.length; i++) {
+    allFolders.filter(f => f.parent === subIds[i]).forEach(f => subIds.push(f.id));
+  }
+  const set = new Set(subIds);
+  return allFiles.filter(x => set.has(x.folderId || "")).length;
+}
+
+function renderExplorer() {
+  const kw = $("searchInput").value.trim().toLowerCase();
+  const nav = $("folderNav"), body = $("listBody");
+
+  // 標題顯示分享範圍
+  if (SCOPE_FOLDER_ID) {
+    const rootFolder = fById(SCOPE_FOLDER_ID);
+    $("listHeading").textContent = "📁 分享專區：" + (rootFolder ? rootFolder.name : "指定資料夾");
+  }
+
+  // 渲染麵包屑與下層資料夾
+  if (kw) {
+    nav.innerHTML = `<div class="text-sm text-blue-800 bg-blue-50 p-2 rounded-lg">🔍 搜尋「${esc(kw)}」於授權範圍內的所有子資料夾結果：</div>`;
+  } else {
+    const path = getFolderPath(curFolder);
+    const crumbs = [];
+    if (!SCOPE_FOLDER_ID) {
+      crumbs.push(`<button data-open-folder="" class="underline text-blue-700 font-bold">🏠 根目錄</button>`);
+    }
+    path.forEach(f => {
+      crumbs.push(`<button data-open-folder="${esc(f.id)}" class="underline text-blue-700 font-bold break-all">📁 ${esc(f.name)}</button>`);
+    });
+
+    const subFolders = allFolders.filter(f => f.parent === curFolder).sort(byName);
+    nav.innerHTML = `
+      <div class="flex flex-wrap items-center gap-1 text-base bg-gray-100 p-2.5 rounded-xl">${crumbs.join(" <span>›</span> ")}</div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+        ${subFolders.map(f => `
+          <button data-open-folder="${esc(f.id)}" class="p-3 bg-teal-50 hover:bg-teal-100 border-2 border-teal-200 rounded-xl flex justify-between items-center text-left">
+            <span class="font-bold break-all">📁 ${esc(f.name)}</span>
+            <span class="text-sm text-teal-800 bg-teal-200/60 px-2.5 py-0.5 rounded-full shrink-0">${countInFolderTree(f.id)} 個項目</span>
+          </button>
+        `).join("")}
+      </div>`;
+  }
+
+  // 過濾當前層級或搜尋結果的檔案
+  let items = allFiles;
+  if (kw) {
+    items = items.filter(f => [f.title, f.fileName, f.category].join("\n").toLowerCase().includes(kw));
+  } else {
+    items = items.filter(f => (f.folderId || "") === curFolder);
+  }
+
+  if (!items.length) {
+    body.innerHTML = `<p class="text-center text-gray-500 py-6">此位置沒有檔案</p>`;
+    return;
+  }
+
+  const groups = new Map();
+  items.forEach(f => {
+    const k = f.category || "";
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(f);
+  });
+  const keys = [...groups.keys()].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  if (groups.has("")) keys.push("");
+
+  body.innerHTML = keys.map(k => `
+    <div class="space-y-2">
+      <div class="bg-blue-50 text-blue-900 font-bold px-3 py-1 rounded-lg">${k ? "🏷️ " + esc(k) : "📄 檔案列表"}</div>
+      ${groups.get(k).map(f => `
+        <button data-open-doc="${esc(f.id)}" class="w-full text-left block p-3.5 bg-gray-50 hover:bg-blue-50 border-2 rounded-xl transition">
+          <div class="flex justify-between gap-2">
+            <b class="break-all text-lg">${f.type === "file" ? "📎" : "📄"} ${esc(f.title)}</b>
+            <span class="shrink-0 flex gap-1 h-fit">
+              ${f.hasPassword ? '<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold">🔒密碼</span>' : ""}
+              ${f.attCount ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs font-bold">📎${f.attCount}</span>` : ""}
+            </span>
+          </div>
+          <div class="text-xs text-gray-500 mt-1">${esc(f.updatedAt)}${f.type === "file" ? " ・ " + fmtSize(f.size) : ""}</div>
+        </button>`).join("")}
+    </div>`).join("");
+}
+
+async function loadList() {
+  showPanel(msgBox("⏳", "讀取授權資料夾中...", ""));
+  try {
+    const r = await api({ action: "list" });
+    if (r.status !== "success") {
+      if (r.code === "NEED_LOGIN") {
+        localStorage.removeItem("liffAuth");
+        if (await ensureLiffSession()) return loadList();
+        return;
+      }
+      return showPanel(msgBox("❌", "無法讀取清單", r.message));
+    }
+    allFiles = r.list || [];
+    allFolders = r.folders || [];
+    if (SCOPE_FOLDER_ID && !fById(curFolder)) curFolder = SCOPE_FOLDER_ID;
+    hidePanel();
+    $("listBox").classList.remove("hidden");
+    renderExplorer();
+  } catch (e) {
+    showPanel(msgBox("❌", "連線失敗", "請重新整理頁面。"));
+  }
+}
+
+/* ===== 事件綁定 ===== */
+document.addEventListener("click", e => {
+  const fb = e.target.closest("[data-open-folder]");
+  if (fb) {
+    curFolder = fb.dataset.openFolder || "";
+    renderExplorer();
+    return;
+  }
+  const db = e.target.closest("[data-open-doc]");
+  if (db) {
+    loadDoc(db.dataset.openDoc);
+  }
+});
+
+$("searchInput").addEventListener("input", renderExplorer);
+
+/* ===== 主進入點 (強制 LIFF 把關) ===== */
+(async function main() {
+  renderUserBar();
+  const bindCode = qs.get("bind");
+  if (bindCode) return handleBindFlow(bindCode);
+
+  const ok = await ensureLiffSession();
+  if (!ok) return;
+
+  // 若是單一檔案分享 (?id=xxx 且無 ?folder=xxx)，嚴格鎖定只顯示該檔案，不提供總清單連結
+  if (SINGLE_FILE_LOCK) {
+    $("brandArea").innerHTML = `<span>📄 專屬分享檔案</span>`;
+    return loadDoc(INITIAL_DOC_ID);
+  }
+
+  // 若是資料夾分享 (?folder=FLD_xxx)，鎖定在該資料夾及下層
+  if (SCOPE_FOLDER_ID) {
+    $("brandArea").innerHTML = `<span>📁 專屬分享資料夾</span>`;
+  }
+
+  await loadList();
+  if (INITIAL_DOC_ID) loadDoc(INITIAL_DOC_ID);
 })();
 </script>
 </body>
