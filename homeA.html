@@ -257,7 +257,7 @@
       cursor: pointer; padding: 6px 0; text-align: left; display: block; min-height: 44px;
     }
 
-    /* 抽屜、彈窗與維護遮罩 */
+    /* 彈窗、維護遮罩與無障礙提示條 */
     .overlay {
       position: fixed; inset: 0; z-index: 80;
       background: rgba(0,0,0,0.65); display: flex;
@@ -272,6 +272,16 @@
       position: fixed; inset: 0; z-index: 95;
       background: var(--cream); display: flex;
       align-items: center; justify-content: center; padding: 20px;
+    }
+    .toast-banner {
+      position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%);
+      z-index: 120; background: #111827; color: #FFFFFF;
+      border: 3px solid var(--yellow); border-radius: 16px;
+      padding: 14px 22px; font-weight: 700; max-width: 92vw;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.28);
+    }
+    @media (min-width: 1024px) {
+      .toast-banner { bottom: 24px; }
     }
     .hidden { display: none !important; }
     .mt-1 { margin-top: 8px; } .mt-2 { margin-top: 16px; } .mt-3 { margin-top: 24px; }
@@ -372,16 +382,19 @@
     <button type="button" class="dock-btn" data-route="sitemap" onclick="go('sitemap')"><span>☰</span><span>全部</span></button>
   </nav>
 
-  <!-- 編輯彈窗 Modal -->
+  <!-- 編輯與確認彈窗 Modal -->
   <div id="editor-modal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-box">
       <div class="between mb-2" style="border-bottom:2px solid var(--border); padding-bottom:12px;">
         <h2 id="modal-title" style="margin:0;">編輯內容</h2>
         <button type="button" class="btn btn-sm btn-outline" onclick="closeModal()" aria-label="關閉視窗">✕ 關閉</button>
       </div>
-      <form id="modal-form" onsubmit="submitModalForm(event)" class="grid"></form>
+      <form id="modal-form" class="grid"></form>
     </div>
   </div>
+
+  <!-- 無障礙即時狀態提示 Toast -->
+  <div id="toast-msg" class="toast-banner hidden" role="status" aria-live="polite"></div>
 
   <!-- 全站頁尾 -->
   <footer class="site-footer" role="contentinfo">
@@ -421,18 +434,49 @@
   </footer>
 
   <script>
-    // 請於部署 Code.gs 後填入網頁應用程式網址
-    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyXxokbQZoxz_tygvPEa5SN6Ow04_4prvLM5gzd-vN9qYXUq5afHO2YgOmJjBu8A1HNag/exec';
+    // 已連接您的 Google Apps Script 網頁應用程式網址
+    const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyjo_U-9f5jmvgsHbaXYZbyzKjA8B067NEUWI7FCxh2fHU_LSWWWOulM7CXOizyM9HrnA/exec';
 
     const $(id) => document.getElementById(id);
     const esc = (str) => String(str ?? '')
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+    let toastTimer = null;
+    function showToast(msg, duration = 4200) {
+      const el = $('toast-msg');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.add('hidden'), duration);
+    }
+
+    function openConfirmDialog(title, message, onConfirm, requireKeyword = '') {
+      $('modal-title').textContent = title;
+      $('modal-form').innerHTML = `
+        <div class="notice-box">${esc(message)}</div>
+        ${requireKeyword ? `<div><label for="confirm-kw">請輸入「${esc(requireKeyword)}」以確認執行：</label><input id="confirm-kw" type="text" required autocomplete="off"></div>` : ''}
+        <div class="flex-wrap" style="justify-content:flex-end;">
+          <button type="button" class="btn btn-outline" onclick="closeModal()">取消</button>
+          <button type="submit" class="btn btn-danger">確認執行</button>
+        </div>
+      `;
+      $('modal-form').onsubmit = async (e) => {
+        e.preventDefault();
+        if (requireKeyword && $('confirm-kw').value.trim() !== requireKeyword) {
+          showToast('確認字樣不符，已取消操作。');
+          return;
+        }
+        closeModal();
+        await onConfirm();
+      };
+      $('editor-modal').classList.remove('hidden');
+    }
+
     const state = {
       route: 'home',
       param: null,
-      isDemoMode: true,
+      isDemoMode: false,
       auth: { loggedIn: false, account: '', secret: '', name: '', role: '' },
       data: {
         settings: [],
@@ -462,19 +506,19 @@
       }
     };
 
-    // 內建示範資料（明確標示為【示範資料】，未接上正式 GAS 前供版型預覽）
+    // 內建預設與示範資料（當遠端工作表尚未填入資料時作為備援顯示）
     function loadSeedDemoData() {
-      state.isDemoMode = GAS_API_URL.includes('待填');
+      state.isDemoMode = !GAS_API_URL || GAS_API_URL.includes('待填');
       state.data.settings = [
-        { key: 'MAINTENANCE_MODE', group: '系統', desc: '網站維護中開關', value: 'OFF', impactScope: '全站遮罩', updatedAt: '2026-11-19', updatedBy: '示範預設' },
-        { key: 'ORG_NAME', group: '基本資訊', desc: '協會正式名稱', value: '社團法人台灣帕金森病友權益促進會', impactScope: '首頁、關於、頁尾', updatedAt: '2026-11-19', updatedBy: '示範預設' },
-        { key: 'ORG_SLOGAN', group: '基本資訊', desc: '協會標語', value: '慢，但不停。有夢就追，把握當下。', impactScope: '首頁、頁尾', updatedAt: '2026-11-19', updatedBy: '示範預設' },
-        { key: 'ORG_EMAIL', group: '基本資訊', desc: '聯絡信箱', value: 'tpdaorgtw@gmail.com', impactScope: '聯絡頁、頁尾', updatedAt: '2026-11-19', updatedBy: '示範預設' },
-        { key: 'ORG_PHONE', group: '基本資訊', desc: '專線電話', value: '【待確認：專線電話】', impactScope: '聯絡頁、頁尾', updatedAt: '2026-11-19', updatedBy: '示範預設' },
-        { key: 'ORG_ADDRESS', group: '基本資訊', desc: '協會會址', value: '【待確認：協會會址】', impactScope: '聯絡頁、頁尾', updatedAt: '2026-11-19', updatedBy: '示範預設' },
-        { key: 'LOVE_CODE', group: '基本資訊', desc: '電子發票愛心碼', value: '8730', impactScope: '財務頁、頁尾', updatedAt: '2026-11-19', updatedBy: '示範預設' },
-        { key: 'HERO_TITLE', group: '版面內容', desc: '首頁主視覺標題', value: '慢一點，也能抵達夢想', impactScope: '首頁', updatedAt: '2026-11-19', updatedBy: '示範預設' },
-        { key: 'HERO_SUBTITLE', group: '版面內容', desc: '首頁主視覺副標', value: '與帕金森同行的路上，步調或許變慢了，但人生的選擇權依然握在您手中。', impactScope: '首頁', updatedAt: '2026-11-19', updatedBy: '示範預設' }
+        { key: 'MAINTENANCE_MODE', group: '系統', desc: '網站維護中開關', value: 'OFF', impactScope: '全站遮罩', updatedAt: '2026-11-19', updatedBy: '系統預設' },
+        { key: 'ORG_NAME', group: '基本資訊', desc: '協會正式名稱', value: '社團法人台灣帕金森病友權益促進會', impactScope: '首頁、關於、頁尾', updatedAt: '2026-11-19', updatedBy: '系統預設' },
+        { key: 'ORG_SLOGAN', group: '基本資訊', desc: '協會標語', value: '慢，但不停。有夢就追，把握當下。', impactScope: '首頁、頁尾', updatedAt: '2026-11-19', updatedBy: '系統預設' },
+        { key: 'ORG_EMAIL', group: '基本資訊', desc: '聯絡信箱', value: 'tpdaorgtw@gmail.com', impactScope: '聯絡頁、頁尾', updatedAt: '2026-11-19', updatedBy: '系統預設' },
+        { key: 'ORG_PHONE', group: '基本資訊', desc: '專線電話', value: '【待確認：專線電話】', impactScope: '聯絡頁、頁尾', updatedAt: '2026-11-19', updatedBy: '系統預設' },
+        { key: 'ORG_ADDRESS', group: '基本資訊', desc: '協會會址', value: '【待確認：協會會址】', impactScope: '聯絡頁、頁尾', updatedAt: '2026-11-19', updatedBy: '系統預設' },
+        { key: 'LOVE_CODE', group: '基本資訊', desc: '電子發票愛心碼', value: '8730', impactScope: '財務頁、頁尾', updatedAt: '2026-11-19', updatedBy: '系統預設' },
+        { key: 'HERO_TITLE', group: '版面內容', desc: '首頁主視覺標題', value: '慢一點，也能抵達夢想', impactScope: '首頁', updatedAt: '2026-11-19', updatedBy: '系統預設' },
+        { key: 'HERO_SUBTITLE', group: '版面內容', desc: '首頁主視覺副標', value: '與帕金森同行的路上，步調或許變慢了，但人生的選擇權依然握在您手中。', impactScope: '首頁', updatedAt: '2026-11-19', updatedBy: '系統預設' }
       ];
       state.data.stats = [
         { id: 'S1', name: '陪伴帕友與家庭', value: '', unit: '戶', definition: '累計建檔服務家庭數', period: '【待確認】', updateMode: '人工輸入', source: '會務登錄表', dataAsOf: '2026-11-19', updatedAt: '2026-11-19', isPublic: true },
@@ -484,7 +528,7 @@
         { id: 'Q1', title: '今天很累也沒關係', content: '今天很累也沒關係；休息是為了明天能再多走十步。', authorSource: '【示範文案】協會陪伴語錄', isFallback: true, status: '已發布' }
       ];
       state.data.news = [
-        { id: 'N1', category: '重要公告', priority: '置頂', title: '【示範資料】網站新架構與無障礙測試版開放檢視', summary: '歡迎帕友、家屬與志工協助測試三段字級、高對比與語音朗讀功能。', body: '本則為系統示範公告。正式上線前將由協會內容管理者替換為正式公告內容。', isPinned: true, showOnHome: true, publishAt: '2026-11-19', expireAt: '2026-12-31', status: '已發布' }
+        { id: 'N1', category: '重要公告', priority: '置頂', title: '【示範資料】網站新架構與無障礙正式版上線測試', summary: '歡迎帕友、家屬與志工協助測試三段字級、高對比與語音朗讀功能。', body: '本則為系統示範公告。正式運作後可於後台「內容文章管理」修改或下架。', isPinned: true, showOnHome: true, publishAt: '2026-11-19', expireAt: '2026-12-31', status: '已發布' }
       ];
       state.data.edu = [
         { id: 'EDU1', topic: '1. 帕金森病是什麼', title: '認識帕金森病：不是老化，也不是絕症', summary: '用白話比喻理解大腦黑質與多巴胺信使的變化。', body: '大腦裡有一個負責協調動作的指揮中心叫「黑質」，分泌「多巴胺」。當多巴胺減少，身體就像按下慢速播放鍵。透過規律服藥與持續運動，許多夥伴仍能維持良好生活品質。', myths: '迷思：手不抖就不是帕金森？事實：部分病友以動作變慢、僵硬為主，未必出現顫抖。', references: '【待確認：台灣動作障礙學會衛教來源】', reviewer: '【待審閱：神經內科醫師】', reviewDate: '待審閱', status: '已發布' },
@@ -562,7 +606,6 @@
       }
     }
 
-    // 路由切換
     function go(route, param = null) {
       state.route = route;
       state.param = param;
@@ -615,7 +658,6 @@
       const publicStats = state.data.stats.filter(s => String(s.isPublic).toUpperCase() !== 'FALSE');
 
       setMain(`
-        ${state.isDemoMode ? '<div class="notice-box mb-2"><strong>【系統示範模式】</strong>目前尚未連接正式 Google Apps Script 網址，畫面顯示為示範與待確認架構資料。</div>' : ''}
         <section class="hero-box">
           <span class="badge">☀️ ${esc(getSetting('ORG_SLOGAN'))}</span>
           <h1 class="mt-1">${esc(getSetting('HERO_TITLE'))}</h1>
@@ -1122,7 +1164,7 @@
     function openAdminLogin() {
       $('modal-title').textContent = '工作人員 CMS 登入';
       $('modal-form').innerHTML = `
-        <p style="font-size:0.9rem;">請輸入個人帳號與密碼（示範模式未連後端時可輸入任意非空字元體驗介面）。</p>
+        <p style="font-size:0.9rem;">請輸入個人帳號與密碼（預設管理者帳號為 <strong>master</strong>，密碼請輸入指令碼屬性設定的 <code>ADMIN_PASS</code>）。</p>
         <div><label for="adm-acc">帳號識別</label><input id="adm-acc" name="account" type="text" value="master" required></div>
         <div><label for="adm-sec">密碼</label><input id="adm-sec" name="secret" type="password" required></div>
         <button type="submit" class="btn btn-primary">登入維護工作區</button>
@@ -1136,14 +1178,17 @@
           state.auth = { loggedIn: true, account, secret, name: '示範管理者', role: '系統管理者' };
           closeModal();
           applyGlobalSettingsToChrome();
+          showToast('已登入示範維護工作區');
           go('admin');
           return;
         }
+        showToast('正在驗證帳號權限...');
         const res = await postGas({ action: 'AUTH_CHECK', account, secret });
         if (res.success) {
           state.auth = { loggedIn: true, account, secret, name: res.user.name, role: res.user.role };
           closeModal();
           await fetchAllData();
+          showToast(`歡迎回來，${res.user.name}！`);
           go('admin');
         }
       };
@@ -1153,6 +1198,7 @@
     function logoutAdmin() {
       state.auth = { loggedIn: false, account: '', secret: '', name: '', role: '' };
       applyGlobalSettingsToChrome();
+      showToast('已安全登出維護模式');
       go('home');
     }
 
@@ -1323,6 +1369,7 @@
         }
         closeModal();
         applyGlobalSettingsToChrome();
+        showToast('設定已更新並全站同步');
         renderAdminDashboard();
       };
       $('editor-modal').classList.remove('hidden');
@@ -1339,6 +1386,7 @@
         await fetchAllData();
       }
       applyGlobalSettingsToChrome();
+      showToast(next === 'ON' ? '已開啟「網站維護中」全站遮罩' : '已解除維護模式，網站恢復正常開放');
       renderAdminDashboard();
     }
 
@@ -1378,7 +1426,7 @@
         if (mod === 'quotes') item.content = item.summary;
 
         if ((mod === 'edu' || mod === 'exercises') && item.status === '已發布' && (!item.reviewer || !item.reviewDate)) {
-          alert('合規攔截：醫療與運動內容必須填寫「審閱醫師」與「審閱日期」才能發布！');
+          showToast('合規攔截：醫療與運動內容必須填寫「審閱醫師」與「審閱日期」才能發布！');
           return;
         }
 
@@ -1396,22 +1444,25 @@
           await fetchAllData();
         }
         closeModal();
+        showToast('資料已儲存並同步！');
         renderAdminDashboard();
       };
       $('editor-modal').classList.remove('hidden');
     }
 
-    async function trashItem(mod, id) {
-      if (!confirm('確定移至回收桶嗎？（移入後前台不再顯示，保存期內可復原）')) return;
-      if (state.isDemoMode) {
-        const it = state.data[mod].find(x => x.id === id);
-        if (it) it.status = '回收桶';
-      } else {
-        const res = await postGas({ action: 'TRASH', module: mod, item: { id } });
-        if (!res.success) return;
-        await fetchAllData();
-      }
-      renderAdminDashboard();
+    function trashItem(mod, id) {
+      openConfirmDialog('移至回收桶確認', '確定要將此筆資料移至回收桶嗎？（移入後前台不再顯示，保存期內可隨時復原）', async () => {
+        if (state.isDemoMode) {
+          const it = state.data[mod].find(x => x.id === id);
+          if (it) it.status = '回收桶';
+        } else {
+          const res = await postGas({ action: 'TRASH', module: mod, item: { id } });
+          if (!res.success) return;
+          await fetchAllData();
+        }
+        showToast('已移至回收桶');
+        renderAdminDashboard();
+      });
     }
 
     async function restoreItem(mod, id) {
@@ -1423,19 +1474,22 @@
         if (!res.success) return;
         await fetchAllData();
       }
+      showToast('已從回收桶復原為「已下架」狀態');
       renderAdminDashboard();
     }
 
-    async function permDeleteItem(mod, id) {
-      if (prompt('永久刪除無法復原，請輸入「DELETE」確認：') !== 'DELETE') return;
-      if (state.isDemoMode) {
-        state.data[mod] = state.data[mod].filter(x => x.id !== id);
-      } else {
-        const res = await postGas({ action: 'PERMANENT_DELETE', module: mod, item: { id } });
-        if (!res.success) return;
-        await fetchAllData();
-      }
-      renderAdminDashboard();
+    function permDeleteItem(mod, id) {
+      openConfirmDialog('永久刪除警告', '此操作將永久移除資料且無法復原！', async () => {
+        if (state.isDemoMode) {
+          state.data[mod] = state.data[mod].filter(x => x.id !== id);
+        } else {
+          const res = await postGas({ action: 'PERMANENT_DELETE', module: mod, item: { id } });
+          if (!res.success) return;
+          await fetchAllData();
+        }
+        showToast('已永久刪除該筆資料');
+        renderAdminDashboard();
+      }, 'DELETE');
     }
 
     function exportBackupJson() {
@@ -1451,23 +1505,37 @@
     // ==================== API 與無障礙控制 ====================
     async function fetchAllData() {
       if (state.isDemoMode) return;
-      const mode = state.auth.loggedIn ? `&mode=admin&account=${encodeURIComponent(state.auth.account)}&secret=${encodeURIComponent(state.auth.secret)}` : '';
-      const res = await fetch(`${GAS_API_URL}?t=${Date.now()}${mode}`);
-      const json = await res.json();
-      if (json.success) {
-        state.data = { ...state.data, ...json.data };
-        applyGlobalSettingsToChrome();
+      try {
+        const mode = state.auth.loggedIn ? `&mode=admin&account=${encodeURIComponent(state.auth.account)}&secret=${encodeURIComponent(state.auth.secret)}` : '';
+        const res = await fetch(`${GAS_API_URL}?t=${Date.now()}${mode}`);
+        const json = await res.json();
+        if (json.success && json.data) {
+          Object.keys(json.data).forEach(k => {
+            if (Array.isArray(json.data[k]) && json.data[k].length > 0) {
+              state.data[k] = json.data[k];
+            }
+          });
+          applyGlobalSettingsToChrome();
+        }
+      } catch (err) {
+        console.warn('遠端資料同步異常，維持預設顯示：', err);
       }
     }
 
     async function postGas(payload) {
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ ...payload, account: state.auth.account, secret: state.auth.secret })
-      });
-      const json = await res.json();
-      if (!json.success) alert('操作失敗：' + json.message);
-      return json;
+      try {
+        const res = await fetch(GAS_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ ...payload, account: state.auth.account, secret: state.auth.secret })
+        });
+        const json = await res.json();
+        if (!json.success) showToast('操作失敗：' + json.message);
+        return json;
+      } catch (err) {
+        showToast('網路或伺服器連線異常：' + err.message);
+        return { success: false, message: err.message };
+      }
     }
 
     async function submitPublicForm(e, sourceName) {
@@ -1475,13 +1543,17 @@
       const item = Object.fromEntries(new FormData(e.target).entries());
       item.source = sourceName;
       if (state.isDemoMode) {
-        alert(`【示範模式】您的「${sourceName}」已送出，正式環境將寫入 Google Sheets 收件匣。`);
+        showToast(`【示範模式】您的「${sourceName}」已送出。`);
         e.target.reset();
         return;
       }
-      const res = await fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: 'SUBMIT_FORM', item }) });
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'SUBMIT_FORM', item })
+      });
       const json = await res.json();
-      alert(json.message);
+      showToast(json.message);
       if (json.success) e.target.reset();
     }
 
@@ -1497,7 +1569,10 @@
     }
 
     function toggleSpeech() {
-      if (!('speechSynthesis' in window)) return alert('此瀏覽器不支援語音朗讀功能。');
+      if (!('speechSynthesis' in window)) {
+        showToast('此瀏覽器不支援語音朗讀功能。');
+        return;
+      }
       if (speechSynthesis.speaking) {
         speechSynthesis.cancel();
         $('speech-btn').textContent = '🔊 朗讀本頁';
