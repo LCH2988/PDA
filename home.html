@@ -471,12 +471,12 @@
     <main id="view" tabindex="-1">載入中…</main>
     <footer id="foot"></footer>
     <div id="dock">
-      <!-- <div id="giveBar" role="region" aria-label="支持協會">
+      <div id="giveBar" role="region" aria-label="支持協會">
         <span>❤️ 愛心碼 8730</span>
         <a id="giveDonate" href="#/donate">我要捐款</a>
         <a id="giveJoin" class="j" href="#/fee">繳交會費／入會</a>
         <a class="m" href="#/systems">各系統入口</a>
-      </div> -->
+      </div>
       <nav id="tabbar" aria-label="手機快捷導覽">
         <a href="#/" data-page="home"><span>🏠</span>首頁</a>
         <a href="#/learn" data-page="learn"><span>📖</span>衛教生活</a>
@@ -541,7 +541,7 @@
 /* =========================================================================
    一、系統連線、組織資料與跨系統整合設定
    ========================================================================= */
-const API_URL = 'https://script.google.com/macros/s/AKfycbyFOfjiiYRRQtWMsft7RHhcgBF_uA-HjRdfl0s2o2TxGFxrtw1U2CR79FJF9w2gRfLNmw/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbx1MeNkZ1oOJypOp2tUdXyCwP273PHk6Fg4r4nxPv3pLlDI_Jt02ys7ZsPNDKGVOlKVvw/exec';
 const LIFF_ID = '2009456572-EflpADae';
 const SYS_URLS = {
   finance: 'https://tpda.org.tw/finance.html',
@@ -1363,7 +1363,7 @@ function eduSubNavHtml(activeKey) {
   return '<div class="mem-subnav noprint" role="navigation" aria-label="衛教與生活支持選單">' + tabs.map(t => '<a href="' + t[1] + '" class="' + (t[0] === activeKey ? 'on' : '') + '">' + t[2] + '</a>').join('') + '</div>';
 }
 function docsAboutSubNavHtml(activeKey) {
-  return '<div class="mem-subnav noprint"><a href="#/about" class="' + (activeKey === 'about' ? 'on' : '') + '">🏛️ 關於協會與理監事</a><a href="#/downloads" class="' + (activeKey === 'downloads' ? 'on' : '') + '">📥 檔案下載專區</a><a href="#/systems" class="' + (activeKey === 'systems' ? 'on' : '') + '">🧭 各系統入口</a></div>';
+  return '<div class="mem-subnav noprint"><a href="#/about" class="' + (activeKey === 'about' ? 'on' : '') + '">🏛️ 關於協會與理監事</a><a href="#/downloads" class="' + (activeKey === 'downloads' ? 'on' : '') + '">📥 檔案下載專區</a><a href="#/volunteer" class="' + (activeKey === 'volunteer' ? 'on' : '') + '">🙌 好人幫志工</a><a href="#/systems" class="' + (activeKey === 'systems' ? 'on' : '') + '">🧭 各系統入口</a></div>';
 }
 
 function goMember(key) {
@@ -2543,6 +2543,110 @@ registerAdminPage({
   }
 });
 
+registerAdminPage({
+  key: 'volunteers', title: '好人幫志工管理', icon: '🙌', group: '會務與內容', roles: 'MEMBER_MGR',
+  render: async el => {
+    const d = await api('volunteer.adminList', {});
+    const pendingLogs = (d.logs || []).filter(l => l.status === '待審核');
+    const curYm = todayStr().slice(0, 7);
+    el.innerHTML = '<div class="row"><h1 style="margin:0">🙌 好人幫志工管理</h1><span class="spacer"></span>' +
+      '<button type="button" class="btn sec" id="vlAddShift">＋ 新增志工班次</button>' +
+      '<button type="button" class="btn acc" id="vlReportBtn">📄 衛生局月報</button></div>' +
+      '<div class="kpis" style="margin-top:12px">' +
+      kpi('登記志工', (d.volunteers || []).length + ' 位', 'var(--navy)') +
+      kpi('開放班次', (d.shifts || []).length + ' 場', 'var(--pine)') +
+      kpi('待審時數', pendingLogs.length + ' 筆', 'var(--warn)') + '</div>' +
+      '<h2>⏳ 待審核服務時數（' + pendingLogs.length + '）</h2>' +
+      (pendingLogs.length ? pendingLogs.map(l => '<div class="card"><div class="row-between"><div><strong>' + esc(l.name) + '</strong> · ' + esc(l.item) + ' · <b>' + l.hours + ' 小時</b>' +
+        '<div class="muted">' + esc(l.date) + '｜' + esc(l.content || '無備註') + '</div></div>' +
+        '<div class="row"><button type="button" class="btn sm ok" data-vlog-ok="' + esc(l.id) + '">✓ 核可</button><button type="button" class="btn sm bad" data-vlog-no="' + esc(l.id) + '">✕ 退回</button></div></div></div>').join('') : '<div class="card muted">目前沒有待審核的時數紀錄</div>') +
+      '<h2>📅 志工排班總覽</h2><div class="card pad-0">' +
+      simpleTable([{h:'日期',k:'date'},{h:'時段',k:'slot'},{h:'項目',k:'item'},{h:'地點',k:'location'},{h:'報名／需求',r:r=>r.claimed.length + ' / ' + r.needed + ' 人'}], d.shifts || []) + '</div>' +
+      '<h2>👥 好人幫志工名冊</h2><div class="card pad-0">' +
+      simpleTable([{h:'編號',k:'volunteerId'},{h:'姓名',k:'name'},{h:'手機',k:'phone'},{h:'組別',k:'group'},{h:'專長',k:'skills'},{h:'累計時數',r:r=>'<b>'+r.totalHours+' 小時</b>'}], d.volunteers || []) + '</div>';
+
+    $('#vlAddShift', el).addEventListener('click', () => openForm({
+      title: '新增好人幫志工班次',
+      body: fieldHtml({id:'vsD',label:'服務日期',type:'date',required:true,value:todayStr()}) +
+        fieldHtml({id:'vsT',label:'時段',required:true,value:'09:00–12:00'}) +
+        fieldHtml({id:'vsI',label:'服務項目',required:true,placeholder:'例：健走活動引導／電話關懷'}) +
+        fieldHtml({id:'vsL',label:'地點',value:'協會會館'}) +
+        fieldHtml({id:'vsN',label:'需求人數',type:'number',value:2,min:1}) +
+        fieldHtml({id:'vsNote',label:'備註',type:'textarea'}),
+      onSubmit: async m => {
+        await api('volunteer.addShift', { date:val('vsD',m.el), slot:val('vsT',m.el), item:val('vsI',m.el), location:val('vsL',m.el), needed:Number(val('vsN',m.el)||2), note:val('vsNote',m.el) });
+        toast('已新增志工班次', 'ok'); reloadAdmin();
+      }
+    }));
+    el.querySelectorAll('[data-vlog-ok]').forEach(b => b.addEventListener('click', () => run(b, async () => {
+      await api('volunteer.approveLog', { id: b.dataset.vlogOk }); toast('已核可時數', 'ok'); reloadAdmin();
+    })));
+    el.querySelectorAll('[data-vlog-no]').forEach(b => b.addEventListener('click', async () => {
+      if (!(await confirmDialog('確定退回此筆時數紀錄？', { danger: true }))) return;
+      await run(b, async () => { await api('volunteer.rejectLog', { id: b.dataset.vlogNo }); toast('已退回', 'warn'); reloadAdmin(); });
+    }));
+    $('#vlReportBtn', el).addEventListener('click', () => openForm({
+      title: '產生衛生局志工服務月報',
+      body: fieldHtml({ id:'vrYm', label:'統計月份（YYYY-MM）', required:true, value:curYm }),
+      okText: '產生報表',
+      onSubmit: async m => {
+        const ym = val('vrYm', m.el);
+        const rep = await api('volunteer.monthlyReport', { month: ym });
+        m.close(true);
+        const html = `<div style="font-family:'Noto Sans TC',sans-serif;padding:16px">
+          <h2 style="text-align:center;margin:0 0 6px">${esc(rep.unit)}</h2>
+          <h3 style="text-align:center;margin:0 0 14px">${esc(rep.month)} 志工服務時數月報表</h3>
+          <table style="width:100%;border-collapse:collapse;font-size:14px">
+            <thead><tr style="background:#EEF3FA"><th style="border:1px solid #333;padding:6px">志工編號</th><th style="border:1px solid #333;padding:6px">姓名</th><th style="border:1px solid #333;padding:6px">服務組別</th><th style="border:1px solid #333;padding:6px">本月服務次數</th><th style="border:1px solid #333;padding:6px">本月時數</th><th style="border:1px solid #333;padding:6px">累計總時數</th></tr></thead>
+            <tbody>${(rep.rows||[]).map(r=>`<tr><td style="border:1px solid #333;padding:6px">${esc(r.volunteerId)}</td><td style="border:1px solid #333;padding:6px">${esc(r.name)}</td><td style="border:1px solid #333;padding:6px">${esc(r.group)}</td><td style="border:1px solid #333;padding:6px;text-align:center">${r.monthCount}</td><td style="border:1px solid #333;padding:6px;text-align:right">${r.monthHours}</td><td style="border:1px solid #333;padding:6px;text-align:right">${r.totalHours}</td></tr>`).join('')}</tbody>
+            <tfoot><tr><th colspan="4" style="border:1px solid #333;padding:6px;text-align:right">本月合計總時數</th><th style="border:1px solid #333;padding:6px;text-align:right">${rep.totalMonthHours} 小時</th><th style="border:1px solid #333;padding:6px"></th></tr></tfoot>
+          </table></div>`;
+        openModal({ title: ym + ' 衛生局志工月報', wide: true, body: html,
+          footer: '<button type="button" class="btn" id="vlPrt">🖨️ 列印報表</button><button type="button" class="btn gh" id="vlCsv">⬇ 匯出 CSV</button><button type="button" class="btn btn-gray" data-close>關閉</button>',
+          onOpen: rm => {
+            rm.$('#vlPrt').addEventListener('click', () => printHtml(html));
+            rm.$('#vlCsv').addEventListener('click', () => {
+              const csv = ['﻿志工編號,姓名,服務組別,本月服務次數,本月時數,累計總時數'].concat((rep.rows||[]).map(r => [r.volunteerId,r.name,r.group,r.monthCount,r.monthHours,r.totalHours].join(','))).join('\n');
+              const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+              const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'tpda_volunteer_' + ym + '.csv'; a.click();
+            });
+          }
+        });
+      }
+    }));
+  }
+});
+
+registerAdminPage({
+  key: 'submissions', title: '提案與電子報', icon: '📬', group: '會務與內容', roles: 'MEMBER_MGR',
+  render: async el => {
+    const list = (await api('submission.list', {})).items || [];
+    const emails = [...new Set(list.filter(x => x.type === '電子報訂閱' && x.contact).map(x => x.contact))];
+    el.innerHTML = '<div class="row"><h1 style="margin:0">📬 追夢提案、輔具需求與電子報訂閱</h1><span class="spacer"></span>' +
+      (emails.length ? '<button type="button" class="btn sec" id="subCopyMail">📋 複製電子報名單（' + emails.length + '）</button>' : '') + '</div>' +
+      '<div class="card pad-0" style="margin-top:12px">' +
+      simpleTable([
+        {h:'類型',r:r=>tag(r.type)},{h:'姓名',k:'name'},{h:'聯絡資訊',k:'contact'},
+        {h:'內容',r:r=>'<div class="pre" style="max-width:340px">'+esc(r.content)+'</div>'},
+        {h:'狀態',r:r=>badge(r.status)},{h:'時間',r:r=>esc(String(r.createdAt).slice(0,16))},
+        {h:'操作',r:r=>'<button type="button" class="btn sm gh" data-sub-edit="'+esc(r.id)+'">更新狀態</button>'}
+      ], list) + '</div>';
+    $('#subCopyMail', el)?.addEventListener('click', () => copyText(emails.join(', '), '電子報 Email 名單'));
+    el.querySelectorAll('[data-sub-edit]').forEach(b => b.addEventListener('click', () => {
+      const item = list.find(x => x.id === b.dataset.subEdit); if (!item) return;
+      openForm({
+        title: '更新提案狀態',
+        body: fieldHtml({id:'sbSt',label:'處理狀態',type:'select',options:['待處理','處理中','已完成','已結案','已訂閱'],value:item.status}) +
+          fieldHtml({id:'sbNt',label:'管理備註',type:'textarea',value:item.note}),
+        onSubmit: async m => {
+          await api('submission.updateStatus', { id:item.id, status:val('sbSt',m.el), note:val('sbNt',m.el) });
+          toast('已更新狀態', 'ok'); reloadAdmin();
+        }
+      });
+    }));
+  }
+});
+
 function openAnnForm(a, onSaved) {
   const isNew = !a; a = a || {};
   const m = openModal({
@@ -2944,8 +3048,10 @@ const PAGES = {
     }
     const list = await api('getForumPosts'), shown = board ? list.filter(p=>p.board===board) : list;
     window._curForumList = shown;
-    return `<div class="row-between"><h2>💬 病友論壇</h2><button type="button" class="btn sec" data-forum-post-new="${esc(board||'')}">✏️ 發表新文章</button></div>${chips(board)}
-      ${shown.length?shown.map(p=>`<article class="card"><a class="link" href="#/forum/${enc(p.id)}"><div>${tag(p.board)}</div><strong>${esc(p.title)}</strong><div class="muted">${esc(p.authorName)} · 💬 ${p.replyCount} 回覆</div></a></article>`).join(''):'<div class="card muted">歡迎點擊「✏️ 發表新文章」開啟討論！</div>'}`;
+    return `<div class="row-between"><h2>💬 病友論壇</h2><button type="button" class="btn sec" data-forum-post-new="${esc(board||'')}">✏️ 發表新文章</button></div>
+      <div class="row" style="margin-bottom:10px"><input type="search" id="forumQ" placeholder="🔍 搜尋論壇標題或發問者…" style="flex:1;margin:0" oninput="[...document.querySelectorAll('#forumList .card')].forEach(el=>el.hidden=this.value&&!el.textContent.toLowerCase().includes(this.value.toLowerCase()))"></div>
+      ${chips(board)}
+      <div id="forumList">${shown.length?shown.map(p=>`<article class="card"><a class="link" href="#/forum/${enc(p.id)}"><div>${tag(p.board)}</div><strong>${esc(p.title)}</strong><div class="muted">${esc(p.authorName)} · 💬 ${p.replyCount} 回覆</div></a></article>`).join(''):'<div class="card muted">歡迎點擊「✏️ 發表新文章」開啟討論！</div>'}</div>`;
   },
   async downloads(cat) {
     const list = await api('getDocs'), cats = [...new Set(DOC_CATS.concat(list.map(d => d.category).filter(Boolean)))];
@@ -2955,19 +3061,57 @@ const PAGES = {
       ${shown.length ? '<div class="cards">' + shown.map(docCard).join('') + '</div>' : '<div class="card muted">目前尚無下載檔案</div>'}`;
   },
   async systems() {
+    const finIn = isAdmin() ? '#/admin/dashboard' : '#/me';
     const sysList = [
-      { ic:'💰', badge:'獨立系統・共用會員名冊', title:'財務管理系統', desc:'個人會費與捐款紀錄、電子收據、支出憑證申請與傳票。', url:SYS_URLS.finance, c:'#B45309' },
-      { ic:'📅', badge:'獨立系統・共用會員名冊', title:'活動報名系統', desc:'LIFF 動態活動表單、即時統計與 LINE 群組推播。', url:SYS_URLS.event, c:'#2F6F5E' },
-      { ic:'🙌', badge:'獨立系統連結', title:'好人幫志工系統', desc:'志工排班、服務時數登錄與衛生局月報匯出。', url:SYS_URLS.volunteer, c:'#5B4B7A' },
-      { ic:'🧠', badge:'官網內建', title:'帕金森衛教資訊', desc:'14 章白話衛教指南、分級運動與輔具實驗室。', url:'#/learn', c:'#0369A1' },
-      { ic:'💬', badge:'官網內建', title:'病友與照顧者論壇', desc:'實名登入匿名代號交流、多媒體分享。', url:'#/forum', c:'#1B365D' },
-      { ic:'👤', badge:'核心名冊', title:'會員身分中心', desc:'LINE 綁定、手機登入、會費繳交與電子收據查詢。', url:'#/me', c:'#06C755' }
+      { ic:'💰', badge:'官網整合＋獨立系統', title:'財務管理系統', desc:'個人會費與捐款紀錄、電子收據、支出憑證申請、傳票與九大法定報表。', url:finIn, ext:SYS_URLS.finance, c:'#B45309' },
+      { ic:'📅', badge:'官網整合＋獨立系統', title:'活動報名系統', desc:'活動線上報名、QR Code 現場掃碼簽到、花絮相簿與追夢提案。', url:'#/events', ext:SYS_URLS.event, c:'#2F6F5E' },
+      { ic:'🙌', badge:'官網整合＋獨立系統', title:'好人幫志工系統', desc:'志工登記、排班認領、服務時數登錄與衛生局月報匯出（中市衛企字第1150022440號）。', url:'#/volunteer', ext:SYS_URLS.volunteer, c:'#5B4B7A' },
+      { ic:'🧠', badge:'官網內建', title:'帕金森衛教資訊', desc:'14 章白話衛教指南、語音朗讀、分級運動與輔具創新實驗室。', url:'#/learn', c:'#0369A1' },
+      { ic:'💬', badge:'官網內建', title:'病友與照顧者論壇', desc:'實名登入匿名代號交流、關鍵字搜尋與多媒體經驗分享。', url:'#/forum', c:'#1B365D' },
+      { ic:'👤', badge:'核心名冊', title:'會員身分中心', desc:'LINE 綁定、手機登入、會費繳交、電子收據查詢與個人健康同意管理。', url:'#/me', c:'#06C755' }
     ];
-    return `${docsAboutSubNavHtml('systems')}<h2>🧭 各系統整合入口</h2>
-      <p class="muted">本會財務、活動、衛教與論壇共用同一份會員名冊；志工服務管理則使用獨立系統連結。</p>
+    return `${docsAboutSubNavHtml('systems')}<h2>🧭 六大系統整合入口</h2>
+      <p class="muted">本會六大系統皆已整合至官方網站並共用同一份會員名冊；財務、活動與志工亦提供獨立外部入口。</p>
       <div class="cards">${sysList.map(s=>`<article class="card accent-l" style="--c:${s.c}"><div class="card-grow">
         <span class="tag">${esc(s.badge)}</span><h3 style="margin:8px 0">${s.ic} ${esc(s.title)}</h3><p class="muted">${esc(s.desc)}</p></div>
-        <a class="btn" style="background:${s.c};color:#fff" href="${esc(s.url)}"${/^https:/.test(s.url)?' target="_blank" rel="noopener noreferrer"':''}>前往系統 →</a></article>`).join('')}</div>`;
+        <div class="row"><a class="btn" style="background:${s.c};color:#fff" href="${esc(s.url)}">進入官網功能 →</a>${s.ext?`<a class="btn gh sm" href="${esc(s.ext)}" target="_blank" rel="noopener noreferrer">獨立系統 ↗</a>`:''}</div></article>`).join('')}</div>`;
+  },
+  async volunteer() {
+    const d = await api('volunteer.overview', {});
+    const v = d.myVolunteer, shifts = d.shifts || [], logs = d.myLogs || [];
+    const volHeader = `${docsAboutSubNavHtml('volunteer')}<div class="row-between"><div><h2>🙌 好人幫志工服務中心</h2><p class="muted">${esc(ORG.volunteerTeam)}</p></div>${isAdmin()?'<a class="btn acc sm" href="#/admin/volunteers">⚙️ 後台志工與月報管理</a>':''}</div>`;
+    let myHtml = '';
+    if (!isLoggedIn()) {
+      myHtml = `<div class="card feat"><h3>🌟 加入好人幫志工隊</h3><p>請先實名登入，即可登記成為志工、認領服務班次並累積衛生局認證時數。</p><a class="btn sec" href="#/me">前往登入／註冊 →</a></div>`;
+    } else if (!v) {
+      myHtml = `<form id="volJoinForm" class="card feat"><h3>🌟 登記成為好人幫志工</h3>
+        <div class="grid c2">
+          <div><label for="vjGroup">服務組別</label><select id="vjGroup"><option>活動關懷組</option><option>電話陪伴組</option><option>行政支援組</option><option>專業醫療／復健組</option></select></div>
+          <div><label for="vjSkills">專長或證照（選填）</label><input id="vjSkills" placeholder="例：護理師、攝影、駕駛、手語"></div>
+        </div>
+        <button type="submit" class="btn sec" style="margin-top:10px">一鍵加入好人幫志工隊</button></form>`;
+    } else {
+      myHtml = `<div class="card accent-l" style="--c:var(--lav)">
+        <div class="row-between"><div><span class="tag">${esc(v.group)}</span><h3 style="margin:6px 0">${esc(v.name)}（${esc(v.volunteerId)}）</h3><div class="muted">專長：${esc(v.skills||'未填寫')}</div></div>
+        <div class="center"><div class="small muted">已核可累計時數</div><div style="font-size:1.8rem;font-weight:900;color:var(--lav)">${v.totalHours} 小時</div></div></div></div>
+        <form id="volLogForm" class="card"><h3>⏱️ 登錄志工服務時數</h3>
+          <div class="grid c3">
+            <div><label for="vlDate">服務日期</label><input id="vlDate" type="date" required value="${todayStr()}"></div>
+            <div><label for="vlItem">服務項目</label><input id="vlItem" required value="${esc(v.group)}" placeholder="例：講座現場引導"></div>
+            <div><label for="vlHrs">服務時數（小時）</label><input id="vlHrs" type="number" step="0.5" min="0.5" max="24" required value="3"></div>
+          </div>
+          <label for="vlDesc" style="margin-top:8px;display:block">服務內容簡述</label><input id="vlDesc" placeholder="簡述當日協助事項">
+          <button type="submit" class="btn sec" style="margin-top:10px">送出時數審核</button></form>
+        <h3>📋 我的服務時數紀錄（${logs.length}）</h3>
+        ${logs.length ? '<div class="card pad-0">' + simpleTable([{h:'日期',k:'date'},{h:'服務項目',k:'item'},{h:'時數',r:r=>r.hours+' 小時'},{h:'內容',k:'content'},{h:'狀態',r:r=>badge(r.status)}], logs) + '</div>' : '<div class="card muted">尚無登錄的服務時數</div>'}`;
+    }
+    const shiftHtml = `<h3>📅 近期志工排班需求（${shifts.length}）</h3>` + (shifts.length ? `<div class="cards">${shifts.map(s => {
+      const joined = v && s.claimed.some(c => c.volunteerId === v.volunteerId);
+      const full = s.claimed.length >= s.needed;
+      return `<article class="card"><div class="card-grow"><span class="tag g">${esc(s.date)} ${esc(s.slot)}</span><h3>${esc(s.item)}</h3><p class="small">📍 ${esc(s.location)}<br>👥 已認領 ${s.claimed.length}／${s.needed} 人</p>${s.note?`<p class="muted small">${esc(s.note)}</p>`:''}</div>
+        <button type="button" class="btn ${joined?'gh':'sec'} sm" data-vol-claim="${esc(s.id)}" ${(!joined && full)?'disabled':''}>${joined?'取消認領':(full?'名額已滿':'我要認領班次')}</button></article>`;
+    }).join('')}</div>` : '<div class="card muted">目前尚無開放認領的志工班次</div>');
+    return volHeader + myHtml + shiftHtml;
   },
   async about(tab) {
     const d = await api('getAbout'), o = org(), k = ABOUT_TABS[tab] ? tab : 'BASIC';
@@ -3013,7 +3157,12 @@ async function renderMemberRoute(pageKey, container) {
     const regs = (myWeb && myWeb.registrations) || [];
     const regsHtml = regs.map(r => `<div class="card"><div class="row-between"><div><strong>${esc(r.eventTitle||'活動')}</strong><div class="muted">共 ${r.companions+1} 人</div></div>${tag(r.status)}</div>
       <div style="margin-top:8px">${['已報名','已出席'].includes(r.status)?btn('show-qr','📲 簽到 QR Code','btn sec sm',{id:r.id}):''}${r.status==='已報名'?btn('cancel-registration','取消報名','btn bad sm',{id:r.id}):''}</div></div>`).join('');
-    $('#meEventRegs', container).innerHTML = '<h2>📅 我的活動報名紀錄</h2>' + (regsHtml || '<div class="card muted">目前尚無活動報名紀錄。<a href="#/events">前往查看近期活動 →</a></div>');
+    const [subsRes, volRes] = await Promise.all([api('submission.myList').catch(() => ({items:[]})), api('volunteer.overview').catch(() => ({}))]);
+    const subs = (subsRes && subsRes.items) || [];
+    const vol = volRes && volRes.myVolunteer;
+    const volCard = `<div class="card accent-l" style="--c:var(--lav);margin-top:16px"><div class="row-between"><div><h3>🙌 我的好人幫志工服務</h3><p class="muted">${vol ? '組別：' + esc(vol.group) + '｜已核可累計 <b>' + vol.totalHours + ' 小時</b>' : '尚未登記為好人幫志工，歡迎一起加入服務行列！'}</p></div><a class="btn sec sm" href="#/volunteer">${vol?'進入志工中心 →':'登記成為志工 →'}</a></div></div>`;
+    const subCard = `<h2>📬 我的提案與電子報紀錄（${subs.length}）</h2>` + (subs.length ? subs.map(x => `<div class="card"><div class="row-between"><div>${tag(x.type)} <b>${esc(String(x.createdAt).slice(0,10))}</b></div>${badge(x.status)}</div><p class="small pre" style="margin-top:6px">${esc(x.content)}</p>${x.note?`<div class="muted small">協會回覆：${esc(x.note)}</div>`:''}</div>`).join('') : '<div class="card muted">尚無追夢提案、輔具需求或電子報訂閱紀錄</div>');
+    $('#meEventRegs', container).innerHTML = '<h2>📅 我的活動報名紀錄</h2>' + (regsHtml || '<div class="card muted">目前尚無活動報名紀錄。<a href="#/events">前往查看近期活動 →</a></div>') + volCard + subCard;
   } catch {}
 }
 
@@ -3114,20 +3263,46 @@ document.addEventListener('submit', event => {
   if (form.id === 'nlForm') {
     event.preventDefault();
     if (!requireLogin()) return;
-    toast('✅ 已訂閱《慢步調》雙週電子報：' + val('nlEmail', form), 'ok');
-    form.reset(); return;
+    safely(() => once('nlForm', form.querySelector('button[type=submit]'), async () => {
+      const email = val('nlEmail', form);
+      await api('submission.create', { type: '電子報訂閱', contact: email, content: '訂閱《慢步調》雙週電子報：' + email });
+      toast('✅ 已訂閱《慢步調》雙週電子報：' + email, 'ok');
+      form.reset();
+    })); return;
   }
   if (form.id === 'dreamForm') {
     event.preventDefault();
     if (!requireLogin()) return;
-    toast('✅ 感謝您送出「慢也能完成」實名夢想提案，協會團隊將與您聯繫！', 'ok');
-    form.reset(); return;
+    safely(() => once('dreamForm', form.querySelector('button[type=submit]'), async () => {
+      await api('submission.create', { type: '追夢提案', content: val('dreamGoal', form) });
+      toast('✅ 感謝您送出「慢也能完成」實名夢想提案，已儲存至協會紀錄！', 'ok');
+      form.reset();
+    })); return;
   }
   if (form.id === 'assistForm') {
     event.preventDefault();
     if (!requireLogin()) return;
-    toast('✅ 已送出生活痛點需求給輔具共創團隊！', 'ok');
-    form.reset(); return;
+    safely(() => once('assistForm', form.querySelector('button[type=submit]'), async () => {
+      await api('submission.create', { type: '輔具需求', content: val('assistDetail', form) });
+      toast('✅ 已送出生活痛點需求給輔具共創團隊！', 'ok');
+      form.reset();
+    })); return;
+  }
+  if (form.id === 'volJoinForm') {
+    event.preventDefault();
+    if (!requireLogin()) return;
+    safely(() => once('volJoinForm', form.querySelector('button[type=submit]'), async () => {
+      await api('volunteer.join', { group: val('vjGroup', form), skills: val('vjSkills', form) });
+      toast('🙌 歡迎加入好人幫志工隊！', 'ok'); route();
+    })); return;
+  }
+  if (form.id === 'volLogForm') {
+    event.preventDefault();
+    if (!requireLogin()) return;
+    safely(() => once('volLogForm', form.querySelector('button[type=submit]'), async () => {
+      await api('volunteer.logHours', { date: val('vlDate', form), item: val('vlItem', form), hours: Number(val('vlHrs', form)), content: val('vlDesc', form) });
+      toast('✅ 志工服務時數已送出審核！', 'ok'); route();
+    })); return;
   }
   if (form.id === 'registerForm') {
     event.preventDefault();
@@ -3182,6 +3357,13 @@ document.addEventListener('click', event => {
     if (action === 'fav-del') { const f = getFavs(); f.splice(Number(el.dataset.i), 1); saveFavs(f); return route(); }
     if (action === 'login') return lineLogin();
     if (action === 'show-qr') return showQR(el.dataset.id);
+    const vcBtn = event.target.closest('[data-vol-claim]');
+    if (vcBtn) {
+      if (!requireLogin()) return;
+      const res = await api('volunteer.claimShift', { shiftId: vcBtn.dataset.volClaim });
+      toast(res.action === 'claimed' ? '✅ 已認領此志工班次' : '已取消認領班次', 'ok');
+      return route();
+    }
     if (action === 'cancel-registration') { if (!(await confirmDialog('確定取消報名？', { danger: true }))) return; await api('cancelRegistration', { id: el.dataset.id }); toast('已取消', 'ok'); return route(); }
     if (action === 'qr-close') { $('#qrDialog').hidden = true; return; }
     if (action === 'camera') return toggleCamera();
@@ -3206,7 +3388,7 @@ const NAV_GROUP_MAP = {
   learn:'learn', newcomer:'learn', exercise:'learn', relations:'learn', caregivers:'learn', assistive:'learn', resources:'learn', faq:'learn',
   events:'events', highlights:'events', dreams:'events',
   forum:'forum',
-  about:'about', downloads:'about', systems:'about', privacy:'about', accessibility:'about',
+  about:'about', downloads:'about', volunteer:'about', systems:'about', privacy:'about', accessibility:'about',
   donate:'donate', fee:'donate',
   me:'me', profile:'me'
 };
