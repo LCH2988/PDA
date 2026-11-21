@@ -73,6 +73,16 @@
       <button id="btnBackHome" type="button" class="btn-tool">🏠 返回協會官網</button>
     </div>
   </div>
+  <div id="testRoleBar" class="hidden bg-slate-900 text-white border-t-2 border-amber-400 no-print">
+    <div class="max-w-7xl mx-auto px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+      <span class="font-black text-amber-300">🧪 免 LINE 預設測試身分：<span id="testRoleBadge">載入中</span></span>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" class="btn-tool" style="min-height:42px;padding:.25rem .85rem;font-size:.9rem" data-switch-role="DEV_ADMIN">👑 切換管理員（總管家）</button>
+        <button type="button" class="btn-tool" style="min-height:42px;padding:.25rem .85rem;font-size:.9rem" data-switch-role="DEV_MEMBER">👤 切換測試會員（一般會員）</button>
+        <button type="button" class="btn-tool" style="min-height:42px;padding:.25rem .85rem;font-size:.9rem" data-switch-role="LINE">🟢 改用真實 LINE 登入</button>
+      </div>
+    </div>
+  </div>
 </header>
 
 <main class="max-w-7xl mx-auto px-4 py-8">
@@ -223,10 +233,12 @@
 
 <script>
 const CONFIG = {
-  GAS_URL: "https://script.google.com/macros/s/AKfycbwzLRVztEi39gr-G9Lx19QTx4pz0BNDZ24sWy4NvNfZzl9N5SekG4QYf3DPMUT0CN6RQw/exec",
+  GAS_URL: "https://script.google.com/macros/s/AKfycbyGR01wMTIfoWcpQ7XjlV8p-PhQOMrkRN8zEhVid_NtuFl1kwG83-UN9dqFcg_FHB9hDw/exec",
   LIFF_ID: "2009456572-EflpADae",
   HOME_URL: "https://tpda.org.tw/home.html",
-  EVENT_URL: "https://tpda.org.tw/event.html"
+  EVENT_URL: "https://tpda.org.tw/event.html",
+  LIFF_EVENT_URL: "https://liff.line.me/2009456572-EflpADae/event.html",
+  TEST_MODE: true
 };
 
 const $ = s => document.querySelector(s);
@@ -756,11 +768,11 @@ document.addEventListener("click", async e => {
       `👥 名額上限：${ev.quota} 人（目前已報名 ${st.totalRegistered} 人，截止日：${ev.deadline}）`,
       `📋 調查統計項目：${statLabels || "出席與基本需求"}`,
       `📝 說明：${ev.description}`,
-      `👉 報名連結：${CONFIG.EVENT_URL}?event=${ev.id}`
+      `👉 報名連結：${CONFIG.LIFF_EVENT_URL}?event=${encodeURIComponent(ev.id)}`
     ].join("\n");
     return withBusy(pushBtn, "準備推播中…", async () => {
       if (lineToken && isEvtAdmin) {
-        try { await api({ action:"pushEventGroup", accessToken:lineToken, eventId:ev.id, eventPageUrl:CONFIG.EVENT_URL }); } catch(err){}
+        try { await api({ action:"pushEventGroup", accessToken:lineToken, eventId:ev.id, eventPageUrl:CONFIG.LIFF_EVENT_URL }); } catch(err){}
       }
       openLineModal("推播活動至 LINE 群組", "請點選下方「開啟 LINE 群組選擇器推播」選擇要傳送的群組：", msg, ev);
     });
@@ -874,7 +886,7 @@ $("#builderForm").addEventListener("submit", async e => {
         accessToken:lineToken,
         title, date, location, quota, deadline, description,
         questions:builderQuestions, statsFields,
-        autoPushGroup:autoPush, targetGroupId, eventPageUrl:CONFIG.EVENT_URL
+        autoPushGroup:autoPush, targetGroupId, eventPageUrl:CONFIG.LIFF_EVENT_URL
       });
       if (!r || !r.ok) {
         toast((r && r.message) || "儲存失敗");
@@ -894,7 +906,7 @@ $("#builderForm").addEventListener("submit", async e => {
           `👥 名額：${savedEv.quota} 人（截止日：${savedEv.deadline}）`,
           `📊 調查統計項目：${statLabels || "出席統計"}`,
           `📝 說明：${savedEv.description}`,
-          `👉 點此開啟活動表單報名：${CONFIG.EVENT_URL}?event=${savedEv.id}`
+          `👉 點此開啟活動表單報名：${CONFIG.LIFF_EVENT_URL}?event=${encodeURIComponent(savedEv.id)}`
         ].join("\n");
         openLineModal("活動表單已建立", "請點選下方按鈕將活動推播至 LINE 群組：", msg, savedEv);
       } else {
@@ -971,7 +983,50 @@ renderHeaderBanner();
 renderBuilderQuestions();
 loadEventsData();
 
+function getTestIdentity() {
+  if (!CONFIG.TEST_MODE) return "LINE";
+  try { return localStorage.getItem("tpda_test_identity") || "DEV_ADMIN"; } catch (e) { return "DEV_ADMIN"; }
+}
+function renderTestRoleBar() {
+  const bar = $("#testRoleBar");
+  if (!bar || !CONFIG.TEST_MODE) return;
+  bar.classList.remove("hidden");
+  const id = getTestIdentity();
+  $("#testRoleBadge").textContent = id === "DEV_ADMIN" ? "管理員（總管家・免 LINE）" : id === "DEV_MEMBER" ? "測試會員（一般會員・免 LINE）" : "真實 LINE 登入模式";
+  bar.querySelectorAll("[data-switch-role]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.switchRole === id)));
+}
+document.addEventListener("click", async e => {
+  const sw = e.target.closest("[data-switch-role]");
+  if (!sw || !CONFIG.TEST_MODE) return;
+  const next = sw.dataset.switchRole;
+  try { localStorage.setItem("tpda_test_identity", next); } catch (err) {}
+  renderTestRoleBar();
+  if (next === "LINE") {
+    lineToken = "";
+    currentUser = null;
+    $("#btnLineLogin").classList.remove("hidden");
+    if (window.liff && CONFIG.LIFF_ID) {
+      try {
+        await liff.init({ liffId: CONFIG.LIFF_ID });
+        if (liff.isLoggedIn()) { lineToken = liff.getAccessToken(); await loadEventsData(); }
+        else liff.login({ redirectUri: location.href });
+      } catch (err) { toast("請點選使用 LINE 帳號驗證登入"); }
+    }
+  } else {
+    lineToken = next;
+    await loadEventsData();
+    toast(next === "DEV_ADMIN" ? "已切換為預設管理員（總管家）身分" : "已切換為測試會員（一般會員）身分");
+  }
+});
+
 window.addEventListener("load", async () => {
+  renderTestRoleBar();
+  const testId = getTestIdentity();
+  if (CONFIG.TEST_MODE && testId !== "LINE") {
+    lineToken = testId;
+    await loadEventsData();
+    return;
+  }
   if (!window.liff || !CONFIG.LIFF_ID) return;
   try {
     await liff.init({ liffId: CONFIG.LIFF_ID });
