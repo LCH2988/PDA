@@ -114,6 +114,16 @@
       <button id="btnLogout" class="btn-tool"><span aria-hidden="true">🚪</span> 登出</button>
     </div>
   </div>
+  <div id="testRoleBar" class="hidden bg-slate-900 text-white border-t-2 border-amber-400 no-print">
+    <div class="max-w-7xl mx-auto px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+      <span class="font-black text-amber-300">🧪 免 LINE 預設測試身分：<span id="testRoleBadge">載入中</span></span>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" class="btn-tool" style="min-height:42px;padding:.25rem .85rem;font-size:.9rem" data-switch-role="DEV_ADMIN">👑 切換管理員（總管家）</button>
+        <button type="button" class="btn-tool" style="min-height:42px;padding:.25rem .85rem;font-size:.9rem" data-switch-role="DEV_MEMBER">👤 切換測試會員（一般會員）</button>
+        <button type="button" class="btn-tool" style="min-height:42px;padding:.25rem .85rem;font-size:.9rem" data-switch-role="LINE">🟢 改用真實 LINE 登入</button>
+      </div>
+    </div>
+  </div>
 </header>
 
 <!-- ② 主導覽 -->
@@ -367,12 +377,13 @@
 
 <script>
 const CONFIG = {
-  GAS_URL: "https://script.google.com/macros/s/AKfycbwzLRVztEi39gr-G9Lx19QTx4pz0BNDZ24sWy4NvNfZzl9N5SekG4QYf3DPMUT0CN6RQw/exec",
+  GAS_URL: "https://script.google.com/macros/s/AKfycbyGR01wMTIfoWcpQ7XjlV8p-PhQOMrkRN8zEhVid_NtuFl1kwG83-UN9dqFcg_FHB9hDw/exec",
   LIFF_ID: "2009456572-EflpADae",
   FINANCE_URL: "https://tpda.org.tw/finance.html",
   EVENT_URL: "https://tpda.org.tw/event.html",
   VOLUNTEER_URL: "https://tpda.org.tw/volunteer.html",
-  MANUAL_URL: "https://tpda.org.tw/manual.html"
+  MANUAL_URL: "https://tpda.org.tw/manual.html",
+  TEST_MODE: true
 };
 const K = { pub:"tpda_pub_v5", draft:"tpda_draft_v5", prefs:"tpda_prefs", token:"tpda_admin_token" };
 
@@ -879,7 +890,47 @@ async function authenticate() {
   } catch (e) { viewGate("目前無法連線到會員系統，請稍後再試。"); }
 }
 
+function getTestIdentity() {
+  if (!CONFIG.TEST_MODE) return "LINE";
+  try { return localStorage.getItem("tpda_test_identity") || "DEV_ADMIN"; } catch (e) { return "DEV_ADMIN"; }
+}
+function renderTestRoleBar() {
+  const bar = $("#testRoleBar");
+  if (!bar || !CONFIG.TEST_MODE) return;
+  bar.classList.remove("hidden");
+  const id = getTestIdentity();
+  $("#testRoleBadge").textContent = id === "DEV_ADMIN" ? "管理員（總管家・免 LINE）" : id === "DEV_MEMBER" ? "測試會員（一般會員・免 LINE）" : "真實 LINE 登入模式";
+  bar.querySelectorAll("[data-switch-role]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.switchRole === id)));
+}
+document.addEventListener("click", e => {
+  const sw = e.target.closest("[data-switch-role]");
+  if (!sw || !CONFIG.TEST_MODE) return;
+  const next = sw.dataset.switchRole;
+  try { localStorage.setItem("tpda_test_identity", next); } catch (err) {}
+  renderTestRoleBar();
+  if (next === "LINE") {
+    lineToken = null; me = null;
+    if (window.liff && CONFIG.LIFF_ID) {
+      liff.init({ liffId:CONFIG.LIFF_ID }).then(() => {
+        if (liff.isLoggedIn()) { lineToken = liff.getAccessToken(); authenticate(); }
+        else liff.login({ redirectUri: location.href.split("#")[0] + "#member" });
+      }).catch(() => viewGate("請使用 LINE 登入"));
+    } else viewGate();
+  } else {
+    lineToken = next;
+    authenticate();
+    toast(next === "DEV_ADMIN" ? "已切換為預設管理員（總管家）身分" : "已切換為測試會員（一般會員）身分");
+  }
+});
+
 async function initLiff() {
+  renderTestRoleBar();
+  const testId = getTestIdentity();
+  if (CONFIG.TEST_MODE && testId !== "LINE") {
+    lineToken = testId;
+    await authenticate();
+    return;
+  }
   if (!CONFIG.LIFF_ID || !CONFIG.GAS_URL || !window.liff) return viewGate();
   try {
     await liff.init({ liffId:CONFIG.LIFF_ID });
