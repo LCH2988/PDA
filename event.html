@@ -28,6 +28,7 @@
   body { font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif; background:#FAF8F5; color:#1A202C; line-height:1.8; letter-spacing:.04em; }
   .btn{ min-height:56px; padding:.5rem 1.4rem; border-radius:14px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:.5rem; border:2px solid transparent; cursor:pointer; text-decoration:none; font-size:1rem; line-height:1.4; text-align:center; transition:transform .1s, background-color .15s; }
   .btn:active, .btn-tool:active, .tab:active{ transform:scale(.98); }
+  .btn:disabled, .btn-tool:disabled{ opacity:.65 !important; cursor:wait !important; pointer-events:none; }
   .btn-sun{ background:#B45309; color:#fff; } .btn-sun:hover{ background:#92400E; }
   .btn-navy{ background:#1B365D; color:#fff; } .btn-navy:hover{ background:#2B4C7E; }
   .btn-pine{ background:#2F6F5E; color:#fff; } .btn-pine:hover{ background:#225446; }
@@ -79,7 +80,7 @@
   <section class="rounded-3xl p-6 text-white shadow-xl border-2 border-pine" style="background:linear-gradient(135deg,#1B365D 0%,#2F6F5E 100%)">
     <div class="flex flex-wrap items-center justify-between gap-4">
       <div>
-        <p class="eyebrow" style="color:#FBBF24">LIFF &amp; Member Roster</p>
+        <p class="eyebrow" style="color:#FBBF24">共用會員名冊與活動報名</p>
         <h2 id="evtBannerUser" class="text-2xl md:text-3xl font-black mt-1">請使用 LINE 驗證會員身分</h2>
         <p id="evtBannerSub" class="text-white/90 mt-1">報名時系統自動帶入您在官網共用會員名冊的姓名、會員編號、縣市與聯絡電話。</p>
       </div>
@@ -107,7 +108,7 @@
     <div class="card p-7" style="--c:#1B365D">
       <div class="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p class="eyebrow">Event Analytics</p>
+          <p class="eyebrow">活動調查即時統計分析</p>
           <h3 class="text-2xl font-black text-navy">活動調查即時統計看板</h3>
           <p class="text-slate-700 mt-1">可於下方自由勾選或調整要納入統計顯示的調查問題與名冊欄位。</p>
         </div>
@@ -129,7 +130,7 @@
   <!-- 分頁三：使用 LIFF 建立動態活動表單（自訂問題＋選擇統計內容＋自動推播至 LINE 群組） -->
   <section id="eview-BUILDER" class="hidden mt-6 space-y-6">
     <div class="card p-7" style="--c:#B45309">
-      <p class="eyebrow" style="color:#B45309">LIFF Event Form Builder</p>
+      <p class="eyebrow" style="color:#B45309">動態活動調查表單建立器</p>
       <h3 class="text-2xl font-black text-navy">建立活動調查表單（自訂問題＆選擇統計項目）</h3>
       <p class="text-slate-700 mt-1">可依各場次活動需求設定不同調查問題，並勾選哪些題目需要納入統計，儲存後可立即推播至 LINE 群組。</p>
 
@@ -222,14 +223,15 @@
 
 <script>
 const CONFIG = {
-  GAS_URL: "https://script.google.com/macros/s/AKfycbyhN5yELPtuy_EeImm-CIAR0cFGhT7xlSikHOVgqT7eJ9DE6m4_wK586ZK5GDa-wLtYkg/exec",
+  GAS_URL: "https://script.google.com/macros/s/AKfycbwzLRVztEi39gr-G9Lx19QTx4pz0BNDZ24sWy4NvNfZzl9N5SekG4QYf3DPMUT0CN6RQw/exec",
   LIFF_ID: "2009456572-EflpADae",
-  HOME_URL: "https://tpda.org.tw/",
+  HOME_URL: "https://tpda.org.tw/indexT999.html",
   EVENT_URL: "https://tpda.org.tw/event.html"
 };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"'`]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[m]));
+const taipeiDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
 
 function toast(msg) {
   const t = $("#toast");
@@ -239,11 +241,38 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove("show"), 4200);
 }
 
+function navigateSystem(url) {
+  if (!url) return;
+  const inLineClient = window.liff && typeof liff.isInClient === "function" && liff.isInClient();
+  if (inLineClient) window.location.href = url;
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
+
+async function withBusy(btn, busyText, asyncFn) {
+  if (!btn) return await asyncFn();
+  if (btn.dataset.busy === "1") return;
+  btn.dataset.busy = "1";
+  const origHtml = btn.innerHTML;
+  const origDisabled = btn.disabled;
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+  btn.innerHTML = `<span aria-hidden="true">⏳</span> ${busyText || "處理中，請稍候…"}`;
+  try {
+    return await asyncFn();
+  } finally {
+    btn.dataset.busy = "";
+    btn.disabled = origDisabled;
+    btn.removeAttribute("aria-busy");
+    btn.innerHTML = origHtml;
+  }
+}
+
 let lineToken = "";
 let currentUser = null;
 let isEvtAdmin = false;
 let activeClipText = "";
 let activeShareEvent = null;
+let deepLinkHandled = false;
 
 const EVT_STATE = {
   events: []
@@ -284,6 +313,19 @@ function normalizeEvents(rawEvents) {
   });
 }
 
+function focusDeepLinkEvent() {
+  if (deepLinkHandled) return;
+  const targetId = new URLSearchParams(location.search).get("event");
+  if (!targetId) return;
+  const card = document.getElementById("ev-card-" + targetId);
+  if (card) {
+    deepLinkHandled = true;
+    card.scrollIntoView({ behavior:"smooth", block:"start" });
+    card.style.outline = "4px solid #D97706";
+    setTimeout(() => { card.style.outline = ""; }, 4000);
+  }
+}
+
 async function loadEventsData() {
   try {
     if (lineToken) {
@@ -295,6 +337,7 @@ async function loadEventsData() {
         $("#btnLineLogin").classList.add("hidden");
         renderHeaderBanner();
         renderEventList();
+        focusDeepLinkEvent();
         return;
       }
     }
@@ -305,6 +348,7 @@ async function loadEventsData() {
   } catch (e) {}
   renderHeaderBanner();
   renderEventList();
+  focusDeepLinkEvent();
 }
 
 /* ---------- 統計計算核心 ---------- */
@@ -370,16 +414,21 @@ function renderEventList() {
     box.innerHTML = `<p class="p-8 rounded-2xl bg-white border-2 border-slate-300 text-slate-700 font-bold text-center">目前尚無開放報名之活動。</p>`;
     return;
   }
+  const today = taipeiDate();
   box.innerHTML = EVT_STATE.events.map(ev => {
     const st = calcStatsForEvent(ev);
     const myReg = ev.myReg || (currentUser ? (ev.registrations || []).find(r => r.memberNo === currentUser.memberNo && r.status !== "已取消") : null);
+    const isFull = !myReg && st.quota > 0 && st.totalRegistered >= st.quota;
+    const isExpired = ev.deadline && /^\d{4}-\d{2}-\d{2}$/.test(ev.deadline) && today > ev.deadline;
     return `
-      <article class="card p-7" style="--c:#2F6F5E">
+      <article id="ev-card-${esc(ev.id)}" class="card p-7" style="--c:#2F6F5E">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex flex-wrap items-center gap-2">
             <span class="pill" style="--pbg:#DCFCE7;--pfg:#166534">${esc(ev.status)}</span>
             <span class="pill">活動編號：${esc(ev.id)}</span>
             ${myReg ? `<span class="pill" style="--pbg:#FEF3C7;--pfg:#92400E">✅ 您已完成報名（序號 ${esc(myReg.id)}）</span>` : ""}
+            ${isFull ? `<span class="pill" style="--pbg:#FEE2E2;--pfg:#991B1B">名額已額滿</span>` : ""}
+            ${isExpired ? `<span class="pill" style="--pbg:#FEE2E2;--pfg:#991B1B">已截止報名</span>` : ""}
           </div>
           <div class="flex flex-wrap gap-2">
             <button type="button" class="btn btn-line" style="min-height:48px;padding:.35rem 1rem" data-push-line="${esc(ev.id)}">📢 推播活動到 LINE 群組</button>
@@ -407,7 +456,7 @@ function renderEventList() {
           </div>
 
           <div class="pt-3 flex flex-wrap items-center gap-4">
-            <button type="submit" class="btn btn-navy">${myReg ? "💾 更新我的活動調查回覆" : "✅ 送出活動報名"}</button>
+            <button type="submit" class="btn btn-navy" ${(isFull || isExpired) ? "disabled" : ""}>${isExpired ? "已截止報名" : isFull ? "名額已滿" : (myReg ? "💾 更新我的活動調查回覆" : "✅ 送出活動報名")}</button>
             <span class="text-sm text-slate-600">送出後系統會自動發送報名確認通知至您的 LINE。</span>
           </div>
         </form>
@@ -600,7 +649,7 @@ function openLineModal(title, subtitle, messageText, ev) {
   activeShareEvent = ev || null;
   $("#lineDlgBody").innerHTML = `
     <div>
-      <p class="eyebrow">LINE Notification</p>
+      <p class="eyebrow">報名確認與群組推播通知</p>
       <h2 id="lineDlgTitle" class="text-2xl font-black text-navy mt-1">${esc(title)}</h2>
       <p class="text-sm text-slate-700 mt-1">${esc(subtitle)}</p>
 
@@ -709,11 +758,12 @@ document.addEventListener("click", async e => {
       `📝 說明：${ev.description}`,
       `👉 報名連結：${CONFIG.EVENT_URL}?event=${ev.id}`
     ].join("\n");
-    if (lineToken && isEvtAdmin) {
-      try { await api({ action:"pushEventGroup", accessToken:lineToken, eventId:ev.id, eventPageUrl:CONFIG.EVENT_URL }); } catch(err){}
-    }
-    openLineModal("推播活動至 LINE 群組", "請點選下方「開啟 LINE 群組選擇器推播」選擇要傳送的群組：", msg, ev);
-    return;
+    return withBusy(pushBtn, "準備推播中…", async () => {
+      if (lineToken && isEvtAdmin) {
+        try { await api({ action:"pushEventGroup", accessToken:lineToken, eventId:ev.id, eventPageUrl:CONFIG.EVENT_URL }); } catch(err){}
+      }
+      openLineModal("推播活動至 LINE 群組", "請點選下方「開啟 LINE 群組選擇器推播」選擇要傳送的群組：", msg, ev);
+    });
   }
 });
 
@@ -737,30 +787,33 @@ document.addEventListener("submit", async e => {
     }
   });
 
-  try {
-    const r = await api({ action:"submitEventReg", accessToken:lineToken, eventId:ev.id, answers });
-    if (!r || !r.ok) return toast((r && r.message) || "報名送出失敗");
-
-    const autoReplyText = r.autoReplyText || [
-      `【社團法人台灣帕金森病友權益促進會 報名確認通知】`,
-      `會員姓名：${currentUser.name}（${currentUser.memberNo}）`,
-      `活動名稱：${ev.title}`,
-      `活動時間：${ev.date}`,
-      `活動地點：${ev.location}`,
-      `報名序號：${r.regId || ""}`
-    ].join("\n");
-
+  const submitBtn = regForm.querySelector('button[type="submit"]');
+  await withBusy(submitBtn, "報名送出中…", async () => {
     try {
-      if (window.liff && liff.isInClient && liff.isInClient()) {
-        await liff.sendMessages([{ type:"text", text:autoReplyText }]);
-      }
-    } catch (err) {}
+      const r = await api({ action:"submitEventReg", accessToken:lineToken, eventId:ev.id, answers });
+      if (!r || !r.ok) return toast((r && r.message) || "報名送出失敗");
 
-    await loadEventsData();
-    openLineModal("報名已完成", "系統已產生報名確認通知：", autoReplyText, null);
-  } catch (err) {
-    toast("連線失敗，請稍後再試");
-  }
+      const autoReplyText = r.autoReplyText || [
+        `【社團法人台灣帕金森病友權益促進會 報名確認通知】`,
+        `會員姓名：${currentUser.name}（${currentUser.memberNo}）`,
+        `活動名稱：${ev.title}`,
+        `活動時間：${ev.date}`,
+        `活動地點：${ev.location}`,
+        `報名序號：${r.regId || ""}`
+      ].join("\n");
+
+      try {
+        if (window.liff && liff.isInClient && liff.isInClient()) {
+          await liff.sendMessages([{ type:"text", text:autoReplyText }]);
+        }
+      } catch (err) {}
+
+      await loadEventsData();
+      openLineModal("報名已完成", "系統已產生報名確認通知：", autoReplyText, null);
+    } catch (err) {
+      toast("連線失敗，請稍後再試");
+    }
+  });
 });
 
 /* ---------- LIFF 建立新活動表單與自動推播 ---------- */
@@ -814,45 +867,43 @@ $("#builderForm").addEventListener("submit", async e => {
   if ($("#bStatRole").checked) statsFields.push("roleGroup");
   builderQuestions.forEach(q => { if (q.isStat) statsFields.push(q.id); });
 
-  const btn = $("#btnSaveEvent");
-  btn.disabled = true;
-  try {
-    const r = await api({
-      action:"saveEvent",
-      accessToken:lineToken,
-      title, date, location, quota, deadline, description,
-      questions:builderQuestions, statsFields,
-      autoPushGroup:autoPush, targetGroupId, eventPageUrl:CONFIG.EVENT_URL
-    });
-    if (!r || !r.ok) {
-      toast((r && r.message) || "儲存失敗");
-      return;
-    }
-    const savedEv = r.event || { id:"", title, date, location, quota, deadline, description };
-    await loadEventsData();
-    document.querySelector('[data-eview="LIST"]').click();
+  await withBusy($("#btnSaveEvent"), "儲存發布活動中…", async () => {
+    try {
+      const r = await api({
+        action:"saveEvent",
+        accessToken:lineToken,
+        title, date, location, quota, deadline, description,
+        questions:builderQuestions, statsFields,
+        autoPushGroup:autoPush, targetGroupId, eventPageUrl:CONFIG.EVENT_URL
+      });
+      if (!r || !r.ok) {
+        toast((r && r.message) || "儲存失敗");
+        return;
+      }
+      const savedEv = r.event || { id:"", title, date, location, quota, deadline, description };
+      await loadEventsData();
+      document.querySelector('[data-eview="LIST"]').click();
 
-    if (autoPush) {
-      const statLabels = builderQuestions.filter(q => q.isStat).map(q => q.label).join("、");
-      const msg = [
-        `📢【社團法人台灣帕金森病友權益促進會 新活動開放報名】`,
-        `活動名稱：${savedEv.title}`,
-        `📅 時間：${savedEv.date}`,
-        `📍 地點：${savedEv.location}`,
-        `👥 名額：${savedEv.quota} 人（截止日：${savedEv.deadline}）`,
-        `📊 調查統計項目：${statLabels || "出席統計"}`,
-        `📝 說明：${savedEv.description}`,
-        `👉 點此開啟活動表單報名：${CONFIG.EVENT_URL}?event=${savedEv.id}`
-      ].join("\n");
-      openLineModal("活動表單已建立", "請點選下方按鈕將活動推播至 LINE 群組：", msg, savedEv);
-    } else {
-      toast(`已建立活動「${title}」`);
+      if (autoPush) {
+        const statLabels = builderQuestions.filter(q => q.isStat).map(q => q.label).join("、");
+        const msg = [
+          `📢【社團法人台灣帕金森病友權益促進會 新活動開放報名】`,
+          `活動名稱：${savedEv.title}`,
+          `📅 時間：${savedEv.date}`,
+          `📍 地點：${savedEv.location}`,
+          `👥 名額：${savedEv.quota} 人（截止日：${savedEv.deadline}）`,
+          `📊 調查統計項目：${statLabels || "出席統計"}`,
+          `📝 說明：${savedEv.description}`,
+          `👉 點此開啟活動表單報名：${CONFIG.EVENT_URL}?event=${savedEv.id}`
+        ].join("\n");
+        openLineModal("活動表單已建立", "請點選下方按鈕將活動推播至 LINE 群組：", msg, savedEv);
+      } else {
+        toast(`已建立活動「${title}」`);
+      }
+    } catch (err) {
+      toast("連線失敗，請稍後再試");
     }
-  } catch (err) {
-    toast("連線失敗，請稍後再試");
-  } finally {
-    btn.disabled = false;
-  }
+  });
 });
 
 $("#btnLineLogin").onclick = () => {
@@ -864,9 +915,11 @@ $("#btnLineLogin").onclick = () => {
   }
 };
 
-$("#btnReloadEvents").onclick = async () => {
-  await loadEventsData();
-  toast("已重新同步雲端活動資料");
+$("#btnReloadEvents").onclick = async function () {
+  await withBusy(this, "同步活動中…", async () => {
+    await loadEventsData();
+    toast("已重新同步雲端活動資料");
+  });
 };
 
 $("#btnCopyLineText").onclick = async () => {
@@ -890,7 +943,7 @@ $("#btnShareLinePicker").onclick = async () => {
 };
 
 $("#btnCloseLineDlg").onclick = () => $("#lineDlg").close();
-$("#btnBackHome").onclick = () => window.open(CONFIG.HOME_URL, "_blank", "noopener,noreferrer");
+$("#btnBackHome").onclick = () => navigateSystem(CONFIG.HOME_URL);
 
 /* ---------- 無障礙字級與高對比 ---------- */
 const prefs = (() => { try { return JSON.parse(localStorage.getItem("tpda_prefs") || "{}"); } catch(e) { return {}; } })();
@@ -913,8 +966,7 @@ $("#btnContrast").onclick = () => {
 };
 
 /* ---------- 初始化 ---------- */
-const todayStr = new Date().toISOString().slice(0,10);
-$("#bDeadline").value = todayStr;
+$("#bDeadline").value = taipeiDate();
 renderHeaderBanner();
 renderBuilderQuestions();
 loadEventsData();
