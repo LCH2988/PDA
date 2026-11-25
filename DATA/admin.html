@@ -122,9 +122,9 @@
           <div>
             <label class="font-bold">觀看與分享權限模式:</label>
             <select id="isPublic" class="inp bg-white">
-              <option value="false">🔒 依綁定身分權限(指定檔案/資料夾/類別)</option>
-              <option value="true">👥 全體已綁定會員皆可閱讀(需 LINE 登入)</option>
-              <option value="open">🌐 公開免綁定分享(免登入・全版面無框架)</option>
+              <option value="false">🔒 依綁定身分權限（需 LINE 登入，單檔分享為全版面無框架）</option>
+              <option value="true">👥 全體已綁定會員皆可閱讀（需 LINE 登入）</option>
+              <option value="open">🌐 免綁定公開分享（不須登入，直接全版面無框架呈現）</option>
             </select>
           </div>
         </div>
@@ -154,31 +154,39 @@
   </div>
 </div>
 
-<!-- 分享 Modal (支援「需綁定框架模式」與「免綁定全版面無框架模式」) -->
+<!-- 分享 Modal (單一檔案：一鍵單選切換分享權限，皆為全版面無框架呈現) -->
 <div id="shareModal" class="hidden fixed inset-0 bg-black/60 z-50 p-4 flex items-center justify-center">
   <div class="bg-white p-6 rounded-2xl max-w-xl w-full space-y-4">
-    <h3 class="text-2xl font-bold text-center" id="shareModalTitle">🔗 分享連結</h3>
+    <h3 class="text-2xl font-bold text-center" id="shareModalTitle">🔗 分享單一檔案</h3>
 
-    <!-- 分享模式切換鈕 (僅針對單檔顯示) -->
-    <div id="shareModeSwitch" class="grid grid-cols-2 gap-2 bg-gray-100 p-1.5 rounded-xl">
-      <button type="button" data-act="switchShareMode" data-smode="bound" id="tabShareBound" class="py-2.5 px-3 rounded-lg font-bold text-base bg-blue-900 text-white">🔒 需綁定 LINE 開啟</button>
-      <button type="button" data-act="switchShareMode" data-smode="open" id="tabShareOpen" class="py-2.5 px-3 rounded-lg font-bold text-base text-gray-700">🌐 免綁定・全版面無框架</button>
+    <!-- 一鍵單選權限選項 (點選即自動儲存並切換連結) -->
+    <div id="sharePermRadioBox" class="space-y-2">
+      <label id="optShareBound" class="p-3.5 border-2 rounded-xl flex items-start gap-3 cursor-pointer transition">
+        <input type="radio" name="sharePermChoice" value="bound" class="w-5 h-5 mt-1 shrink-0">
+        <div>
+          <div class="font-bold text-base">🔒 需綁定 LINE 開啟（僅限授權人員）</div>
+          <div class="text-xs text-gray-600">驗證後僅顯示此單一檔案（全版面無框架），不顯示其他檔案或選單。</div>
+        </div>
+      </label>
+      <label id="optShareOpen" class="p-3.5 border-2 rounded-xl flex items-start gap-3 cursor-pointer transition">
+        <input type="radio" name="sharePermChoice" value="open" class="w-5 h-5 mt-1 shrink-0">
+        <div>
+          <div class="font-bold text-base">🌐 免綁定直接開啟（不須登入 LINE）</div>
+          <div class="text-xs text-gray-600">任何人點開連結即直接全版面無框架呈現原始畫面，不顯示其他內容。</div>
+        </div>
+      </label>
     </div>
 
-    <!-- 免綁定狀態提示與快速啟用區 -->
-    <div id="openShareStatusBox" class="hidden bg-amber-50 border-2 border-amber-300 p-3 rounded-xl space-y-2 text-sm text-amber-900">
-      <div id="openShareStatusText">⚠️ 此檔案目前尚未開啟「免綁定公開分享」，直接傳送連結對方會被擋下。</div>
-      <button type="button" data-act="toggleOpenShare" id="btnToggleOpenShare" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-base w-full">⚡ 立即啟用「免綁定全版面公開」</button>
-    </div>
+    <div id="shareSavingHint" class="hidden text-center text-sm font-bold text-blue-700">⏳ 正在更新此檔案的分享權限設定...</div>
+    <p id="shareHint" class="hidden text-sm text-blue-900 bg-blue-50 p-2.5 rounded-lg border border-blue-200"></p>
 
-    <p id="shareHint" class="text-sm text-blue-900 bg-blue-50 p-2.5 rounded-lg border border-blue-200"></p>
     <div>
       <label class="font-bold">名稱:</label>
       <input id="shareName" readonly class="inp bg-gray-100 text-base">
     </div>
     <div>
-      <label class="font-bold">專屬連結:</label>
-      <input id="shareLink" readonly class="inp bg-gray-100 text-base font-mono">
+      <label class="font-bold">專屬分享連結:</label>
+      <input id="shareLink" readonly class="inp bg-gray-100 text-base font-mono" onclick="this.select()">
     </div>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <button data-act="copyShareAll" class="big-btn bg-emerald-600 text-white">📋 複製名稱＋連結</button>
@@ -332,7 +340,7 @@ let users = [], listCache = [], cats = [], searchTimer, listSeq = 0;
 let atts = [], uploading = 0;
 let folders = [], curFolder = "", moveCtx = null, editingPermUser = "";
 let permSelectedFiles = new Set();
-let sharingDocId = "", sharingMode = "bound";
+let sharingDocId = "";
 
 /* ---------- 類別 ---------- */
 function catOptions(withAll, withUncat) {
@@ -620,61 +628,71 @@ async function previewById(id) {
   } else openPreview(r.title, htmlFrame(renderCode(r.mode, r.code)));
 }
 
-function renderShareModalState() {
-  const f = listCache.find(x => x.id === sharingDocId) || {};
-  const isOpen = f.isPublic === "open";
-  const tabBound = $("tabShareBound"), tabOpen = $("tabShareOpen");
+function updateShareModalUI(mode) {
+  const isOpen = mode === "open";
+  const radio = document.querySelector(`input[name=sharePermChoice][value="${isOpen ? "open" : "bound"}"]`);
+  if (radio) radio.checked = true;
 
-  if (sharingMode === "open") {
-    tabOpen.className = "py-2.5 px-3 rounded-lg font-bold text-base bg-amber-500 text-gray-900 shadow";
-    tabBound.className = "py-2.5 px-3 rounded-lg font-bold text-base text-gray-700 hover:bg-gray-200";
-    $("shareModalTitle").textContent = "🌐 免綁定・全版面無框架分享";
-    $("shareHint").textContent = "🌐 不須綁定 LINE 帳號即可直接開啟，且頁面完全不顯示頂端列與邊框，以 100% 全版面呈現。";
-    $("shareLink").value = `${baseUrl()}view.html?open=${encodeURIComponent(sharingDocId)}`;
+  $("optShareBound").className = !isOpen
+    ? "p-3.5 border-2 border-blue-600 bg-blue-50 rounded-xl flex items-start gap-3 cursor-pointer transition"
+    : "p-3.5 border-2 border-gray-200 bg-white hover:bg-gray-50 rounded-xl flex items-start gap-3 cursor-pointer transition";
+  $("optShareOpen").className = isOpen
+    ? "p-3.5 border-2 border-amber-500 bg-amber-50 rounded-xl flex items-start gap-3 cursor-pointer transition"
+    : "p-3.5 border-2 border-gray-200 bg-white hover:bg-gray-50 rounded-xl flex items-start gap-3 cursor-pointer transition";
 
-    $("openShareStatusBox").classList.remove("hidden");
-    if (isOpen) {
-      $("openShareStatusBox").className = "bg-emerald-50 border-2 border-emerald-300 p-3 rounded-xl space-y-2 text-sm text-emerald-900";
-      $("openShareStatusText").innerHTML = "✅ <b>已啟用免綁定公開分享</b>：任何人拿到下方連結皆可直接全版面開啟。";
-      $("btnToggleOpenShare").className = "bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg font-bold text-sm w-full";
-      $("btnToggleOpenShare").textContent = "🔒 關閉免綁定公開（改回需 LINE 登入）";
-    } else {
-      $("openShareStatusBox").className = "bg-amber-50 border-2 border-amber-300 p-3 rounded-xl space-y-2 text-sm text-amber-900";
-      $("openShareStatusText").innerHTML = "⚠️ <b>尚未啟用免綁定公開</b>：請先點擊下方按鈕啟用，對方才能免登入開啟此連結。";
-      $("btnToggleOpenShare").className = "bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-base w-full";
-      $("btnToggleOpenShare").textContent = "⚡ 立即啟用「免綁定全版面公開」";
-    }
-  } else {
-    tabBound.className = "py-2.5 px-3 rounded-lg font-bold text-base bg-blue-900 text-white shadow";
-    tabOpen.className = "py-2.5 px-3 rounded-lg font-bold text-base text-gray-700 hover:bg-gray-200";
-    $("shareModalTitle").textContent = "🔒 LINE 實名授權分享";
-    $("shareHint").textContent = "🔒 收到此連結的使用者需具備此檔案的閱讀權限並登入 LINE，且僅能檢視此檔案。";
-    $("shareLink").value = `${baseUrl()}view.html?id=${encodeURIComponent(sharingDocId)}`;
-    $("openShareStatusBox").classList.add("hidden");
-  }
+  $("shareLink").value = isOpen
+    ? `${baseUrl()}view.html?open=${encodeURIComponent(sharingDocId)}`
+    : `${baseUrl()}view.html?id=${encodeURIComponent(sharingDocId)}`;
 }
 
 function openShareFile(id) {
   const f = listCache.find(x => x.id === id) || {};
   sharingDocId = id;
-  sharingMode = f.isPublic === "open" ? "open" : "bound";
-  $("shareModeSwitch").classList.remove("hidden");
+  $("shareModalTitle").textContent = "🔗 分享單一檔案（全版面無框架）";
+  $("sharePermRadioBox").classList.remove("hidden");
+  $("shareHint").classList.add("hidden");
+  $("shareSavingHint").classList.add("hidden");
   $("shareName").value = f.fileName || f.title || "";
-  renderShareModalState();
+  updateShareModalUI(f.isPublic === "open" ? "open" : "bound");
   $("shareModal").classList.remove("hidden");
 }
 
 function openShareFolder(fid) {
   const f = fById(fid) || {};
   sharingDocId = "";
-  $("shareModeSwitch").classList.add("hidden");
-  $("openShareStatusBox").classList.add("hidden");
   $("shareModalTitle").textContent = "📁 分享資料夾（含下層）";
+  $("sharePermRadioBox").classList.add("hidden");
+  $("shareSavingHint").classList.add("hidden");
+  $("shareHint").classList.remove("hidden");
   $("shareHint").textContent = "🔒 收到此連結的使用者僅能瀏覽此資料夾與其下層子資料夾內有權限的檔案。";
   $("shareName").value = "📁 " + (f.name || "");
   $("shareLink").value = `${baseUrl()}view.html?folder=${encodeURIComponent(fid)}`;
   $("shareModal").classList.remove("hidden");
 }
+
+document.querySelectorAll("input[name=sharePermChoice]").forEach(radio => {
+  radio.addEventListener("change", async e => {
+    if (!sharingDocId) return;
+    const nextOpen = e.target.value === "open";
+    const f = listCache.find(x => x.id === sharingDocId);
+    updateShareModalUI(nextOpen ? "open" : "bound");
+    $("shareSavingHint").classList.remove("hidden");
+    try {
+      const r = await api({ action: "setOpenShare", id: sharingDocId, enabled: nextOpen });
+      if (r.status !== "success") {
+        alert("❌ 權限切換失敗：" + r.message);
+        return;
+      }
+      if (f) f.isPublic = nextOpen ? "open" : false;
+      if ($("fileId").value === sharingDocId) {
+        $("isPublic").value = nextOpen ? "open" : "false";
+      }
+      renderList();
+    } finally {
+      $("shareSavingHint").classList.add("hidden");
+    }
+  });
+});
 
 async function copyText(text, okMsg) {
   try { await navigator.clipboard.writeText(text); alert(okMsg); }
@@ -906,31 +924,6 @@ document.addEventListener("click", async ev => {
     case "edit": editFile(id); break;
     case "preview": previewById(id); break;
     case "share": openShareFile(id); break;
-    case "switchShareMode":
-      sharingMode = b.dataset.smode || "bound";
-      renderShareModalState();
-      break;
-    case "toggleOpenShare": {
-      if (!sharingDocId) break;
-      const f = listCache.find(x => x.id === sharingDocId);
-      const nextOpen = f?.isPublic !== "open";
-      const btn = $("btnToggleOpenShare");
-      btn.disabled = true;
-      btn.textContent = "⏳ 更新權限中...";
-      try {
-        const r = await api({ action: "setOpenShare", id: sharingDocId, enabled: nextOpen });
-        if (r.status !== "success") return alert("❌ 設定失敗：" + r.message);
-        if (f) f.isPublic = nextOpen ? "open" : false;
-        if ($("fileId").value === sharingDocId) {
-          $("isPublic").value = nextOpen ? "open" : "false";
-        }
-        renderList();
-        renderShareModalState();
-      } finally {
-        btn.disabled = false;
-      }
-      break;
-    }
     case "shareFolder": openShareFolder(fid); break;
     case "delete": deleteFile(id, title); break;
     case "deleteCurrent":
