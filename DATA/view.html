@@ -78,8 +78,8 @@
 <script>
 /* ===== 設定區 ===== */
 const GAS_URL = "https://script.google.com/macros/s/AKfycbyMsV_8YfS9sxJGKyKAHEjtt4Preo0ILdQA7yoUiD8X2Py0u2x3KXeOSz3-n6XMumLeVQ/exec";
-const LINE_CHANNEL_ID = "2009456572"; 
-const LIFF_ID = "2009456572-VIoH1oY0"; 
+const LINE_CHANNEL_ID = "2009456572";
+const LIFF_ID = "2009456572-VIoH1oY0";
 const REDIRECT_URI = location.origin + location.pathname;
 
 const $ = id => document.getElementById(id);
@@ -96,12 +96,24 @@ if (qs.get("liff.state")) {
   } catch (e) {}
 }
 
-if (qs.get("bind")) localStorage.setItem("pendingBind", qs.get("bind").trim());
-if (qs.get("id")) sessionStorage.setItem("targetDocId", qs.get("id").trim());
-if (qs.get("folder")) sessionStorage.setItem("targetFolderId", qs.get("folder").trim());
+const IS_OAUTH_RETURN = !!(qs.get("code") || qs.get("error"));
 
-const INITIAL_DOC_ID = qs.get("id") || sessionStorage.getItem("targetDocId") || "";
-const SCOPE_FOLDER_ID = qs.get("folder") || sessionStorage.getItem("targetFolderId") || "";
+// 僅在網址明確帶參數時寫入暫存；若非 OAuth 回調且網址無參數，主動清除舊暫存避免卡死
+if (qs.get("bind")) localStorage.setItem("pendingBind", qs.get("bind").trim());
+if (qs.get("id")) {
+  sessionStorage.setItem("targetDocId", qs.get("id").trim());
+} else if (!IS_OAUTH_RETURN) {
+  sessionStorage.removeItem("targetDocId");
+}
+
+if (qs.get("folder")) {
+  sessionStorage.setItem("targetFolderId", qs.get("folder").trim());
+} else if (!IS_OAUTH_RETURN) {
+  sessionStorage.removeItem("targetFolderId");
+}
+
+const INITIAL_DOC_ID = (qs.get("id") || (IS_OAUTH_RETURN ? sessionStorage.getItem("targetDocId") : "") || "").trim();
+const SCOPE_FOLDER_ID = (qs.get("folder") || (IS_OAUTH_RETURN ? sessionStorage.getItem("targetFolderId") : "") || "").trim();
 const SINGLE_FILE_LOCK = !!INITIAL_DOC_ID && !SCOPE_FOLDER_ID;
 
 let curFolder = SCOPE_FOLDER_ID || "";
@@ -127,6 +139,8 @@ function logout() {
   localStorage.removeItem("lineAuth");
   localStorage.removeItem("pendingBind");
   sessionStorage.removeItem("lineFlow");
+  sessionStorage.removeItem("targetDocId");
+  sessionStorage.removeItem("targetFolderId");
   try { if (window.liff && liff.isLoggedIn()) liff.logout(); } catch (e) {}
   const params = new URLSearchParams();
   if (INITIAL_DOC_ID) params.set("id", INITIAL_DOC_ID);
@@ -144,6 +158,29 @@ function renderUserBar() {
     : `<span class="text-sm text-yellow-200">⏳ 尚未驗證</span>`;
   $("btnLogout")?.addEventListener("click", logout);
 }
+
+/* ===== 手機 / LINE 返回鍵防誤關 ===== */
+function backToListView() {
+  $("viewer").classList.add("hidden");
+  $("attBox").classList.add("hidden");
+  $("listBox").classList.remove("hidden");
+  renderExplorer();
+}
+
+window.addEventListener("popstate", e => {
+  if (!$("shareModal").classList.contains("hidden")) {
+    $("shareModal").classList.add("hidden");
+    return;
+  }
+  if (!$("viewer").classList.contains("hidden") && !SINGLE_FILE_LOCK) {
+    backToListView();
+    return;
+  }
+  if (e.state && e.state.view === "folder") {
+    curFolder = e.state.folderId || SCOPE_FOLDER_ID || "";
+    renderExplorer();
+  }
+});
 
 /* ===== 分享工具 ===== */
 function openUserShare(title, url) {
@@ -191,6 +228,8 @@ function randStr(n = 16) {
 function startLineOAuth(bindCode = "") {
   const finalBind = bindCode || localStorage.getItem("pendingBind") || "";
   if (finalBind) localStorage.setItem("pendingBind", finalBind);
+  if (INITIAL_DOC_ID) sessionStorage.setItem("targetDocId", INITIAL_DOC_ID);
+  if (SCOPE_FOLDER_ID) sessionStorage.setItem("targetFolderId", SCOPE_FOLDER_ID);
 
   const state = randStr(), nonce = randStr();
   const flowData = { state, bindCode: finalBind, redirectUri: REDIRECT_URI };
@@ -226,6 +265,12 @@ async function handleOAuthCallback() {
   if (error) {
     return showPanel(msgBox("⚠️", "LINE 登入已取消", qs.get("error_description") || error,
       `<button onclick="startLineOAuth('${esc(bindCode)}')" class="big-btn bg-green-600 text-white mt-2">重新登入</button>`));
+  }
+
+  // 驗證 OAuth state 防範 Login CSRF
+  if (!flow || !flow.state || state !== flow.state) {
+    return showPanel(msgBox("⚠️", "登入狀態驗證逾時或異常", "為確保帳號安全，請重新點擊登入按鈕進行驗證。",
+      `<button onclick="startLineOAuth('${esc(bindCode)}')" class="big-btn bg-green-600 text-white mt-2">重新驗證登入</button>`));
   }
 
   showPanel(msgBox("⏳", "正在驗證 LINE 身分與權限...", "請稍候"));
@@ -297,7 +342,7 @@ function showBindScreen(code) {
 }
 
 /* ===== 載入單一檔案 (嚴格遵守 canShare 與 canDownload 權限) ===== */
-async function loadDoc(id, password) {
+async function loadDoc(id, password, pushHist = true) {
   showPanel(msgBox("⏳", "檔案載入中...", "正在確認閱讀權限"));
   let r;
   try { r = await api({ action: "load", id, password: password || "" }); }
@@ -305,6 +350,9 @@ async function loadDoc(id, password) {
 
   if (r.status === "success") {
     if (r.perms) { userPerms = r.perms; renderUserBar(); }
+    if (pushHist && !SINGLE_FILE_LOCK) {
+      history.pushState({ view: "doc", docId: id, folderId: curFolder }, "", location.href);
+    }
     return renderDoc(id, r);
   }
 
@@ -337,7 +385,7 @@ function showPwForm(id, errMsg) {
       <input type="password" id="pwInput" class="inp" placeholder="請輸入密碼" autocomplete="off" autofocus>
       <button class="big-btn bg-blue-600 hover:bg-blue-700 text-white w-full">確認</button>
     </form>`);
-  $("pwForm").onsubmit = e => { e.preventDefault(); const v = $("pwInput").value; if (v) loadDoc(id, v); };
+  $("pwForm").onsubmit = e => { e.preventDefault(); const v = $("pwInput").value; if (v) loadDoc(id, v, false); };
 }
 
 function renderDoc(id, r) {
@@ -347,12 +395,9 @@ function renderDoc(id, r) {
   $("docTitle").textContent = (r.type === "file" ? "📎 " : "📄 ") + (r.title || "");
 
   const actions = [];
-  // 若允許分享 (canShare)，顯示「分享此檔案」按鈕
   if (userPerms.canShare) {
-    const shareUrl = `${REDIRECT_URI}?id=${encodeURIComponent(id)}`;
     actions.push(`<button id="btnShareCurrentDoc" class="bg-amber-500 hover:bg-amber-600 text-gray-900 px-4 py-2 rounded-lg font-bold">🔗 分享此檔案</button>`);
   }
-  // 只有當管理員明確勾選允許下載 (canDownload === true) 時，才顯示下載按鈕
   if (r.type === "file" && userPerms.canDownload) {
     const did = encodeURIComponent(r.driveId);
     actions.push(`<a href="https://drive.google.com/uc?export=download&id=${did}" target="_blank" rel="noopener" class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold">⬇️ 下載</a>`);
@@ -367,12 +412,7 @@ function renderDoc(id, r) {
     backBtn.classList.add("hidden");
   } else {
     backBtn.classList.remove("hidden");
-    backBtn.onclick = () => {
-      $("viewer").classList.add("hidden");
-      $("attBox").classList.add("hidden");
-      $("listBox").classList.remove("hidden");
-      renderExplorer();
-    };
+    backBtn.onclick = () => backToListView();
   }
 
   const body = $("docBody");
@@ -382,13 +422,29 @@ function renderDoc(id, r) {
     const did = encodeURIComponent(r.driveId);
     const info = document.createElement("div");
     info.className = "px-4 py-2 text-sm text-gray-500 break-all";
-    info.textContent = `${r.fileName || ""} ・ ${fmtSize(r.size)} ${userPerms.canDownload ? "" : "・ 🔒 僅供線上閱覽"}`;
+    info.textContent = `${r.fileName || ""} ・ ${fmtSize(r.size)} ${userPerms.canDownload ? "" : "・ 🔒 僅供線上閱覽（已停用下載）"}`;
+
+    const frameWrap = document.createElement("div");
+    frameWrap.className = "relative w-full";
+    frameWrap.style.height = "75vh";
+
     const f = document.createElement("iframe");
     f.src = `https://drive.google.com/file/d/${did}/preview`;
-    f.className = "w-full";
-    f.style.height = "75vh";
+    f.className = "w-full h-full";
     f.setAttribute("allow", "autoplay; fullscreen");
-    body.append(info, f);
+    frameWrap.appendChild(f);
+
+    // 禁止下載時，覆蓋 Drive 預覽框右上角「彈出新視窗」按鈕區域防止透過外開下載
+    if (!userPerms.canDownload) {
+      const shield = document.createElement("div");
+      shield.className = "absolute top-0 right-0 w-20 h-16 z-10";
+      shield.title = "僅供線上閱覽，已停用彈出與下載";
+      shield.setAttribute("oncontextmenu", "return false");
+      shield.onclick = e => e.stopPropagation();
+      frameWrap.appendChild(shield);
+    }
+
+    body.append(info, frameWrap);
   } else {
     const f = document.createElement("iframe");
     f.className = "w-full";
@@ -459,7 +515,6 @@ function renderExplorer() {
     $("listHeading").textContent = "📁 分享專區：" + (rootFolder ? rootFolder.name : "指定資料夾");
   }
 
-  // 若目前在某個資料夾內且允許分享，提供「分享此資料夾(含下層)」按鈕
   if (curFolder && userPerms.canShare && activeFolderObj) {
     shareBox.innerHTML = `<button data-share-folder="${esc(curFolder)}" data-share-name="${esc(activeFolderObj.name)}" class="bg-amber-500 hover:bg-amber-600 text-gray-900 px-3 py-1.5 rounded-lg text-sm font-bold">🔗 分享目前資料夾</button>`;
   } else {
@@ -498,7 +553,6 @@ function renderExplorer() {
   if (kw) {
     items = items.filter(f => [f.title, f.fileName, f.category].join("\n").toLowerCase().includes(kw));
   } else if (!curCat) {
-    // 若在首頁且某檔案所在的資料夾本身不在可見資料夾清單頂層，或剛好在當前資料夾
     items = items.filter(f => (f.folderId || "") === curFolder || (!curFolder && f.folderId && !fById(f.folderId)));
   }
 
@@ -582,25 +636,31 @@ document.addEventListener("click", e => {
   const fb = e.target.closest("[data-open-folder]");
   if (fb) {
     curFolder = fb.dataset.openFolder || "";
+    history.pushState({ view: "folder", folderId: curFolder }, "", location.href);
     renderExplorer();
     return;
   }
   const db = e.target.closest("[data-open-doc]");
-  if (db) loadDoc(db.dataset.openDoc);
+  if (db) loadDoc(db.dataset.openDoc, "", true);
 });
 
 $("searchInput").addEventListener("input", renderExplorer);
 
 async function startAppAfterAuth() {
+  // 驗證成功進入畫面後立即清除跳轉暫存，避免下次直接開首頁被舊連結參數卡住
+  sessionStorage.removeItem("targetDocId");
+  sessionStorage.removeItem("targetFolderId");
+
   if (SINGLE_FILE_LOCK) {
     $("brandArea").innerHTML = `<span>📄 專屬分享檔案</span>`;
-    return loadDoc(INITIAL_DOC_ID);
+    return loadDoc(INITIAL_DOC_ID, "", false);
   }
   if (SCOPE_FOLDER_ID) {
     $("brandArea").innerHTML = `<span>📁 專屬分享資料夾</span>`;
   }
+  history.replaceState({ view: "folder", folderId: curFolder }, "", location.href);
   await loadList();
-  if (INITIAL_DOC_ID) loadDoc(INITIAL_DOC_ID);
+  if (INITIAL_DOC_ID) loadDoc(INITIAL_DOC_ID, "", true);
 }
 
 (async function main() {
