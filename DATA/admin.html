@@ -13,7 +13,7 @@
 </head>
 <body class="min-h-screen p-4 md:p-8">
 
-<!-- 管理者金鑰驗證遮罩 (避免未輸入或誤觸導致連發錯誤計數) -->
+<!-- 管理者金鑰驗證遮罩 -->
 <div id="adminLoginOverlay" class="fixed inset-0 bg-blue-950/90 z-50 p-4 flex items-center justify-center">
   <form id="adminLoginForm" class="bg-white p-8 rounded-2xl max-w-md w-full space-y-4 shadow-2xl">
     <div class="text-5xl text-center">🔐</div>
@@ -120,10 +120,11 @@
             </label>
           </div>
           <div>
-            <label class="font-bold">觀看權限模式:</label>
+            <label class="font-bold">觀看與分享權限模式:</label>
             <select id="isPublic" class="inp bg-white">
               <option value="false">🔒 依綁定身分權限(指定檔案/資料夾/類別)</option>
-              <option value="true">👥 全體已綁定會員皆可閱讀</option>
+              <option value="true">👥 全體已綁定會員皆可閱讀(需 LINE 登入)</option>
+              <option value="open">🌐 公開免綁定分享(免登入・全版面無框架)</option>
             </select>
           </div>
         </div>
@@ -153,11 +154,24 @@
   </div>
 </div>
 
-<!-- 分享 Modal -->
+<!-- 分享 Modal (支援「需綁定框架模式」與「免綁定全版面無框架模式」) -->
 <div id="shareModal" class="hidden fixed inset-0 bg-black/60 z-50 p-4 flex items-center justify-center">
-  <div class="bg-white p-6 rounded-2xl max-w-lg w-full space-y-3">
+  <div class="bg-white p-6 rounded-2xl max-w-xl w-full space-y-4">
     <h3 class="text-2xl font-bold text-center" id="shareModalTitle">🔗 分享連結</h3>
-    <p id="shareHint" class="text-sm text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200"></p>
+
+    <!-- 分享模式切換鈕 (僅針對單檔顯示) -->
+    <div id="shareModeSwitch" class="grid grid-cols-2 gap-2 bg-gray-100 p-1.5 rounded-xl">
+      <button type="button" data-act="switchShareMode" data-smode="bound" id="tabShareBound" class="py-2.5 px-3 rounded-lg font-bold text-base bg-blue-900 text-white">🔒 需綁定 LINE 開啟</button>
+      <button type="button" data-act="switchShareMode" data-smode="open" id="tabShareOpen" class="py-2.5 px-3 rounded-lg font-bold text-base text-gray-700">🌐 免綁定・全版面無框架</button>
+    </div>
+
+    <!-- 免綁定狀態提示與快速啟用區 -->
+    <div id="openShareStatusBox" class="hidden bg-amber-50 border-2 border-amber-300 p-3 rounded-xl space-y-2 text-sm text-amber-900">
+      <div id="openShareStatusText">⚠️ 此檔案目前尚未開啟「免綁定公開分享」，直接傳送連結對方會被擋下。</div>
+      <button type="button" data-act="toggleOpenShare" id="btnToggleOpenShare" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-base w-full">⚡ 立即啟用「免綁定全版面公開」</button>
+    </div>
+
+    <p id="shareHint" class="text-sm text-blue-900 bg-blue-50 p-2.5 rounded-lg border border-blue-200"></p>
     <div>
       <label class="font-bold">名稱:</label>
       <input id="shareName" readonly class="inp bg-gray-100 text-base">
@@ -225,7 +239,6 @@
       <button data-act="closeModal" data-target="permModal" class="big-btn bg-gray-300">✖</button>
     </div>
 
-    <!-- 1. 瀏覽與分享操作權限 -->
     <div class="bg-amber-50 border-2 border-amber-200 p-4 rounded-xl space-y-2">
       <h4 class="text-xl font-bold text-amber-900">① 瀏覽與分享操作權限</h4>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -244,7 +257,6 @@
       </div>
     </div>
 
-    <!-- 2. 可看的資料夾(含下層) -->
     <div class="bg-teal-50 border-2 border-teal-200 p-4 rounded-xl space-y-2">
       <div class="flex justify-between items-center">
         <h4 class="text-xl font-bold text-teal-900">② 可看的雲端資料夾（勾選後自動包含所有下層子資料夾與檔案）</h4>
@@ -252,13 +264,11 @@
       <div id="permFolderList" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1"></div>
     </div>
 
-    <!-- 3. 可看的檔案類別 -->
     <div class="bg-indigo-50 border-2 border-indigo-200 p-4 rounded-xl space-y-2">
       <h4 class="text-xl font-bold text-indigo-900">③ 可看的檔案類別（勾選後該類別所有檔案皆可閱讀）</h4>
       <div id="permCatList" class="flex flex-wrap gap-2"></div>
     </div>
 
-    <!-- 4. 可閱讀的個別檔案 -->
     <div class="bg-gray-50 border-2 border-gray-200 p-4 rounded-xl space-y-2">
       <div class="flex flex-wrap justify-between items-center gap-2">
         <h4 class="text-xl font-bold text-gray-900">④ 指定可閱讀的單一檔案</h4>
@@ -275,7 +285,7 @@
 </div>
 
 <script>
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyMsV_8YfS9sxJGKyKAHEjtt4Preo0ILdQA7yoUiD8X2Py0u2x3KXeOSz3-n6XMumLeVQ/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxQj-94DRQOV3anjUPgHdKHkQpZfRpHJszakcFesQ-3TZQL4Qc7y3COUUB2zau9vOnF5A/exec";
 const CHUNK = 8 * 1024 * 1024;
 const UNCAT = "__none__";
 const CODE_CELL = 45000;
@@ -322,6 +332,7 @@ let users = [], listCache = [], cats = [], searchTimer, listSeq = 0;
 let atts = [], uploading = 0;
 let folders = [], curFolder = "", moveCtx = null, editingPermUser = "";
 let permSelectedFiles = new Set();
+let sharingDocId = "", sharingMode = "bound";
 
 /* ---------- 類別 ---------- */
 function catOptions(withAll, withUncat) {
@@ -428,6 +439,12 @@ function openMove(ctx, title, exclude) {
 
 /* ---------- 清單 ---------- */
 function fileCard(f) {
+  let permTag = '<span class="bg-purple-100 text-purple-700 px-2 rounded text-xs">依權限</span>';
+  if (f.isPublic === "open") {
+    permTag = '<span class="bg-amber-100 text-amber-800 border border-amber-300 px-2 rounded text-xs font-bold">🌐免綁定公開</span>';
+  } else if (f.isPublic) {
+    permTag = '<span class="bg-green-100 text-green-700 px-2 rounded text-xs">全體會員</span>';
+  }
   return `
     <div class="p-3 bg-gray-50 rounded-xl border space-y-2" data-id="${esc(f.id)}">
       <div class="flex justify-between gap-2">
@@ -435,7 +452,7 @@ function fileCard(f) {
         <div class="flex gap-1 shrink-0 h-fit">
           ${f.hasPassword?'<span class="bg-red-100 text-red-700 px-2 rounded text-xs">🔒密碼</span>':''}
           ${f.attCount ? `<span class="bg-indigo-100 text-indigo-700 px-2 rounded text-xs">📎${f.attCount}</span>` : ''}
-          ${f.isPublic?'<span class="bg-green-100 text-green-700 px-2 rounded text-xs">全體會員</span>':'<span class="bg-purple-100 text-purple-700 px-2 rounded text-xs">依權限</span>'}
+          ${permTag}
         </div>
       </div>
       <div class="text-xs text-gray-500">${esc(f.updatedAt)} ${f.type==="file"?"・"+fmtSize(f.size):""}${$("searchInput").value.trim() && f.folderId ? "・📁 " + esc(folderPath(f.folderId).map(x => x.name).join(" / ")) : ""}</div>
@@ -539,7 +556,7 @@ async function editFile(id) {
     $("fileCategory").insertAdjacentHTML("beforeend", `<option value="${esc(c)}">${esc(c)}</option>`);
   $("fileCategory").value = c;
   $("fileFolder").value = r.folderId || "";
-  $("isPublic").value = r.isPublic ? "true" : "false";
+  $("isPublic").value = r.isPublic === "open" ? "open" : (r.isPublic ? "true" : "false");
   $("allowedUsers").value = r.allowedUsers || "";
   $("pwState").textContent = r.hasPassword ? "(目前已設定密碼)" : "(目前無密碼)";
   $("editorTitle").textContent = "✏️ 編輯:" + r.title;
@@ -553,13 +570,14 @@ async function saveFile() {
   const type = $("fileType").value, code = $("codeEditor").value;
   if (type === "page" && !code.trim()) return alert("請填入網頁內容!");
   const pw = $("filePassword").value;
+  const pubSelect = $("isPublic").value;
   const payload = {
     action: "save", id: $("fileId").value || undefined,
     title: $("pageTitle").value.trim() || "未命名網頁",
     category: $("fileCategory").value,
     folderId: $("fileFolder").value,
     code, mode: getMode(), attachments: atts,
-    isPublic: $("isPublic").value === "true",
+    isPublic: pubSelect === "open" ? "open" : (pubSelect === "true"),
     allowedUsers: $("allowedUsers").value.trim(),
     password: pw || undefined, clearPassword: $("clearPassword").checked
   };
@@ -602,17 +620,55 @@ async function previewById(id) {
   } else openPreview(r.title, htmlFrame(renderCode(r.mode, r.code)));
 }
 
+function renderShareModalState() {
+  const f = listCache.find(x => x.id === sharingDocId) || {};
+  const isOpen = f.isPublic === "open";
+  const tabBound = $("tabShareBound"), tabOpen = $("tabShareOpen");
+
+  if (sharingMode === "open") {
+    tabOpen.className = "py-2.5 px-3 rounded-lg font-bold text-base bg-amber-500 text-gray-900 shadow";
+    tabBound.className = "py-2.5 px-3 rounded-lg font-bold text-base text-gray-700 hover:bg-gray-200";
+    $("shareModalTitle").textContent = "🌐 免綁定・全版面無框架分享";
+    $("shareHint").textContent = "🌐 不須綁定 LINE 帳號即可直接開啟，且頁面完全不顯示頂端列與邊框，以 100% 全版面呈現。";
+    $("shareLink").value = `${baseUrl()}view.html?open=${encodeURIComponent(sharingDocId)}`;
+
+    $("openShareStatusBox").classList.remove("hidden");
+    if (isOpen) {
+      $("openShareStatusBox").className = "bg-emerald-50 border-2 border-emerald-300 p-3 rounded-xl space-y-2 text-sm text-emerald-900";
+      $("openShareStatusText").innerHTML = "✅ <b>已啟用免綁定公開分享</b>：任何人拿到下方連結皆可直接全版面開啟。";
+      $("btnToggleOpenShare").className = "bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg font-bold text-sm w-full";
+      $("btnToggleOpenShare").textContent = "🔒 關閉免綁定公開（改回需 LINE 登入）";
+    } else {
+      $("openShareStatusBox").className = "bg-amber-50 border-2 border-amber-300 p-3 rounded-xl space-y-2 text-sm text-amber-900";
+      $("openShareStatusText").innerHTML = "⚠️ <b>尚未啟用免綁定公開</b>：請先點擊下方按鈕啟用，對方才能免登入開啟此連結。";
+      $("btnToggleOpenShare").className = "bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-base w-full";
+      $("btnToggleOpenShare").textContent = "⚡ 立即啟用「免綁定全版面公開」";
+    }
+  } else {
+    tabBound.className = "py-2.5 px-3 rounded-lg font-bold text-base bg-blue-900 text-white shadow";
+    tabOpen.className = "py-2.5 px-3 rounded-lg font-bold text-base text-gray-700 hover:bg-gray-200";
+    $("shareModalTitle").textContent = "🔒 LINE 實名授權分享";
+    $("shareHint").textContent = "🔒 收到此連結的使用者需具備此檔案的閱讀權限並登入 LINE，且僅能檢視此檔案。";
+    $("shareLink").value = `${baseUrl()}view.html?id=${encodeURIComponent(sharingDocId)}`;
+    $("openShareStatusBox").classList.add("hidden");
+  }
+}
+
 function openShareFile(id) {
   const f = listCache.find(x => x.id === id) || {};
-  $("shareModalTitle").textContent = "🔗 分享單一檔案";
-  $("shareHint").textContent = "🔒 收到此連結的使用者需具備此檔案的閱讀權限，且僅能檢視此檔案，無法窺探其他檔案。";
+  sharingDocId = id;
+  sharingMode = f.isPublic === "open" ? "open" : "bound";
+  $("shareModeSwitch").classList.remove("hidden");
   $("shareName").value = f.fileName || f.title || "";
-  $("shareLink").value = `${baseUrl()}view.html?id=${encodeURIComponent(id)}`;
+  renderShareModalState();
   $("shareModal").classList.remove("hidden");
 }
 
 function openShareFolder(fid) {
   const f = fById(fid) || {};
+  sharingDocId = "";
+  $("shareModeSwitch").classList.add("hidden");
+  $("openShareStatusBox").classList.add("hidden");
   $("shareModalTitle").textContent = "📁 分享資料夾（含下層）";
   $("shareHint").textContent = "🔒 收到此連結的使用者僅能瀏覽此資料夾與其下層子資料夾內有權限的檔案。";
   $("shareName").value = "📁 " + (f.name || "");
@@ -850,6 +906,31 @@ document.addEventListener("click", async ev => {
     case "edit": editFile(id); break;
     case "preview": previewById(id); break;
     case "share": openShareFile(id); break;
+    case "switchShareMode":
+      sharingMode = b.dataset.smode || "bound";
+      renderShareModalState();
+      break;
+    case "toggleOpenShare": {
+      if (!sharingDocId) break;
+      const f = listCache.find(x => x.id === sharingDocId);
+      const nextOpen = f?.isPublic !== "open";
+      const btn = $("btnToggleOpenShare");
+      btn.disabled = true;
+      btn.textContent = "⏳ 更新權限中...";
+      try {
+        const r = await api({ action: "setOpenShare", id: sharingDocId, enabled: nextOpen });
+        if (r.status !== "success") return alert("❌ 設定失敗：" + r.message);
+        if (f) f.isPublic = nextOpen ? "open" : false;
+        if ($("fileId").value === sharingDocId) {
+          $("isPublic").value = nextOpen ? "open" : "false";
+        }
+        renderList();
+        renderShareModalState();
+      } finally {
+        btn.disabled = false;
+      }
+      break;
+    }
     case "shareFolder": openShareFolder(fid); break;
     case "delete": deleteFile(id, title); break;
     case "deleteCurrent":
