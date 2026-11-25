@@ -13,7 +13,28 @@
 </style>
 </head>
 <body class="min-h-screen p-3 md:p-6" oncontextmenu="return false">
-<div class="max-w-5xl mx-auto space-y-4">
+
+<!-- ===== 免綁定全版面無框架檢視區 (?open=ID 專用) ===== -->
+<div id="openOverlay" class="hidden fixed inset-0 w-screen h-[100dvh] bg-white z-40 flex items-center justify-center p-4">
+  <div id="openPanel" class="max-w-md w-full bg-white p-6 rounded-2xl border-2 shadow-lg space-y-4 text-center"></div>
+</div>
+<div id="fullStage" class="hidden fixed inset-0 w-screen h-[100dvh] bg-white z-50 overflow-hidden"></div>
+<!-- 免綁定模式若有隨附檔案時的極簡右下角浮動按鈕 -->
+<div id="openAttFab" class="hidden fixed bottom-4 right-4 z-50">
+  <button id="btnOpenAttDrawer" class="bg-blue-900/90 hover:bg-blue-900 text-white px-4 py-2.5 rounded-full font-bold text-base shadow-xl backdrop-blur">📎 隨附檔案 (<span id="openAttCount">0</span>)</button>
+</div>
+<div id="openAttModal" class="hidden fixed inset-0 bg-black/60 z-50 p-4 flex items-center justify-center">
+  <div class="bg-white p-5 rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto space-y-3">
+    <div class="flex justify-between items-center border-b pb-2">
+      <h3 class="text-xl font-bold">📎 隨附檔案</h3>
+      <button onclick="document.getElementById('openAttModal').classList.add('hidden')" class="bg-gray-200 px-3 py-1 rounded-lg font-bold">✖ 關閉</button>
+    </div>
+    <div id="openAttList" class="space-y-2"></div>
+  </div>
+</div>
+
+<!-- ===== 一般 LINE 登入檢視主框架 ===== -->
+<div id="appShell" class="max-w-5xl mx-auto space-y-4">
 
   <!-- 頂端列 -->
   <header class="bg-blue-900 text-white p-4 rounded-2xl flex flex-wrap justify-between items-center gap-2">
@@ -56,7 +77,7 @@
 <div id="shareModal" class="hidden fixed inset-0 bg-black/60 z-50 p-4 flex items-center justify-center">
   <div class="bg-white p-6 rounded-2xl max-w-lg w-full space-y-3">
     <h3 class="text-2xl font-bold text-center" id="shareModalTitle">🔗 分享連結</h3>
-    <p class="text-sm text-blue-800 bg-blue-50 p-2.5 rounded-lg border border-blue-200">
+    <p id="shareModalDesc" class="text-sm text-blue-800 bg-blue-50 p-2.5 rounded-lg border border-blue-200">
       🔒 收到此連結的人需以已授權的 LINE 帳號登入，且僅能看見此項目與下層內容。
     </p>
     <div>
@@ -71,13 +92,16 @@
       <button id="btnCopyAll" class="big-btn bg-emerald-600 text-white">📋 複製名稱＋連結</button>
       <button id="btnCopyUrl" class="big-btn bg-sky-600 text-white">🔗 只複製連結</button>
     </div>
+    <div id="openShareQuickBox" class="hidden pt-2 border-t">
+      <button id="btnCopyOpenFullUrl" class="big-btn bg-amber-500 hover:bg-amber-600 text-gray-900 w-full">🌐 複製「免綁定・全版面無框架」連結</button>
+    </div>
     <button onclick="document.getElementById('shareModal').classList.add('hidden')" class="big-btn bg-gray-300 w-full">關閉</button>
   </div>
 </div>
 
 <script>
 /* ===== 設定區 ===== */
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyMsV_8YfS9sxJGKyKAHEjtt4Preo0ILdQA7yoUiD8X2Py0u2x3KXeOSz3-n6XMumLeVQ/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxQj-94DRQOV3anjUPgHdKHkQpZfRpHJszakcFesQ-3TZQL4Qc7y3COUUB2zau9vOnF5A/exec";
 const LINE_CHANNEL_ID = "2009456572";
 const LIFF_ID = "2009456572-VIoH1oY0";
 const REDIRECT_URI = location.origin + location.pathname;
@@ -93,33 +117,139 @@ if (qs.get("liff.state")) {
     if (innerQs.get("bind") && !qs.get("bind")) qs.set("bind", innerQs.get("bind"));
     if (innerQs.get("id") && !qs.get("id")) qs.set("id", innerQs.get("id"));
     if (innerQs.get("folder") && !qs.get("folder")) qs.set("folder", innerQs.get("folder"));
+    if (innerQs.get("open") && !qs.get("open")) qs.set("open", innerQs.get("open"));
   } catch (e) {}
 }
 
+// 免綁定全版面分享 ID (?open=ID 或 ?id=ID&open=1)
+const OPEN_DOC_ID = (qs.get("open") || (qs.get("open") === "1" ? qs.get("id") : "") || "").trim();
 const IS_OAUTH_RETURN = !!(qs.get("code") || qs.get("error"));
 
-// 僅在網址明確帶參數時寫入暫存；若非 OAuth 回調且網址無參數，主動清除舊暫存避免卡死
 if (qs.get("bind")) localStorage.setItem("pendingBind", qs.get("bind").trim());
-if (qs.get("id")) {
+if (!OPEN_DOC_ID && qs.get("id")) {
   sessionStorage.setItem("targetDocId", qs.get("id").trim());
 } else if (!IS_OAUTH_RETURN) {
   sessionStorage.removeItem("targetDocId");
 }
 
-if (qs.get("folder")) {
+if (!OPEN_DOC_ID && qs.get("folder")) {
   sessionStorage.setItem("targetFolderId", qs.get("folder").trim());
 } else if (!IS_OAUTH_RETURN) {
   sessionStorage.removeItem("targetFolderId");
 }
 
-const INITIAL_DOC_ID = (qs.get("id") || (IS_OAUTH_RETURN ? sessionStorage.getItem("targetDocId") : "") || "").trim();
-const SCOPE_FOLDER_ID = (qs.get("folder") || (IS_OAUTH_RETURN ? sessionStorage.getItem("targetFolderId") : "") || "").trim();
+const INITIAL_DOC_ID = OPEN_DOC_ID ? "" : (qs.get("id") || (IS_OAUTH_RETURN ? sessionStorage.getItem("targetDocId") : "") || "").trim();
+const SCOPE_FOLDER_ID = OPEN_DOC_ID ? "" : (qs.get("folder") || (IS_OAUTH_RETURN ? sessionStorage.getItem("targetFolderId") : "") || "").trim();
 const SINGLE_FILE_LOCK = !!INITIAL_DOC_ID && !SCOPE_FOLDER_ID;
 
 let curFolder = SCOPE_FOLDER_ID || "";
 let curCat = "";
 let allFiles = [], allFolders = [];
 let userPerms = { canShare: true, canDownload: false };
+let currentOpenShareUrl = "";
+
+/* ===== API 呼叫 ===== */
+async function api(p) {
+  const a = getAuth();
+  const r = await fetch(GAS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ ...p, token: a?.token, scopeFolder: SCOPE_FOLDER_ID || undefined })
+  });
+  return r.json();
+}
+
+const msgBox = (icon, title, text, extra = "") =>
+  `<div class="text-5xl">${icon}</div><h2 class="text-2xl font-bold">${esc(title)}</h2>
+   <p class="text-gray-600 break-words">${esc(text)}</p>${extra}`;
+
+/* ===== 免綁定・全版面無框架載入邏輯 ===== */
+async function loadOpenDoc(id, password = "") {
+  $("openOverlay").classList.remove("hidden");
+  $("openPanel").innerHTML = msgBox("⏳", "內容載入中...", "請稍候");
+  let r;
+  try {
+    r = await api({ action: "loadOpen", id, password });
+  } catch (e) {
+    $("openPanel").innerHTML = msgBox("❌", "連線失敗", "請檢查網路連線後重試。",
+      `<button onclick="loadOpenDoc('${esc(id)}')" class="big-btn bg-blue-600 text-white mt-2">重新載入</button>`);
+    return;
+  }
+
+  if (r.status === "success") {
+    renderOpenFullScreen(r);
+    return;
+  }
+
+  switch (r.code) {
+    case "NEED_PASSWORD":
+      $("openPanel").innerHTML = `<div class="text-5xl">🔑</div>
+        <h2 class="text-2xl font-bold">此內容需要密碼</h2>
+        ${password ? `<p class="text-red-600 font-bold">${esc(r.message)}</p>` : ""}
+        <form id="openPwForm" class="space-y-3">
+          <input type="password" id="openPwInput" class="inp" placeholder="請輸入密碼" autocomplete="off" autofocus>
+          <button class="big-btn bg-blue-600 hover:bg-blue-700 text-white w-full">確認開啟</button>
+        </form>`;
+      $("openPwForm").onsubmit = e => {
+        e.preventDefault();
+        const v = $("openPwInput").value;
+        if (v) loadOpenDoc(id, v);
+      };
+      break;
+    case "NEED_LOGIN":
+      $("openPanel").innerHTML = msgBox("🔒", "此檔案未開放免綁定公開", r.message,
+        `<a href="${REDIRECT_URI}?id=${encodeURIComponent(id)}" class="inline-block big-btn bg-green-600 text-white mt-2">🟢 改用 LINE 登入開啟</a>`);
+      break;
+    case "LOCKED":
+      $("openPanel").innerHTML = msgBox("⏱️", "密碼錯誤次數過多", r.message);
+      break;
+    default:
+      $("openPanel").innerHTML = msgBox("🔍", "無法開啟內容", r.message || "連結可能已失效或檔案已被移除。");
+  }
+}
+
+function renderOpenFullScreen(r) {
+  document.title = r.title || "檔案檢視";
+  $("openOverlay").classList.add("hidden");
+
+  const stage = $("fullStage");
+  stage.replaceChildren();
+
+  if (r.type === "file") {
+    const did = encodeURIComponent(r.driveId);
+    const f = document.createElement("iframe");
+    f.src = `https://drive.google.com/file/d/${did}/preview`;
+    f.className = "w-full h-full border-0 block";
+    f.style.width = "100vw";
+    f.style.height = "100dvh";
+    f.setAttribute("allow", "autoplay; fullscreen");
+    stage.appendChild(f);
+  } else {
+    const f = document.createElement("iframe");
+    f.className = "w-full h-full border-0 block";
+    f.style.width = "100vw";
+    f.style.height = "100dvh";
+    f.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-modals");
+    f.srcdoc = r.code || "";
+    stage.appendChild(f);
+  }
+
+  stage.classList.remove("hidden");
+
+  // 若免綁定頁面有隨附檔案，提供右下角浮動按鈕檢視
+  if (r.attachments && r.attachments.length > 0) {
+    $("openAttCount").textContent = r.attachments.length;
+    $("openAttList").innerHTML = r.attachments.map(a => {
+      const aid = encodeURIComponent(a.driveId);
+      return `<div class="p-3 border rounded-xl flex items-center justify-between gap-2">
+        <div class="break-all"><b>${esc(a.name)}</b> <span class="text-sm text-gray-500">(${fmtSize(a.size)})</span></div>
+        <a href="https://drive.google.com/file/d/${aid}/preview" target="_blank" rel="noopener" class="bg-sky-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold shrink-0">👁️ 檢視</a>
+      </div>`;
+    }).join("");
+    $("openAttFab").classList.remove("hidden");
+    $("btnOpenAttDrawer").onclick = () => $("openAttModal").classList.remove("hidden");
+  }
+}
 
 /* ===== 登入 Session 管理 ===== */
 const SESSION_MS = 5 * 3600 * 1000;
@@ -183,10 +313,16 @@ window.addEventListener("popstate", e => {
 });
 
 /* ===== 分享工具 ===== */
-function openUserShare(title, url) {
+function openUserShare(title, url, openUrl = "") {
   if (!userPerms.canShare) return alert("您的帳號權限設定為「僅限閱讀」，無法分享連結。");
   $("shareName").value = title;
   $("shareLink").value = url;
+  currentOpenShareUrl = openUrl;
+  if (openUrl) {
+    $("openShareQuickBox").classList.remove("hidden");
+  } else {
+    $("openShareQuickBox").classList.add("hidden");
+  }
   $("shareModal").classList.remove("hidden");
 }
 async function copyText(text, msg) {
@@ -195,17 +331,10 @@ async function copyText(text, msg) {
 }
 $("btnCopyUrl").onclick = () => copyText($("shareLink").value, "📋 已複製分享連結！");
 $("btnCopyAll").onclick = () => copyText(`${$("shareName").value}\n${$("shareLink").value}`, "📋 已複製名稱與連結！");
-
-/* ===== API 呼叫 ===== */
-async function api(p) {
-  const a = getAuth();
-  const r = await fetch(GAS_URL, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ ...p, token: a?.token, scopeFolder: SCOPE_FOLDER_ID || undefined })
-  });
-  return r.json();
-}
+$("btnCopyOpenFullUrl").onclick = () => {
+  if (!currentOpenShareUrl) return;
+  copyText(`${$("shareName").value}\n${currentOpenShareUrl}`, "🌐 已複製「免綁定・全版面」分享名稱與連結！");
+};
 
 function showPanel(html) {
   $("viewer").classList.add("hidden");
@@ -215,9 +344,6 @@ function showPanel(html) {
   $("panel").classList.remove("hidden");
 }
 function hidePanel() { $("panel").classList.add("hidden"); }
-const msgBox = (icon, title, text, extra = "") =>
-  `<div class="text-5xl">${icon}</div><h2 class="text-2xl font-bold">${esc(title)}</h2>
-   <p class="text-gray-600 break-words">${esc(text)}</p>${extra}`;
 
 /* ===== OAuth 2.1 與 LIFF 雙保險驗證 ===== */
 function randStr(n = 16) {
@@ -267,7 +393,6 @@ async function handleOAuthCallback() {
       `<button onclick="startLineOAuth('${esc(bindCode)}')" class="big-btn bg-green-600 text-white mt-2">重新登入</button>`));
   }
 
-  // 驗證 OAuth state 防範 Login CSRF
   if (!flow || !flow.state || state !== flow.state) {
     return showPanel(msgBox("⚠️", "登入狀態驗證逾時或異常", "為確保帳號安全，請重新點擊登入按鈕進行驗證。",
       `<button onclick="startLineOAuth('${esc(bindCode)}')" class="big-btn bg-green-600 text-white mt-2">重新驗證登入</button>`));
@@ -341,7 +466,7 @@ function showBindScreen(code) {
   };
 }
 
-/* ===== 載入單一檔案 (嚴格遵守 canShare 與 canDownload 權限) ===== */
+/* ===== 載入單一檔案 ===== */
 async function loadDoc(id, password, pushHist = true) {
   showPanel(msgBox("⏳", "檔案載入中...", "正在確認閱讀權限"));
   let r;
@@ -404,7 +529,8 @@ function renderDoc(id, r) {
   }
   $("docActions").innerHTML = actions.join("");
   if ($("btnShareCurrentDoc")) {
-    $("btnShareCurrentDoc").onclick = () => openUserShare(r.title || "分享檔案", `${REDIRECT_URI}?id=${encodeURIComponent(id)}`);
+    const openUrl = r.isOpen ? `${REDIRECT_URI}?open=${encodeURIComponent(id)}` : "";
+    $("btnShareCurrentDoc").onclick = () => openUserShare(r.title || "分享檔案", `${REDIRECT_URI}?id=${encodeURIComponent(id)}`, openUrl);
   }
 
   const backBtn = $("btnBackToFolder");
@@ -434,7 +560,6 @@ function renderDoc(id, r) {
     f.setAttribute("allow", "autoplay; fullscreen");
     frameWrap.appendChild(f);
 
-    // 禁止下載時，覆蓋 Drive 預覽框右上角「彈出新視窗」按鈕區域防止透過外開下載
     if (!userPerms.canDownload) {
       const shield = document.createElement("div");
       shield.className = "absolute top-0 right-0 w-20 h-16 z-10";
@@ -578,6 +703,7 @@ function renderExplorer() {
           <button data-open-doc="${esc(f.id)}" class="text-left flex-1 min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <b class="break-all text-lg">${f.type === "file" ? "📎" : "📄"} ${esc(f.title)}</b>
+              ${f.isPublic === "open" ? '<span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-xs font-bold">🌐免綁定公開</span>' : ""}
               ${f.hasPassword ? '<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold">🔒密碼</span>' : ""}
               ${f.attCount ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs font-bold">📎${f.attCount}</span>` : ""}
             </div>
@@ -585,7 +711,7 @@ function renderExplorer() {
           </button>
           <div class="flex gap-1.5 shrink-0">
             <button data-open-doc="${esc(f.id)}" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold">閱讀</button>
-            ${userPerms.canShare ? `<button data-share-doc="${esc(f.id)}" data-share-name="${esc(f.title)}" class="bg-amber-500 text-gray-900 px-3 py-1.5 rounded-lg text-sm font-bold">分享</button>` : ""}
+            ${userPerms.canShare ? `<button data-share-doc="${esc(f.id)}" data-share-name="${esc(f.title)}" data-share-open="${f.isPublic === 'open' ? '1' : ''}" class="bg-amber-500 text-gray-900 px-3 py-1.5 rounded-lg text-sm font-bold">分享</button>` : ""}
           </div>
         </div>`).join("")}
     </div>`).join("");
@@ -624,13 +750,14 @@ document.addEventListener("click", e => {
   const sf = e.target.closest("[data-share-folder]");
   if (sf) {
     const fid = sf.dataset.shareFolder;
-    openUserShare("📁 " + (sf.dataset.shareName || "分享資料夾"), `${REDIRECT_URI}?folder=${encodeURIComponent(fid)}`);
+    openUserShare("📁 " + (sf.dataset.shareName || "分享資料夾"), `${REDIRECT_URI}?folder=${encodeURIComponent(fid)}`, "");
     return;
   }
   const sd = e.target.closest("[data-share-doc]");
   if (sd) {
     const did = sd.dataset.shareDoc;
-    openUserShare(sd.dataset.shareName || "分享檔案", `${REDIRECT_URI}?id=${encodeURIComponent(did)}`);
+    const openUrl = sd.dataset.shareOpen === "1" ? `${REDIRECT_URI}?open=${encodeURIComponent(did)}` : "";
+    openUserShare(sd.dataset.shareName || "分享檔案", `${REDIRECT_URI}?id=${encodeURIComponent(did)}`, openUrl);
     return;
   }
   const fb = e.target.closest("[data-open-folder]");
@@ -647,7 +774,6 @@ document.addEventListener("click", e => {
 $("searchInput").addEventListener("input", renderExplorer);
 
 async function startAppAfterAuth() {
-  // 驗證成功進入畫面後立即清除跳轉暫存，避免下次直接開首頁被舊連結參數卡住
   sessionStorage.removeItem("targetDocId");
   sessionStorage.removeItem("targetFolderId");
 
@@ -664,6 +790,13 @@ async function startAppAfterAuth() {
 }
 
 (async function main() {
+  // 若網址帶有 ?open=ID，直接進入免綁定・全版面無框架檢視模式
+  if (OPEN_DOC_ID) {
+    document.body.className = "m-0 p-0 bg-white overflow-hidden";
+    $("appShell").classList.add("hidden");
+    return loadOpenDoc(OPEN_DOC_ID);
+  }
+
   renderUserBar();
   if (qs.get("code") || qs.get("error")) return handleOAuthCallback();
   if (qs.get("bind")) return showBindScreen(qs.get("bind").trim());
