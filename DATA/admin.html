@@ -12,6 +12,21 @@
 </style>
 </head>
 <body class="min-h-screen p-4 md:p-8">
+
+<!-- 管理者金鑰驗證遮罩 (避免未輸入或誤觸導致連發錯誤計數) -->
+<div id="adminLoginOverlay" class="fixed inset-0 bg-blue-950/90 z-50 p-4 flex items-center justify-center">
+  <form id="adminLoginForm" class="bg-white p-8 rounded-2xl max-w-md w-full space-y-4 shadow-2xl">
+    <div class="text-5xl text-center">🔐</div>
+    <h2 class="text-2xl font-extrabold text-center text-blue-900">管理者身分驗證</h2>
+    <p id="adminLoginErr" class="hidden text-red-600 font-bold text-center text-base bg-red-50 p-2 rounded-lg"></p>
+    <div>
+      <label class="font-bold block mb-1">請輸入管理者金鑰：</label>
+      <input type="password" id="adminKeyInput" class="inp" placeholder="輸入管理者金鑰" autocomplete="current-password" required autofocus>
+    </div>
+    <button type="submit" id="btnAdminLogin" class="big-btn bg-blue-600 hover:bg-blue-700 text-white w-full">登入管理後台</button>
+  </form>
+</div>
+
 <div class="max-w-7xl mx-auto space-y-6">
 
   <header class="bg-blue-900 text-white p-6 rounded-2xl flex flex-wrap justify-between items-center gap-3">
@@ -26,6 +41,7 @@
       <button data-act="newFolder" class="big-btn bg-teal-600 hover:bg-teal-700">📁 新增資料夾</button>
       <button data-act="openCats" class="big-btn bg-amber-500 hover:bg-amber-600">🏷️ 管理類別</button>
       <button data-act="openUsers" class="big-btn bg-green-500 hover:bg-green-600">👥 使用者與權限設定</button>
+      <button data-act="adminLogout" class="big-btn bg-rose-600 hover:bg-rose-700">🔒 登出</button>
     </div>
     <input type="file" id="fileInput" class="hidden" multiple>
   </header>
@@ -209,7 +225,7 @@
       <button data-act="closeModal" data-target="permModal" class="big-btn bg-gray-300">✖</button>
     </div>
 
-    <!-- 3. 只能看跟分享 設定 -->
+    <!-- 1. 瀏覽與分享操作權限 -->
     <div class="bg-amber-50 border-2 border-amber-200 p-4 rounded-xl space-y-2">
       <h4 class="text-xl font-bold text-amber-900">① 瀏覽與分享操作權限</h4>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -228,7 +244,7 @@
       </div>
     </div>
 
-    <!-- 2A. 可看的資料夾(含下層) -->
+    <!-- 2. 可看的資料夾(含下層) -->
     <div class="bg-teal-50 border-2 border-teal-200 p-4 rounded-xl space-y-2">
       <div class="flex justify-between items-center">
         <h4 class="text-xl font-bold text-teal-900">② 可看的雲端資料夾（勾選後自動包含所有下層子資料夾與檔案）</h4>
@@ -236,13 +252,13 @@
       <div id="permFolderList" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1"></div>
     </div>
 
-    <!-- 2B. 可看的檔案類別 -->
+    <!-- 3. 可看的檔案類別 -->
     <div class="bg-indigo-50 border-2 border-indigo-200 p-4 rounded-xl space-y-2">
       <h4 class="text-xl font-bold text-indigo-900">③ 可看的檔案類別（勾選後該類別所有檔案皆可閱讀）</h4>
       <div id="permCatList" class="flex flex-wrap gap-2"></div>
     </div>
 
-    <!-- 1. 可閱讀的個別檔案 -->
+    <!-- 4. 可閱讀的個別檔案 -->
     <div class="bg-gray-50 border-2 border-gray-200 p-4 rounded-xl space-y-2">
       <div class="flex flex-wrap justify-between items-center gap-2">
         <h4 class="text-xl font-bold text-gray-900">④ 指定可閱讀的單一檔案</h4>
@@ -264,8 +280,7 @@ const CHUNK = 8 * 1024 * 1024;
 const UNCAT = "__none__";
 const CODE_CELL = 45000;
 
-let ADMIN_KEY = sessionStorage.getItem("adminKey") || prompt("請輸入管理者金鑰:") || "";
-sessionStorage.setItem("adminKey", ADMIN_KEY);
+let ADMIN_KEY = sessionStorage.getItem("adminKey") || "";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -273,15 +288,32 @@ const fmtSize = n => { n = +n || 0; const u=["B","KB","MB","GB","TB"]; let i=0; 
 const baseUrl = () => location.href.split("?")[0].replace(/[^/]*$/, "");
 const splitCsv = s => String(s || "").split(",").map(x => x.trim()).filter(Boolean);
 
+function showAdminLogin(errMsg = "") {
+  sessionStorage.removeItem("adminKey");
+  ADMIN_KEY = "";
+  const errEl = $("adminLoginErr");
+  if (errMsg) {
+    errEl.textContent = errMsg;
+    errEl.classList.remove("hidden");
+  } else {
+    errEl.classList.add("hidden");
+  }
+  $("adminLoginOverlay").classList.remove("hidden");
+  $("adminKeyInput").value = "";
+  $("adminKeyInput").focus();
+}
+
 async function api(p) {
-  const r = await fetch(GAS_URL, { method: "POST", headers: {"Content-Type":"text/plain;charset=utf-8"},
-    body: JSON.stringify({ ...p, adminKey: ADMIN_KEY }) });
+  const r = await fetch(GAS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ ...p, adminKey: ADMIN_KEY })
+  });
   const j = await r.json();
   if (j.code === "NO_ADMIN") {
-    sessionStorage.removeItem("adminKey");
-    alert("管理者金鑰錯誤，請重新整理後再輸入");
+    showAdminLogin("❌ 管理者金鑰錯誤，請重新輸入");
   } else if (j.code === "LOCKED") {
-    alert("⏱️ 錯誤嘗試次數過多，系統已暫時鎖定，請稍後再試");
+    showAdminLogin("⏱️ 錯誤嘗試次數過多，系統已暫時鎖定，請 5 分鐘後再試");
   }
   return j;
 }
@@ -289,6 +321,7 @@ async function api(p) {
 let users = [], listCache = [], cats = [], searchTimer, listSeq = 0;
 let atts = [], uploading = 0;
 let folders = [], curFolder = "", moveCtx = null, editingPermUser = "";
+let permSelectedFiles = new Set();
 
 /* ---------- 類別 ---------- */
 function catOptions(withAll, withUncat) {
@@ -313,6 +346,7 @@ async function loadCats() {
   if (r.status === "success") cats = r.cats || [];
   refreshCatSelects();
   renderCatTable();
+  return r;
 }
 function renderCatTable() {
   const cnt = {};
@@ -533,7 +567,8 @@ async function saveFile() {
   if (r.status !== "success") return alert("❌ 儲存失敗:" + r.message);
   alert("✅ 儲存成功!");
   $("fileId").value = r.id; $("filePassword").value = ""; $("clearPassword").checked = false;
-  loadList(); editFile(r.id);
+  await Promise.all([loadList(), loadUsers()]);
+  editFile(r.id);
 }
 
 async function deleteFile(id, title) {
@@ -541,7 +576,7 @@ async function deleteFile(id, title) {
   const r = await api({ action: "delete", id });
   if (r.status !== "success") return alert("刪除失敗:" + r.message);
   if ($("fileId").value === id) resetEditor("page");
-  loadList();
+  await Promise.all([loadList(), loadUsers()]);
 }
 
 /* ---------- 預覽與分享 ---------- */
@@ -695,17 +730,22 @@ async function loadUsers() {
   }).join("") || `<p class="text-gray-500 text-center">尚無使用者</p>`;
 }
 
+function syncVisiblePermFileCheckboxes() {
+  document.querySelectorAll(".perm-file-cb").forEach(cb => {
+    if (cb.checked) permSelectedFiles.add(cb.value);
+    else permSelectedFiles.delete(cb.value);
+  });
+}
+
 function openPermModal(label) {
   const u = users.find(x => x.label === label);
   if (!u) return;
   editingPermUser = label;
   $("permModalTitle").textContent = `⚙️ 進階權限設定：${label}`;
 
-  // 1. 設定操作權限 radio
   const modeVal = u.canDownload ? "full" : (u.canShare ? "share_only" : "view_only");
   document.querySelector(`input[name=permMode][value="${modeVal}"]`).checked = true;
 
-  // 2. 渲染資料夾樹狀勾選
   const selFolders = new Set(splitCsv(u.allowedFolders));
   const fHtml = [];
   (function walk(pid, depth) {
@@ -720,7 +760,6 @@ function openPermModal(label) {
   })("", 0);
   $("permFolderList").innerHTML = fHtml.join("") || `<p class="text-gray-500 text-sm">尚無建立雲端資料夾</p>`;
 
-  // 3. 渲染類別勾選
   const selCats = new Set(splitCsv(u.allowedCats));
   $("permCatList").innerHTML = cats.map(c => `
     <label class="px-3 py-2 bg-white border rounded-xl flex items-center gap-2 cursor-pointer">
@@ -728,29 +767,25 @@ function openPermModal(label) {
       <span>🏷️ <b>${esc(c)}</b></span>
     </label>`).join("") || `<p class="text-gray-500 text-sm">尚無建立檔案類別</p>`;
 
-  // 4. 渲染單一檔案勾選
-  const selFiles = new Set(splitCsv(u.allowedFiles));
+  permSelectedFiles = new Set(splitCsv(u.allowedFiles));
   $("permFileSearch").value = "";
-  renderPermFileList(selFiles, "");
+  renderPermFileList("");
   $("permFileSearch").oninput = e => {
-    // 保留目前勾選狀態
-    document.querySelectorAll(".perm-file-cb").forEach(cb => {
-      if (cb.checked) selFiles.add(cb.value); else selFiles.delete(cb.value);
-    });
-    renderPermFileList(selFiles, e.target.value.trim().toLowerCase());
+    syncVisiblePermFileCheckboxes();
+    renderPermFileList(e.target.value.trim().toLowerCase());
   };
 
   $("permModal").classList.remove("hidden");
 }
 
-function renderPermFileList(selFiles, kw) {
+function renderPermFileList(kw) {
   const filtered = listCache.filter(f => !kw || f.title.toLowerCase().includes(kw) || (f.category || "").toLowerCase().includes(kw));
   $("permFileList").innerHTML = filtered.map(f => {
     const fPath = f.folderId ? folderPath(f.folderId).map(x => x.name).join("/") : "根目錄";
     return `
       <label class="p-2 bg-white border rounded-lg flex items-center justify-between gap-2 cursor-pointer hover:bg-blue-50">
         <div class="flex items-center gap-2 min-w-0">
-          <input type="checkbox" class="perm-file-cb w-5 h-5 shrink-0" value="${esc(f.id)}" ${selFiles.has(f.id) ? "checked" : ""}>
+          <input type="checkbox" class="perm-file-cb w-5 h-5 shrink-0" value="${esc(f.id)}" ${permSelectedFiles.has(f.id) ? "checked" : ""}>
           <span class="break-all">${f.type === "file" ? "📎" : "📄"} <b>${esc(f.title)}</b></span>
         </div>
         <span class="text-xs text-gray-500 shrink-0">📁${esc(fPath)} ${f.category ? "・🏷️" + esc(f.category) : ""}</span>
@@ -760,13 +795,15 @@ function renderPermFileList(selFiles, kw) {
 
 async function saveUserPerm() {
   if (!editingPermUser) return;
+  syncVisiblePermFileCheckboxes();
+
   const modeVal = document.querySelector("input[name=permMode]:checked")?.value || "share_only";
   const canShare = modeVal === "share_only" || modeVal === "full";
   const canDownload = modeVal === "full";
 
   const allowedFolders = [...document.querySelectorAll(".perm-folder-cb:checked")].map(cb => cb.value);
   const allowedCats = [...document.querySelectorAll(".perm-cat-cb:checked")].map(cb => cb.value);
-  const allowedFiles = [...document.querySelectorAll(".perm-file-cb:checked")].map(cb => cb.value);
+  const allowedFiles = [...permSelectedFiles];
 
   const r = await api({
     action: "userPermSave",
@@ -782,6 +819,7 @@ async function saveUserPerm() {
   $("permModal").classList.add("hidden");
   await loadUsers();
   await loadList();
+  if ($("fileId").value) editFile($("fileId").value);
 }
 
 /* ---------- 事件委派 ---------- */
@@ -795,6 +833,9 @@ document.addEventListener("click", async ev => {
   const fid = b.closest("[data-fid]")?.dataset.fid;
 
   switch (act) {
+    case "adminLogout":
+      if (confirm("確定要登出管理者後台嗎？")) showAdminLogin();
+      break;
     case "newPage": resetEditor("page"); break;
     case "pickFile": $("fileInput").click(); break;
     case "pickAtt": $("attInput").click(); break;
@@ -835,7 +876,7 @@ document.addEventListener("click", async ev => {
     }
     case "delFolder":
       if (confirm(`刪除資料夾「${fById(fid)?.name}」?\n內部的檔案與子資料夾會移到上一層,不會被刪除。`)) {
-        if (await folderCall({ action: "folderDelete", id: fid })) loadList();
+        if (await folderCall({ action: "folderDelete", id: fid })) { loadList(); loadUsers(); }
       }
       break;
     case "moveFile": {
@@ -868,7 +909,7 @@ document.addEventListener("click", async ev => {
         const r = await api({ action: "catDelete", name: catName });
         if (r.status !== "success") return alert(r.message);
         if ($("catFilter").value === catName) $("catFilter").value = "";
-        await loadCats(); loadList();
+        await loadCats(); loadList(); loadUsers();
       }
       break;
 
@@ -900,7 +941,38 @@ $("catFilter").addEventListener("change", renderList);
 $("codeEditor").addEventListener("input", updateCount);
 document.querySelectorAll("input[name=contentMode]").forEach(r => r.addEventListener("change", applyModeUI));
 
-resetEditor("page"); loadCats(); loadUsers(); loadList().then(loadFolders);
+async function bootstrapAdmin() {
+  resetEditor("page");
+  const check = await loadCats();
+  if (check && check.status === "success") {
+    $("adminLoginOverlay").classList.add("hidden");
+    loadUsers();
+    loadList().then(loadFolders);
+  }
+}
+
+$("adminLoginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const key = $("adminKeyInput").value.trim();
+  if (!key) return;
+  const btn = $("btnAdminLogin");
+  btn.disabled = true;
+  btn.textContent = "⏳ 驗證中...";
+  ADMIN_KEY = key;
+  sessionStorage.setItem("adminKey", key);
+  try {
+    await bootstrapAdmin();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "登入管理後台";
+  }
+});
+
+if (ADMIN_KEY) {
+  bootstrapAdmin();
+} else {
+  showAdminLogin();
+}
 </script>
 </body>
 </html>
